@@ -444,8 +444,6 @@ export {
   planAllowsFeature,
   GEOCODING_MIN_PLAN,
   planAllowsGeocoding,
-  DATA_RESIDENCY_REGIONS,
-  DATA_RESIDENCY_LABEL,
 } from './lib/billing/plans';
 export type {
   PlanKey,
@@ -457,7 +455,6 @@ export type {
   TierPricing,
   FeatureMatrixRow,
   FeatureMatrixGroup,
-  DataResidencyRegion,
 } from './lib/billing/plans';
 export {
   CURRENCY_CODES,

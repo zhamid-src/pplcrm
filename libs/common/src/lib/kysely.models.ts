@@ -685,6 +685,10 @@ export interface Tasks extends RecordType {
   assigned_to: string | null;
   team_id: string | null;
   file_id: string | null;
+  /** Optional link to the contact the task is about — the person the task_sla_breach automation enrolls. */
+  person_id: string | null;
+  /** Once-only marker: when the hourly scan first found this task past its working-hours SLA target. */
+  sla_breached_at: Timestamp | null;
 }
 
 // Unlike every other record table, tenants.createdby_id is NULLABLE in the schema — the tenant
@@ -1274,6 +1278,10 @@ export interface WorkflowRuns {
    * webhook via the workflow_run_id custom arg). Step conditions and exit goals read these. */
   opened_at: Timestamp | null;
   clicked_at: Timestamp | null;
+  /** First hard bounce / spam complaint for the automation email this run sent (stamped by the
+   * same webhook). The automation abuse tripwires aggregate these per tenant. */
+  bounced_at: Timestamp | null;
+  spam_reported_at: Timestamp | null;
   created_at: Generated<Timestamp>;
 }
 

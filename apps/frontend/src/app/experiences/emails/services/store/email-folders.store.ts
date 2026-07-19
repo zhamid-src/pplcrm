@@ -6,6 +6,11 @@ import { EmailStateStore } from './email-state.store';
 import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
 import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
 
+/** Rows fetched when a folder is opened or refreshed — the first page. */
+const INITIAL_PAGE_SIZE = 50;
+/** Rows fetched per infinite-scroll page as the user nears the bottom. */
+const NEXT_PAGE_SIZE = 25;
+
 @Service()
 export class EmailFoldersStore {
   private readonly emailFolders = signal<EmailFolderType[]>([]);
@@ -39,7 +44,18 @@ export class EmailFoldersStore {
   }
 
   public hasMore = signal<boolean>(true);
-  public isLoadingMore = signal<boolean>(false);
+
+  private readonly _loadingMore = createLoadingGate();
+
+  /**
+   * Synchronous re-entrancy guard for {@link loadNextPage}. The gate's `visible`
+   * signal is deliberately flicker-delayed (~300ms), so it cannot double as an
+   * in-flight check — a fast second scroll event would slip past it.
+   */
+  private loadingMoreInFlight = false;
+
+  /** Spinner for the load-more row — gated, so sub-300ms pages never flicker it. */
+  public readonly isLoadingMore = this._loadingMore.visible;
 
   public async loadEmailsForFolder(folderId: string): Promise<void> {
     const end = this._loading.begin();
@@ -47,17 +63,13 @@ export class EmailFoldersStore {
       this.hasMore.set(true);
     }
     try {
-      const raw = await this.svc.getEmails(folderId, 40, 0); // initial load is 40
+      const raw = await this.svc.getEmails(folderId, INITIAL_PAGE_SIZE, 0);
 
       const emailsFromServer: ServerEmail[] = raw.map(normalizeServerEmailRow);
 
       this.state.setEmailsForFolder(folderId, emailsFromServer, false);
       if (folderId === this.currentSelectedFolderId()) {
-        if (emailsFromServer.length < 40) {
-          this.hasMore.set(false);
-        } else {
-          this.hasMore.set(true);
-        }
+        this.hasMore.set(emailsFromServer.length >= INITIAL_PAGE_SIZE);
       }
     } finally {
       end();
@@ -66,25 +78,30 @@ export class EmailFoldersStore {
 
   public async loadNextPage(): Promise<void> {
     const folderId = this.currentSelectedFolderId();
-    if (!folderId || this.isLoadingMore() || !this.hasMore()) return;
+    if (!folderId || this.loadingMoreInFlight || !this.hasMore()) return;
 
-    this.isLoadingMore.set(true);
+    this.loadingMoreInFlight = true;
+    const end = this._loadingMore.begin();
     try {
+      // Offset = rows already loaded for this folder, so pages append seamlessly.
       const currentIds = this.state.emailIdsByFolderId()[folderId] ?? [];
       const offset = currentIds.length;
-      const raw = await this.svc.getEmails(folderId, 20, offset); // load 20 more
+      const raw = await this.svc.getEmails(folderId, NEXT_PAGE_SIZE, offset);
       const emailsFromServer: ServerEmail[] = raw.map(normalizeServerEmailRow);
 
+      // Ignore late results if the user switched folders while we were fetching.
       if (folderId === this.currentSelectedFolderId()) {
         this.state.setEmailsForFolder(folderId, emailsFromServer, true);
-        if (emailsFromServer.length < 20) {
+        if (emailsFromServer.length < NEXT_PAGE_SIZE) {
+          // End of the folder — go quiet: no spinner, no banner, scrolling just stops loading.
           this.hasMore.set(false);
         }
       }
     } catch (e) {
       console.error('Failed to load next page of emails', e);
     } finally {
-      this.isLoadingMore.set(false);
+      end();
+      this.loadingMoreInFlight = false;
     }
   }
 

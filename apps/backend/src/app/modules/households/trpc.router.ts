@@ -79,10 +79,6 @@ export const HouseholdsRouter = router({
       return households.getTags(id, ctx.auth, type);
     }),
 
-  getDistinctTags: authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => households.getDistinctTags(ctx.auth, input)),
-
   getAllWithPeopleCount: authProcedure
     .input(z.any().optional())
     .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input)),

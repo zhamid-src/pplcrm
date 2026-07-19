@@ -13,6 +13,21 @@ describe('TasksController Notifications', () => {
     vi.restoreAllMocks();
   });
 
+  /**
+   * The in-app push is gated on the assignee's `task_assigned_in_app` preference, so the
+   * controller looks the assignee up before notifying. Stub that lookup (email: null keeps
+   * the email branch out of these tests).
+   */
+  function stubAssigneeLookup(preferences: unknown): void {
+    const qb: any = {
+      leftJoin: vi.fn(() => qb),
+      select: vi.fn(() => qb),
+      where: vi.fn(() => qb),
+      executeTakeFirst: vi.fn().mockResolvedValue({ email: null, first_name: null, profile_preferences: preferences }),
+    };
+    vi.spyOn(controller as any, 'getRepo').mockReturnValue({ db: { selectFrom: vi.fn(() => qb) } });
+  }
+
   it('should push notification on addTask if assigned_to is present', async () => {
     const auth = { tenant_id: 'tenant-1', user_id: 'user-1' } as any;
     const payload = {
@@ -23,6 +38,7 @@ describe('TasksController Notifications', () => {
     const mockTask = { id: 'task-1', name: 'Test Task' };
     const addSpy = vi.spyOn(controller, 'add').mockResolvedValue(mockTask as any);
     const pushSpy = vi.spyOn(NotificationsRepo.prototype, 'pushNotification').mockResolvedValue(null as any);
+    stubAssigneeLookup(null); // no stored preferences — notifications default on
 
     const result = await controller.addTask(payload, auth);
 
@@ -50,6 +66,7 @@ describe('TasksController Notifications', () => {
     const getSpy = vi.spyOn(controller, 'getOneById').mockResolvedValue(mockExistingTask as any);
     const updateSpy = vi.spyOn(controller, 'update').mockResolvedValue(mockUpdatedTask as any);
     const pushSpy = vi.spyOn(NotificationsRepo.prototype, 'pushNotification').mockResolvedValue(null as any);
+    stubAssigneeLookup(null);
 
     const result = await controller.updateTask('task-1', updatePayload, auth);
 
@@ -64,6 +81,19 @@ describe('TasksController Notifications', () => {
       link: '/tasks/task-1',
     });
     expect(result).toEqual(mockUpdatedTask);
+  });
+
+  it('should NOT push notification when the assignee turned task_assigned_in_app off', async () => {
+    const auth = { tenant_id: 'tenant-1', user_id: 'user-1' } as any;
+    const payload = { name: 'Test Task', assigned_to: 'user-2' } as any;
+
+    vi.spyOn(controller, 'add').mockResolvedValue({ id: 'task-1', name: 'Test Task' } as any);
+    const pushSpy = vi.spyOn(NotificationsRepo.prototype, 'pushNotification').mockResolvedValue(null as any);
+    stubAssigneeLookup({ notifications: { task_assigned_in_app: false } });
+
+    await controller.addTask(payload, auth);
+
+    expect(pushSpy).not.toHaveBeenCalled();
   });
 
   it('should NOT push notification on updateTask if assignee did not change', async () => {

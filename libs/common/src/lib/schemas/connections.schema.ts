@@ -28,7 +28,6 @@ export const RELATION_TYPE_LABELS: Record<(typeof RELATION_TYPES)[number], strin
 };
 
 export const relationTypeSchema = z.enum(RELATION_TYPES);
-export type RelationTypeSchema = z.infer<typeof relationTypeSchema>;
 
 export const AddConnectionObj = z.object({
   to_person_id: idSchema,

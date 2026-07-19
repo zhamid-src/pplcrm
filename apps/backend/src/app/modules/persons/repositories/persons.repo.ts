@@ -673,6 +673,20 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         }
       }
 
+      // Do-not-contact carries over — a merge must never make someone MORE contactable.
+      // Channels merge as a union; null means "all channels", so a union with null stays null.
+      if (source.do_not_contact) {
+        if (!target.do_not_contact) {
+          targetUpdate['do_not_contact'] = true;
+          targetUpdate['do_not_contact_channels'] = source.do_not_contact_channels ?? null;
+        } else if (target.do_not_contact_channels != null) {
+          targetUpdate['do_not_contact_channels'] =
+            source.do_not_contact_channels == null
+              ? null
+              : Array.from(new Set([...target.do_not_contact_channels, ...source.do_not_contact_channels]));
+        }
+      }
+
       if (Object.keys(targetUpdate).length > 0) {
         targetUpdate['updatedby_id'] = input.user_id;
         targetUpdate['updated_at'] = sql`now()`;
@@ -795,10 +809,262 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .where('tenant_id', '=', input.tenant_id)
         .where('team_captain_id', '=', input.source_id)
         .execute();
-      // 6. Delete source person
+      // 6. Re-point child rows with no per-person uniqueness constraint. Without this,
+      // deleting the source would SET NULL (donations, donation_pledges, delivery_requests,
+      // delivery_routes.volunteer_person_id, turf_knocks) or CASCADE-delete (form_submissions)
+      // this history — silent data loss.
+      await trx
+        .updateTable('donations')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('donation_pledges')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('delivery_requests')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('delivery_routes')
+        .set({ volunteer_person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('volunteer_person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('turf_knocks')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('form_submissions')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 7. Children keyed uniquely per person: keep the TARGET's row when both exist
+      // (delete the source's duplicate instead of violating the constraint), re-point the rest.
+      // campaign_person_facts — unique (tenant_id, campaign_id, person_id)
+      const targetFacts = await trx
+        .selectFrom('campaign_person_facts')
+        .select('campaign_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetFactCampaigns = targetFacts.map((r) => String(r.campaign_id));
+      if (targetFactCampaigns.length > 0) {
+        await trx
+          .deleteFrom('campaign_person_facts')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('person_id', '=', input.source_id)
+          .where('campaign_id', 'in', targetFactCampaigns)
+          .execute();
+      }
+      await trx
+        .updateTable('campaign_person_facts')
+        .set({ person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // event_registrations — unique (tenant_id, event_id, person_id)
+      const targetRegs = await trx
+        .selectFrom('event_registrations')
+        .select('event_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetRegEvents = targetRegs.map((r) => String(r.event_id));
+      if (targetRegEvents.length > 0) {
+        await trx
+          .deleteFrom('event_registrations')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('person_id', '=', input.source_id)
+          .where('event_id', 'in', targetRegEvents)
+          .execute();
+      }
+      await trx
+        .updateTable('event_registrations')
+        .set({ person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // volunteer_shifts — no DB unique, but one signup per person+event is the app invariant
+      const targetShifts = await trx
+        .selectFrom('volunteer_shifts')
+        .select('event_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetShiftEvents = targetShifts.map((r) => String(r.event_id));
+      if (targetShiftEvents.length > 0) {
+        await trx
+          .deleteFrom('volunteer_shifts')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('person_id', '=', input.source_id)
+          .where('event_id', 'in', targetShiftEvents)
+          .execute();
+      }
+      await trx
+        .updateTable('volunteer_shifts')
+        .set({ person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // workflow_enrollments — app-level dedupe: someone already in a sequence isn't enrolled twice
+      const targetEnrollments = await trx
+        .selectFrom('workflow_enrollments')
+        .select('workflow_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetEnrollmentWorkflows = targetEnrollments.map((r) => String(r.workflow_id));
+      if (targetEnrollmentWorkflows.length > 0) {
+        await trx
+          .deleteFrom('workflow_enrollments')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('person_id', '=', input.source_id)
+          .where('workflow_id', 'in', targetEnrollmentWorkflows)
+          .execute();
+      }
+      await trx
+        .updateTable('workflow_enrollments')
+        .set({ person_id: input.target_id, updated_at: sql`now()` })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 8. campaign_subscriptions — unique (tenant_id, campaign_id, person_id). Keep the
+      // target's row on collision, but consent is MOST-restrictive: if either record for a
+      // campaign is unsubscribed, the surviving row must be unsubscribed. A merge must never
+      // make someone more contactable.
+      const targetSubs = await trx
+        .selectFrom('campaign_subscriptions')
+        .select(['id', 'campaign_id', 'status'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetSubByCampaign = new Map(targetSubs.map((s) => [String(s.campaign_id), s]));
+      const sourceSubs = await trx
+        .selectFrom('campaign_subscriptions')
+        .select(['id', 'campaign_id', 'status', 'unsubscribed_at'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      for (const sub of sourceSubs) {
+        const existing = targetSubByCampaign.get(String(sub.campaign_id));
+        if (!existing) {
+          await trx
+            .updateTable('campaign_subscriptions')
+            .set({ person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', sub.id)
+            .execute();
+          continue;
+        }
+        if (sub.status === 'unsubscribed' && existing.status !== 'unsubscribed') {
+          await trx
+            .updateTable('campaign_subscriptions')
+            .set({
+              status: 'unsubscribed',
+              unsubscribed_at: sub.unsubscribed_at ?? sql`now()`,
+              updatedby_id: input.user_id,
+              updated_at: sql`now()`,
+            })
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', existing.id)
+            .execute();
+        }
+        await trx
+          .deleteFrom('campaign_subscriptions')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('id', '=', sub.id)
+          .execute();
+      }
+
+      // 9. person_connections — re-point both edge directions. Drop edges that would become a
+      // self-loop (source connected to target) or collide with an identical existing target
+      // edge (unique on tenant/from/to/relation_type; CHECK forbids from = to).
+      const targetFromEdges = await trx
+        .selectFrom('person_connections')
+        .select(['to_person_id', 'relation_type'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('from_person_id', '=', input.target_id)
+        .execute();
+      const targetFromKeys = new Set(targetFromEdges.map((e) => `${String(e.to_person_id)}|${e.relation_type}`));
+      const sourceFromEdges = await trx
+        .selectFrom('person_connections')
+        .select(['id', 'to_person_id', 'relation_type'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('from_person_id', '=', input.source_id)
+        .execute();
+      for (const edge of sourceFromEdges) {
+        const key = `${String(edge.to_person_id)}|${edge.relation_type}`;
+        if (String(edge.to_person_id) === String(input.target_id) || targetFromKeys.has(key)) {
+          await trx
+            .deleteFrom('person_connections')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', edge.id)
+            .execute();
+        } else {
+          targetFromKeys.add(key);
+          await trx
+            .updateTable('person_connections')
+            .set({ from_person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', edge.id)
+            .execute();
+        }
+      }
+      // (to-side selected after the from-side re-point so freshly moved edges count too)
+      const targetToEdges = await trx
+        .selectFrom('person_connections')
+        .select(['from_person_id', 'relation_type'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('to_person_id', '=', input.target_id)
+        .execute();
+      const targetToKeys = new Set(targetToEdges.map((e) => `${String(e.from_person_id)}|${e.relation_type}`));
+      const sourceToEdges = await trx
+        .selectFrom('person_connections')
+        .select(['id', 'from_person_id', 'relation_type'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('to_person_id', '=', input.source_id)
+        .execute();
+      for (const edge of sourceToEdges) {
+        const key = `${String(edge.from_person_id)}|${edge.relation_type}`;
+        if (String(edge.from_person_id) === String(input.target_id) || targetToKeys.has(key)) {
+          await trx
+            .deleteFrom('person_connections')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', edge.id)
+            .execute();
+        } else {
+          targetToKeys.add(key);
+          await trx
+            .updateTable('person_connections')
+            .set({ to_person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', edge.id)
+            .execute();
+        }
+      }
+
+      // 10. Delete source person. Remaining references clean themselves up: the source's
+      // potential_duplicates rows are ON DELETE CASCADE (stale groups are recomputed by the
+      // duplicate-maintenance service), and dismissed_duplicate_groups carries no person FK.
       await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
 
-      // 7. Clean up empty household if source's household is now empty
+      // 11. Clean up empty household if source's household is now empty
       const sourceHhId = source.household_id;
       if (sourceHhId && sourceHhId !== target.household_id) {
         const remainingHhMembers = await trx

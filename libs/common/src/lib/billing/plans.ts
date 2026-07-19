@@ -15,8 +15,8 @@
  *    including Free; forms, donations, automations, lists (segments) and volunteer management
  *    (teams & events) are the paid step-up (Grassroots and up); the field-ops surface — both
  *    companion apps (canvassing & deliveries), companion volunteer access & monitoring, yard
- *    signs, turf cutting, walk lists & routes, field reports, route optimization — plus A/B
- *    testing and the optional dedicated sending IP are Movement-only.
+ *    signs, turf cutting, walk lists & routes, field reports, route optimization — is
+ *    Movement-only.
  *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
  *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
  *    can actually email. This is the differentiator vs. contact-metered tools.
@@ -262,8 +262,6 @@ export const PLANS: readonly PlanDef[] = [
       'Companion volunteer access & field monitoring',
       'Yard signs & route optimization',
       'Turf cutting, walk lists & routes, field reports',
-      'A/B testing & optional dedicated sending IP',
-      'Choose your data residency region (US, EU, Canada or UK)',
       'Priority support & onboarding',
     ],
   },
@@ -284,8 +282,7 @@ export const PLANS: readonly PlanDef[] = [
       'Unlimited subscribers & sends',
       'Multiple linked workspaces',
       'Single sign-on (SSO)',
-      'Data residency by region',
-      'Dedicated IP & custom integrations',
+      'Custom integrations',
       'SLA support & guided onboarding',
     ],
   },
@@ -487,15 +484,6 @@ export function planAllowsGeocoding(planName: string | null | undefined): boolea
   return PLAN_RANK[plan.key] >= PLAN_RANK[GEOCODING_MIN_PLAN];
 }
 
-/** Regions a Movement customer can choose to store their data in, set when they create their
- * workspace. Single-sourced so the plan bullet, the comparison-table cell and any FAQ/help copy
- * stay in agreement. (Display-only on the marketing site; the actual choice happens at signup.) */
-export const DATA_RESIDENCY_REGIONS = ['US', 'EU', 'Canada', 'UK'] as const;
-export type DataResidencyRegion = (typeof DATA_RESIDENCY_REGIONS)[number];
-
-/** The residency regions as a single comparison-cell / bullet label, e.g. "US · EU · Canada · UK". */
-export const DATA_RESIDENCY_LABEL = DATA_RESIDENCY_REGIONS.join(' · ');
-
 /**
  * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
  * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
@@ -588,12 +576,6 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       {
         label: 'Companion volunteer access & monitoring',
         values: { free: false, grassroots: false, movement: true },
-      },
-      { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
-      {
-        label: 'Data residency',
-        values: { free: false, grassroots: false, movement: DATA_RESIDENCY_LABEL },
       },
       {
         label: 'Support',

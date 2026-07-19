@@ -152,7 +152,7 @@ export class HomePage {
     {
       icon: 'lock-closed',
       title: 'Your list is yours',
-      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada (or the region you pick on Movement) in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
+      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
     },
     {
       icon: 'paper-airplane',
@@ -290,7 +290,7 @@ export class HomePage {
     },
     {
       q: 'Where does my data live?',
-      a: 'In Canada, isolated from every other organization’s workspace. On the Movement plan you choose the region yourself: Canada, US, EU or UK.',
+      a: 'In Canada, isolated from every other organization’s workspace.',
     },
     {
       q: 'Will my newsletter land in spam?',

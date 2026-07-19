@@ -60,6 +60,9 @@ apps/
           2026-07-20-c-engagement-reactive-automation.ts
           2026-07-20-d-remove-newsletter-schedules.ts
           2026-07-20-e-newsletter-templates.ts
+          2026-07-20-f-automation-engagement-tripwires.ts
+          2026-07-20-g-drop-tenant-billing-columns.ts
+          2026-07-20-h-task-sla-breach.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -1309,59 +1312,113 @@ export async function down(db: Kysely<any>): Promise<void> {
 }
 `````
 
-## File: apps/backend/src/app/_migrations/2026-07-20-e-newsletter-templates.ts
+## File: apps/backend/src/app/_migrations/2026-07-20-f-automation-engagement-tripwires.ts
 `````typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
 /**
- * User-saved newsletter templates: a tenant-wide library of reusable designs
- * saved from the newsletter wizard.
+ * Automation engagement tripwires (spec: anti-abuse sending controls):
+ *  - workflow_runs gains bounced_at / spam_reported_at — the SendGrid event webhook already
+ *    stamps opens/clicks onto the run that sent an automation email; now hard bounces and spam
+ *    complaints are stamped the same way. That gives automation sends a durable, per-tenant
+ *    engagement record, which is what lets the same bounce/complaint tripwires that guard
+ *    newsletters (pause at >5% hard bounces, suspend at >1% complaints) also cover automation
+ *    volume — previously an abuser could blast through workflows without ever tripping the
+ *    account-level wires.
+ */
+export async function up(db: Kysely<unknown>): Promise<void> {
+  await sql`
+    ALTER TABLE public.workflow_runs
+      ADD COLUMN IF NOT EXISTS bounced_at timestamptz,
+      ADD COLUMN IF NOT EXISTS spam_reported_at timestamptz
+  `.execute(db);
+}
+
+export async function down(db: Kysely<unknown>): Promise<void> {
+  await sql`
+    ALTER TABLE public.workflow_runs
+      DROP COLUMN IF EXISTS bounced_at,
+      DROP COLUMN IF EXISTS spam_reported_at
+  `.execute(db);
+}
+`````
+
+## File: apps/backend/src/app/_migrations/2026-07-20-g-drop-tenant-billing-columns.ts
+`````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Drop the seven dead `tenants.billing_*` address columns.
  *
- * No campaign_id on purpose — a template is pure content (the compiled HTML with
- * the embedded PPLCRM_VISUAL_BLOCKS_DATA block model plus its plain-text twin).
- * It carries no audience, consent, or send logic, so per the Campaigns §15
- * shared-rolodex-vs-scoped-facts rule it lives on the shared side and stays
- * usable across every campaign context and after carry-over.
- *
- * (Filename note: dated 2026-07-20-e, not the authoring date, because dated
- * migrations through 2026-07-20-d are already applied and Kysely's migrator
- * rejects a new file that sorts before an executed one.)
+ * Billing addresses are owned by Stripe (Customer billing details); these columns
+ * were never read or written by any code path and carried no data worth preserving.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`
-    CREATE TABLE public.newsletter_templates (
-      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-      tenant_id bigint NOT NULL,
-      createdby_id bigint NOT NULL,
-      updatedby_id bigint NOT NULL,
-      name text NOT NULL,
-      html_content text NOT NULL,
-      plain_text_content text DEFAULT ''::text NOT NULL,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT fk_newsletter_templates_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
-    )
-  `.execute(db);
-  await sql`CREATE INDEX idx_newsletter_templates_tenant_name ON public.newsletter_templates (tenant_id, name)`.execute(
-    db,
-  );
-  await sql`
-    CREATE TRIGGER trg_newsletter_templates_updated_at
-      BEFORE UPDATE ON public.newsletter_templates
-      FOR EACH ROW EXECUTE FUNCTION public.set_updated_at()
-  `.execute(db);
-  await sql`ALTER TABLE public.newsletter_templates ENABLE ROW LEVEL SECURITY`.execute(db);
-  await sql`ALTER TABLE public.newsletter_templates FORCE ROW LEVEL SECURITY`.execute(db);
-  await sql`
-    CREATE POLICY tenant_isolation ON public.newsletter_templates
-      USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
-      WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
+    ALTER TABLE public.tenants
+      DROP COLUMN IF EXISTS billing_street_num,
+      DROP COLUMN IF EXISTS billing_street1,
+      DROP COLUMN IF EXISTS billing_street2,
+      DROP COLUMN IF EXISTS billing_city,
+      DROP COLUMN IF EXISTS billing_state,
+      DROP COLUMN IF EXISTS billing_zip,
+      DROP COLUMN IF EXISTS billing_country
   `.execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
-  await sql`DROP TABLE IF EXISTS public.newsletter_templates`.execute(db);
+  await sql`
+    ALTER TABLE public.tenants
+      ADD COLUMN IF NOT EXISTS billing_street_num text,
+      ADD COLUMN IF NOT EXISTS billing_street1 text,
+      ADD COLUMN IF NOT EXISTS billing_street2 text,
+      ADD COLUMN IF NOT EXISTS billing_city text,
+      ADD COLUMN IF NOT EXISTS billing_state text,
+      ADD COLUMN IF NOT EXISTS billing_zip text,
+      ADD COLUMN IF NOT EXISTS billing_country text
+  `.execute(db);
+}
+`````
+
+## File: apps/backend/src/app/_migrations/2026-07-20-h-task-sla-breach.ts
+`````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Task SLA-breach automation trigger (spec §4 → §16).
+ *
+ * - `tasks.person_id`: optional link to the contact a task is about. Automations enroll
+ *   persons, so the `task_sla_breach` trigger needs it — the `create_task` automation step
+ *   stamps the enrolled person, and the API accepts it on add/update. Nullable: most tasks
+ *   are internal and have no linked contact (those skip enrollment when they breach).
+ * - `tasks.sla_breached_at`: once-only marker stamped by the hourly scan the first time a
+ *   task crosses its working-hours SLA target. Guarantees the trigger fires exactly once
+ *   per task across cron ticks.
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS person_id bigint`.execute(db);
+  await sql`
+    DO $$
+    BEGIN
+      ALTER TABLE ONLY public.tasks
+        ADD CONSTRAINT fk_tasks_person_id FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END
+    $$
+  `.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_tasks_person_id ON public.tasks USING btree (person_id)`.execute(db);
+  await sql`ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS sla_breached_at timestamp with time zone`.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP INDEX IF EXISTS idx_tasks_person_id`.execute(db);
+  await sql`ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS fk_tasks_person_id`.execute(db);
+  await sql`ALTER TABLE public.tasks DROP COLUMN IF EXISTS person_id`.execute(db);
+  await sql`ALTER TABLE public.tasks DROP COLUMN IF EXISTS sla_breached_at`.execute(db);
 }
 `````
 
@@ -19176,1300 +19233,6 @@ const deliveriesPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 export default deliveriesPublicRoute;
 `````
 
-## File: apps/backend/src/app/modules/deliveries/controller.ts
-`````typescript
-import { createHash, randomBytes } from 'crypto';
-
-import type { Transaction } from 'kysely';
-
-import type {
-  AddDeliveryRequestType,
-  AssignVolunteerType,
-  CommitDeliveriesType,
-  GetSignStatusType,
-  IAuthKeyPayload,
-  PlanDeliveriesType,
-  ReorderStopType,
-  ReorderStopsType,
-  SetDeliveryRequestStatusType,
-  SetDeliveryRouteStatusType,
-  StopActionType,
-  UpdateDeliveryRequestType,
-  UpdateDeliveryRouteType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-
-import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
-import { geocodeAddress } from '../../lib/gis/geocode-address';
-import { legMinutes, roadKm, type LatLng } from '../../lib/routing/geo';
-import { planRoutes, type PlanParams, type PlanStopInput } from '../../lib/routing/plan-routes';
-import {
-  AVG_SPEED_KMH,
-  MAX_STOPS_PER_PLAN,
-  SERVICE_MINUTES_PER_STOP,
-  SHARE_TOKEN_TTL_DAYS,
-} from '../../lib/routing/route-constants';
-import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
-import { logger } from '../../logger';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { CompanionAccessController } from '../companion-access/controller';
-import { DeliveryRequestsRepo } from './repositories/delivery-requests.repo';
-import { DeliveryRouteStopsRepo } from './repositories/delivery-route-stops.repo';
-import { DeliveryRoutesRepo } from './repositories/delivery-routes.repo';
-
-const ROUTE_DEFAULTS_SETTING_KEY = 'deliveries.route_defaults';
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-type StopVia = 'staff' | 'volunteer_link';
-
-interface RouteParamsSnapshot {
-  serviceMinutes: number;
-  avgSpeedKmh: number;
-  includeReturnLeg: boolean;
-  drivers: number | null;
-}
-
-function resolveParams(input: PlanDeliveriesType): PlanParams {
-  return {
-    serviceMinutes: input.service_minutes ?? SERVICE_MINUTES_PER_STOP,
-    avgSpeedKmh: input.avg_speed_kmh ?? AVG_SPEED_KMH,
-    includeReturnLeg: input.include_return_leg ?? false,
-    drivers: input.drivers ?? null,
-  };
-}
-
-/** Human-readable route name: "Maple St area — Jul 10" derived from the first stop + today. */
-function deriveRouteName(firstAddress: string, date: Date): string {
-  const firstSegment = (firstAddress.split(',')[0] ?? '').trim();
-  const streetOnly = firstSegment.replace(/^\d+\s+/, '').trim();
-  const area = streetOnly || firstSegment || 'Delivery';
-  const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return `${area} area — ${label}`;
-}
-
-export class DeliveriesController {
-  private readonly requestsRepo = new DeliveryRequestsRepo();
-  private readonly campaignsRepo = new CampaignsRepo();
-  private readonly companionAccess = new CompanionAccessController();
-  private readonly routesRepo = new DeliveryRoutesRepo();
-  private readonly stopsRepo = new DeliveryRouteStopsRepo();
-  private readonly userActivity = new UserActivityRepo();
-
-  // ---- Requests -----------------------------------------------------------
-  public getAllRequests(tenant: string, options?: getAllOptionsType) {
-    return this.requestsRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
-  }
-
-  public getRequestCounts(tenant: string) {
-    return this.requestsRepo.getStatusCounts(tenant);
-  }
-
-  public getReadyCount(tenant: string) {
-    return this.requestsRepo.getReadyCount(tenant);
-  }
-
-  /** Yard-sign standing for one household in one campaign context (household/person pages). */
-  public async getSignStatus(auth: IAuthKeyPayload, input: GetSignStatusType) {
-    const request = await this.requestsRepo.getSignStatus(auth.tenant_id, input.household_id, input.campaign_id);
-    return { request };
-  }
-
-  public async addRequest(auth: IAuthKeyPayload, input: AddDeliveryRequestType) {
-    // Guard: a household with an OPEN request (new/approved, incl. routed) can't have a second.
-    const open = await this.requestsRepo.db
-      .selectFrom('delivery_requests')
-      .select(['id'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('household_id', '=', input.household_id)
-      .where('status', 'in', ['new', 'approved'])
-      .executeTakeFirst();
-    if (open) {
-      throw new ConflictError('This household already has an open delivery request.');
-    }
-    const personId = input.person_id ? String(input.person_id) : null;
-    const row = {
-      tenant_id: auth.tenant_id,
-      // The context this yard-sign request belongs to (§15); defaults to the office.
-      campaign_id: await this.campaignsRepo.resolveForWrite({
-        tenant_id: auth.tenant_id,
-        campaign_id: input.campaign_id,
-      }),
-      household_id: input.household_id,
-      person_id: personId,
-      web_form_id: null,
-      source: 'manual',
-      status: 'new',
-      notes: input.notes ?? null,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'delivery_requests', 'insert'>;
-    const created = await this.requestsRepo.add({ row });
-    await this.logRequestStanding(undefined, auth, [String(created.id)], 'recorded');
-    return { id: String(created.id) };
-  }
-
-  public async updateRequestNotes(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRequestType) {
-    const updated = await this.requestsRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { notes: input.notes ?? null, updatedby_id: auth.user_id, updated_at: new Date() } as OperationDataType<
-        'delivery_requests',
-        'update'
-      >,
-    });
-    if (!updated) throw new NotFoundError('Request not found');
-    return { id };
-  }
-
-  public async setRequestStatus(auth: IAuthKeyPayload, input: SetDeliveryRequestStatusType) {
-    // A request sitting on an active (pending) stop can't be declined or reset out from under a
-    // route. Approved + pending stop is the normal on-route state, and 'delivered' flows THROUGH
-    // the stop below so route progress stays truthful.
-    if (input.status === 'declined' || input.status === 'new') {
-      const onRoute = await this.requestsRepo.db
-        .selectFrom('delivery_route_stops')
-        .select(['id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('request_id', 'in', input.ids)
-        .where('status', '=', 'pending')
-        .executeTakeFirst();
-      if (onRoute) {
-        throw new BadRequestError('Remove these requests from their route first, or cancel that route.');
-      }
-    }
-    return this.requestsRepo.transaction().execute(async (trx) => {
-      let directIds = input.ids;
-      if (input.status === 'delivered') {
-        // Manual "the sign is in the ground" flip: requests on an active route deliver via their
-        // stop (staff-attributed), which also advances/auto-completes the route.
-        const pendingStops = await trx
-          .selectFrom('delivery_route_stops')
-          .select(['id', 'route_id', 'request_id'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('request_id', 'in', input.ids)
-          .where('status', '=', 'pending')
-          .execute();
-        for (const stop of pendingStops) {
-          await this.applyStopTransition(trx, auth, String(stop.route_id), String(stop.id), 'deliver', null, 'staff');
-        }
-        const handled = new Set(pendingStops.map((s) => String(s.request_id)));
-        directIds = input.ids.filter((id) => !handled.has(id));
-      }
-      if (directIds.length > 0) {
-        await trx
-          .updateTable('delivery_requests')
-          .set({
-            status: input.status,
-            ...(input.status === 'delivered' ? { skip_reason: null } : {}),
-            updatedby_id: auth.user_id,
-            updated_at: new Date(),
-          })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', 'in', directIds)
-          .execute();
-      }
-      await this.logRequestStanding(trx, auth, input.ids, input.status);
-      return { updated: input.ids.length };
-    });
-  }
-
-  // ---- Planning -----------------------------------------------------------
-  public async previewPlan(auth: IAuthKeyPayload, input: PlanDeliveriesType) {
-    const geo = await geocodeAddress(input.start_address);
-    if (!geo) {
-      throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
-    }
-    const start: LatLng = { lat: geo.lat, lng: geo.lng };
-    const params = resolveParams(input);
-
-    const eligible = await this.requestsRepo.getEligibleForPlanning(auth.tenant_id, MAX_STOPS_PER_PLAN + 1);
-    const capApplied = eligible.length > MAX_STOPS_PER_PLAN;
-    const capped = capApplied ? eligible.slice(0, MAX_STOPS_PER_PLAN) : eligible;
-    const byId = new Map(capped.map((e) => [e.request_id, e] as const));
-
-    const stops: PlanStopInput[] = capped.map((e) => ({ requestId: e.request_id, lat: e.lat, lng: e.lng }));
-    const result = planRoutes(start, stops, params);
-
-    const routes = result.routes.map((route, i) => ({
-      index: i + 1,
-      total_minutes: route.totalMinutes,
-      total_km: route.totalKm,
-      stops: route.stops.map((s) => {
-        const info = byId.get(s.requestId);
-        return {
-          request_id: s.requestId,
-          seq: s.seq,
-          leg_minutes: s.legMinutes,
-          address: info?.address ?? '',
-          name: info?.name ?? null,
-        };
-      }),
-    }));
-
-    const unroutable = result.unroutable.map((u) => {
-      const info = byId.get(u.requestId);
-      const reasonText =
-        u.reason === 'isolated'
-          ? `Isolated. The nearest other stop is ${u.nearestKm} km away`
-          : `Too far to reach within an hour from this start (${u.nearestKm} km out)`;
-      return { request_id: u.requestId, reason: u.reason, reason_text: reasonText, address: info?.address ?? '' };
-    });
-
-    const buckets = await this.requestsRepo.getIneligibleBuckets(auth.tenant_id);
-
-    return {
-      start: { address: geo.formatted_address, lat: geo.lat, lng: geo.lng },
-      eligible_count: capped.length,
-      cap_applied: capApplied,
-      routes,
-      unroutable,
-      ineligible: buckets,
-    };
-  }
-
-  public async commitPlan(auth: IAuthKeyPayload, input: CommitDeliveriesType) {
-    const geo = await geocodeAddress(input.start_address);
-    if (!geo) throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
-    const start: LatLng = { lat: geo.lat, lng: geo.lng };
-    const params = resolveParams(input);
-    const snapshot: RouteParamsSnapshot = {
-      serviceMinutes: params.serviceMinutes,
-      avgSpeedKmh: params.avgSpeedKmh,
-      includeReturnLeg: params.includeReturnLeg,
-      drivers: params.drivers ?? null,
-    };
-    const now = new Date();
-
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const skipped: Array<{ request_id: string; reason: string }> = [];
-      let created = 0;
-      let firstRouteId: string | null = null;
-
-      for (const proposed of input.routes) {
-        const eligible = await this.requestsRepo.getEligibleByIds(auth.tenant_id, proposed.request_ids, trx);
-        const eligibleById = new Map(eligible.map((e) => [e.request_id, e] as const));
-        // Preserve the client's order, dropping any request that lost eligibility (concurrent planner).
-        const ordered = proposed.request_ids.filter((id) => eligibleById.has(id));
-        for (const id of proposed.request_ids) {
-          if (!eligibleById.has(id)) skipped.push({ request_id: id, reason: 'no_longer_eligible' });
-        }
-        if (ordered.length === 0) continue;
-
-        // Recompute legs server-side — never trust client math.
-        let cursor: LatLng = start;
-        let totalMinutes = 0;
-        let totalKm = 0;
-        const legs: number[] = [];
-        for (const id of ordered) {
-          const e = eligibleById.get(id);
-          if (!e) continue;
-          const point: LatLng = { lat: e.lat, lng: e.lng };
-          const leg = legMinutes(cursor, point, params.avgSpeedKmh);
-          legs.push(leg);
-          totalMinutes += leg + params.serviceMinutes;
-          totalKm += roadKm(cursor, point);
-          cursor = point;
-        }
-        if (params.includeReturnLeg) totalKm += roadKm(cursor, start);
-
-        const firstAddress = eligibleById.get(ordered[0] ?? '')?.address ?? '';
-        // A route inherits the campaign of the requests it serves (§15); the
-        // eligibility query keeps plans single-campaign, so the first stop is
-        // representative.
-        const firstRequest = await trx
-          .selectFrom('delivery_requests')
-          .select(['campaign_id'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', String(ordered[0]))
-          .executeTakeFirstOrThrow();
-        const routeRow = {
-          tenant_id: auth.tenant_id,
-          campaign_id: String(firstRequest.campaign_id),
-          name: deriveRouteName(firstAddress, now),
-          status: 'draft',
-          volunteer_person_id: null,
-          start_address: geo.formatted_address,
-          start_lat: start.lat,
-          start_lng: start.lng,
-          est_minutes: Math.round(totalMinutes * 10) / 10,
-          est_km: Math.round(totalKm * 10) / 10,
-          scheduled_for: null,
-          share_token_hash: null,
-          share_token_expires_at: null,
-          params: JSON.stringify(snapshot),
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        } as OperationDataType<'delivery_routes', 'insert'>;
-        const route = await this.routesRepo.add({ row: routeRow }, trx);
-        const routeId = String(route.id);
-        if (!firstRouteId) firstRouteId = routeId;
-
-        const stopRows = ordered.map(
-          (id, i) =>
-            ({
-              tenant_id: auth.tenant_id,
-              route_id: routeId,
-              request_id: id,
-              seq: i + 1,
-              leg_minutes: Math.round((legs[i] ?? 0) * 10) / 10,
-              status: 'pending',
-              reason: null,
-              acted_at: null,
-              acted_via: null,
-              createdby_id: auth.user_id,
-              updatedby_id: auth.user_id,
-            }) as OperationDataType<'delivery_route_stops', 'insert'>,
-        );
-        await this.stopsRepo.addMany({ rows: stopRows }, trx);
-        created++;
-        await this.logRouteActivity(trx, auth, routeId, 'create', 'route_created', 'Route created from plan');
-      }
-
-      // Persist the start address as the tenant default for the next plan.
-      await this.saveRouteDefaults(trx, auth, { start_address: geo.formatted_address });
-
-      return { created, skipped, first_route_id: firstRouteId };
-    });
-  }
-
-  public async getRouteDefaults(tenant: string): Promise<{ start_address: string | null }> {
-    const row = await this.routesRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenant)
-      .where('key', '=', ROUTE_DEFAULTS_SETTING_KEY)
-      .executeTakeFirst();
-    const value = row?.value as { start_address?: string } | null | undefined;
-    return { start_address: value?.start_address ?? null };
-  }
-
-  private async saveRouteDefaults(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    value: { start_address: string },
-  ): Promise<void> {
-    await trx
-      .insertInto('settings')
-      .values({
-        tenant_id: auth.tenant_id,
-        key: ROUTE_DEFAULTS_SETTING_KEY,
-        value: JSON.stringify(value),
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
-      })
-      .onConflict((oc) =>
-        oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(value), updatedby_id: auth.user_id }),
-      )
-      .execute();
-  }
-
-  // ---- Routes -------------------------------------------------------------
-  public getAllRoutes(tenant: string, options?: getAllOptionsType) {
-    return this.routesRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
-  }
-
-  public async getRouteById(auth: IAuthKeyPayload, id: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
-    if (!route) throw new NotFoundError('Route not found');
-    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, id);
-    let volunteerName: string | null = null;
-    if (route.volunteer_person_id) {
-      const v = await this.routesRepo.db
-        .selectFrom('persons')
-        .select(['first_name', 'last_name'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(route.volunteer_person_id))
-        .executeTakeFirst();
-      if (v) volunteerName = `${v.first_name ?? ''} ${v.last_name ?? ''}`.trim() || null;
-    }
-    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
-    return this.sanitizeRoute(route, stops, volunteerName, expiryEnforced);
-  }
-
-  public async updateRoute(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRouteType) {
-    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
-    if (input.name !== undefined) row['name'] = input.name;
-    if (input.scheduled_for !== undefined) {
-      row['scheduled_for'] = input.scheduled_for ? new Date(input.scheduled_for) : null;
-    }
-    const updated = await this.routesRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: row as OperationDataType<'delivery_routes', 'update'>,
-    });
-    if (!updated) throw new NotFoundError('Route not found');
-    return { id };
-  }
-
-  public async assignVolunteer(auth: IAuthKeyPayload, input: AssignVolunteerType) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
-    if (!route) throw new NotFoundError('Route not found');
-    const personId = input.person_id ? String(input.person_id) : null;
-    // Assigning moves draft → assigned; clearing a volunteer on a draft/assigned route → draft.
-    let status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled' = route.status;
-    if (personId && status === 'draft') status = 'assigned';
-    if (!personId && status === 'assigned') status = 'draft';
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({ volunteer_person_id: personId, status, updatedby_id: auth.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', input.route_id)
-      .execute();
-    await this.logRouteActivity(
-      undefined,
-      auth,
-      input.route_id,
-      personId ? 'assign' : 'unassign',
-      personId ? 'volunteer_assigned' : 'volunteer_unassigned',
-      personId ? 'Volunteer assigned' : 'Volunteer removed',
-    );
-    return { id: input.route_id, status };
-  }
-
-  public async setRouteStatus(auth: IAuthKeyPayload, input: SetDeliveryRouteStatusType) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
-    if (!route) throw new NotFoundError('Route not found');
-    if (input.status === 'canceled') {
-      return this.cancelRoute(auth, input.route_id);
-    }
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({ status: input.status, updatedby_id: auth.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', input.route_id)
-      .execute();
-    return { id: input.route_id, status: input.status };
-  }
-
-  private async cancelRoute(auth: IAuthKeyPayload, routeId: string) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      // Undelivered (pending) stops return their requests to the pool; delivered stay delivered.
-      const pending = await trx
-        .selectFrom('delivery_route_stops')
-        .select(['id', 'request_id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('route_id', '=', routeId)
-        .where('status', '=', 'pending')
-        .execute();
-      const requestIds = pending.map((p) => String(p.request_id));
-      if (requestIds.length > 0) {
-        await trx
-          .updateTable('delivery_requests')
-          .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', 'in', requestIds)
-          .execute();
-        await trx
-          .updateTable('delivery_route_stops')
-          .set({ status: 'skipped', reason: 'Other', updatedby_id: auth.user_id, updated_at: new Date() })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where(
-            'id',
-            'in',
-            pending.map((p) => String(p.id)),
-          )
-          .execute();
-      }
-      await trx
-        .updateTable('delivery_routes')
-        .set({ status: 'canceled', updatedby_id: auth.user_id, updated_at: new Date() })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .execute();
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'update',
-        'route_canceled',
-        `Route canceled. ${requestIds.length} undelivered stops returned to the pool`,
-      );
-      return { id: routeId, status: 'canceled' as const, returned: requestIds.length };
-    });
-  }
-
-  public async deleteRoute(auth: IAuthKeyPayload, id: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
-    if (!route) throw new NotFoundError('Route not found');
-    const status = String(route.status);
-    if (status !== 'draft' && status !== 'assigned') {
-      throw new BadRequestError('Only draft or assigned routes can be deleted. Cancel the route first.');
-    }
-    // Stops cascade via FK; requests free automatically once their pending stop is gone.
-    await this.routesRepo.delete({ tenant_id: auth.tenant_id, id });
-    return { id };
-  }
-
-  // ---- Stops (staff) ------------------------------------------------------
-  public async stopAction(auth: IAuthKeyPayload, input: StopActionType) {
-    if (input.action === 'remove') {
-      return this.removeStop(auth, input.route_id, input.stop_id);
-    }
-    const action = input.action; // narrowed to 'deliver' | 'skip'
-    return this.routesRepo.transaction().execute(async (trx) => {
-      await this.applyStopTransition(trx, auth, input.route_id, input.stop_id, action, input.reason ?? null, 'staff');
-      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-    });
-  }
-
-  private async removeStop(auth: IAuthKeyPayload, routeId: string, stopId: string) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const stop = await trx
-        .selectFrom('delivery_route_stops')
-        .selectAll()
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .where('route_id', '=', routeId)
-        .executeTakeFirst();
-      if (!stop) throw new NotFoundError('Stop not found');
-      // Free the request back to the pool then delete the stop and renumber/recompute.
-      await trx
-        .updateTable('delivery_requests')
-        .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(stop.request_id))
-        .execute();
-      await trx
-        .deleteFrom('delivery_route_stops')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .execute();
-      await this.renumberAndRecompute(trx, auth, routeId);
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'update',
-        'stop_removed',
-        'Stop removed. Request returned to the pool',
-      );
-      return this.readRouteProgress(trx, auth.tenant_id, routeId);
-    });
-  }
-
-  /**
-   * Drag-to-reorder: reseat only the PENDING stops of a route into the given order. Delivered and
-   * skipped stops are not movable — they keep their exact seq, and the pending stops are permuted
-   * across the seq slots they already occupy. `ordered_stop_ids` must be exactly the set of the
-   * route's pending stop ids (any foreign, non-pending, or missing id is rejected). Seq writes go
-   * through `applySeqOrder`'s temp-offset trick to dodge the unique(route_id, seq) index, then legs
-   * and the route estimate are recomputed. One `stop_reordered` activity is logged, matching the
-   * adjacent-swap path.
-   */
-  public async reorderStops(auth: IAuthKeyPayload, input: ReorderStopsType) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const route = await trx
-        .selectFrom('delivery_routes')
-        .select(['id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', input.route_id)
-        .executeTakeFirst();
-      if (!route) throw new NotFoundError('Route not found');
-
-      const stops = await trx
-        .selectFrom('delivery_route_stops')
-        .select(['id', 'seq', 'status'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('route_id', '=', input.route_id)
-        .orderBy('seq', 'asc')
-        .execute();
-
-      const pendingIds = stops.filter((s) => s.status === 'pending').map((s) => String(s.id));
-      const requested = input.ordered_stop_ids;
-      // Exact set equality: same length + same members. This one check rejects a foreign/other-route
-      // stop, a delivered/skipped id, and a missing pending id all at once.
-      const pendingSet = new Set(pendingIds);
-      const sameMembers =
-        requested.length === pendingIds.length &&
-        new Set(requested).size === requested.length &&
-        requested.every((id) => pendingSet.has(id));
-      if (!sameMembers) {
-        throw new BadRequestError('The new order must list exactly the route’s pending stops.');
-      }
-      if (pendingIds.length < 2) {
-        // Nothing to permute — no-op, but return the current authoritative shape.
-        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-      }
-
-      // Drop the pending stops into the slots they currently occupy, in the requested order, while
-      // every non-pending stop stays exactly where it is (so it keeps its seq).
-      const queue = [...requested];
-      const finalOrder = stops.map((s) => (s.status === 'pending' ? (queue.shift() ?? String(s.id)) : String(s.id)));
-      await this.applySeqOrder(trx, auth.tenant_id, finalOrder);
-      await this.renumberAndRecompute(trx, auth, input.route_id);
-      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
-      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-    });
-  }
-
-  public async reorderStop(auth: IAuthKeyPayload, input: ReorderStopType) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const stops = await trx
-        .selectFrom('delivery_route_stops')
-        .select(['id', 'seq'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('route_id', '=', input.route_id)
-        .orderBy('seq', 'asc')
-        .execute();
-      const idx = stops.findIndex((s) => String(s.id) === input.stop_id);
-      if (idx === -1) throw new NotFoundError('Stop not found');
-      const swapIdx = input.direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= stops.length) {
-        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-      }
-      const a = stops[idx];
-      const b = stops[swapIdx];
-      if (!a || !b) return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-      // Swap seq via a temporary value to avoid the unique(route_id, seq) collision.
-      await this.setStopSeq(trx, auth.tenant_id, String(a.id), -1);
-      await this.setStopSeq(trx, auth.tenant_id, String(b.id), Number(a.seq));
-      await this.setStopSeq(trx, auth.tenant_id, String(a.id), Number(b.seq));
-      await this.renumberAndRecompute(trx, auth, input.route_id);
-      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
-      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-    });
-  }
-
-  // ---- Share links --------------------------------------------------------
-  public async mintShareLink(auth: IAuthKeyPayload, input: { route_id: string; regenerate?: boolean }) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
-    if (!route) throw new NotFoundError('Route not found');
-    // The companion access layer verifies the volunteer BEHIND the link, so a
-    // link with nobody behind it can never pass the gate — refuse to mint one.
-    if (route.volunteer_person_id == null) {
-      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
-    }
-    // Whether the 30-day expiry is enforced is a live workspace policy (Workspace → App).
-    // The date is always STORED at mint time; the setting decides whether it counts.
-    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
-    const active =
-      route.share_token_hash != null &&
-      (!expiryEnforced ||
-        (route.share_token_expires_at != null && new Date(route.share_token_expires_at) > new Date()));
-    if (active && !input.regenerate) {
-      // A live link already exists; the raw token is never stored, so we can't return it. Tell the
-      // UI so it can offer copy-vs-regenerate. expires_at is null when the workspace disables expiry.
-      return { status: 'exists' as const, expires_at: expiryEnforced ? route.share_token_expires_at : null };
-    }
-    const rawToken = randomBytes(32).toString('base64url');
-    const hash = createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY);
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({
-        share_token_hash: hash,
-        share_token_expires_at: expiresAt,
-        updatedby_id: auth.user_id,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', input.route_id)
-      .execute();
-    await this.logRouteActivity(undefined, auth, input.route_id, 'update', 'link_created', 'Volunteer link created');
-    return { status: 'minted' as const, token: rawToken, expires_at: expiryEnforced ? expiresAt.toISOString() : null };
-  }
-
-  public async revokeShareLink(auth: IAuthKeyPayload, routeId: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
-    if (!route) throw new NotFoundError('Route not found');
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({ share_token_hash: null, share_token_expires_at: null, updatedby_id: auth.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .execute();
-    return { id: routeId };
-  }
-
-  // ---- Public volunteer path (token is the credential) --------------------
-  public hashToken(rawToken: string): string {
-    return createHash('sha256').update(rawToken).digest('hex');
-  }
-
-  /**
-   * Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload.
-   * The capability token says WHAT may be touched; the companion session (X-Companion-Session)
-   * proves WHO is touching it — both are required (COMPANION-APPS-PLAN.md §2).
-   */
-  public async getPublicRoute(rawToken: string, sessionToken: string | null) {
-    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
-    if (!route) return null;
-    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
-    if (!this.isTokenUsable(route, expiryEnforced)) return null;
-    await this.requireCompanionSession(route, sessionToken);
-    const tenantId = String(route.tenant_id);
-    const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
-    const orgName = await this.publicOrgName(tenantId);
-    return this.publicRoutePayload(route, stops, orgName);
-  }
-
-  public async publicStopAction(
-    rawToken: string,
-    stopId: string,
-    action: 'deliver' | 'skip' | 'defer' | 'undo',
-    reason: string | null,
-    sessionToken: string | null,
-    opId: string | null,
-  ) {
-    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
-    if (!route) return null;
-    const enforceExpiry = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
-    if (!this.isTokenUsable(route, enforceExpiry)) return null;
-    await this.requireCompanionSession(route, sessionToken);
-    const tenantId = String(route.tenant_id);
-    const routeId = String(route.id);
-    const actor: IAuthKeyPayload = {
-      tenant_id: tenantId,
-      user_id: String(route.createdby_id),
-      session_id: 'volunteer-link',
-    };
-    await this.routesRepo.transaction().execute(async (trx) => {
-      // Idempotency ledger (companion_ops, scope 'deliveries'): claim the opId
-      // inside the SAME transaction as the action, so claim + apply commit or
-      // roll back together. A replayed opId conflicts, applies nothing, and
-      // falls through to return the current authoritative payload — this is
-      // what makes a retried "defer" move the stop once, not twice.
-      if (opId) {
-        const claimed = await trx
-          .insertInto('companion_ops')
-          .values({ tenant_id: tenantId, op_id: opId, scope: 'deliveries' })
-          .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
-          .returning('op_id')
-          .executeTakeFirst();
-        if (!claimed) return;
-      }
-      const stop = await trx
-        .selectFrom('delivery_route_stops')
-        .selectAll()
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', stopId)
-        .where('route_id', '=', routeId)
-        .executeTakeFirst();
-      if (!stop) throw new NotFoundError('Stop not found');
-
-      if (action === 'defer') {
-        await this.deferStop(trx, actor, routeId, stopId);
-      } else if (action === 'undo') {
-        await this.undoStop(trx, actor, routeId, stopId);
-      } else {
-        await this.applyStopTransition(trx, actor, routeId, stopId, action, reason, 'volunteer_link');
-      }
-    });
-    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId);
-    const fresh = await this.routesRepo.getRouteRow(tenantId, routeId);
-    const orgName = await this.publicOrgName(tenantId);
-    return fresh ? this.publicRoutePayload(fresh, stops, orgName) : null;
-  }
-
-  /**
-   * The volunteer-identity gate on every public data request. Throws
-   * UnauthorizedError (401 — no/invalid device session, the gate re-verifies)
-   * or ForbiddenError (403 — verified but not yet admin-approved); the route
-   * handler passes those two statuses through so the companion gate can render
-   * its verify/pending states, and keeps the uniform 404 for dead tokens.
-   */
-  private async requireCompanionSession(
-    route: { tenant_id: string } & Record<string, unknown>,
-    sessionToken: string | null,
-  ): Promise<void> {
-    const volunteerId = route['volunteer_person_id'];
-    await this.companionAccess.requireSession(sessionToken, {
-      tenant_id: String(route.tenant_id),
-      volunteer_person_id: volunteerId == null ? null : String(volunteerId),
-    });
-  }
-
-  // ---- Shared transition helpers ------------------------------------------
-  private async applyStopTransition(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    stopId: string,
-    action: 'deliver' | 'skip',
-    reason: string | null,
-    via: StopVia,
-  ): Promise<void> {
-    const stop = await trx
-      .selectFrom('delivery_route_stops')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', stopId)
-      .where('route_id', '=', routeId)
-      .executeTakeFirst();
-    if (!stop) throw new NotFoundError('Stop not found');
-
-    const now = new Date();
-    if (action === 'deliver') {
-      await trx
-        .updateTable('delivery_route_stops')
-        .set({
-          status: 'delivered',
-          reason: null,
-          acted_at: now,
-          acted_via: via,
-          updatedby_id: auth.user_id,
-          updated_at: now,
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .execute();
-      await trx
-        .updateTable('delivery_requests')
-        .set({ status: 'delivered', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(stop.request_id))
-        .execute();
-    } else {
-      const skipReason = reason ?? 'Other';
-      await trx
-        .updateTable('delivery_route_stops')
-        .set({
-          status: 'skipped',
-          reason: skipReason,
-          acted_at: now,
-          acted_via: via,
-          updatedby_id: auth.user_id,
-          updated_at: now,
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .execute();
-      // A skipped house returns to the planning pool automatically.
-      await trx
-        .updateTable('delivery_requests')
-        .set({ status: 'approved', skip_reason: skipReason, updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(stop.request_id))
-        .execute();
-    }
-
-    await this.advanceRouteStatus(trx, auth, routeId, via);
-    const message =
-      action === 'deliver'
-        ? `Stop ${stop.seq} delivered${via === 'volunteer_link' ? ' via volunteer link' : ''}`
-        : `Stop ${stop.seq} skipped: ${(reason ?? 'Other').toLowerCase()}${via === 'volunteer_link' ? ' via volunteer link' : ''}`;
-    await this.logRouteActivity(
-      trx,
-      auth,
-      routeId,
-      'update',
-      action === 'deliver' ? 'stop_delivered' : 'stop_skipped',
-      message,
-      via,
-    );
-  }
-
-  private async deferStop(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    stopId: string,
-  ): Promise<void> {
-    const stops = await trx
-      .selectFrom('delivery_route_stops')
-      .select(['id', 'seq', 'status'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('route_id', '=', routeId)
-      .orderBy('seq', 'asc')
-      .execute();
-    const target = stops.find((s) => String(s.id) === stopId);
-    if (!target || target.status !== 'pending') return;
-    // Move the target to the end: rebuild the order with it last, then renumber via a temp offset.
-    const others = stops.filter((s) => String(s.id) !== stopId);
-    const newOrder = [...others.map((s) => String(s.id)), stopId];
-    await this.applySeqOrder(trx, auth.tenant_id, newOrder);
-    await this.renumberAndRecompute(trx, auth, routeId);
-    await this.logRouteActivity(
-      trx,
-      auth,
-      routeId,
-      'update',
-      'stop_deferred',
-      'Stop moved to the end of the route',
-      'volunteer_link',
-    );
-  }
-
-  private async undoStop(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    stopId: string,
-  ): Promise<void> {
-    const stop = await trx
-      .selectFrom('delivery_route_stops')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', stopId)
-      .where('route_id', '=', routeId)
-      .executeTakeFirst();
-    if (!stop) throw new NotFoundError('Stop not found');
-    const now = new Date();
-    await trx
-      .updateTable('delivery_route_stops')
-      .set({
-        status: 'pending',
-        reason: null,
-        acted_at: null,
-        acted_via: null,
-        updatedby_id: auth.user_id,
-        updated_at: now,
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', stopId)
-      .execute();
-    // Restore the request to the pool state (approved) — undo clears the delivered/skipped result.
-    await trx
-      .updateTable('delivery_requests')
-      .set({ status: 'approved', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', String(stop.request_id))
-      .execute();
-    // Undoing from a completed route reopens it to in_progress.
-    await trx
-      .updateTable('delivery_routes')
-      .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .where('status', '=', 'completed')
-      .execute();
-    await this.logRouteActivity(trx, auth, routeId, 'update', 'stop_undo', `Stop ${stop.seq} undone`, 'volunteer_link');
-  }
-
-  /** First action flips assigned → in_progress; all-terminal auto-completes the route. */
-  private async advanceRouteStatus(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    _via: StopVia,
-  ): Promise<void> {
-    const now = new Date();
-    const counts = await trx
-      .selectFrom('delivery_route_stops')
-      .select([
-        ({ fn }) => fn.count<number>('id').as('total'),
-        ({ fn }) => fn.count<number>('id').filterWhere('status', '=', 'pending').as('pending'),
-      ])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('route_id', '=', routeId)
-      .executeTakeFirst();
-    const total = Number(counts?.total ?? 0);
-    const pending = Number(counts?.pending ?? 0);
-    if (total > 0 && pending === 0) {
-      await trx
-        .updateTable('delivery_routes')
-        .set({ status: 'completed', updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .execute();
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'close',
-        'route_completed',
-        'Route auto-completed: every stop handled',
-      );
-    } else {
-      await trx
-        .updateTable('delivery_routes')
-        .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .where('status', 'in', ['assigned', 'draft'])
-        .execute();
-    }
-  }
-
-  private async setStopSeq(trx: Transaction<Models>, tenantId: string, stopId: string, seq: number): Promise<void> {
-    await trx
-      .updateTable('delivery_route_stops')
-      .set({ seq })
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', stopId)
-      .execute();
-  }
-
-  /** Assign contiguous 1..n seq values to the given ordered stop ids, avoiding unique collisions. */
-  private async applySeqOrder(trx: Transaction<Models>, tenantId: string, orderedIds: string[]): Promise<void> {
-    const OFFSET = 100000;
-    for (let i = 0; i < orderedIds.length; i++) {
-      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', OFFSET + i);
-    }
-    for (let i = 0; i < orderedIds.length; i++) {
-      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', i + 1);
-    }
-  }
-
-  /** Renumber stops to contiguous seq in current order and recompute leg times + route estimate. */
-  private async renumberAndRecompute(trx: Transaction<Models>, auth: IAuthKeyPayload, routeId: string): Promise<void> {
-    const route = await trx
-      .selectFrom('delivery_routes')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .executeTakeFirst();
-    if (!route) return;
-    const params = this.paramsFromRoute(route.params);
-    const start: LatLng = { lat: Number(route.start_lat), lng: Number(route.start_lng) };
-    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, routeId, trx);
-    // Ensure contiguous seq.
-    await this.applySeqOrder(
-      trx,
-      auth.tenant_id,
-      stops.map((s) => s.id),
-    );
-
-    let cursor: LatLng = start;
-    let totalMinutes = 0;
-    let totalKm = 0;
-    for (const stop of stops) {
-      const point: LatLng = { lat: stop.lat ?? start.lat, lng: stop.lng ?? start.lng };
-      const leg = legMinutes(cursor, point, params.avgSpeedKmh);
-      await trx
-        .updateTable('delivery_route_stops')
-        .set({ leg_minutes: Math.round(leg * 10) / 10 })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stop.id)
-        .execute();
-      totalMinutes += leg + params.serviceMinutes;
-      totalKm += roadKm(cursor, point);
-      cursor = point;
-    }
-    if (params.includeReturnLeg && stops.length > 0) totalKm += roadKm(cursor, start);
-    await trx
-      .updateTable('delivery_routes')
-      .set({
-        est_minutes: Math.round(totalMinutes * 10) / 10,
-        est_km: Math.round(totalKm * 10) / 10,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .execute();
-  }
-
-  private paramsFromRoute(raw: unknown): RouteParamsSnapshot {
-    const obj = typeof raw === 'string' ? safeParse(raw) : raw;
-    const rec = (obj ?? {}) as Record<string, unknown>;
-    return {
-      serviceMinutes: typeof rec['serviceMinutes'] === 'number' ? rec['serviceMinutes'] : SERVICE_MINUTES_PER_STOP,
-      avgSpeedKmh: typeof rec['avgSpeedKmh'] === 'number' ? rec['avgSpeedKmh'] : AVG_SPEED_KMH,
-      includeReturnLeg: rec['includeReturnLeg'] === true,
-      drivers: typeof rec['drivers'] === 'number' ? rec['drivers'] : null,
-    };
-  }
-
-  private async readRouteProgress(trx: Transaction<Models>, tenantId: string, routeId: string) {
-    const route = await trx
-      .selectFrom('delivery_routes')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', routeId)
-      .executeTakeFirst();
-    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId, trx);
-    return {
-      id: routeId,
-      status: route ? String(route.status) : 'unknown',
-      est_minutes: route ? Number(route.est_minutes) : 0,
-      est_km: route ? Number(route.est_km) : 0,
-      stops,
-    };
-  }
-
-  /** `enforceExpiry` is the live Workspace → App policy (volunteerLinksExpire) — when the
-   * workspace disables expiry, a link stays usable for the life of the route (until revoked
-   * or the route is canceled). */
-  private isTokenUsable(
-    route: { status?: unknown; share_token_expires_at?: unknown } | undefined,
-    enforceExpiry: boolean,
-  ): route is {
-    id: string;
-    tenant_id: string;
-    createdby_id: string;
-    status: string;
-    share_token_expires_at: Date | string | null;
-  } & Record<string, unknown> {
-    if (!route) return false;
-    const status = String((route as Record<string, unknown>)['status']);
-    if (status === 'canceled') return false;
-    if (!enforceExpiry) return true;
-    const exp = (route as Record<string, unknown>)['share_token_expires_at'];
-    if (!exp) return false;
-    return new Date(String(exp)) > new Date();
-  }
-
-  private async publicOrgName(tenantId: string): Promise<string> {
-    const row = await this.routesRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    return typeof value === 'string' && value.trim() ? value : 'Our organization';
-  }
-
-  private publicRoutePayload(
-    route: Record<string, unknown>,
-    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
-    orgName: string,
-  ) {
-    const delivered = stops.filter((s) => s.status === 'delivered').length;
-    // Data minimization (spec §4.4): first name + address only. No email/phone/notes/person_id.
-    return {
-      organization_name: orgName,
-      route_name: String(route['name'] ?? 'Delivery route'),
-      status: String(route['status'] ?? 'assigned'),
-      start: { lat: Number(route['start_lat']), lng: Number(route['start_lng']) },
-      stops_total: stops.length,
-      stops_delivered: delivered,
-      stops: stops.map((s) => ({
-        id: s.id,
-        seq: s.seq,
-        first_name: s.first_name ?? 'Neighbour',
-        address: s.address,
-        lat: s.lat,
-        lng: s.lng,
-        status: s.status,
-        reason: s.reason,
-        acted_at: s.acted_at,
-      })),
-    };
-  }
-
-  private sanitizeRoute(
-    route: Record<string, unknown>,
-    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
-    volunteerName: string | null,
-    expiryEnforced: boolean,
-  ) {
-    // link_expires_at is a POLICY-shaped value: null when the workspace disables expiry, so the
-    // UI never shows a date that won't be enforced.
-    const expiresAt = expiryEnforced ? route['share_token_expires_at'] : null;
-    const linkActive =
-      route['share_token_hash'] != null &&
-      (!expiryEnforced || (!!expiresAt && new Date(String(expiresAt)) > new Date()));
-    return {
-      id: String(route['id']),
-      name: String(route['name'] ?? ''),
-      status: String(route['status'] ?? 'draft'),
-      volunteer_person_id: route['volunteer_person_id'] != null ? String(route['volunteer_person_id']) : null,
-      volunteer_name: volunteerName,
-      start_address: String(route['start_address'] ?? ''),
-      start_lat: Number(route['start_lat']),
-      start_lng: Number(route['start_lng']),
-      est_minutes: Number(route['est_minutes'] ?? 0),
-      est_km: Number(route['est_km'] ?? 0),
-      scheduled_for: (route['scheduled_for'] as Date | string | null) ?? null,
-      link_active: linkActive,
-      link_expires_at: (expiresAt as Date | string | null) ?? null,
-      stops,
-    };
-  }
-
-  /**
-   * Yard-sign standing changes surface on the household's (and requester's) activity feed —
-   * the sign lives at the door, so that's where its history belongs (honest attribution, §22.7).
-   * Route-level history is logged separately by applyStopTransition/logRouteActivity.
-   */
-  private async logRequestStanding(
-    trx: Transaction<Models> | undefined,
-    auth: IAuthKeyPayload,
-    requestIds: string[],
-    status: 'recorded' | SetDeliveryRequestStatusType['status'],
-  ): Promise<void> {
-    const db = trx ?? this.requestsRepo.db;
-    const labels: Record<string, string> = {
-      recorded: 'Yard sign request recorded',
-      new: 'Yard sign request reopened',
-      approved: 'Yard sign request approved',
-      declined: 'Yard sign request declined',
-      delivered: 'Yard sign marked delivered',
-    };
-    const message = labels[status] ?? `Yard sign request ${status}`;
-    try {
-      const rows = await db
-        .selectFrom('delivery_requests')
-        .select(['id', 'household_id', 'person_id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', 'in', requestIds)
-        .execute();
-      for (const r of rows) {
-        const targets: Array<{ entity: string; entity_id: string }> = [
-          { entity: 'households', entity_id: String(r.household_id) },
-        ];
-        if (r.person_id != null) targets.push({ entity: 'persons', entity_id: String(r.person_id) });
-        for (const target of targets) {
-          await this.userActivity.log(
-            {
-              tenant_id: auth.tenant_id,
-              user_id: auth.user_id,
-              activity: status === 'recorded' ? 'create' : 'update',
-              entity: target.entity,
-              entity_id: target.entity_id,
-              quantity: 1,
-              metadata: {
-                action: 'yard_sign_status',
-                message,
-                entity_label: message,
-                request_id: String(r.id),
-                via: 'staff',
-              },
-            },
-            trx,
-          );
-        }
-      }
-    } catch (err) {
-      logger.error({ err }, 'Failed to log yard sign standing activity');
-    }
-  }
-
-  private async logRouteActivity(
-    trxOrAny: Transaction<Models> | unknown,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    activity: 'create' | 'update' | 'assign' | 'unassign' | 'close' | 'reopen' | 'delete',
-    action: string,
-    message: string,
-    via?: StopVia,
-  ): Promise<void> {
-    const trx = isTransaction(trxOrAny) ? trxOrAny : undefined;
-    try {
-      await this.userActivity.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity,
-          entity: 'delivery_routes',
-          entity_id: routeId,
-          quantity: 1,
-          metadata: { action, message, entity_label: message, via: via ?? 'staff' },
-        },
-        trx,
-      );
-    } catch (err) {
-      logger.error({ err }, 'Failed to log delivery route activity');
-    }
-  }
-}
-
-function isTransaction(value: unknown): value is Transaction<Models> {
-  return typeof value === 'object' && value !== null && 'selectFrom' in (value as Record<string, unknown>);
-}
-
-function safeParse(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-`````
-
 ## File: apps/backend/src/app/modules/demo/controller.ts
 `````typescript
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
@@ -24595,7 +23358,10 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
       .where('tenant_id', '=', tenant_id)
       .where('campaign_id', '=', campaign_id)
       .where('user_id', '=', user_id)
-      .orderBy('updated_at', 'desc');
+      .orderBy('updated_at', 'desc')
+      // Paging tiebreaker: `updated_at` alone is not unique, so limit/offset pages
+      // could repeat or skip drafts when timestamps collide.
+      .orderBy('id', 'desc');
 
     if (typeof limit === 'number') q = q.limit(limit);
     if (typeof offset === 'number') q = q.offset(offset);
@@ -24875,7 +23641,11 @@ export class EmailRepo extends BaseRepository<'emails'> {
       .where('emails.tenant_id', '=', tenant_id)
       .where('emails.campaign_id', '=', campaign_id)
       .where((eb) => whereForFolder(eb))
-      .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc');
+      .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc')
+      // Paging tiebreaker: timestamps collide (bulk syncs land whole batches with
+      // identical date_sent), and without a unique sort key limit/offset pages can
+      // repeat or skip rows. `emails.id` makes the order total and stable.
+      .orderBy('emails.id', 'desc');
 
     if (typeof limit === 'number') q = q.limit(limit);
     if (typeof offset === 'number') q = q.offset(offset);
@@ -26312,10 +25082,6 @@ export const HouseholdsRouter = router({
       return households.getTags(id, ctx.auth, type);
     }),
 
-  getDistinctTags: authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => households.getDistinctTags(ctx.auth, input)),
-
   getAllWithPeopleCount: authProcedure
     .input(z.any().optional())
     .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input)),
@@ -26633,107 +25399,6 @@ export class MapListsPersonsRepo extends BaseRepository<'map_lists_persons'> {
       .where('person_id', 'in', input.person_ids)
       .executeTakeFirst();
     return Number(res?.numDeletedRows ?? 0);
-  }
-}
-`````
-
-## File: apps/backend/src/app/modules/newsletters/repositories/newsletter-templates.repo.ts
-`````typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-/**
- * User-saved newsletter templates: a tenant-wide reusable-design library.
- * No campaign scoping (Campaigns §15 — pure content is a shared asset).
- */
-export class NewsletterTemplatesRepo extends BaseRepository<'newsletter_templates'> {
-  constructor() {
-    super('newsletter_templates');
-  }
-
-  /** Every saved template for the tenant, alphabetized so the wizard's list is scannable. */
-  public getAllByName(tenant_id: string) {
-    return this.db
-      .selectFrom('newsletter_templates')
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .orderBy('name', 'asc')
-      .execute();
-  }
-}
-`````
-
-## File: apps/backend/src/app/modules/newsletters/templates.controller.ts
-`````typescript
-import type {
-  AddNewsletterTemplateType,
-  IAuthKeyPayload,
-  UpdateNewsletterTemplateType,
-} from '../../../../../../libs/common/src';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-
-import { BaseController } from '../../lib/base.controller';
-import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-import { NewsletterTemplatesRepo } from './repositories/newsletter-templates.repo';
-
-/** Per-tenant ceiling on saved templates; the error message names the number. */
-export const MAX_SAVED_TEMPLATES_PER_TENANT = 50;
-
-/**
- * User-saved newsletter templates (wizard "Save as template" + "Your templates").
- * Templates are tenant-wide shared assets — every member of the workspace sees
- * and can manage the same library, so there is no per-user ownership check here;
- * tenant scoping is the boundary (a foreign tenant's template is a NotFound).
- */
-export class NewsletterTemplatesController extends BaseController<'newsletter_templates', NewsletterTemplatesRepo> {
-  constructor() {
-    super(new NewsletterTemplatesRepo());
-  }
-
-  public listTemplates(tenant_id: string) {
-    return this.getRepo().getAllByName(tenant_id);
-  }
-
-  public async addTemplate(auth: IAuthKeyPayload, input: AddNewsletterTemplateType) {
-    // Zod already rejects whitespace-only html; this re-check keeps the guard
-    // with the write in case another caller ever bypasses the router schema.
-    if (!input.html_content.trim()) {
-      throw new BadRequestError('Template content is empty. Design the newsletter first, then save it.');
-    }
-    const existing = await this.getRepo().count(auth.tenant_id);
-    if (existing >= MAX_SAVED_TEMPLATES_PER_TENANT) {
-      throw new BadRequestError(
-        `You have reached the limit of ${MAX_SAVED_TEMPLATES_PER_TENANT} saved templates. Delete one you no longer use, then save again.`,
-      );
-    }
-    const row = {
-      tenant_id: auth.tenant_id,
-      name: input.name,
-      html_content: input.html_content,
-      plain_text_content: input.plain_text_content ?? '',
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'newsletter_templates', 'insert'>;
-    return this.add(row);
-  }
-
-  public async renameTemplate(auth: IAuthKeyPayload, id: string, data: UpdateNewsletterTemplateType) {
-    await this.mustGetTemplate(auth.tenant_id, id);
-    return this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { name: data.name, updatedby_id: auth.user_id } as OperationDataType<'newsletter_templates', 'update'>,
-    });
-  }
-
-  public async deleteTemplate(auth: IAuthKeyPayload, id: string) {
-    await this.mustGetTemplate(auth.tenant_id, id);
-    return this.delete(auth.tenant_id, id, auth.user_id);
-  }
-
-  private async mustGetTemplate(tenant_id: string, id: string) {
-    const template = await this.getRepo().getOneById({ tenant_id, id });
-    if (!template) throw new NotFoundError('Template not found');
-    return template;
   }
 }
 `````
@@ -29175,6 +27840,96 @@ run();
 interface BigInt {
   toJSON(): string;
 }
+`````
+
+## File: apps/backend/eslint.config.cjs
+`````javascript
+/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
+/* Node.js, Fastify, tRPC backend-specific rules only.                         */
+
+const { FlatCompat } = require('@eslint/eslintrc');
+const js = require('@eslint/js');
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+  recommendedConfig: js.configs.recommended,
+});
+
+module.exports = [
+  /* Compose the root config so `nx lint backend` enforces the same
+   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
+   * as the pre-commit `eslint` invocation. Previously this file stood alone,
+   * which meant nx lint never saw those rules and plain `eslint` never saw
+   * `local/no-unscoped-db-query` below — two disjoint, non-overlapping
+   * checks. Confirmed zero new violations from this composition. */
+  ...require('../../eslint.config.cjs'),
+
+  /* Extend the base config */
+  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
+    ...cfg,
+    files: ['**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      /* Fastify/tRPC specific style preferences */
+      'prefer-arrow-callback': 'warn',
+      'arrow-body-style': ['warn', 'as-needed'],
+    },
+  })),
+
+  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
+   *
+   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
+   * reaches an execute terminal without a .where('tenant_id', …) filter.
+   *
+   * Scoped to modules/** only — excludes:
+   *   - base.repo.ts          (tenant filtering is callers' responsibility)
+   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
+   *   - _migrations/**        (DDL; no runtime tenant scoping)
+   *   - *.spec.ts             (integration tests do their own scoped cleanup)
+   *   - kyselyinit*.ts        (migration runner)
+   * ─────────────────────────────────────────────────────────────────────── */
+  {
+    files: ['**/src/app/modules/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    // `local` is already registered by the root config spread in above —
+    // redeclaring it here for the same file set throws
+    // "Cannot redefine plugin 'local'" under ESLint's flat config.
+    rules: {
+      'local/no-unscoped-db-query': [
+        'error',
+        {
+          // Tables where cross-tenant queries are intentional:
+          //   authusers - login by email, password reset by code (pre-auth, no tenant known yet)
+          //   sessions  - sign-out by session_id hash (no tenant in token)
+          //   tenants   - tenant lookup by id
+          //
+          // Removed 2026-07-04: `tags` (all module queries already scope tenant_id — the old
+          // "join-level scoping" note was wrong) and `ms_oauth_tokens`/`google_oauth_tokens`
+          // (migration 2026-06-26-email-sync-per-tenant re-keyed both on UNIQUE(tenant_id) and
+          // made user_id nullable, so "keyed by user_id" no longer held — these hold OAuth
+          // secrets and must be tenant-scoped). Adding a table here is a security decision:
+          // prove every current and future query on it is safe cross-tenant, not just quiet.
+          ignoreTables: ['authusers', 'sessions', 'tenants'],
+        },
+      ],
+    },
+  },
+
+  /* ── Relax `no-explicit-any` for non-production code ────────────────────────
+   *
+   * `any` in production logic is a real smell we're driving to zero, but two
+   * file classes are intentionally exempt:
+   *   - _migrations/**  DDL history; already applied, append-only, never re-run.
+   *                     Typing pg/Kysely migration builders adds no runtime safety.
+   *   - *.spec.ts       Test doubles/mocks where `any` is the pragmatic shape for
+   *                     a stub; typing them buys nothing and obscures intent.
+   * ─────────────────────────────────────────────────────────────────────── */
+  {
+    files: ['**/src/app/_migrations/**/*.ts', '**/*.spec.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+];
 `````
 
 ## File: apps/backend/jest.config.ts
@@ -34035,7 +32790,6 @@ export const RELATION_TYPE_LABELS: Record<(typeof RELATION_TYPES)[number], strin
 };
 
 export const relationTypeSchema = z.enum(RELATION_TYPES);
-export type RelationTypeSchema = z.infer<typeof relationTypeSchema>;
 
 export const AddConnectionObj = z.object({
   to_person_id: idSchema,
@@ -34046,151 +32800,6 @@ export const AddConnectionObj = z.object({
 });
 
 export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-`````
-
-## File: libs/common/src/lib/schemas/deliveries.schema.ts
-`````typescript
-import { z } from 'zod';
-
-import { idSchema, notesSchema } from './core.schema';
-
-// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
-// the spec's strings win, including the American spelling "canceled" for route status.
-export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
-export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
-export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
-export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
-
-// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
-// reason — it keeps the stop pending and moves it to the end of the route.
-export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
-
-export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
-
-/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
-export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
-  new: 'Requested',
-  approved: 'Approved',
-  declined: 'Declined',
-  delivered: 'Delivered',
-};
-export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
-export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
-export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
-export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
-
-// ---- Requests --------------------------------------------------------------
-export const AddDeliveryRequestObj = z.object({
-  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  household_id: idSchema,
-  person_id: idSchema.or(z.literal('')).nullable().optional(),
-  notes: notesSchema,
-});
-
-export const UpdateDeliveryRequestObj = z.object({
-  notes: notesSchema,
-});
-
-// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
-// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
-export const SetDeliveryRequestStatusObj = z.object({
-  ids: z.array(idSchema).min(1, 'Select at least one request'),
-  status: z.enum(DELIVERY_REQUEST_STATUSES),
-});
-
-// The yard-sign standing lookup for one household in one campaign context.
-export const GetSignStatusObj = z.object({
-  household_id: idSchema,
-  campaign_id: idSchema,
-});
-
-// ---- Planning --------------------------------------------------------------
-// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
-// return trip). Preview is pure — it writes nothing.
-export const PlanDeliveriesObj = z.object({
-  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
-  drivers: z.number().int().min(1).max(50).nullable().optional(),
-  service_minutes: z.number().min(0).max(60).nullable().optional(),
-  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
-  include_return_leg: z.boolean().nullable().optional(),
-});
-
-export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
-  routes: z
-    .array(
-      z.object({
-        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
-      }),
-    )
-    .min(1, 'Nothing to commit'),
-});
-
-// ---- Routes ----------------------------------------------------------------
-export const UpdateDeliveryRouteObj = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
-  scheduled_for: z.string().datetime().nullable().optional(),
-});
-
-export const AssignVolunteerObj = z.object({
-  route_id: idSchema,
-  person_id: idSchema.nullable(),
-});
-
-export const SetDeliveryRouteStatusObj = z.object({
-  route_id: idSchema,
-  status: z.enum(['in_progress', 'completed', 'canceled']),
-});
-
-export const ReorderStopObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  direction: z.enum(['up', 'down']),
-});
-
-// Drag-to-reorder: the full new order of a route's PENDING stops. Delivered/skipped stops are not
-// movable and keep their seq; the backend reassigns only the pending slots to this order.
-export const ReorderStopsObj = z.object({
-  route_id: idSchema,
-  ordered_stop_ids: z.array(idSchema).min(1, 'Provide the new stop order'),
-});
-
-// Staff act on a stop from the route detail page. Same transitions as the public path.
-export const StopActionObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  action: z.enum(['deliver', 'skip', 'remove']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export const RouteIdObj = z.object({ route_id: idSchema });
-
-export const MintShareLinkObj = z.object({
-  route_id: idSchema,
-  regenerate: z.boolean().optional(),
-});
-
-// ---- Public volunteer path (token is the only credential) ------------------
-// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
-export const PublicStopActionObj = z.object({
-  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
-export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
-export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
-export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
-export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
-export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
-export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
-export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
-export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
-export type ReorderStopType = z.infer<typeof ReorderStopObj>;
-export type ReorderStopsType = z.infer<typeof ReorderStopsObj>;
-export type StopActionType = z.infer<typeof StopActionObj>;
-export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
-export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
 `````
 
 ## File: libs/common/src/lib/schemas/emails.schema.ts
@@ -34255,152 +32864,6 @@ export const EmailObj = z.object({
   is_read: z.boolean().optional(),
   sender_first_name: z.string().nullish(),
   sender_last_name: z.string().nullish(),
-});
-`````
-
-## File: libs/common/src/lib/schemas/events.schema.ts
-`````typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-const slugSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .regex(
-    /^(?=.*[a-z])[a-z0-9-]+$/,
-    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-  );
-
-export const AddEventObj = z.object({
-  /** Campaigns §15 — the context this event belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema,
-  is_published: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_registration_confirmation: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const EventObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  slug: z.string(),
-  is_published: z.boolean(),
-  send_reminder: z.boolean(),
-  send_registration_confirmation: z.boolean(),
-});
-
-export const UpdateEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema.optional(),
-  is_published: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_registration_confirmation: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const AddTicketTypeObj = z.object({
-  event_id: idSchema,
-  name: nameSchema('Ticket type name', 100),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).default(0).optional(),
-});
-
-export const TicketTypeObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  price_cents: z.number(),
-  capacity: z.number().nullable().optional(),
-  sort_order: z.number(),
-});
-
-export const UpdateTicketTypeObj = z.object({
-  name: nameSchema('Ticket type name', 100).optional(),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).optional(),
-});
-
-// Drag-to-reorder ticket types: the full new order of an event's ticket type ids. The backend
-// writes each id's sort_order to its index, so the order shown to attendees matches the form.
-export const ReorderTicketTypesObj = z.object({
-  event_id: idSchema,
-  ordered_ids: z.array(idSchema).min(1, 'Provide the new ticket order'),
-});
-
-const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
-
-export const AddRegistrationObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.default('registered').optional(),
-  notes: notesSchema,
-});
-
-export const RegistrationObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  ticket_type_id: z.string().nullable().optional(),
-  status: registrationStatusEnum,
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateRegistrationObj = z.object({
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.optional(),
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: notesSchema,
 });
 `````
 
@@ -34484,56 +32947,6 @@ export const ImportListItemObj = z.object({
   canDownloadSource: z.boolean(),
   canDownloadSkipped: z.boolean(),
 });
-`````
-
-## File: libs/common/src/lib/schemas/newsletter-templates.schema.ts
-`````typescript
-import { z } from 'zod';
-
-import { nameSchema } from './core.schema';
-
-/** Generous ceiling for a compiled email document (the presets are ~15 KB). */
-const MAX_TEMPLATE_HTML_LENGTH = 500_000;
-const MAX_TEMPLATE_TEXT_LENGTH = 200_000;
-
-/**
- * Create payload for a user-saved newsletter template.
- *
- * html_content is deliberately NOT trimmed or transformed: the wizard stores the
- * compiled document verbatim so the PPLCRM_VISUAL_BLOCKS_DATA comment survives
- * the round-trip back into the visual editor. Emptiness is checked on the
- * trimmed view only.
- */
-export const AddNewsletterTemplateObj = z.object({
-  name: nameSchema('Name', 120),
-  html_content: z
-    .string()
-    .max(MAX_TEMPLATE_HTML_LENGTH)
-    .refine((value) => value.trim().length > 0, 'Template content is required'),
-  plain_text_content: z.string().max(MAX_TEMPLATE_TEXT_LENGTH).optional(),
-});
-
-/** Rename-only edit payload; the content of a saved template is immutable. */
-export const UpdateNewsletterTemplateObj = z.object({
-  name: nameSchema('Name', 120),
-});
-
-/** Read shape returned by newsletters.templates.getAll. */
-export const NewsletterTemplateObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  html_content: z.string(),
-  plain_text_content: z.string(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
-
-export type AddNewsletterTemplateType = z.infer<typeof AddNewsletterTemplateObj>;
-export type UpdateNewsletterTemplateType = z.infer<typeof UpdateNewsletterTemplateObj>;
-export type NewsletterTemplateType = z.infer<typeof NewsletterTemplateObj>;
 `````
 
 ## File: libs/common/src/lib/schemas/persons.schema.ts
@@ -34678,121 +33091,6 @@ export const UpdateTagObj = z.object({
     .optional(),
   type: z.enum(['tag', 'issue']).optional(),
 });
-`````
-
-## File: libs/common/src/lib/schemas/tasks.schema.ts
-`````typescript
-import { z } from 'zod';
-import { nameSchema, notesSchema, idSchema } from './core.schema';
-
-/**
- * Canonical task status vocabulary (spec §4). This is the single source of truth —
- * every layer (DB check constraint, Zod schemas, backend queries, frontend board/list)
- * derives from this list. Do not hand-roll a parallel status array anywhere.
- *
- * `waiting` replaces the old `blocked` name (board column is "Waiting", with an
- * optional waiting-reason line on the card/row). `archived` absorbs the old `canceled`
- * state — a canceled task is, in practice, a task nobody is coming back to, which is
- * exactly what "archived" already means in this app (hidden from the active views,
- * reachable via the grid's Archived toggle). See the 2026-07-07 migration that
- * normalizes existing rows to this vocabulary.
- */
-export const TASK_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'archived'] as const;
-export type TaskStatus = (typeof TASK_STATUSES)[number];
-
-/** The four board columns (spec §4) — `archived` sits outside the active workflow. */
-export const TASK_BOARD_STATUSES = ['todo', 'in_progress', 'waiting', 'done'] as const;
-export type TaskBoardStatus = (typeof TASK_BOARD_STATUSES)[number];
-
-/** Statuses that count as "open" for SLA-breach and count-sentence purposes. */
-export const TASK_OPEN_STATUSES = ['todo', 'in_progress', 'waiting'] as const;
-
-export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  todo: 'To do',
-  in_progress: 'In progress',
-  waiting: 'Waiting',
-  done: 'Done',
-  archived: 'Archived',
-};
-
-/** Type guard — narrows an unknown/loosely-typed status string to the canonical vocabulary. */
-export function isTaskStatus(value: unknown): value is TaskStatus {
-  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
-}
-
-/** Type guard for the four board columns specifically (excludes `archived`). */
-export function isTaskBoardStatus(value: unknown): value is TaskBoardStatus {
-  return typeof value === 'string' && (TASK_BOARD_STATUSES as readonly string[]).includes(value);
-}
-
-const taskStatusEnum = z.enum(TASK_STATUSES);
-const taskPriorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
-
-export const AddTaskObj = z.object({
-  name: nameSchema('Task name', 200),
-  details: z.string().trim().max(10000, 'Details too long').optional(),
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: taskStatusEnum.default('todo').optional(),
-  priority: taskPriorityEnum.optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-
-export const TasksObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  details: z.string().optional(),
-  due_at: z.coerce.date().optional(),
-  status: taskStatusEnum.nullable().optional(),
-  priority: taskPriorityEnum.nullable().optional(),
-  completed_at: z.coerce.date().optional(),
-  position: z.number().int().optional(),
-  assigned_to: z.string().nullable().optional(),
-  team_id: z.string().nullable().optional(),
-});
-
-export const UpdateTaskObj = z.object({
-  name: nameSchema('Task name', 200).optional(),
-  details: notesSchema,
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: taskStatusEnum.optional(),
-  priority: taskPriorityEnum.optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-
-/**
- * Board drag-and-drop persistence (spec §4). One drop touches one or two board
- * columns: dragging within a column re-seats that single column; dragging across
- * two columns re-seats the source and target. Each column lists its cards in the
- * new top-to-bottom order — the backend writes `position = index` per id and sets
- * every id's `status` to its column, all in one transaction. `archived` is not a
- * board column, so only the four `TASK_BOARD_STATUSES` are accepted.
- */
-export const ReorderTasksObj = z.object({
-  columns: z
-    .array(
-      z.object({
-        status: z.enum(TASK_BOARD_STATUSES),
-        ids: z.array(idSchema).min(1, 'A column must list at least one task').max(1000, 'Too many tasks in one column'),
-      }),
-    )
-    .min(1, 'At least one column is required')
-    .max(2, 'A single drop touches at most two columns'),
-});
-
-/** Subtask drag-to-reorder (task detail): the full ordered id list for one task. */
-export const ReorderSubtasksObj = z.object({
-  task_id: idSchema,
-  ids: z.array(idSchema).min(1, 'At least one subtask is required').max(1000, 'Too many subtasks'),
-});
-
-export type ReorderTasksType = z.infer<typeof ReorderTasksObj>;
-export type ReorderSubtasksType = z.infer<typeof ReorderSubtasksObj>;
 `````
 
 ## File: libs/common/src/lib/schemas/teams.schema.ts
@@ -35647,251 +33945,6 @@ export const jsend = {
     throw new Error('Unknown JSend shape');
   },
 };
-`````
-
-## File: libs/common/src/lib/models.ts
-`````typescript
-import type { z } from 'zod';
-
-import type {
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  EmailCommentObj,
-  EmailFolderObj,
-  EmailObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  NewsletterReportObj,
-  NewsletterReportBounceObj,
-  NewsletterReportEngagedObj,
-  NewsletterReportLinkObj,
-  NewsletterReportPreviousSendObj,
-  CreateClickersListResultObj,
-  EmailDraftObj,
-  PersonsObj,
-  SettingsEntryObj,
-  SettingsObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  ListsObj,
-  UpdateMarketingEmailObj,
-  UpdateListObj,
-  UpdateTaskObj,
-  UpdateTeamObj,
-  TasksObj,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  sortModelItem,
-  InviteAuthUserObj,
-  ProfilePreferencesObj,
-  UpdateAuthUserObj,
-  Verify2FAObj,
-  ImportListItemObj,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  ReorderTicketTypesObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-} from './schema';
-
-export interface INow {
-  now: string;
-}
-
-export type AddTagType = z.infer<typeof AddTagObj>;
-
-export type EmailCommentType = z.infer<typeof EmailCommentObj>;
-
-export type EmailFolderType = z.infer<typeof EmailFolderObj>;
-
-export type EmailType = z.infer<typeof EmailObj>;
-
-export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
-
-export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
-
-export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
-
-export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
-
-export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
-
-export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
-
-export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
-
-export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
-
-export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
-
-export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
-
-export type EmailDraftType = z.infer<typeof EmailDraftObj>;
-
-export type ImportListItem = z.infer<typeof ImportListItemObj>;
-
-export type PERSONINHOUSEHOLDTYPE = {
-  first_name: string;
-  full_name: string;
-  id: string;
-  last_name: string;
-  middle_names: string;
-};
-
-export type PersonsType = z.infer<typeof PersonsObj>;
-
-export type SettingsType = z.infer<typeof SettingsObj>;
-
-export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
-
-export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
-
-export type SortModelType = z.infer<typeof sortModelItem>;
-
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
-
-export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
-
-export type UpdateTagType = z.infer<typeof UpdateTagObj>;
-
-export type getAllOptionsType = z.infer<typeof getAllOptions>;
-
-export type AddListType = z.infer<typeof AddListObj>;
-
-export type AddCampaignType = z.infer<typeof AddCampaignObj>;
-
-export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
-
-export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
-
-export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
-
-export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
-
-export type AddTeamType = z.infer<typeof AddTeamObj>;
-
-export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
-
-export type Verify2FAType = z.infer<typeof Verify2FAObj>;
-
-export type ListsType = z.infer<typeof ListsObj>;
-
-export type UpdateListType = z.infer<typeof UpdateListObj>;
-
-export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
-
-export type AddTurfType = z.infer<typeof AddTurfObj>;
-
-export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
-
-export type CutTurfsType = z.infer<typeof CutTurfsObj>;
-
-export type AssignTurfType = z.infer<typeof AssignTurfObj>;
-
-export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
-
-export type LogKnockType = z.infer<typeof LogKnockObj>;
-
-export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
-
-export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
-
-export type AddTaskType = z.infer<typeof AddTaskObj>;
-export type TasksType = z.infer<typeof TasksObj>;
-export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
-export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
-export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
-export type QueueExportInputType = z.infer<typeof queueExportInput>;
-export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
-export type DataExportRecordType = z.infer<typeof dataExportRecord>;
-
-export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
-export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
-export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
-
-export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
-export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
-export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
-
-export type AddWebFormType = z.infer<typeof AddWebFormObj>;
-export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
-export type WebFormsType = z.infer<typeof WebFormsObj>;
-export type CreateFormType = z.infer<typeof CreateFormObj>;
-export type UpdateFormType = z.infer<typeof UpdateFormObj>;
-export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
-
-export type WorkflowsType = z.infer<typeof WorkflowObj>;
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
-
-export type AddEventType = z.infer<typeof AddEventObj>;
-export type EventType = z.infer<typeof EventObj>;
-export type UpdateEventType = z.infer<typeof UpdateEventObj>;
-
-export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
-export type TicketTypeType = z.infer<typeof TicketTypeObj>;
-export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
-export type ReorderTicketTypesType = z.infer<typeof ReorderTicketTypesObj>;
-
-export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
-export type RegistrationType = z.infer<typeof RegistrationObj>;
-export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-
-export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 `````
 
 ## File: libs/common/src/lib/public-id.ts
@@ -41599,6 +39652,62 @@ export async function down(): Promise<void> {
 }
 `````
 
+## File: apps/backend/src/app/_migrations/2026-07-20-e-newsletter-templates.ts
+`````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * User-saved newsletter templates: a tenant-wide library of reusable designs
+ * saved from the newsletter wizard.
+ *
+ * No campaign_id on purpose — a template is pure content (the compiled HTML with
+ * the embedded PPLCRM_VISUAL_BLOCKS_DATA block model plus its plain-text twin).
+ * It carries no audience, consent, or send logic, so per the Campaigns §15
+ * shared-rolodex-vs-scoped-facts rule it lives on the shared side and stays
+ * usable across every campaign context and after carry-over.
+ *
+ * (Filename note: dated 2026-07-20-e, not the authoring date, because dated
+ * migrations through 2026-07-20-d are already applied and Kysely's migrator
+ * rejects a new file that sorts before an executed one.)
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    CREATE TABLE public.newsletter_templates (
+      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      tenant_id bigint NOT NULL,
+      createdby_id bigint NOT NULL,
+      updatedby_id bigint NOT NULL,
+      name text NOT NULL,
+      html_content text NOT NULL,
+      plain_text_content text DEFAULT ''::text NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT fk_newsletter_templates_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+    )
+  `.execute(db);
+  await sql`CREATE INDEX idx_newsletter_templates_tenant_name ON public.newsletter_templates (tenant_id, name)`.execute(
+    db,
+  );
+  await sql`
+    CREATE TRIGGER trg_newsletter_templates_updated_at
+      BEFORE UPDATE ON public.newsletter_templates
+      FOR EACH ROW EXECUTE FUNCTION public.set_updated_at()
+  `.execute(db);
+  await sql`ALTER TABLE public.newsletter_templates ENABLE ROW LEVEL SECURITY`.execute(db);
+  await sql`ALTER TABLE public.newsletter_templates FORCE ROW LEVEL SECURITY`.execute(db);
+  await sql`
+    CREATE POLICY tenant_isolation ON public.newsletter_templates
+      USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
+      WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP TABLE IF EXISTS public.newsletter_templates`.execute(db);
+}
+`````
+
 ## File: apps/backend/src/app/lib/gis/geocode-queue.ts
 `````typescript
 import type { Kysely, Transaction } from 'kysely';
@@ -41713,7 +39822,7 @@ import type { Kysely } from 'kysely';
 import { env } from '../../../../env';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
-import { loadSendingTenant } from '../../../modules/newsletters/send-guards';
+import { loadSendingTenant, logAutomationSend } from '../../../modules/newsletters/send-guards';
 
 const mailService = new NewsletterEmailService();
 
@@ -41725,6 +39834,9 @@ export interface SendAutomationEmailPayload {
   html: string;
   text: string;
   unsubscribeUrl: string;
+  /** Set on jobs enqueued since quota moved to delivery-time metering — this handler logs the
+   * send after SendGrid accepts it. Legacy jobs (flag absent) were metered at enqueue time. */
+  meterOnSend?: boolean;
 }
 
 /**
@@ -41790,7 +39902,7 @@ export async function handleSendAutomationEmail(
     settingsMap['communications.footer_disclaimer'],
   );
 
-  await mailService.sendNewsletter({
+  const delivered = await mailService.sendNewsletter({
     fromName,
     fromEmail,
     replyTo,
@@ -41806,6 +39918,13 @@ export async function handleSendAutomationEmail(
     // subscription), so SendGrid's subscription tracking stays off.
     subscriptionTracking: false,
   });
+
+  // Meter the send only after SendGrid accepted it — a job that fails (and exhausts its
+  // retries) must not consume the tenant's allowance. Legacy jobs without `meterOnSend` were
+  // already metered at enqueue time; logging them again would double-count.
+  if (payload.meterOnSend && delivered > 0) {
+    await logAutomationSend(db, tenantId);
+  }
 }
 
 /**
@@ -42263,16 +40382,18 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
 ## File: apps/backend/src/app/lib/jobs/handlers/workflows.handlers.ts
 `````typescript
 import type { Kysely, Selectable, Transaction } from 'kysely';
-import { WORKFLOW_EXIT_CONDITIONS, WORKFLOW_SEND_CONDITIONS } from '@common';
+import { sql } from 'kysely';
+import { WORKFLOW_EXIT_CONDITIONS, WORKFLOW_SEND_CONDITIONS, calculateWorkingTimeMs, planAllowsFeature } from '@common';
 import type { WorkflowExitCondition, WorkflowSendCondition } from '@common';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../../env';
 import { logger } from '../../../logger';
 import {
+  AUTOMATION_PHONE_UNVERIFIED_MESSAGE,
   assertTenantSendingNotBlocked,
   hasVerifiedSendingDomain,
   loadSendingTenant,
-  logAutomationSend,
+  needsPhoneVerification,
   remainingSendAllowance,
 } from '../../../modules/newsletters/send-guards';
 import { encodeUnsubscribeToken } from '../../../modules/newsletters/unsubscribe-token';
@@ -42308,8 +40429,40 @@ export async function handleProcessDripWorkflows(db: Kysely<Models>): Promise<vo
     .limit(ENROLLMENT_BATCH_SIZE)
     .execute();
 
+  // Plan gate, checked at processing time (once per tenant per tick): a tenant downgraded
+  // below the 'automations' feature's minimum plan must not keep running the automations it
+  // built while entitled. Ungated enrollments behave exactly like a paused workflow — nothing
+  // sends, nothing advances, nothing is deleted — and resume cleanly on re-upgrade.
+  const automationsAllowedByTenant = new Map<string, boolean>();
+
   for (const enrollment of pendingEnrollments) {
     try {
+      const tenantId = String(enrollment.tenant_id);
+      let automationsAllowed = automationsAllowedByTenant.get(tenantId);
+      if (automationsAllowed === undefined) {
+        const tenantRow = await db
+          .selectFrom('tenants')
+          .select('subscription_plan')
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+        automationsAllowed = planAllowsFeature(tenantRow?.subscription_plan, 'automations');
+        automationsAllowedByTenant.set(tenantId, automationsAllowed);
+        if (!automationsAllowed) {
+          logger.info(
+            { tenantId, plan: tenantRow?.subscription_plan ?? null },
+            '[plan-gate] Tenant plan does not include automations — drip enrollments deferred, not run',
+          );
+        }
+      }
+      if (!automationsAllowed) {
+        await db
+          .updateTable('workflow_enrollments')
+          .set({ next_run_at: new Date(Date.now() + ONE_HOUR_MS), updated_at: new Date() })
+          .where('id', '=', enrollment.id)
+          .execute();
+        continue;
+      }
+
       await db.transaction().execute(async (trx) => {
         const lockedEnrollment = await trx
           .selectFrom('workflow_enrollments')
@@ -42622,6 +40775,124 @@ export async function handleDetectLapsedSupporters(db: Kysely<Models>): Promise<
   await scheduleNextRun(db, 'detect_lapsed_supporters', 24 * 60 * 60 * 1000);
 }
 
+/** Self-rescheduling hourly scan behind the `task_sla_breach` trigger ("Task breaches SLA"). */
+export async function handleDetectTaskSlaBreaches(db: Kysely<Models>): Promise<void> {
+  await detectTaskSlaBreaches(db);
+
+  await scheduleNextRun(db, 'detect_task_sla_breaches', ONE_HOUR_MS);
+}
+
+/**
+ * Hourly scan behind the `task_sla_breach` trigger (spec §4 → §16). For every open task not
+ * yet marked breached, compute its working-hours age against the tenant's SLA target
+ * (`sla.tasks_hours` + working days/hours — the same math as the sidebar badge's
+ * countSlaBreaches). The first time a task crosses the target it is stamped
+ * `sla_breached_at` (the once-only marker — later ticks skip stamped tasks), then the
+ * task's linked person is enrolled through the normal trigger path (conditions respected).
+ * Tasks with no linked person are stamped but skip enrollment: automations enroll persons.
+ */
+export async function detectTaskSlaBreaches(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  const candidates = await db
+    .selectFrom('tasks')
+    .select(['id', 'tenant_id', 'created_at', 'person_id'])
+    .where('status', 'not in', ['done', 'archived'])
+    .where('sla_breached_at', 'is', null)
+    .execute();
+  if (candidates.length === 0) return;
+
+  const byTenant = new Map<string, typeof candidates>();
+  for (const task of candidates) {
+    const tenantId = String(task.tenant_id);
+    const list = byTenant.get(tenantId) ?? [];
+    list.push(task);
+    byTenant.set(tenantId, list);
+  }
+
+  const { WorkflowsController } = await import('../../../modules/workflows/controller');
+  const controller = new WorkflowsController();
+
+  for (const [tenantId, tasks] of byTenant.entries()) {
+    try {
+      const config = await loadTaskSlaConfig(db, tenantId);
+      const slaMs = config.taskSlaHours * ONE_HOUR_MS;
+
+      for (const task of tasks) {
+        const workingMs = calculateWorkingTimeMs(
+          new Date(task.created_at),
+          now,
+          config.workingDays,
+          config.workingHoursStart,
+          config.workingHoursEnd,
+        );
+        if (workingMs <= slaMs) continue;
+
+        // Stamp before enrolling: even if enrollment fails, the trigger fires at most once
+        // per task. The `is null` guard makes concurrent ticks race-safe — only the tick
+        // that flips the marker proceeds to enroll.
+        const stamped = await db
+          .updateTable('tasks')
+          .set({ sla_breached_at: now })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', String(task.id))
+          .where('sla_breached_at', 'is', null)
+          .returning('id')
+          .executeTakeFirst();
+        if (!stamped) continue;
+
+        if (!task.person_id) {
+          logger.info(
+            { tenantId, taskId: String(task.id) },
+            '[task-sla] Task breached SLA but has no linked person — skipping automation enrollment',
+          );
+          continue;
+        }
+
+        try {
+          await controller.triggerWorkflow(tenantId, String(task.person_id), 'task_sla_breach', null);
+        } catch (err) {
+          logger.error({ err, tenantId, taskId: String(task.id) }, '[task-sla] Failed to fire task_sla_breach trigger');
+        }
+      }
+    } catch (err) {
+      logger.error({ err, tenantId }, '[task-sla] Failed to scan tenant for task SLA breaches');
+    }
+  }
+}
+
+/** The tenant's working-hours SLA settings, with the same fallbacks used tenant-wide. */
+async function loadTaskSlaConfig(
+  db: Kysely<Models>,
+  tenantId: string,
+): Promise<{
+  taskSlaHours: number;
+  workingDays: number[];
+  workingHoursStart: string;
+  workingHoursEnd: string;
+}> {
+  const rows = await db
+    .selectFrom('settings')
+    .select(['key', 'value'])
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', ['sla.tasks_hours', 'sla.working_days', 'sla.working_hours_start', 'sla.working_hours_end'])
+    .execute();
+  const settingsMap = rows.reduce<Record<string, unknown>>((acc, row) => {
+    acc[row.key] = row.value;
+    return acc;
+  }, {});
+
+  const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+  return {
+    taskSlaHours: Number(settingsMap['sla.tasks_hours'] ?? 24),
+    workingDays: workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n)),
+    workingHoursStart: String(settingsMap['sla.working_hours_start'] ?? '09:00'),
+    workingHoursEnd: String(settingsMap['sla.working_hours_end'] ?? '17:00'),
+  };
+}
+
 async function completeEnrollment(trx: Transaction<Models>, enrollmentId: string): Promise<void> {
   await trx
     .updateTable('workflow_enrollments')
@@ -42664,7 +40935,7 @@ interface StepPerson {
   last_name: string | null;
 }
 
-interface ActionContext {
+export interface ActionContext {
   tenantId: string;
   workflowId: string;
   enrollmentId: string;
@@ -42696,9 +40967,24 @@ function str(value: unknown): string | null {
   return value == null ? null : String(value);
 }
 
+/** Enqueued-but-unsent automation deliveries for the tenant. Quota is metered on actual
+ * delivery, so these are invisible to `remainingSendAllowance` — the enqueue-time check
+ * subtracts them to stay honest about what is already committed to go out. */
+async function pendingAutomationSendCount(trx: Transaction<Models>, tenantId: string): Promise<number> {
+  const row = await trx
+    .selectFrom('background_jobs')
+    .select((eb) => eb.fn.countAll<number>().as('total'))
+    .where('tenant_id', '=', tenantId)
+    .where('status', 'in', ['pending', 'processing'])
+    .where(sql`payload->>'type'`, '=', 'send-automation-email')
+    .executeTakeFirst();
+  return Number(row?.total ?? 0);
+}
+
 // Executes a single action step. Throws with a human-readable message on failure so the caller
 // records a failed run whose `error` narrates what went wrong (surfaced on the list + editor).
-async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): Promise<ActionOutcome> {
+// Exported for unit tests (the drip handler is the only production caller).
+export async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): Promise<ActionOutcome> {
   const { step, person } = ctx;
   const config = readConfig(step.config);
 
@@ -42748,16 +41034,26 @@ async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): 
       } catch (err) {
         throw new RetryLaterError(err instanceof Error ? err.message : String(err));
       }
-      if ((await remainingSendAllowance(trx, tenant, new Date())) < 1) {
-        throw new RetryLaterError('Sending allowance exhausted for now');
-      }
 
-      // Same identity gate as newsletters: automation emails send from the tenant's own
-      // verified-domain address via SendGrid, never a platform address.
+      // Same identity gates as newsletters, in the newsletter path's order: a verified sending
+      // domain (automation emails send from the tenant's own domain via SendGrid, never a
+      // platform address), and on Free a verified mobile number. Both need the user to act, so
+      // the run fails with the fix named rather than deferring forever.
       if (!(await hasVerifiedSendingDomain(trx, ctx.tenantId))) {
         throw new Error(
           'Verify a sending domain and choose a From address (Settings) so automation emails can send. This email was not sent.',
         );
+      }
+      if (needsPhoneVerification(tenant)) {
+        throw new Error(AUTOMATION_PHONE_UNVERIFIED_MESSAGE);
+      }
+
+      // Caps: quota is metered on actual delivery (the send-automation-email handler writes
+      // newsletter_send_log), so enqueued-but-unsent jobs are invisible to the meter — count
+      // them against the allowance here so a burst of due enrollments can't enqueue past it.
+      const pendingSends = await pendingAutomationSendCount(trx, ctx.tenantId);
+      if ((await remainingSendAllowance(trx, tenant, new Date())) - pendingSends < 1) {
+        throw new RetryLaterError('Sending allowance exhausted for now');
       }
 
       const unsubscribeUrl = `${env.apiUrl}/api/unsubscribe/${encodeUnsubscribeToken({
@@ -42799,12 +41095,16 @@ async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): 
             text: text ?? '',
             html: html ?? '',
             unsubscribeUrl,
+            // Quota is metered by the delivery handler after SendGrid accepts the send — a job
+            // that exhausts its retries must not consume allowance. The flag marks payloads
+            // enqueued under that scheme; legacy jobs without it were already metered here at
+            // enqueue time and must not be counted twice.
+            meterOnSend: true,
           }),
           run_at: new Date(),
           max_attempts: 5,
         })
         .execute();
-      await logAutomationSend(trx, ctx.tenantId);
       return { runRecorded: true };
     }
 
@@ -42848,6 +41148,9 @@ async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): 
           status: 'todo',
           priority: 'medium',
           position: 0,
+          // Link the task to the enrolled contact so a later SLA breach can enroll them
+          // in a task_sla_breach automation (spec §4 → §16).
+          person_id: person ? String(person.id) : null,
           createdby_id: ctx.actorId,
           updatedby_id: ctx.actorId,
         })
@@ -43121,7 +41424,11 @@ import {
   handleSendWebformNotifications,
 } from './handlers/notifications.handlers';
 import { handleGoogleSync, handleMsSync, handleScheduleSyncJobs } from './handlers/sync.handlers';
-import { handleDetectLapsedSupporters, handleProcessDripWorkflows } from './handlers/workflows.handlers';
+import {
+  handleDetectLapsedSupporters,
+  handleDetectTaskSlaBreaches,
+  handleProcessDripWorkflows,
+} from './handlers/workflows.handlers';
 import { handleSendAutomationEmail } from './handlers/automation-mail.handlers';
 
 export { checkDueTasks } from './handlers/notifications.handlers';
@@ -43227,6 +41534,9 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
       break;
     case 'detect_lapsed_supporters':
       await handleDetectLapsedSupporters(db);
+      break;
+    case 'detect_task_sla_breaches':
+      await handleDetectTaskSlaBreaches(db);
       break;
     case 'perform_scheduled_deletions':
       await handlePerformScheduledDeletions(db);
@@ -43771,6 +42081,406 @@ export function resolveMergeSubstitutions(tokens: MergeToken[], recipient: Merge
     out[t.token] = escapeHtml(resolved);
   }
   return out;
+}
+`````
+
+## File: apps/backend/src/app/lib/base.controller.ts
+`````typescript
+import { TRPCError } from '@trpc/server';
+
+import type {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  getAllOptionsType,
+} from '../../../../../libs/common/src';
+import { env } from '../../env';
+import { logger } from '../logger';
+
+import type { ReferenceExpression, Transaction } from 'kysely';
+
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
+import type { BaseRepository, QueryParams } from './base.repo';
+import { rowsToCsv } from './csv';
+import { notificationEnabled } from './profile-preferences';
+import type { UserActivityType } from './user-activity.repo';
+import { UserActivityRepo } from './user-activity.repo';
+import { TransactionalEmailService } from './mail/transactional-mail.service';
+
+// The inline exportCsv path buffers the whole result set plus the built CSV string in memory and
+// returns it in a single tRPC response, so it must be bounded — a large tenant would otherwise spike
+// backend memory or stall the event loop (SECURITY-REVIEW.md 3.2). Anything past this cap has to go
+// through the queued/streamed background export (ExportsController.queueExport), which writes to
+// storage instead of buffering. Kept generous so ordinary exports are unaffected.
+const MAX_INLINE_EXPORT_ROWS = 50_000;
+
+/** Refuse an oversized inline export with an actionable message pointing at the background export. */
+function assertInlineExportWithinCap(rowCount: number): void {
+  if (rowCount > MAX_INLINE_EXPORT_ROWS) {
+    throw new TRPCError({
+      code: 'PAYLOAD_TOO_LARGE',
+      message: `This export is too large for a direct download (over ${MAX_INLINE_EXPORT_ROWS.toLocaleString()} rows). Use the background export to have it prepared as a downloadable file.`,
+    });
+  }
+}
+
+export class BaseController<T extends keyof Models, R extends BaseRepository<T>> {
+  protected readonly userActivity = new UserActivityRepo();
+
+  constructor(private repo: R) {}
+
+  private getEntityLabel(tableName: string, rowObj: any): string {
+    if (!rowObj) return '';
+    if (tableName === 'tasks') {
+      return String(rowObj['name'] || '');
+    }
+    if (tableName === 'persons') {
+      return `${rowObj['first_name'] || ''} ${rowObj['last_name'] || ''}`.trim();
+    }
+    if (tableName === 'households') {
+      const streetParts = [
+        rowObj['apt'] ? `Apt ${rowObj['apt']}` : null,
+        rowObj['street_num'],
+        rowObj['street1'],
+        rowObj['street2'],
+      ].filter(Boolean);
+      const locationParts = [rowObj['city'], rowObj['state'], rowObj['zip']].filter(Boolean);
+      return [streetParts.join(' '), locationParts.join(', ')].filter(Boolean).join(', ').trim() || 'Household';
+    }
+    if (tableName === 'emails') {
+      return String(rowObj['subject'] || '');
+    }
+    return String(rowObj['name'] || rowObj['subject'] || rowObj['title'] || '');
+  }
+
+  public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
+    const result = await this.repo.add({ row }, trx);
+    try {
+      const rowObj = row as Record<string, unknown>;
+      const actor = rowObj['createdby_id'];
+      const tenant = rowObj['tenant_id'];
+      if (actor != null && tenant != null) {
+        const resultObj = result as Record<string, unknown> | undefined;
+        const resultId = resultObj && 'id' in resultObj ? String(resultObj['id']) : null;
+        const metadata: Record<string, unknown> = resultId ? { id: resultId } : {};
+        if (resultObj) {
+          const tableName = String(this.repo.getTableName());
+          metadata['entity_label'] = this.getEntityLabel(tableName, resultObj);
+        }
+        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
+          metadata['task_name'] = String(resultObj['name']);
+        }
+        await this.userActivity.log(
+          {
+            tenant_id: String(tenant),
+            user_id: String(actor),
+            activity: 'create',
+            entity: String(this.repo.getTableName()),
+            entity_id: resultId,
+            quantity: 1,
+            metadata,
+          },
+          trx,
+        );
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log create activity');
+    }
+    return result;
+  }
+
+  public async addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
+    const result = await this.repo.addMany({ rows }, trx);
+    try {
+      const firstRow = rows[0];
+      if (firstRow) {
+        const rowObj = firstRow as Record<string, unknown>;
+        const actor = rowObj['createdby_id'];
+        const tenant = rowObj['tenant_id'];
+        if (actor != null && tenant != null) {
+          await this.userActivity.log(
+            {
+              tenant_id: String(tenant),
+              user_id: String(actor),
+              activity: 'create',
+              entity: String(this.repo.getTableName()),
+              quantity: rows.length,
+              metadata: { count: rows.length },
+            },
+            trx,
+          );
+        }
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log addMany activity');
+    }
+    return result;
+  }
+
+  public async delete(tenant_id: TypeTenantId<T>, idToDelete: string, userId?: string) {
+    const result = await this.repo.delete({
+      tenant_id,
+      id: idToDelete,
+    });
+    try {
+      if (userId != null) {
+        await this.userActivity.log({
+          tenant_id: String(tenant_id),
+          user_id: String(userId),
+          activity: 'delete',
+          entity: String(this.repo.getTableName()),
+          entity_id: idToDelete ? String(idToDelete) : null,
+          quantity: 1,
+          metadata: { id: idToDelete },
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log delete activity');
+    }
+    return result;
+  }
+
+  public deleteMany(tenant_id: TypeTenantId<T>, idsToDelete: string[]) {
+    return this.repo.deleteMany({
+      ids: idsToDelete,
+      tenant_id,
+    });
+  }
+
+  public find(input: { tenant_id: string; key: string; column: ReferenceExpression<Models, T> }) {
+    return this.repo.find({
+      tenant_id: input.tenant_id,
+      key: input.key,
+      column: input.column,
+    });
+  }
+
+  public getAll(tenant: string, options?: getAllOptionsType) {
+    return this.repo.getAll({
+      tenant_id: tenant,
+      options: options as QueryParams<T>,
+    });
+  }
+
+  public getAllWithCounts(tenant: string, options?: getAllOptionsType) {
+    return this.getRepo().getAllWithCounts({
+      tenant_id: tenant,
+      options: options as QueryParams<any>,
+    });
+  }
+
+  public getCount(tenant_id: string) {
+    return this.repo.count(tenant_id);
+  }
+
+  public getOneById(input: { tenant_id: string; id: string }) {
+    return this.repo.getOneById({ id: input.id, tenant_id: input.tenant_id });
+  }
+
+  public async update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
+    let original: Record<string, unknown> | undefined;
+    try {
+      original = (await this.repo.getOneById({ id: input.id, tenant_id: input.tenant_id })) as
+        | Record<string, unknown>
+        | undefined;
+    } catch (err) {
+      logger.error({ err }, 'Failed to fetch original record for activity log');
+    }
+    const result = await this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
+    try {
+      const rowObj = input.row as Record<string, unknown>;
+      const actor = rowObj['updatedby_id'];
+      if (actor != null) {
+        const metadata: Record<string, unknown> = { id: input.id };
+        const resultObj = result as Record<string, unknown> | undefined;
+        if (original && resultObj) {
+          const skipKeys = [
+            'id',
+            'tenant_id',
+            'createdby_id',
+            'updatedby_id',
+            'created_at',
+            'updated_at',
+            'address_fp_street',
+            'address_fp_full',
+            'password',
+            'password_reset_code',
+            'password_reset_code_created_at',
+          ];
+          const changes: Record<string, unknown> = {};
+          for (const key of Object.keys(rowObj)) {
+            if (skipKeys.includes(key)) continue;
+            const oldVal = original[key];
+            const newVal = resultObj[key];
+            if (oldVal !== newVal) {
+              changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+            }
+          }
+          metadata['changes'] = changes;
+          metadata['entity_label'] = this.getEntityLabel(String(this.repo.getTableName()), resultObj);
+        }
+        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
+          metadata['task_name'] = String(resultObj['name']);
+        }
+        let activity: UserActivityType = 'update';
+        if (String(this.repo.getTableName()) === 'tasks' && 'due_at' in rowObj) {
+          metadata['action'] = 'change_due_date';
+          metadata['due_at'] = rowObj['due_at'];
+        }
+        if (String(this.repo.getTableName()) === 'tasks' && 'assigned_to' in rowObj) {
+          const assigneeId = rowObj['assigned_to'];
+          if (assigneeId == null || assigneeId === '') {
+            activity = 'unassign';
+          } else {
+            activity = 'assign';
+            try {
+              const assignee = await this.repo.db
+                .selectFrom('authusers')
+                .select(['first_name', 'last_name'])
+                .where('id', '=', String(assigneeId))
+                .executeTakeFirst();
+              if (assignee) {
+                metadata['assigned_to_name'] = `${assignee.first_name} ${assignee.last_name || ''}`.trim();
+              }
+            } catch (err) {
+              logger.error({ err }, 'Failed to look up assignee name');
+            }
+          }
+        }
+        await this.userActivity.log({
+          tenant_id: String(input.tenant_id),
+          user_id: String(actor),
+          activity: activity,
+          entity: String(this.repo.getTableName()),
+          entity_id: input.id ? String(input.id) : null,
+          quantity: 1,
+          metadata,
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log update activity');
+    }
+    return result;
+  }
+
+  protected getRepo() {
+    return this.repo;
+  }
+
+  public async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    const options = (input?.options ?? {}) as QueryParams<T>;
+    // Fetch one past the cap so an oversized export is detected and refused (below) instead of
+    // pulling an unbounded table into memory. An explicit limit wins over any derived paging.
+    const cappedOptions = { ...options, limit: MAX_INLINE_EXPORT_ROWS + 1 } as QueryParams<T>;
+    const rows = await this.repo.getAll({ tenant_id: input.tenant_id, options: cappedOptions });
+    assertInlineExportWithinCap(rows.length);
+    const records = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
+    const response = this.buildCsvResponse(records, input) as {
+      csv: string;
+      fileName: string;
+      columns: string[];
+      rowCount: number;
+    };
+
+    if (auth) {
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'export',
+          entity: String(this.repo.getTableName()),
+          quantity: response.rowCount,
+          metadata: {
+            requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+            returned_columns: response.columns.slice(0, 12),
+            file_name: response.fileName,
+          },
+        });
+
+        const user = await this.repo.db
+          .selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'profiles.preferences as profile_preferences'])
+          .where('authusers.id', '=', auth.user_id)
+          .executeTakeFirst();
+        if (user && user.email) {
+          if (notificationEnabled(user.profile_preferences, 'export_ready')) {
+            const mailService = new TransactionalEmailService();
+            await mailService.sendMail({
+              to: user.email,
+              subject: `Your export is ready: ${response.fileName}`,
+              text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile name: ${response.fileName}\nDownload it here: ${env.appUrl}/downloads/${response.fileName}`,
+              html: `<h2>Your export is ready</h2>
+<p>Hi ${auth.name},</p>
+<p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p>
+<div class="panel"><p><strong>File name:</strong> ${response.fileName}</p></div>
+<div class="btn-container">
+  <a href="${env.appUrl}/downloads/${response.fileName}" class="btn">Download CSV</a>
+</div>`,
+            });
+          }
+        }
+      } catch (err) {
+        // Logging failures should never break export flow; swallow silently
+        logger.error({ err }, 'Failed to log export activity or send email alert');
+      }
+    }
+
+    return response;
+  }
+
+  protected buildCsvResponse(
+    rows: Array<Record<string, unknown>>,
+    input: ExportCsvInputType & { tenant_id: string },
+  ): ExportCsvResponseType {
+    const requestedColumns = Array.isArray(input?.columns)
+      ? (input.columns.filter((c): c is string => Boolean(c)) ?? [])
+      : [];
+    const columns = requestedColumns.length
+      ? requestedColumns
+      : rows.length > 0
+        ? Object.keys(rows[0] as Record<string, unknown>)
+        : [];
+    const fileName = input?.fileName?.trim() || `${String(this.repo.getTableName())}-export.csv`;
+    // Shared safety net for override paths (persons/households/etc.) that fetch rows themselves:
+    // never build an oversized CSV string inline — steer them to the background export too.
+    assertInlineExportWithinCap(rows.length);
+    const csv = columns.length ? rowsToCsv(rows as Array<Record<string, unknown>>, columns) : '';
+    return {
+      csv,
+      columns,
+      fileName,
+      rowCount: rows.length,
+    };
+  }
+
+  protected async resolveCreatorAndUpdater(tenantId: string, record: any, trx?: Transaction<Models>) {
+    if (!record) return record;
+    const db = trx ?? this.repo.db;
+    const userIds: string[] = [record.createdby_id, record.updatedby_id].filter(Boolean);
+    if (userIds.length === 0) return record;
+
+    const users = await db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('id', 'in', userIds)
+      .where('tenant_id', '=', tenantId)
+      .execute();
+
+    const userMap: Record<string, string> = {};
+    for (const u of users) {
+      userMap[String(u.id)] = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || 'Unknown User';
+    }
+
+    return {
+      ...record,
+      created_by_name: record.createdby_id ? (userMap[String(record.createdby_id)] ?? 'Unknown User') : null,
+      updated_by_name: record.updatedby_id ? (userMap[String(record.updatedby_id)] ?? 'Unknown User') : null,
+    };
+  }
 }
 `````
 
@@ -46097,6 +44807,710 @@ export class CompanionAccessController {
 }
 `````
 
+## File: apps/backend/src/app/modules/dashboard/controller.ts
+`````typescript
+import { BaseRepository } from '../../lib/base.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import { sql } from 'kysely';
+import { calculateWorkingTimeMs, TASK_OPEN_STATUSES } from '../../../../../../libs/common/src';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+
+export class DashboardController {
+  private get db() {
+    return BaseRepository.dbInstance;
+  }
+
+  public async getStats(auth: IAuthKeyPayload) {
+    const tenant_id = auth.tenant_id;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
+    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
+
+    // 1. Fetch all users in the tenant
+    const users = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    // 2. Fetch all inbox emails for this tenant (folder_id '11' is Inbox)
+    const inboxEmails = await this.db
+      .selectFrom('emails')
+      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '11')
+      .execute();
+
+    // 2.3 Fetch all tasks for this tenant
+    const tasks = await this.db
+      .selectFrom('tasks')
+      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    // 2.5 Fetch all close activities for emails in this tenant to determine who closed them
+    const closeActivities = await this.db
+      .selectFrom('user_activity')
+      .select(['entity_id', 'user_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('activity', '=', 'close')
+      .where('entity', 'in', ['email', 'emails'])
+      .orderBy('created_at', 'asc')
+      .execute();
+
+    const closerMap = new Map<string, string>();
+    for (const act of closeActivities) {
+      if (act.entity_id) {
+        closerMap.set(String(act.entity_id), String(act.user_id));
+      }
+    }
+
+    // 3. Fetch earliest comment times grouped by email_id
+    const earliestComments = await this.db
+      .selectFrom('email_comments')
+      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email_id')
+      .execute();
+    const commentMap = new Map<string, number>(
+      earliestComments
+        .filter((c) => c.email_id && c.earliest_comment_at)
+        .map((c) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
+    );
+
+    // 4. Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
+    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
+    const sentRecipients = await this.db
+      .selectFrom('email_recipients')
+      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
+      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
+      .where('email_recipients.tenant_id', '=', tenant_id)
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('email_recipients.kind', '=', 'to')
+      .where('emails.folder_id', '=', '3')
+      .orderBy('emails.created_at', 'asc')
+      .execute();
+
+    const sentMap = new Map<string, number[]>();
+    for (const sent of sentRecipients) {
+      const e = String(sent.email).toLowerCase().trim();
+      if (!e) continue;
+      let list = sentMap.get(e);
+      if (!list) {
+        list = [];
+        sentMap.set(e, list);
+      }
+      list.push(new Date(sent.created_at).getTime());
+    }
+
+    // Initialize user stats map
+    const userStatsMap: Record<
+      string,
+      {
+        user_id: string;
+        first_name: string;
+        last_name: string;
+        openCount: number;
+        closedCount: number;
+        totalResponseTimeMs: number;
+        responseCount: number;
+        totalTimeToCloseMs: number;
+        timeToCloseCount: number;
+        slaBreaches: number;
+        emailSlaBreaches: number;
+        taskSlaBreaches: number;
+      }
+    > = {};
+
+    for (const u of users) {
+      userStatsMap[u.id] = {
+        user_id: u.id,
+        first_name: u.first_name || '',
+        last_name: u.last_name || '',
+        openCount: 0,
+        closedCount: 0,
+        totalResponseTimeMs: 0,
+        responseCount: 0,
+        totalTimeToCloseMs: 0,
+        timeToCloseCount: 0,
+        slaBreaches: 0,
+        emailSlaBreaches: 0,
+        taskSlaBreaches: 0,
+      };
+    }
+
+    let globalTotalResponseTimeMs = 0;
+    let globalResponseCount = 0;
+    let globalTotalTimeToCloseMs = 0;
+    let globalTimeToCloseCount = 0;
+    let unassignedCount = 0;
+    let unassignedSlaBreaches = 0;
+    let unassignedEmailSlaBreaches = 0;
+    let unassignedTaskSlaBreaches = 0;
+
+    const breachedEmailsList: Array<{
+      id: string;
+      from_email: string | null;
+      subject: string | null;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const breachedTasksList: Array<{
+      id: string;
+      name: string;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const nowMs = Date.now();
+
+    for (const email of inboxEmails) {
+      const assignedUser = (email.assigned_to && userStatsMap[email.assigned_to]) || null;
+
+      // Determine who closed the email (with fallback to assignee)
+      const closerId =
+        email.status === 'closed'
+          ? closerMap.get(String(email.id)) || (email.assigned_to != null ? String(email.assigned_to) : null)
+          : null;
+      const closerUser = closerId && userStatsMap[closerId] ? userStatsMap[closerId] : null;
+
+      // Track open/closed counts
+      if (email.status === 'open') {
+        if (assignedUser) {
+          assignedUser.openCount++;
+        } else {
+          unassignedCount++;
+        }
+      } else if (email.status === 'closed') {
+        if (closerUser) {
+          closerUser.closedCount++;
+        }
+      }
+
+      // Time to close calculation
+      if (email.status === 'closed') {
+        const closeDiff = new Date(email.updated_at).getTime() - new Date(email.created_at).getTime();
+        if (closeDiff > 0) {
+          globalTotalTimeToCloseMs += closeDiff;
+          globalTimeToCloseCount++;
+          if (closerUser) {
+            closerUser.totalTimeToCloseMs += closeDiff;
+            closerUser.timeToCloseCount++;
+          }
+        }
+      }
+
+      // First response calculation
+      const commentTime = commentMap.get(email.id) || null;
+      let outboundTime: number | null = null;
+      if (email.from_email) {
+        const fromEmailClean = email.from_email.toLowerCase().trim();
+        const sentTimes = sentMap.get(fromEmailClean);
+        if (sentTimes) {
+          const emailCreatedTime = new Date(email.created_at).getTime();
+          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
+          if (firstSentAfter) {
+            outboundTime = firstSentAfter;
+          }
+        }
+      }
+
+      let firstResponseTime: number | null = null;
+      if (commentTime && outboundTime) {
+        firstResponseTime = Math.min(commentTime, outboundTime);
+      } else if (commentTime) {
+        firstResponseTime = commentTime;
+      } else if (outboundTime) {
+        firstResponseTime = outboundTime;
+      }
+
+      if (firstResponseTime) {
+        const respDiff = firstResponseTime - new Date(email.created_at).getTime();
+        if (respDiff > 0) {
+          globalTotalResponseTimeMs += respDiff;
+          globalResponseCount++;
+          if (assignedUser) {
+            assignedUser.totalResponseTimeMs += respDiff;
+            assignedUser.responseCount++;
+          }
+        }
+      }
+
+      // SLA Breach calculation: Open inbox email older than target in working hours
+      if (email.status === 'open') {
+        const workingTimeMs = calculateWorkingTimeMs(
+          new Date(email.created_at),
+          new Date(nowMs),
+          workingDays,
+          workingHoursStart,
+          workingHoursEnd,
+        );
+        if (workingTimeMs > emailSlaMs && !firstResponseTime) {
+          if (assignedUser) {
+            assignedUser.emailSlaBreaches++;
+            assignedUser.slaBreaches++; // for backward compatibility
+          } else {
+            unassignedEmailSlaBreaches++;
+            unassignedSlaBreaches++; // for backward compatibility
+          }
+          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
+          breachedEmailsList.push({
+            id: String(email.id),
+            from_email: email.from_email,
+            subject: email.subject || null,
+            created_at: email.created_at,
+            assigned_to: email.assigned_to,
+            assignee_name: assigneeName,
+            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+          });
+        }
+      }
+    }
+
+    // Calculate Task SLA Breaches
+    for (const task of tasks) {
+      const isOpenTask = task.status && (TASK_OPEN_STATUSES as readonly string[]).includes(task.status);
+      if (isOpenTask) {
+        const workingTimeMs = calculateWorkingTimeMs(
+          new Date(task.created_at),
+          new Date(nowMs),
+          workingDays,
+          workingHoursStart,
+          workingHoursEnd,
+        );
+        if (workingTimeMs > taskSlaMs) {
+          const assignedUser = (task.assigned_to && userStatsMap[task.assigned_to]) || null;
+          if (assignedUser) {
+            assignedUser.taskSlaBreaches++;
+          } else {
+            unassignedTaskSlaBreaches++;
+          }
+          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
+          breachedTasksList.push({
+            id: String(task.id),
+            name: task.name,
+            created_at: task.created_at,
+            assigned_to: task.assigned_to,
+            assignee_name: assigneeName,
+            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+          });
+        }
+      }
+    }
+
+    const avgFirstResponseHours =
+      globalResponseCount > 0 ? globalTotalResponseTimeMs / globalResponseCount / (1000 * 60 * 60) : 0;
+    const avgTimeToCloseHours =
+      globalTimeToCloseCount > 0 ? globalTotalTimeToCloseMs / globalTimeToCloseCount / (1000 * 60 * 60) : 0;
+
+    // 5. Contacts Growth (Last 30 days)
+    const growthRows = await this.db
+      .selectFrom('persons')
+      .select([sql<string>`date_trunc('day', created_at)`.as('day'), sql<number>`count(id)`.as('count')])
+      .where('tenant_id', '=', tenant_id)
+      .where('created_at', '>=', sql<Date>`now() - interval '30 days'`)
+      .groupBy(sql`date_trunc('day', created_at)`)
+      .orderBy(sql`date_trunc('day', created_at)`, 'asc')
+      .execute();
+
+    const contactsGrowth = growthRows.map((r) => ({
+      date: r.day ? (new Date(r.day).toISOString().split('T')[0] ?? '') : '',
+      count: Number(r.count || 0),
+    }));
+
+    // 5.1 Oldest unassigned open inbox email → drives the "waiting for an owner" next-action card
+    // (age since arrival + how long until the first-response SLA is due, in working time).
+    let oldestUnassignedCreatedAt: Date | null = null;
+    for (const email of inboxEmails) {
+      if (email.status === 'open' && email.assigned_to == null) {
+        const created = new Date(email.created_at);
+        if (!oldestUnassignedCreatedAt || created < oldestUnassignedCreatedAt) {
+          oldestUnassignedCreatedAt = created;
+        }
+      }
+    }
+    let oldestUnassignedAgeHours: number | null = null;
+    let firstResponseDueHours: number | null = null;
+    if (oldestUnassignedCreatedAt) {
+      oldestUnassignedAgeHours = (nowMs - oldestUnassignedCreatedAt.getTime()) / (1000 * 60 * 60);
+      const workedMs = calculateWorkingTimeMs(
+        oldestUnassignedCreatedAt,
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      firstResponseDueHours = Math.max(0, (emailSlaMs - workedMs) / (1000 * 60 * 60));
+    }
+
+    // 5.2 Latest unsent (draft) newsletter → "ready to send" next-action card + briefing clause.
+    const draftRow = await this.db
+      .selectFrom('newsletters')
+      .select(['id', 'name', 'total_recipients'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', '=', 'pending')
+      .orderBy('updated_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    const draftNewsletter = draftRow
+      ? { id: String(draftRow.id), name: draftRow.name, total_recipients: Number(draftRow.total_recipients || 0) }
+      : null;
+
+    // 5.3 Upcoming volunteer events → "coming up" list (real rows only; empty state otherwise).
+    const upcomingRows = await this.db
+      .selectFrom('volunteer_events')
+      .select(['id', 'name', 'start_time', 'capacity', 'location_address'])
+      .where('tenant_id', '=', tenant_id)
+      .where('start_time', '>=', new Date(nowMs))
+      .orderBy('start_time', 'asc')
+      .limit(3)
+      .execute();
+    const upcomingEvents = upcomingRows.map((e) => ({
+      id: String(e.id),
+      name: e.name,
+      start_time: new Date(e.start_time).toISOString(),
+      capacity: e.capacity == null ? null : Number(e.capacity),
+      location_address: e.location_address ?? null,
+    }));
+
+    // Build backward-compatible emailsAssigned
+    const emailsAssigned = Object.values(userStatsMap)
+      .filter((u) => u.openCount > 0)
+      .map((u) => ({
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        count: u.openCount,
+      }));
+
+    // Build backward-compatible emailsClosed
+    const emailsClosed = Object.values(userStatsMap)
+      .filter((u) => u.closedCount > 0)
+      .map((u) => ({
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        count: u.closedCount,
+      }));
+
+    // Map user stats for representative stats table
+    const userStats = Object.values(userStatsMap).map((u) => {
+      const totalHandled = u.openCount + u.closedCount;
+      const resolutionRate = totalHandled > 0 ? Math.round((u.closedCount / totalHandled) * 100) : 0;
+      const avgFirstResponse = u.responseCount > 0 ? u.totalResponseTimeMs / u.responseCount / (1000 * 60 * 60) : 0;
+      const avgTimeToClose = u.timeToCloseCount > 0 ? u.totalTimeToCloseMs / u.timeToCloseCount / (1000 * 60 * 60) : 0;
+
+      return {
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        openCount: u.openCount,
+        closedCount: u.closedCount,
+        resolutionRate,
+        avgFirstResponseHours: avgFirstResponse,
+        avgTimeToCloseHours: avgTimeToClose,
+        slaBreaches: u.slaBreaches,
+        emailSlaBreaches: u.emailSlaBreaches,
+        taskSlaBreaches: u.taskSlaBreaches,
+      };
+    });
+
+    const totalOpenCount = unassignedCount + Object.values(userStatsMap).reduce((acc, cur) => acc + cur.openCount, 0);
+
+    return {
+      avgFirstResponseHours,
+      avgTimeToCloseHours,
+      emailsAssigned,
+      emailsClosed,
+      contactsGrowth,
+      unassignedCount,
+      totalOpenCount,
+      userStats,
+      oldestUnassignedAgeHours,
+      firstResponseDueHours,
+      draftNewsletter,
+      upcomingEvents,
+      unassignedSlaBreaches,
+      unassignedEmailSlaBreaches,
+      unassignedTaskSlaBreaches,
+      breachedEmailsList: [],
+      breachedTasksList: [],
+      taskSlaHours,
+      emailSlaHours,
+      emailSlaWarningThreshold: Number(settingsMap['sla.email_warning_threshold'] ?? 1),
+      emailSlaCriticalThreshold: Number(settingsMap['sla.email_critical_threshold'] ?? 4),
+      taskSlaWarningThreshold: Number(settingsMap['sla.task_warning_threshold'] ?? 1),
+      taskSlaCriticalThreshold: Number(settingsMap['sla.task_critical_threshold'] ?? 4),
+    };
+  }
+
+  public async getBreachedEmails(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
+    const tenant_id = auth.tenant_id;
+    const { page, limit } = input;
+    const offset = (page - 1) * limit;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
+
+    // Fetch all users in the tenant
+    const users = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
+    }
+
+    // Fetch all open inbox emails (folder_id '11' is Inbox, status 'open')
+    const openInboxEmails = await this.db
+      .selectFrom('emails')
+      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '11')
+      .where('status', '=', 'open')
+      .execute();
+
+    // Fetch earliest comment times grouped by email_id
+    const earliestComments = await this.db
+      .selectFrom('email_comments')
+      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email_id')
+      .execute();
+    const commentMap = new Map<string, number>(
+      earliestComments
+        .filter((c) => c.email_id && c.earliest_comment_at)
+        .map((c) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
+    );
+
+    // Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
+    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
+    const sentRecipients = await this.db
+      .selectFrom('email_recipients')
+      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
+      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
+      .where('email_recipients.tenant_id', '=', tenant_id)
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('email_recipients.kind', '=', 'to')
+      .where('emails.folder_id', '=', '3')
+      .orderBy('emails.created_at', 'asc')
+      .execute();
+
+    const sentMap = new Map<string, number[]>();
+    for (const sent of sentRecipients) {
+      const e = String(sent.email).toLowerCase().trim();
+      if (!e) continue;
+      let list = sentMap.get(e);
+      if (!list) {
+        list = [];
+        sentMap.set(e, list);
+      }
+      list.push(new Date(sent.created_at).getTime());
+    }
+
+    const breachedEmailsList: Array<{
+      id: string;
+      from_email: string | null;
+      subject: string | null;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const nowMs = Date.now();
+
+    for (const email of openInboxEmails) {
+      // First response calculation
+      const commentTime = commentMap.get(email.id) || null;
+      let outboundTime: number | null = null;
+      if (email.from_email) {
+        const fromEmailClean = email.from_email.toLowerCase().trim();
+        const sentTimes = sentMap.get(fromEmailClean);
+        if (sentTimes) {
+          const emailCreatedTime = new Date(email.created_at).getTime();
+          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
+          if (firstSentAfter) {
+            outboundTime = firstSentAfter;
+          }
+        }
+      }
+
+      let firstResponseTime: number | null = null;
+      if (commentTime && outboundTime) {
+        firstResponseTime = Math.min(commentTime, outboundTime);
+      } else if (commentTime) {
+        firstResponseTime = commentTime;
+      } else if (outboundTime) {
+        firstResponseTime = outboundTime;
+      }
+
+      const workingTimeMs = calculateWorkingTimeMs(
+        new Date(email.created_at),
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+
+      if (workingTimeMs > emailSlaMs && !firstResponseTime) {
+        const assigneeName = email.assigned_to ? userMap.get(email.assigned_to) || null : null;
+        breachedEmailsList.push({
+          id: String(email.id),
+          from_email: email.from_email,
+          subject: email.subject || null,
+          created_at: email.created_at,
+          assigned_to: email.assigned_to,
+          assignee_name: assigneeName,
+          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+        });
+      }
+    }
+
+    breachedEmailsList.sort((a, b) => b.working_time_hours - a.working_time_hours);
+
+    const totalCount = breachedEmailsList.length;
+    const items = breachedEmailsList.slice(offset, offset + limit);
+
+    return {
+      items,
+      totalCount,
+      hasMore: offset + limit < totalCount,
+    };
+  }
+
+  public async getBreachedTasks(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
+    const tenant_id = auth.tenant_id;
+    const { page, limit } = input;
+    const offset = (page - 1) * limit;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+
+    // Fetch all users in the tenant
+    const users = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
+    }
+
+    // Fetch open tasks for this tenant
+    const openTasks = await this.db
+      .selectFrom('tasks')
+      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .execute();
+
+    const breachedTasksList: Array<{
+      id: string;
+      name: string;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const nowMs = Date.now();
+
+    for (const task of openTasks) {
+      const workingTimeMs = calculateWorkingTimeMs(
+        new Date(task.created_at),
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      if (workingTimeMs > taskSlaMs) {
+        const assigneeName = task.assigned_to ? userMap.get(task.assigned_to) || null : null;
+        breachedTasksList.push({
+          id: String(task.id),
+          name: task.name,
+          created_at: task.created_at,
+          assigned_to: task.assigned_to,
+          assignee_name: assigneeName,
+          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+        });
+      }
+    }
+
+    breachedTasksList.sort((a, b) => b.working_time_hours - a.working_time_hours);
+
+    const totalCount = breachedTasksList.length;
+    const items = breachedTasksList.slice(offset, offset + limit);
+
+    return {
+      items,
+      totalCount,
+      hasMore: offset + limit < totalCount,
+    };
+  }
+}
+`````
+
 ## File: apps/backend/src/app/modules/dashboard/trpc.router.ts
 `````typescript
 import { z } from 'zod';
@@ -46118,96 +45532,1298 @@ export const DashboardRouter = router({
 });
 `````
 
-## File: apps/backend/src/app/modules/deliveries/trpc.router.ts
+## File: apps/backend/src/app/modules/deliveries/controller.ts
 `````typescript
-import {
-  AddDeliveryRequestObj,
-  AssignVolunteerObj,
-  CommitDeliveriesObj,
-  GetSignStatusObj,
-  MintShareLinkObj,
-  PlanDeliveriesObj,
-  ReorderStopObj,
-  ReorderStopsObj,
-  RouteIdObj,
-  SetDeliveryRequestStatusObj,
-  SetDeliveryRouteStatusObj,
-  StopActionObj,
-  UpdateDeliveryRequestObj,
-  UpdateDeliveryRouteObj,
-  getAllOptions,
-  idSchema,
+import { createHash, randomBytes } from 'crypto';
+
+import type { Transaction } from 'kysely';
+
+import type {
+  AddDeliveryRequestType,
+  AssignVolunteerType,
+  CommitDeliveriesType,
+  GetSignStatusType,
+  IAuthKeyPayload,
+  PlanDeliveriesType,
+  ReorderStopType,
+  ReorderStopsType,
+  SetDeliveryRequestStatusType,
+  SetDeliveryRouteStatusType,
+  StopActionType,
+  UpdateDeliveryRequestType,
+  UpdateDeliveryRouteType,
+  getAllOptionsType,
 } from '../../../../../../libs/common/src';
 
-import { z } from 'zod';
+import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
+import { geocodeAddress } from '../../lib/gis/geocode-address';
+import { legMinutes, roadKm, type LatLng } from '../../lib/routing/geo';
+import { planRoutes, type PlanParams, type PlanStopInput } from '../../lib/routing/plan-routes';
+import {
+  AVG_SPEED_KMH,
+  MAX_STOPS_PER_PLAN,
+  SERVICE_MINUTES_PER_STOP,
+  SHARE_TOKEN_TTL_DAYS,
+} from '../../lib/routing/route-constants';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
+import { logger } from '../../logger';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { CompanionAccessController } from '../companion-access/controller';
+import { DeliveryRequestsRepo } from './repositories/delivery-requests.repo';
+import { DeliveryRouteStopsRepo } from './repositories/delivery-route-stops.repo';
+import { DeliveryRoutesRepo } from './repositories/delivery-routes.repo';
 
-import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import { planFeatureGate } from '../billing/plan-gate';
-import { DeliveriesController } from './controller';
+const ROUTE_DEFAULTS_SETTING_KEY = 'deliveries.route_defaults';
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-const controller = new DeliveriesController();
+type StopVia = 'staff' | 'volunteer_link';
 
-// FEATURE_MATRIX plan gate: deliveries are Movement-only; mutations below are blocked on lower plans.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('deliveries'));
+interface RouteParamsSnapshot {
+  serviceMinutes: number;
+  avgSpeedKmh: number;
+  includeReturnLeg: boolean;
+  drivers: number | null;
+}
 
-export const DeliveriesRouter = router({
-  // Requests
-  getAllRequests: authProcedure
-    .input(getAllOptions.optional())
-    .query(({ ctx, input }) => controller.getAllRequests(ctx.auth.tenant_id, input)),
-  getRequestCounts: authProcedure.query(({ ctx }) => controller.getRequestCounts(ctx.auth.tenant_id)),
-  getReadyCount: authProcedure.query(({ ctx }) => controller.getReadyCount(ctx.auth.tenant_id)),
-  getSignStatus: authProcedure
-    .input(GetSignStatusObj)
-    .query(({ ctx, input }) => controller.getSignStatus(ctx.auth, input)),
-  addRequest: authProcedure
-    .input(AddDeliveryRequestObj)
-    .mutation(({ ctx, input }) => controller.addRequest(ctx.auth, input)),
-  updateRequestNotes: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateDeliveryRequestObj }))
-    .mutation(({ ctx, input }) => controller.updateRequestNotes(ctx.auth, input.id, input.data)),
-  setRequestStatus: authProcedure
-    .input(SetDeliveryRequestStatusObj)
-    .mutation(({ ctx, input }) => controller.setRequestStatus(ctx.auth, input)),
+function resolveParams(input: PlanDeliveriesType): PlanParams {
+  return {
+    serviceMinutes: input.service_minutes ?? SERVICE_MINUTES_PER_STOP,
+    avgSpeedKmh: input.avg_speed_kmh ?? AVG_SPEED_KMH,
+    includeReturnLeg: input.include_return_leg ?? false,
+    drivers: input.drivers ?? null,
+  };
+}
 
-  // Planning
-  getRouteDefaults: authProcedure.query(({ ctx }) => controller.getRouteDefaults(ctx.auth.tenant_id)),
-  previewPlan: authProcedure
-    .input(PlanDeliveriesObj)
-    .mutation(({ ctx, input }) => controller.previewPlan(ctx.auth, input)),
-  commitPlan: authProcedure
-    .input(CommitDeliveriesObj)
-    .mutation(({ ctx, input }) => controller.commitPlan(ctx.auth, input)),
+/** Human-readable route name: "Maple St area — Jul 10" derived from the first stop + today. */
+function deriveRouteName(firstAddress: string, date: Date): string {
+  const firstSegment = (firstAddress.split(',')[0] ?? '').trim();
+  const streetOnly = firstSegment.replace(/^\d+\s+/, '').trim();
+  const area = streetOnly || firstSegment || 'Delivery';
+  const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${area} area — ${label}`;
+}
 
-  // Routes
-  getAllRoutes: authProcedure
-    .input(getAllOptions.optional())
-    .query(({ ctx, input }) => controller.getAllRoutes(ctx.auth.tenant_id, input)),
-  getRouteById: authProcedure.input(idSchema).query(({ ctx, input }) => controller.getRouteById(ctx.auth, input)),
-  updateRoute: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateDeliveryRouteObj }))
-    .mutation(({ ctx, input }) => controller.updateRoute(ctx.auth, input.id, input.data)),
-  assignVolunteer: authProcedure
-    .input(AssignVolunteerObj)
-    .mutation(({ ctx, input }) => controller.assignVolunteer(ctx.auth, input)),
-  setRouteStatus: authProcedure
-    .input(SetDeliveryRouteStatusObj)
-    .mutation(({ ctx, input }) => controller.setRouteStatus(ctx.auth, input)),
-  deleteRoute: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteRoute(ctx.auth, input)),
-  stopAction: authProcedure.input(StopActionObj).mutation(({ ctx, input }) => controller.stopAction(ctx.auth, input)),
-  reorderStop: authProcedure
-    .input(ReorderStopObj)
-    .mutation(({ ctx, input }) => controller.reorderStop(ctx.auth, input)),
-  reorderStops: authProcedure
-    .input(ReorderStopsObj)
-    .mutation(({ ctx, input }) => controller.reorderStops(ctx.auth, input)),
-  mintShareLink: authProcedure
-    .input(MintShareLinkObj)
-    .mutation(({ ctx, input }) => controller.mintShareLink(ctx.auth, input)),
-  revokeShareLink: authProcedure
-    .input(RouteIdObj)
-    .mutation(({ ctx, input }) => controller.revokeShareLink(ctx.auth, input.route_id)),
-});
+export class DeliveriesController {
+  private readonly requestsRepo = new DeliveryRequestsRepo();
+  private readonly campaignsRepo = new CampaignsRepo();
+  private readonly companionAccess = new CompanionAccessController();
+  private readonly routesRepo = new DeliveryRoutesRepo();
+  private readonly stopsRepo = new DeliveryRouteStopsRepo();
+  private readonly userActivity = new UserActivityRepo();
+
+  // ---- Requests -----------------------------------------------------------
+  public getAllRequests(tenant: string, options?: getAllOptionsType) {
+    return this.requestsRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
+  }
+
+  public getRequestCounts(tenant: string) {
+    return this.requestsRepo.getStatusCounts(tenant);
+  }
+
+  public getReadyCount(tenant: string) {
+    return this.requestsRepo.getReadyCount(tenant);
+  }
+
+  /** Yard-sign standing for one household in one campaign context (household/person pages). */
+  public async getSignStatus(auth: IAuthKeyPayload, input: GetSignStatusType) {
+    const request = await this.requestsRepo.getSignStatus(auth.tenant_id, input.household_id, input.campaign_id);
+    return { request };
+  }
+
+  public async addRequest(auth: IAuthKeyPayload, input: AddDeliveryRequestType) {
+    // Guard: a household with an OPEN request (new/approved, incl. routed) can't have a second.
+    const open = await this.requestsRepo.db
+      .selectFrom('delivery_requests')
+      .select(['id'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('household_id', '=', input.household_id)
+      .where('status', 'in', ['new', 'approved'])
+      .executeTakeFirst();
+    if (open) {
+      throw new ConflictError('This household already has an open delivery request.');
+    }
+    const personId = input.person_id ? String(input.person_id) : null;
+    const row = {
+      tenant_id: auth.tenant_id,
+      // The context this yard-sign request belongs to (§15); defaults to the office.
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: input.campaign_id,
+      }),
+      household_id: input.household_id,
+      person_id: personId,
+      web_form_id: null,
+      source: 'manual',
+      status: 'new',
+      notes: input.notes ?? null,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'delivery_requests', 'insert'>;
+    const created = await this.requestsRepo.add({ row });
+    await this.logRequestStanding(undefined, auth, [String(created.id)], 'recorded');
+    return { id: String(created.id) };
+  }
+
+  public async updateRequestNotes(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRequestType) {
+    const updated = await this.requestsRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { notes: input.notes ?? null, updatedby_id: auth.user_id, updated_at: new Date() } as OperationDataType<
+        'delivery_requests',
+        'update'
+      >,
+    });
+    if (!updated) throw new NotFoundError('Request not found');
+    return { id };
+  }
+
+  public async setRequestStatus(auth: IAuthKeyPayload, input: SetDeliveryRequestStatusType) {
+    // A request sitting on an active (pending) stop can't be declined or reset out from under a
+    // route. Approved + pending stop is the normal on-route state, and 'delivered' flows THROUGH
+    // the stop below so route progress stays truthful.
+    if (input.status === 'declined' || input.status === 'new') {
+      const onRoute = await this.requestsRepo.db
+        .selectFrom('delivery_route_stops')
+        .select(['id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('request_id', 'in', input.ids)
+        .where('status', '=', 'pending')
+        .executeTakeFirst();
+      if (onRoute) {
+        throw new BadRequestError('Remove these requests from their route first, or cancel that route.');
+      }
+    }
+    return this.requestsRepo.transaction().execute(async (trx) => {
+      let directIds = input.ids;
+      if (input.status === 'delivered') {
+        // Manual "the sign is in the ground" flip: requests on an active route deliver via their
+        // stop (staff-attributed), which also advances/auto-completes the route.
+        const pendingStops = await trx
+          .selectFrom('delivery_route_stops')
+          .select(['id', 'route_id', 'request_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('request_id', 'in', input.ids)
+          .where('status', '=', 'pending')
+          .execute();
+        for (const stop of pendingStops) {
+          await this.applyStopTransition(trx, auth, String(stop.route_id), String(stop.id), 'deliver', null, 'staff');
+        }
+        const handled = new Set(pendingStops.map((s) => String(s.request_id)));
+        directIds = input.ids.filter((id) => !handled.has(id));
+      }
+      if (directIds.length > 0) {
+        await trx
+          .updateTable('delivery_requests')
+          .set({
+            status: input.status,
+            ...(input.status === 'delivered' ? { skip_reason: null } : {}),
+            updatedby_id: auth.user_id,
+            updated_at: new Date(),
+          })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', 'in', directIds)
+          .execute();
+      }
+      await this.logRequestStanding(trx, auth, input.ids, input.status);
+      return { updated: input.ids.length };
+    });
+  }
+
+  // ---- Planning -----------------------------------------------------------
+  public async previewPlan(auth: IAuthKeyPayload, input: PlanDeliveriesType) {
+    const geo = await geocodeAddress(input.start_address);
+    if (!geo) {
+      throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
+    }
+    const start: LatLng = { lat: geo.lat, lng: geo.lng };
+    const params = resolveParams(input);
+
+    const eligible = await this.requestsRepo.getEligibleForPlanning(auth.tenant_id, MAX_STOPS_PER_PLAN + 1);
+    const capApplied = eligible.length > MAX_STOPS_PER_PLAN;
+    const capped = capApplied ? eligible.slice(0, MAX_STOPS_PER_PLAN) : eligible;
+    const byId = new Map(capped.map((e) => [e.request_id, e] as const));
+
+    const stops: PlanStopInput[] = capped.map((e) => ({ requestId: e.request_id, lat: e.lat, lng: e.lng }));
+    const result = planRoutes(start, stops, params);
+
+    const routes = result.routes.map((route, i) => ({
+      index: i + 1,
+      total_minutes: route.totalMinutes,
+      total_km: route.totalKm,
+      stops: route.stops.map((s) => {
+        const info = byId.get(s.requestId);
+        return {
+          request_id: s.requestId,
+          seq: s.seq,
+          leg_minutes: s.legMinutes,
+          address: info?.address ?? '',
+          name: info?.name ?? null,
+        };
+      }),
+    }));
+
+    const unroutable = result.unroutable.map((u) => {
+      const info = byId.get(u.requestId);
+      const reasonText =
+        u.reason === 'isolated'
+          ? `Isolated. The nearest other stop is ${u.nearestKm} km away`
+          : `Too far to reach within an hour from this start (${u.nearestKm} km out)`;
+      return { request_id: u.requestId, reason: u.reason, reason_text: reasonText, address: info?.address ?? '' };
+    });
+
+    const buckets = await this.requestsRepo.getIneligibleBuckets(auth.tenant_id);
+
+    return {
+      start: { address: geo.formatted_address, lat: geo.lat, lng: geo.lng },
+      eligible_count: capped.length,
+      cap_applied: capApplied,
+      routes,
+      unroutable,
+      ineligible: buckets,
+    };
+  }
+
+  public async commitPlan(auth: IAuthKeyPayload, input: CommitDeliveriesType) {
+    const geo = await geocodeAddress(input.start_address);
+    if (!geo) throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
+    const start: LatLng = { lat: geo.lat, lng: geo.lng };
+    const params = resolveParams(input);
+    const snapshot: RouteParamsSnapshot = {
+      serviceMinutes: params.serviceMinutes,
+      avgSpeedKmh: params.avgSpeedKmh,
+      includeReturnLeg: params.includeReturnLeg,
+      drivers: params.drivers ?? null,
+    };
+    const now = new Date();
+
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const skipped: Array<{ request_id: string; reason: string }> = [];
+      let created = 0;
+      let firstRouteId: string | null = null;
+
+      for (const proposed of input.routes) {
+        const eligible = await this.requestsRepo.getEligibleByIds(auth.tenant_id, proposed.request_ids, trx);
+        const eligibleById = new Map(eligible.map((e) => [e.request_id, e] as const));
+        // Preserve the client's order, dropping any request that lost eligibility (concurrent planner).
+        const ordered = proposed.request_ids.filter((id) => eligibleById.has(id));
+        for (const id of proposed.request_ids) {
+          if (!eligibleById.has(id)) skipped.push({ request_id: id, reason: 'no_longer_eligible' });
+        }
+        if (ordered.length === 0) continue;
+
+        // Recompute legs server-side — never trust client math.
+        let cursor: LatLng = start;
+        let totalMinutes = 0;
+        let totalKm = 0;
+        const legs: number[] = [];
+        for (const id of ordered) {
+          const e = eligibleById.get(id);
+          if (!e) continue;
+          const point: LatLng = { lat: e.lat, lng: e.lng };
+          const leg = legMinutes(cursor, point, params.avgSpeedKmh);
+          legs.push(leg);
+          totalMinutes += leg + params.serviceMinutes;
+          totalKm += roadKm(cursor, point);
+          cursor = point;
+        }
+        if (params.includeReturnLeg) totalKm += roadKm(cursor, start);
+
+        const firstAddress = eligibleById.get(ordered[0] ?? '')?.address ?? '';
+        // A route inherits the campaign of the requests it serves (§15); the
+        // eligibility query keeps plans single-campaign, so the first stop is
+        // representative.
+        const firstRequest = await trx
+          .selectFrom('delivery_requests')
+          .select(['campaign_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', String(ordered[0]))
+          .executeTakeFirstOrThrow();
+        const routeRow = {
+          tenant_id: auth.tenant_id,
+          campaign_id: String(firstRequest.campaign_id),
+          name: deriveRouteName(firstAddress, now),
+          status: 'draft',
+          volunteer_person_id: null,
+          start_address: geo.formatted_address,
+          start_lat: start.lat,
+          start_lng: start.lng,
+          est_minutes: Math.round(totalMinutes * 10) / 10,
+          est_km: Math.round(totalKm * 10) / 10,
+          scheduled_for: null,
+          share_token_hash: null,
+          share_token_expires_at: null,
+          params: JSON.stringify(snapshot),
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        } as OperationDataType<'delivery_routes', 'insert'>;
+        const route = await this.routesRepo.add({ row: routeRow }, trx);
+        const routeId = String(route.id);
+        if (!firstRouteId) firstRouteId = routeId;
+
+        const stopRows = ordered.map(
+          (id, i) =>
+            ({
+              tenant_id: auth.tenant_id,
+              route_id: routeId,
+              request_id: id,
+              seq: i + 1,
+              leg_minutes: Math.round((legs[i] ?? 0) * 10) / 10,
+              status: 'pending',
+              reason: null,
+              acted_at: null,
+              acted_via: null,
+              createdby_id: auth.user_id,
+              updatedby_id: auth.user_id,
+            }) as OperationDataType<'delivery_route_stops', 'insert'>,
+        );
+        await this.stopsRepo.addMany({ rows: stopRows }, trx);
+        created++;
+        await this.logRouteActivity(trx, auth, routeId, 'create', 'route_created', 'Route created from plan');
+      }
+
+      // Persist the start address as the tenant default for the next plan.
+      await this.saveRouteDefaults(trx, auth, { start_address: geo.formatted_address });
+
+      return { created, skipped, first_route_id: firstRouteId };
+    });
+  }
+
+  public async getRouteDefaults(tenant: string): Promise<{ start_address: string | null }> {
+    const row = await this.routesRepo.db
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenant)
+      .where('key', '=', ROUTE_DEFAULTS_SETTING_KEY)
+      .executeTakeFirst();
+    const value = row?.value as { start_address?: string } | null | undefined;
+    return { start_address: value?.start_address ?? null };
+  }
+
+  private async saveRouteDefaults(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    value: { start_address: string },
+  ): Promise<void> {
+    await trx
+      .insertInto('settings')
+      .values({
+        tenant_id: auth.tenant_id,
+        key: ROUTE_DEFAULTS_SETTING_KEY,
+        value: JSON.stringify(value),
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      })
+      .onConflict((oc) =>
+        oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(value), updatedby_id: auth.user_id }),
+      )
+      .execute();
+  }
+
+  // ---- Routes -------------------------------------------------------------
+  public getAllRoutes(tenant: string, options?: getAllOptionsType) {
+    return this.routesRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
+  }
+
+  public async getRouteById(auth: IAuthKeyPayload, id: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
+    if (!route) throw new NotFoundError('Route not found');
+    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, id);
+    let volunteerName: string | null = null;
+    if (route.volunteer_person_id) {
+      const v = await this.routesRepo.db
+        .selectFrom('persons')
+        .select(['first_name', 'last_name'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(route.volunteer_person_id))
+        .executeTakeFirst();
+      if (v) volunteerName = `${v.first_name ?? ''} ${v.last_name ?? ''}`.trim() || null;
+    }
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
+    return this.sanitizeRoute(route, stops, volunteerName, expiryEnforced);
+  }
+
+  public async updateRoute(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRouteType) {
+    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
+    if (input.name !== undefined) row['name'] = input.name;
+    if (input.scheduled_for !== undefined) {
+      row['scheduled_for'] = input.scheduled_for ? new Date(input.scheduled_for) : null;
+    }
+    const updated = await this.routesRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: row as OperationDataType<'delivery_routes', 'update'>,
+    });
+    if (!updated) throw new NotFoundError('Route not found');
+    return { id };
+  }
+
+  public async assignVolunteer(auth: IAuthKeyPayload, input: AssignVolunteerType) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
+    if (!route) throw new NotFoundError('Route not found');
+    const personId = input.person_id ? String(input.person_id) : null;
+    // Assigning moves draft → assigned; clearing a volunteer on a draft/assigned route → draft.
+    let status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled' = route.status;
+    if (personId && status === 'draft') status = 'assigned';
+    if (!personId && status === 'assigned') status = 'draft';
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({ volunteer_person_id: personId, status, updatedby_id: auth.user_id, updated_at: new Date() })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', input.route_id)
+      .execute();
+    await this.logRouteActivity(
+      undefined,
+      auth,
+      input.route_id,
+      personId ? 'assign' : 'unassign',
+      personId ? 'volunteer_assigned' : 'volunteer_unassigned',
+      personId ? 'Volunteer assigned' : 'Volunteer removed',
+    );
+    return { id: input.route_id, status };
+  }
+
+  public async setRouteStatus(auth: IAuthKeyPayload, input: SetDeliveryRouteStatusType) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
+    if (!route) throw new NotFoundError('Route not found');
+    if (input.status === 'canceled') {
+      return this.cancelRoute(auth, input.route_id);
+    }
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({ status: input.status, updatedby_id: auth.user_id, updated_at: new Date() })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', input.route_id)
+      .execute();
+    return { id: input.route_id, status: input.status };
+  }
+
+  private async cancelRoute(auth: IAuthKeyPayload, routeId: string) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      // Undelivered (pending) stops return their requests to the pool; delivered stay delivered.
+      const pending = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'request_id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', routeId)
+        .where('status', '=', 'pending')
+        .execute();
+      const requestIds = pending.map((p) => String(p.request_id));
+      if (requestIds.length > 0) {
+        await trx
+          .updateTable('delivery_requests')
+          .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', 'in', requestIds)
+          .execute();
+        await trx
+          .updateTable('delivery_route_stops')
+          .set({ status: 'skipped', reason: 'Other', updatedby_id: auth.user_id, updated_at: new Date() })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where(
+            'id',
+            'in',
+            pending.map((p) => String(p.id)),
+          )
+          .execute();
+      }
+      await trx
+        .updateTable('delivery_routes')
+        .set({ status: 'canceled', updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .execute();
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'update',
+        'route_canceled',
+        `Route canceled. ${requestIds.length} undelivered stops returned to the pool`,
+      );
+      return { id: routeId, status: 'canceled' as const, returned: requestIds.length };
+    });
+  }
+
+  public async deleteRoute(auth: IAuthKeyPayload, id: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
+    if (!route) throw new NotFoundError('Route not found');
+    const status = String(route.status);
+    if (status !== 'draft' && status !== 'assigned') {
+      throw new BadRequestError('Only draft or assigned routes can be deleted. Cancel the route first.');
+    }
+    // Stops cascade via FK; requests free automatically once their pending stop is gone.
+    await this.routesRepo.delete({ tenant_id: auth.tenant_id, id });
+    return { id };
+  }
+
+  // ---- Stops (staff) ------------------------------------------------------
+  public async stopAction(auth: IAuthKeyPayload, input: StopActionType) {
+    if (input.action === 'remove') {
+      return this.removeStop(auth, input.route_id, input.stop_id);
+    }
+    const action = input.action; // narrowed to 'deliver' | 'skip'
+    return this.routesRepo.transaction().execute(async (trx) => {
+      await this.applyStopTransition(trx, auth, input.route_id, input.stop_id, action, input.reason ?? null, 'staff');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+    });
+  }
+
+  private async removeStop(auth: IAuthKeyPayload, routeId: string, stopId: string) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const stop = await trx
+        .selectFrom('delivery_route_stops')
+        .selectAll()
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .where('route_id', '=', routeId)
+        .executeTakeFirst();
+      if (!stop) throw new NotFoundError('Stop not found');
+      // Free the request back to the pool then delete the stop and renumber/recompute.
+      await trx
+        .updateTable('delivery_requests')
+        .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(stop.request_id))
+        .execute();
+      await trx
+        .deleteFrom('delivery_route_stops')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .execute();
+      await this.renumberAndRecompute(trx, auth, routeId);
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'update',
+        'stop_removed',
+        'Stop removed. Request returned to the pool',
+      );
+      return this.readRouteProgress(trx, auth.tenant_id, routeId);
+    });
+  }
+
+  /**
+   * Drag-to-reorder: reseat only the PENDING stops of a route into the given order. Delivered and
+   * skipped stops are not movable — they keep their exact seq, and the pending stops are permuted
+   * across the seq slots they already occupy. `ordered_stop_ids` must be exactly the set of the
+   * route's pending stop ids (any foreign, non-pending, or missing id is rejected). Seq writes go
+   * through `applySeqOrder`'s temp-offset trick to dodge the unique(route_id, seq) index, then legs
+   * and the route estimate are recomputed. One `stop_reordered` activity is logged, matching the
+   * adjacent-swap path.
+   */
+  public async reorderStops(auth: IAuthKeyPayload, input: ReorderStopsType) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const route = await trx
+        .selectFrom('delivery_routes')
+        .select(['id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .executeTakeFirst();
+      if (!route) throw new NotFoundError('Route not found');
+
+      const stops = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'seq', 'status'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', input.route_id)
+        .orderBy('seq', 'asc')
+        .execute();
+
+      const pendingIds = stops.filter((s) => s.status === 'pending').map((s) => String(s.id));
+      const requested = input.ordered_stop_ids;
+      // Exact set equality: same length + same members. This one check rejects a foreign/other-route
+      // stop, a delivered/skipped id, and a missing pending id all at once.
+      const pendingSet = new Set(pendingIds);
+      const sameMembers =
+        requested.length === pendingIds.length &&
+        new Set(requested).size === requested.length &&
+        requested.every((id) => pendingSet.has(id));
+      if (!sameMembers) {
+        throw new BadRequestError('The new order must list exactly the route’s pending stops.');
+      }
+      if (pendingIds.length < 2) {
+        // Nothing to permute — no-op, but return the current authoritative shape.
+        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      }
+
+      // Drop the pending stops into the slots they currently occupy, in the requested order, while
+      // every non-pending stop stays exactly where it is (so it keeps its seq).
+      const queue = [...requested];
+      const finalOrder = stops.map((s) => (s.status === 'pending' ? (queue.shift() ?? String(s.id)) : String(s.id)));
+      await this.applySeqOrder(trx, auth.tenant_id, finalOrder);
+      await this.renumberAndRecompute(trx, auth, input.route_id);
+      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+    });
+  }
+
+  public async reorderStop(auth: IAuthKeyPayload, input: ReorderStopType) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const stops = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'seq'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', input.route_id)
+        .orderBy('seq', 'asc')
+        .execute();
+      const idx = stops.findIndex((s) => String(s.id) === input.stop_id);
+      if (idx === -1) throw new NotFoundError('Stop not found');
+      const swapIdx = input.direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= stops.length) {
+        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      }
+      const a = stops[idx];
+      const b = stops[swapIdx];
+      if (!a || !b) return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      // Swap seq via a temporary value to avoid the unique(route_id, seq) collision.
+      await this.setStopSeq(trx, auth.tenant_id, String(a.id), -1);
+      await this.setStopSeq(trx, auth.tenant_id, String(b.id), Number(a.seq));
+      await this.setStopSeq(trx, auth.tenant_id, String(a.id), Number(b.seq));
+      await this.renumberAndRecompute(trx, auth, input.route_id);
+      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+    });
+  }
+
+  // ---- Share links --------------------------------------------------------
+  public async mintShareLink(auth: IAuthKeyPayload, input: { route_id: string; regenerate?: boolean }) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
+    if (!route) throw new NotFoundError('Route not found');
+    // The companion access layer verifies the volunteer BEHIND the link, so a
+    // link with nobody behind it can never pass the gate — refuse to mint one.
+    if (route.volunteer_person_id == null) {
+      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
+    }
+    // Whether the 30-day expiry is enforced is a live workspace policy (Workspace → App).
+    // The date is always STORED at mint time; the setting decides whether it counts.
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
+    const active =
+      route.share_token_hash != null &&
+      (!expiryEnforced ||
+        (route.share_token_expires_at != null && new Date(route.share_token_expires_at) > new Date()));
+    if (active && !input.regenerate) {
+      // A live link already exists; the raw token is never stored, so we can't return it. Tell the
+      // UI so it can offer copy-vs-regenerate. expires_at is null when the workspace disables expiry.
+      return { status: 'exists' as const, expires_at: expiryEnforced ? route.share_token_expires_at : null };
+    }
+    const rawToken = randomBytes(32).toString('base64url');
+    const hash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY);
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({
+        share_token_hash: hash,
+        share_token_expires_at: expiresAt,
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', input.route_id)
+      .execute();
+    await this.logRouteActivity(undefined, auth, input.route_id, 'update', 'link_created', 'Volunteer link created');
+    return { status: 'minted' as const, token: rawToken, expires_at: expiryEnforced ? expiresAt.toISOString() : null };
+  }
+
+  public async revokeShareLink(auth: IAuthKeyPayload, routeId: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
+    if (!route) throw new NotFoundError('Route not found');
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({ share_token_hash: null, share_token_expires_at: null, updatedby_id: auth.user_id, updated_at: new Date() })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .execute();
+    return { id: routeId };
+  }
+
+  // ---- Public volunteer path (token is the credential) --------------------
+  public hashToken(rawToken: string): string {
+    return createHash('sha256').update(rawToken).digest('hex');
+  }
+
+  /**
+   * Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload.
+   * The capability token says WHAT may be touched; the companion session (X-Companion-Session)
+   * proves WHO is touching it — both are required (COMPANION-APPS-PLAN.md §2).
+   */
+  public async getPublicRoute(rawToken: string, sessionToken: string | null) {
+    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
+    if (!route) return null;
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
+    if (!this.isTokenUsable(route, expiryEnforced)) return null;
+    await this.requireCompanionSession(route, sessionToken);
+    const tenantId = String(route.tenant_id);
+    const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
+    const orgName = await this.publicOrgName(tenantId);
+    return this.publicRoutePayload(route, stops, orgName);
+  }
+
+  public async publicStopAction(
+    rawToken: string,
+    stopId: string,
+    action: 'deliver' | 'skip' | 'defer' | 'undo',
+    reason: string | null,
+    sessionToken: string | null,
+    opId: string | null,
+  ) {
+    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
+    if (!route) return null;
+    const enforceExpiry = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
+    if (!this.isTokenUsable(route, enforceExpiry)) return null;
+    await this.requireCompanionSession(route, sessionToken);
+    const tenantId = String(route.tenant_id);
+    const routeId = String(route.id);
+    const actor: IAuthKeyPayload = {
+      tenant_id: tenantId,
+      user_id: String(route.createdby_id),
+      session_id: 'volunteer-link',
+    };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      // Idempotency ledger (companion_ops, scope 'deliveries'): claim the opId
+      // inside the SAME transaction as the action, so claim + apply commit or
+      // roll back together. A replayed opId conflicts, applies nothing, and
+      // falls through to return the current authoritative payload — this is
+      // what makes a retried "defer" move the stop once, not twice.
+      if (opId) {
+        const claimed = await trx
+          .insertInto('companion_ops')
+          .values({ tenant_id: tenantId, op_id: opId, scope: 'deliveries' })
+          .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
+          .returning('op_id')
+          .executeTakeFirst();
+        if (!claimed) return;
+      }
+      const stop = await trx
+        .selectFrom('delivery_route_stops')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', stopId)
+        .where('route_id', '=', routeId)
+        .executeTakeFirst();
+      if (!stop) throw new NotFoundError('Stop not found');
+
+      if (action === 'defer') {
+        await this.deferStop(trx, actor, routeId, stopId);
+      } else if (action === 'undo') {
+        await this.undoStop(trx, actor, routeId, stopId);
+      } else {
+        await this.applyStopTransition(trx, actor, routeId, stopId, action, reason, 'volunteer_link');
+      }
+    });
+    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId);
+    const fresh = await this.routesRepo.getRouteRow(tenantId, routeId);
+    const orgName = await this.publicOrgName(tenantId);
+    return fresh ? this.publicRoutePayload(fresh, stops, orgName) : null;
+  }
+
+  /**
+   * The volunteer-identity gate on every public data request. Throws
+   * UnauthorizedError (401 — no/invalid device session, the gate re-verifies)
+   * or ForbiddenError (403 — verified but not yet admin-approved); the route
+   * handler passes those two statuses through so the companion gate can render
+   * its verify/pending states, and keeps the uniform 404 for dead tokens.
+   */
+  private async requireCompanionSession(
+    route: { tenant_id: string } & Record<string, unknown>,
+    sessionToken: string | null,
+  ): Promise<void> {
+    const volunteerId = route['volunteer_person_id'];
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: String(route.tenant_id),
+      volunteer_person_id: volunteerId == null ? null : String(volunteerId),
+    });
+  }
+
+  // ---- Shared transition helpers ------------------------------------------
+  private async applyStopTransition(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    stopId: string,
+    action: 'deliver' | 'skip',
+    reason: string | null,
+    via: StopVia,
+  ): Promise<void> {
+    const stop = await trx
+      .selectFrom('delivery_route_stops')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', stopId)
+      .where('route_id', '=', routeId)
+      .executeTakeFirst();
+    if (!stop) throw new NotFoundError('Stop not found');
+
+    const now = new Date();
+    if (action === 'deliver') {
+      await trx
+        .updateTable('delivery_route_stops')
+        .set({
+          status: 'delivered',
+          reason: null,
+          acted_at: now,
+          acted_via: via,
+          updatedby_id: auth.user_id,
+          updated_at: now,
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .execute();
+      await trx
+        .updateTable('delivery_requests')
+        .set({ status: 'delivered', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(stop.request_id))
+        .execute();
+    } else {
+      const skipReason = reason ?? 'Other';
+      await trx
+        .updateTable('delivery_route_stops')
+        .set({
+          status: 'skipped',
+          reason: skipReason,
+          acted_at: now,
+          acted_via: via,
+          updatedby_id: auth.user_id,
+          updated_at: now,
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .execute();
+      // A skipped house returns to the planning pool automatically.
+      await trx
+        .updateTable('delivery_requests')
+        .set({ status: 'approved', skip_reason: skipReason, updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(stop.request_id))
+        .execute();
+    }
+
+    await this.advanceRouteStatus(trx, auth, routeId, via);
+    const message =
+      action === 'deliver'
+        ? `Stop ${stop.seq} delivered${via === 'volunteer_link' ? ' via volunteer link' : ''}`
+        : `Stop ${stop.seq} skipped: ${(reason ?? 'Other').toLowerCase()}${via === 'volunteer_link' ? ' via volunteer link' : ''}`;
+    await this.logRouteActivity(
+      trx,
+      auth,
+      routeId,
+      'update',
+      action === 'deliver' ? 'stop_delivered' : 'stop_skipped',
+      message,
+      via,
+    );
+  }
+
+  private async deferStop(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    stopId: string,
+  ): Promise<void> {
+    const stops = await trx
+      .selectFrom('delivery_route_stops')
+      .select(['id', 'seq', 'status'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('route_id', '=', routeId)
+      .orderBy('seq', 'asc')
+      .execute();
+    const target = stops.find((s) => String(s.id) === stopId);
+    if (!target || target.status !== 'pending') return;
+    // Move the target to the end: rebuild the order with it last, then renumber via a temp offset.
+    const others = stops.filter((s) => String(s.id) !== stopId);
+    const newOrder = [...others.map((s) => String(s.id)), stopId];
+    await this.applySeqOrder(trx, auth.tenant_id, newOrder);
+    await this.renumberAndRecompute(trx, auth, routeId);
+    await this.logRouteActivity(
+      trx,
+      auth,
+      routeId,
+      'update',
+      'stop_deferred',
+      'Stop moved to the end of the route',
+      'volunteer_link',
+    );
+  }
+
+  private async undoStop(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    stopId: string,
+  ): Promise<void> {
+    const stop = await trx
+      .selectFrom('delivery_route_stops')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', stopId)
+      .where('route_id', '=', routeId)
+      .executeTakeFirst();
+    if (!stop) throw new NotFoundError('Stop not found');
+    const now = new Date();
+    await trx
+      .updateTable('delivery_route_stops')
+      .set({
+        status: 'pending',
+        reason: null,
+        acted_at: null,
+        acted_via: null,
+        updatedby_id: auth.user_id,
+        updated_at: now,
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', stopId)
+      .execute();
+    // Restore the request to the pool state (approved) — undo clears the delivered/skipped result.
+    await trx
+      .updateTable('delivery_requests')
+      .set({ status: 'approved', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', String(stop.request_id))
+      .execute();
+    // Undoing from a completed route reopens it to in_progress.
+    await trx
+      .updateTable('delivery_routes')
+      .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .where('status', '=', 'completed')
+      .execute();
+    await this.logRouteActivity(trx, auth, routeId, 'update', 'stop_undo', `Stop ${stop.seq} undone`, 'volunteer_link');
+  }
+
+  /** First action flips assigned → in_progress; all-terminal auto-completes the route. */
+  private async advanceRouteStatus(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    _via: StopVia,
+  ): Promise<void> {
+    const now = new Date();
+    const counts = await trx
+      .selectFrom('delivery_route_stops')
+      .select([
+        ({ fn }) => fn.count<number>('id').as('total'),
+        ({ fn }) => fn.count<number>('id').filterWhere('status', '=', 'pending').as('pending'),
+      ])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('route_id', '=', routeId)
+      .executeTakeFirst();
+    const total = Number(counts?.total ?? 0);
+    const pending = Number(counts?.pending ?? 0);
+    if (total > 0 && pending === 0) {
+      await trx
+        .updateTable('delivery_routes')
+        .set({ status: 'completed', updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .execute();
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'close',
+        'route_completed',
+        'Route auto-completed: every stop handled',
+      );
+    } else {
+      await trx
+        .updateTable('delivery_routes')
+        .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .where('status', 'in', ['assigned', 'draft'])
+        .execute();
+    }
+  }
+
+  private async setStopSeq(trx: Transaction<Models>, tenantId: string, stopId: string, seq: number): Promise<void> {
+    await trx
+      .updateTable('delivery_route_stops')
+      .set({ seq })
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', stopId)
+      .execute();
+  }
+
+  /** Assign contiguous 1..n seq values to the given ordered stop ids, avoiding unique collisions. */
+  private async applySeqOrder(trx: Transaction<Models>, tenantId: string, orderedIds: string[]): Promise<void> {
+    const OFFSET = 100000;
+    for (let i = 0; i < orderedIds.length; i++) {
+      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', OFFSET + i);
+    }
+    for (let i = 0; i < orderedIds.length; i++) {
+      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', i + 1);
+    }
+  }
+
+  /** Renumber stops to contiguous seq in current order and recompute leg times + route estimate. */
+  private async renumberAndRecompute(trx: Transaction<Models>, auth: IAuthKeyPayload, routeId: string): Promise<void> {
+    const route = await trx
+      .selectFrom('delivery_routes')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .executeTakeFirst();
+    if (!route) return;
+    const params = this.paramsFromRoute(route.params);
+    const start: LatLng = { lat: Number(route.start_lat), lng: Number(route.start_lng) };
+    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, routeId, trx);
+    // Ensure contiguous seq.
+    await this.applySeqOrder(
+      trx,
+      auth.tenant_id,
+      stops.map((s) => s.id),
+    );
+
+    let cursor: LatLng = start;
+    let totalMinutes = 0;
+    let totalKm = 0;
+    for (const stop of stops) {
+      const point: LatLng = { lat: stop.lat ?? start.lat, lng: stop.lng ?? start.lng };
+      const leg = legMinutes(cursor, point, params.avgSpeedKmh);
+      await trx
+        .updateTable('delivery_route_stops')
+        .set({ leg_minutes: Math.round(leg * 10) / 10 })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stop.id)
+        .execute();
+      totalMinutes += leg + params.serviceMinutes;
+      totalKm += roadKm(cursor, point);
+      cursor = point;
+    }
+    if (params.includeReturnLeg && stops.length > 0) totalKm += roadKm(cursor, start);
+    await trx
+      .updateTable('delivery_routes')
+      .set({
+        est_minutes: Math.round(totalMinutes * 10) / 10,
+        est_km: Math.round(totalKm * 10) / 10,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .execute();
+  }
+
+  private paramsFromRoute(raw: unknown): RouteParamsSnapshot {
+    const obj = typeof raw === 'string' ? safeParse(raw) : raw;
+    const rec = (obj ?? {}) as Record<string, unknown>;
+    return {
+      serviceMinutes: typeof rec['serviceMinutes'] === 'number' ? rec['serviceMinutes'] : SERVICE_MINUTES_PER_STOP,
+      avgSpeedKmh: typeof rec['avgSpeedKmh'] === 'number' ? rec['avgSpeedKmh'] : AVG_SPEED_KMH,
+      includeReturnLeg: rec['includeReturnLeg'] === true,
+      drivers: typeof rec['drivers'] === 'number' ? rec['drivers'] : null,
+    };
+  }
+
+  private async readRouteProgress(trx: Transaction<Models>, tenantId: string, routeId: string) {
+    const route = await trx
+      .selectFrom('delivery_routes')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', routeId)
+      .executeTakeFirst();
+    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId, trx);
+    return {
+      id: routeId,
+      status: route ? String(route.status) : 'unknown',
+      est_minutes: route ? Number(route.est_minutes) : 0,
+      est_km: route ? Number(route.est_km) : 0,
+      stops,
+    };
+  }
+
+  /** `enforceExpiry` is the live Workspace → App policy (volunteerLinksExpire) — when the
+   * workspace disables expiry, a link stays usable for the life of the route (until revoked
+   * or the route is canceled). */
+  private isTokenUsable(
+    route: { status?: unknown; share_token_expires_at?: unknown } | undefined,
+    enforceExpiry: boolean,
+  ): route is {
+    id: string;
+    tenant_id: string;
+    createdby_id: string;
+    status: string;
+    share_token_expires_at: Date | string | null;
+  } & Record<string, unknown> {
+    if (!route) return false;
+    const status = String((route as Record<string, unknown>)['status']);
+    if (status === 'canceled') return false;
+    if (!enforceExpiry) return true;
+    const exp = (route as Record<string, unknown>)['share_token_expires_at'];
+    if (!exp) return false;
+    return new Date(String(exp)) > new Date();
+  }
+
+  private async publicOrgName(tenantId: string): Promise<string> {
+    const row = await this.routesRepo.db
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'organization.name')
+      .executeTakeFirst();
+    const value = row?.value;
+    return typeof value === 'string' && value.trim() ? value : 'Our organization';
+  }
+
+  private publicRoutePayload(
+    route: Record<string, unknown>,
+    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
+    orgName: string,
+  ) {
+    const delivered = stops.filter((s) => s.status === 'delivered').length;
+    // Data minimization (spec §4.4): first name + address only. No email/phone/notes/person_id.
+    return {
+      organization_name: orgName,
+      route_name: String(route['name'] ?? 'Delivery route'),
+      status: String(route['status'] ?? 'assigned'),
+      start: { lat: Number(route['start_lat']), lng: Number(route['start_lng']) },
+      stops_total: stops.length,
+      stops_delivered: delivered,
+      stops: stops.map((s) => ({
+        id: s.id,
+        seq: s.seq,
+        first_name: s.first_name ?? 'Neighbour',
+        address: s.address,
+        lat: s.lat,
+        lng: s.lng,
+        status: s.status,
+        reason: s.reason,
+        acted_at: s.acted_at,
+      })),
+    };
+  }
+
+  private sanitizeRoute(
+    route: Record<string, unknown>,
+    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
+    volunteerName: string | null,
+    expiryEnforced: boolean,
+  ) {
+    // link_expires_at is a POLICY-shaped value: null when the workspace disables expiry, so the
+    // UI never shows a date that won't be enforced.
+    const expiresAt = expiryEnforced ? route['share_token_expires_at'] : null;
+    const linkActive =
+      route['share_token_hash'] != null &&
+      (!expiryEnforced || (!!expiresAt && new Date(String(expiresAt)) > new Date()));
+    return {
+      id: String(route['id']),
+      name: String(route['name'] ?? ''),
+      status: String(route['status'] ?? 'draft'),
+      volunteer_person_id: route['volunteer_person_id'] != null ? String(route['volunteer_person_id']) : null,
+      volunteer_name: volunteerName,
+      start_address: String(route['start_address'] ?? ''),
+      start_lat: Number(route['start_lat']),
+      start_lng: Number(route['start_lng']),
+      est_minutes: Number(route['est_minutes'] ?? 0),
+      est_km: Number(route['est_km'] ?? 0),
+      scheduled_for: (route['scheduled_for'] as Date | string | null) ?? null,
+      link_active: linkActive,
+      link_expires_at: (expiresAt as Date | string | null) ?? null,
+      stops,
+    };
+  }
+
+  /**
+   * Yard-sign standing changes surface on the household's (and requester's) activity feed —
+   * the sign lives at the door, so that's where its history belongs (honest attribution, §22.7).
+   * Route-level history is logged separately by applyStopTransition/logRouteActivity.
+   */
+  private async logRequestStanding(
+    trx: Transaction<Models> | undefined,
+    auth: IAuthKeyPayload,
+    requestIds: string[],
+    status: 'recorded' | SetDeliveryRequestStatusType['status'],
+  ): Promise<void> {
+    const db = trx ?? this.requestsRepo.db;
+    const labels: Record<string, string> = {
+      recorded: 'Yard sign request recorded',
+      new: 'Yard sign request reopened',
+      approved: 'Yard sign request approved',
+      declined: 'Yard sign request declined',
+      delivered: 'Yard sign marked delivered',
+    };
+    const message = labels[status] ?? `Yard sign request ${status}`;
+    try {
+      const rows = await db
+        .selectFrom('delivery_requests')
+        .select(['id', 'household_id', 'person_id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', requestIds)
+        .execute();
+      for (const r of rows) {
+        const targets: Array<{ entity: string; entity_id: string }> = [
+          { entity: 'households', entity_id: String(r.household_id) },
+        ];
+        if (r.person_id != null) targets.push({ entity: 'persons', entity_id: String(r.person_id) });
+        for (const target of targets) {
+          await this.userActivity.log(
+            {
+              tenant_id: auth.tenant_id,
+              user_id: auth.user_id,
+              activity: status === 'recorded' ? 'create' : 'update',
+              entity: target.entity,
+              entity_id: target.entity_id,
+              quantity: 1,
+              metadata: {
+                action: 'yard_sign_status',
+                message,
+                entity_label: message,
+                request_id: String(r.id),
+                via: 'staff',
+              },
+            },
+            trx,
+          );
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to log yard sign standing activity');
+    }
+  }
+
+  private async logRouteActivity(
+    trxOrAny: Transaction<Models> | unknown,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    activity: 'create' | 'update' | 'assign' | 'unassign' | 'close' | 'reopen' | 'delete',
+    action: string,
+    message: string,
+    via?: StopVia,
+  ): Promise<void> {
+    const trx = isTransaction(trxOrAny) ? trxOrAny : undefined;
+    try {
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity,
+          entity: 'delivery_routes',
+          entity_id: routeId,
+          quantity: 1,
+          metadata: { action, message, entity_label: message, via: via ?? 'staff' },
+        },
+        trx,
+      );
+    } catch (err) {
+      logger.error({ err }, 'Failed to log delivery route activity');
+    }
+  }
+}
+
+function isTransaction(value: unknown): value is Transaction<Models> {
+  return typeof value === 'object' && value !== null && 'selectFrom' in (value as Record<string, unknown>);
+}
+
+function safeParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
 `````
 
 ## File: apps/backend/src/app/modules/donations/donation-guards.ts
@@ -47912,919 +48528,6 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default eventsPublicRoute;
-`````
-
-## File: apps/backend/src/app/modules/events/controller.ts
-`````typescript
-import { TRPCError } from '@trpc/server';
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { BaseController } from '../../lib/base.controller';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { publicOrgName } from '../../lib/public-tenant';
-import { logger } from '../../logger';
-import { WorkflowsController } from '../workflows/controller';
-import { EventsRepo } from './repositories/events.repo';
-
-const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-const ipRsvpTimestamps = new Map<string, number[]>();
-const RSVP_RATE_LIMIT_MAX = 5;
-const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-export class EventsController extends BaseController<'events', EventsRepo> {
-  private readonly campaignsRepo = new CampaignsRepo();
-  constructor() {
-    super(new EventsRepo());
-  }
-
-  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
-  }
-
-  public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', payload.slug)
-      .executeTakeFirst();
-
-    if (existing) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This URL slug is already in use. Please choose a different one.',
-      });
-    }
-
-    const row = {
-      tenant_id: auth.tenant_id,
-      // The context this event belongs to (§15); defaults to the office.
-      campaign_id: await this.campaignsRepo.resolveForWrite({
-        tenant_id: auth.tenant_id,
-        campaign_id: payload.campaign_id,
-      }),
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      location_address: payload.location_address ?? null,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      capacity: payload.capacity ?? null,
-      contact_email: payload.contact_email ?? null,
-      contact_phone: payload.contact_phone ?? null,
-      slug: payload.slug,
-      is_published: payload.is_published ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_registration_confirmation: payload.send_registration_confirmation ?? true,
-      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
-      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
-      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
-      // Stringifying it first makes node-postgres send plain text, which Postgres casts
-      // to jsonb correctly.
-      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
-    } as OperationDataType<'events', 'insert'>;
-
-    try {
-      return await this.add(row);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
-   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
-   */
-  public async getEventBySlug(tenantId: string, slug: string) {
-    return this.getRepo()
-      .db.selectFrom('events')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('slug', '=', slug)
-      .where('is_published', '=', true)
-      .executeTakeFirst();
-  }
-
-  /**
-   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
-   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
-   */
-  public async getPublicEventConfig(tenantId: string, slug: string) {
-    const event = await this.getEventBySlug(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    const eventId = String(event.id);
-    const [orgName, tickets, regCount] = await Promise.all([
-      publicOrgName(tenantId),
-      this.getTicketTypesByEventId(eventId, tenantId),
-      this.getRegistrationCountForEvent(eventId, tenantId),
-    ]);
-
-    const now = new Date();
-    const isPast = new Date(event.end_time) < now;
-    const isFull = event.capacity !== null && regCount >= event.capacity;
-    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
-
-    const fields: string[] = Array.isArray(event.fields)
-      ? event.fields
-      : typeof event.fields === 'string'
-        ? JSON.parse(event.fields)
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-    return {
-      orgName,
-      event: {
-        name: String(event.name),
-        description: event.description ?? null,
-        location_address: event.location_address ?? null,
-        start_time: event.start_time,
-        end_time: event.end_time,
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? null,
-        contact_phone: event.contact_phone ?? null,
-        fields,
-      },
-      tickets: tickets.map((t) => ({
-        name: String(t.name),
-        description: t.description ?? null,
-        price_cents: t.price_cents ?? null,
-        capacity: t.capacity ?? null,
-      })),
-      isPast,
-      isFull,
-      remaining,
-    };
-  }
-
-  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
-    const row = await this.getRepo()
-      .db.selectFrom('event_registrations')
-      .select(({ fn }) => [fn.count('id').as('cnt')])
-      .where('tenant_id', '=', tenantId)
-      .where('event_id', '=', eventId)
-      .where('status', '!=', 'cancelled')
-      .executeTakeFirst();
-    return Number(row?.cnt ?? 0);
-  }
-
-  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('event_ticket_types')
-      .selectAll()
-      .where('event_id', '=', eventId)
-      .where('tenant_id', '=', tenantId)
-      .orderBy('sort_order', 'asc')
-      .execute();
-  }
-
-  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
-    if (!slug) return { unique: true };
-    let query = this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const existing = await query.executeTakeFirst();
-    return { unique: !existing };
-  }
-
-  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
-    if (payload.slug) {
-      const existing = await this.getRepo()
-        .db.selectFrom('events')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('slug', '=', payload.slug)
-        .where('id', '!=', id)
-        .executeTakeFirst();
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This URL slug is already in use. Please choose a different one.',
-        });
-      }
-    }
-
-    const row = {
-      ...payload,
-      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
-      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
-      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'events', 'update'>;
-    let result;
-    try {
-      result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-
-    // Manage pending reminder jobs when the toggle changes
-    if (payload.send_reminder === false) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'eventId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending event reminders');
-      }
-    } else if (payload.send_reminder === true) {
-      try {
-        const event = await this.getRepo()
-          .db.selectFrom('events')
-          .select(['start_time'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .executeTakeFirst();
-
-        if (event) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            const registrations = await this.getRepo()
-              .db.selectFrom('event_registrations')
-              .select(['id', 'person_id'])
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('event_id', '=', id)
-              .where('status', '=', 'registered')
-              .execute();
-
-            for (const reg of registrations) {
-              await this.getRepo()
-                .db.deleteFrom('background_jobs')
-                .where('tenant_id', '=', auth.tenant_id)
-                .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
-                .execute();
-
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(id),
-                    personId: String(reg.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule event reminders');
-      }
-    }
-
-    return result;
-  }
-
-  // Ticket types
-
-  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().addTicketType({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      price_cents: payload.price_cents ?? 0,
-      capacity: payload.capacity ?? null,
-      sort_order: payload.sort_order ?? 0,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
-  }
-
-  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
-  }
-
-  /**
-   * Persist the drag-to-reorder of an event's ticket types. `ordered_ids` must be exactly the set of
-   * this event's ticket type ids (any foreign or missing id is rejected); each id's sort_order is
-   * written to its index so the public /e/:slug page shows tickets in the same order as the form.
-   */
-  public async reorderTicketTypes(payload: { event_id: string; ordered_ids: string[] }, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo().getTicketTypesForEvent({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-    });
-    const existingIds = new Set(existing.map((t) => String(t.id)));
-    const requested = payload.ordered_ids;
-    const sameMembers =
-      requested.length === existingIds.size &&
-      new Set(requested).size === requested.length &&
-      requested.every((id) => existingIds.has(id));
-    if (!sameMembers) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'The new order must list exactly this event’s ticket types.',
-      });
-    }
-    await this.getRepo().reorderTicketTypes({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      ordered_ids: requested,
-      user_id: auth.user_id,
-    });
-    return { reordered: requested.length };
-  }
-
-  // Registrations
-
-  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
-    // Capacity check across the whole event
-    const event = await this.getRepo()
-      .db.selectFrom('events')
-      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', payload.event_id)
-      .executeTakeFirst();
-
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    if (event.capacity !== null) {
-      const countRow = await this.getRepo()
-        .db.selectFrom('event_registrations')
-        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('event_id', '=', payload.event_id)
-        .where('status', '!=', 'cancelled')
-        .executeTakeFirst();
-      if (Number(countRow?.cnt || 0) >= event.capacity) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-      }
-    }
-
-    // Per-ticket-type capacity check
-    if (payload.ticket_type_id) {
-      const ticketType = await this.getRepo()
-        .db.selectFrom('event_ticket_types')
-        .select(['capacity'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', payload.ticket_type_id)
-        .executeTakeFirst();
-
-      if (ticketType && ticketType.capacity !== null) {
-        const ticketCountRow = await this.getRepo()
-          .db.selectFrom('event_registrations')
-          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('ticket_type_id', '=', payload.ticket_type_id)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-        if (Number(ticketCountRow?.cnt || 0) >= ticketType.capacity) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
-        }
-      }
-    }
-
-    const result = await this.getRepo().addRegistration({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      person_id: payload.person_id,
-      ticket_type_id: payload.ticket_type_id ?? null,
-      status: payload.status ?? 'registered',
-      notes: payload.notes ?? null,
-      user_id: auth.user_id,
-    });
-
-    if (result) {
-      // Queue registration confirmation email
-      if (event.send_registration_confirmation !== false) {
-        try {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: auth.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'send-event-registration-confirmation',
-                registrationId: String(result.id),
-                eventId: String(payload.event_id),
-                personId: String(payload.person_id),
-              }),
-              run_at: new Date(),
-            })
-            .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue registration confirmation');
-        }
-      }
-
-      // Queue 24h reminder
-      if (event.send_reminder !== false) {
-        try {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await this.getRepo()
-              .db.insertInto('background_jobs')
-              .values({
-                tenant_id: auth.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-reminder',
-                  registrationId: String(result.id),
-                  eventId: String(payload.event_id),
-                  personId: String(payload.person_id),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue event reminder');
-        }
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'assign',
-          entity: 'event_registrations',
-          entity_id: String(result.id),
-          quantity: 1,
-          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async checkIn(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status: 'attended', checked_in_at: new Date() },
-      user_id: auth.user_id,
-    });
-
-    // Cancel pending reminder — they've already arrived
-    try {
-      await this.getRepo()
-        .db.deleteFrom('background_jobs')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('status', '=', 'pending')
-        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-        .where(sql`payload->>'registrationId'`, '=', String(id))
-        .execute();
-    } catch (err) {
-      logger.error({ err }, 'Failed to cancel event reminder on check-in');
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log check-in activity');
-    }
-
-    return result;
-  }
-
-  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: payload,
-      user_id: auth.user_id,
-    });
-
-    // Cancel reminder if status moves away from 'registered'
-    if (payload.status && payload.status !== 'registered') {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on status change');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: payload.status },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log registration update activity');
-    }
-
-    return result;
-  }
-
-  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
-
-    if (result) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'delete',
-          entity: 'event_registrations',
-          entity_id: id,
-          quantity: 1,
-          metadata: { id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration delete activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
-    // Rate limiting
-    const now = Date.now();
-    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
-      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
-    }
-    timestamps.push(now);
-    ipRsvpTimestamps.set(clientIp, timestamps);
-
-    const event = await this.getEventBySlug(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    // Honeypot
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      return { success: true };
-    }
-
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
-    }
-
-    if (new Date(event.end_time) < new Date()) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
-    }
-
-    const firstName = payload['first_name']?.trim() || null;
-    const lastName = payload['last_name']?.trim() || null;
-    const mobile = payload['mobile']?.trim() || null;
-    const notes = payload['notes']?.trim() || null;
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id;
-
-        if (!householdId || !creatorId) {
-          throw new Error('Tenant configuration is incomplete.');
-        }
-
-        // Check overall capacity
-        if (event.capacity !== null) {
-          const countRow = await trx
-            .selectFrom('event_registrations')
-            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-            .where('tenant_id', '=', tenantId)
-            .where('event_id', '=', String(event.id))
-            .where('status', '!=', 'cancelled')
-            .executeTakeFirst();
-          if (Number(countRow?.cnt || 0) >= event.capacity) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-          }
-        }
-
-        // Find or create person
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (notes) {
-            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
-          }
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
-          // (there is no "campaign-less" person). `persons` also has no address columns
-          // (street1/city/state/zip/country live on `households`, not `persons`), so those
-          // RSVP fields are intentionally not persisted here.
-          const campaignRow = await trx
-            .selectFrom('campaigns')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .orderBy('created_at', 'asc')
-            .limit(1)
-            .executeTakeFirst();
-
-          if (!campaignRow) {
-            throw new Error('Tenant configuration is incomplete.');
-          }
-          const campaignId = String(campaignRow.id);
-
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: householdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email,
-            mobile,
-            notes,
-          };
-
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          try {
-            const workflowsCtrl = new WorkflowsController();
-            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
-          }
-        }
-
-        // Check duplicate registration
-        const existingReg = await trx
-          .selectFrom('event_registrations')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', String(event.id))
-          .where('person_id', '=', personId)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-
-        if (existingReg) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
-        }
-
-        // Insert registration
-        const reg = await trx
-          .insertInto('event_registrations')
-          .values({
-            tenant_id: tenantId,
-            event_id: String(event.id),
-            person_id: personId,
-            ticket_type_id: null,
-            status: 'registered',
-            notes: notes ?? null,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        // Queue confirmation email
-        if (event.send_registration_confirmation !== false) {
-          try {
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: tenantId,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-registration-confirmation',
-                  registrationId: String(reg.id),
-                  eventId: String(event.id),
-                  personId,
-                }),
-                run_at: new Date(),
-              })
-              .execute();
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue RSVP confirmation');
-          }
-        }
-
-        // Queue 24h reminder
-        if (event.send_reminder !== false) {
-          try {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await trx
-                .insertInto('background_jobs')
-                .values({
-                  tenant_id: tenantId,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(event.id),
-                    personId,
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
-          }
-        }
-      });
-
-    return { success: true };
-  }
-}
-`````
-
-## File: apps/backend/src/app/modules/events/trpc.router.ts
-`````typescript
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import {
-  idSchema,
-  getAllOptions,
-  AddEventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  UpdateTicketTypeObj,
-  ReorderTicketTypesObj,
-  AddRegistrationObj,
-  UpdateRegistrationObj,
-} from '../../../../../../libs/common/src';
-import { EventsController } from './controller';
-
-const ctrl = new EventsController();
-
-export const EventsRouter = router({
-  // Events
-  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
-
-  getById: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-
-  add: authProcedure.input(AddEventObj).mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
-
-  checkSlugUnique: authProcedure
-    .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
-    .query(({ input, ctx }) => ctrl.checkSlugUnique(input.slug, input.excludeId || null, ctx.auth)),
-
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateEventObj }))
-    .mutation(({ input, ctx }) => ctrl.updateEvent(input.id, input.data, ctx.auth)),
-
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => ctrl.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-
-  // Ticket types
-  getTicketTypesForEvent: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getTicketTypesForEvent(input, ctx.auth)),
-
-  addTicketType: authProcedure
-    .input(AddTicketTypeObj)
-    .mutation(({ input, ctx }) => ctrl.addTicketType(input, ctx.auth)),
-
-  updateTicketType: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateTicketTypeObj }))
-    .mutation(({ input, ctx }) => ctrl.updateTicketType(input.id, input.data, ctx.auth)),
-
-  deleteTicketType: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteTicketType(input, ctx.auth)),
-
-  reorderTicketTypes: authProcedure
-    .input(ReorderTicketTypesObj)
-    .mutation(({ input, ctx }) => ctrl.reorderTicketTypes(input, ctx.auth)),
-
-  // Registrations
-  getRegistrationsForEvent: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getRegistrationsForEvent(input, ctx.auth)),
-
-  addRegistration: authProcedure
-    .input(AddRegistrationObj)
-    .mutation(({ input, ctx }) => ctrl.addRegistration(input, ctx.auth)),
-
-  checkIn: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.checkIn(input, ctx.auth)),
-
-  updateRegistration: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateRegistrationObj }))
-    .mutation(({ input, ctx }) => ctrl.updateRegistration(input.id, input.data, ctx.auth)),
-
-  deleteRegistration: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => ctrl.deleteRegistration(input, ctx.auth)),
-
-  // Person-specific history & stats
-  getHistoryForPerson: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
-
-  getStatsForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getEventStats(input, ctx.auth)),
-});
 `````
 
 ## File: apps/backend/src/app/modules/exports/routes/exports-download.route.ts
@@ -51838,6 +51541,31 @@ export const MsSyncRouter = router({
 });
 `````
 
+## File: apps/backend/src/app/modules/newsletters/repositories/newsletter-templates.repo.ts
+`````typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+/**
+ * User-saved newsletter templates: a tenant-wide reusable-design library.
+ * No campaign scoping (Campaigns §15 — pure content is a shared asset).
+ */
+export class NewsletterTemplatesRepo extends BaseRepository<'newsletter_templates'> {
+  constructor() {
+    super('newsletter_templates');
+  }
+
+  /** Every saved template for the tenant, alphabetized so the wizard's list is scannable. */
+  public getAllByName(tenant_id: string) {
+    return this.db
+      .selectFrom('newsletter_templates')
+      .selectAll()
+      .where('tenant_id', '=', tenant_id)
+      .orderBy('name', 'asc')
+      .execute();
+  }
+}
+`````
+
 ## File: apps/backend/src/app/modules/newsletters/routes/unsubscribe.route.ts
 `````typescript
 import type { FastifyPluginCallback } from 'fastify';
@@ -51917,6 +51645,82 @@ const unsubscribeRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default unsubscribeRoute;
+`````
+
+## File: apps/backend/src/app/modules/newsletters/templates.controller.ts
+`````typescript
+import type {
+  AddNewsletterTemplateType,
+  IAuthKeyPayload,
+  UpdateNewsletterTemplateType,
+} from '../../../../../../libs/common/src';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+
+import { BaseController } from '../../lib/base.controller';
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { NewsletterTemplatesRepo } from './repositories/newsletter-templates.repo';
+
+/** Per-tenant ceiling on saved templates; the error message names the number. */
+export const MAX_SAVED_TEMPLATES_PER_TENANT = 50;
+
+/**
+ * User-saved newsletter templates (wizard "Save as template" + "Your templates").
+ * Templates are tenant-wide shared assets — every member of the workspace sees
+ * and can manage the same library, so there is no per-user ownership check here;
+ * tenant scoping is the boundary (a foreign tenant's template is a NotFound).
+ */
+export class NewsletterTemplatesController extends BaseController<'newsletter_templates', NewsletterTemplatesRepo> {
+  constructor() {
+    super(new NewsletterTemplatesRepo());
+  }
+
+  public listTemplates(tenant_id: string) {
+    return this.getRepo().getAllByName(tenant_id);
+  }
+
+  public async addTemplate(auth: IAuthKeyPayload, input: AddNewsletterTemplateType) {
+    // Zod already rejects whitespace-only html; this re-check keeps the guard
+    // with the write in case another caller ever bypasses the router schema.
+    if (!input.html_content.trim()) {
+      throw new BadRequestError('Template content is empty. Design the newsletter first, then save it.');
+    }
+    const existing = await this.getRepo().count(auth.tenant_id);
+    if (existing >= MAX_SAVED_TEMPLATES_PER_TENANT) {
+      throw new BadRequestError(
+        `You have reached the limit of ${MAX_SAVED_TEMPLATES_PER_TENANT} saved templates. Delete one you no longer use, then save again.`,
+      );
+    }
+    const row = {
+      tenant_id: auth.tenant_id,
+      name: input.name,
+      html_content: input.html_content,
+      plain_text_content: input.plain_text_content ?? '',
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'newsletter_templates', 'insert'>;
+    return this.add(row);
+  }
+
+  public async renameTemplate(auth: IAuthKeyPayload, id: string, data: UpdateNewsletterTemplateType) {
+    await this.mustGetTemplate(auth.tenant_id, id);
+    return this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { name: data.name, updatedby_id: auth.user_id } as OperationDataType<'newsletter_templates', 'update'>,
+    });
+  }
+
+  public async deleteTemplate(auth: IAuthKeyPayload, id: string) {
+    await this.mustGetTemplate(auth.tenant_id, id);
+    return this.delete(auth.tenant_id, id, auth.user_id);
+  }
+
+  private async mustGetTemplate(tenant_id: string, id: string) {
+    const template = await this.getRepo().getOneById({ tenant_id, id });
+    if (!template) throw new NotFoundError('Template not found');
+    return template;
+  }
+}
 `````
 
 ## File: apps/backend/src/app/modules/newsletters/unsubscribe-token.ts
@@ -52707,6 +52511,20 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         }
       }
 
+      // Do-not-contact carries over — a merge must never make someone MORE contactable.
+      // Channels merge as a union; null means "all channels", so a union with null stays null.
+      if (source.do_not_contact) {
+        if (!target.do_not_contact) {
+          targetUpdate['do_not_contact'] = true;
+          targetUpdate['do_not_contact_channels'] = source.do_not_contact_channels ?? null;
+        } else if (target.do_not_contact_channels != null) {
+          targetUpdate['do_not_contact_channels'] =
+            source.do_not_contact_channels == null
+              ? null
+              : Array.from(new Set([...target.do_not_contact_channels, ...source.do_not_contact_channels]));
+        }
+      }
+
       if (Object.keys(targetUpdate).length > 0) {
         targetUpdate['updatedby_id'] = input.user_id;
         targetUpdate['updated_at'] = sql`now()`;
@@ -52829,10 +52647,262 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .where('tenant_id', '=', input.tenant_id)
         .where('team_captain_id', '=', input.source_id)
         .execute();
-      // 6. Delete source person
+      // 6. Re-point child rows with no per-person uniqueness constraint. Without this,
+      // deleting the source would SET NULL (donations, donation_pledges, delivery_requests,
+      // delivery_routes.volunteer_person_id, turf_knocks) or CASCADE-delete (form_submissions)
+      // this history — silent data loss.
+      await trx
+        .updateTable('donations')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('donation_pledges')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('delivery_requests')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('delivery_routes')
+        .set({ volunteer_person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('volunteer_person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('turf_knocks')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      await trx
+        .updateTable('form_submissions')
+        .set({ person_id: input.target_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 7. Children keyed uniquely per person: keep the TARGET's row when both exist
+      // (delete the source's duplicate instead of violating the constraint), re-point the rest.
+      // campaign_person_facts — unique (tenant_id, campaign_id, person_id)
+      const targetFacts = await trx
+        .selectFrom('campaign_person_facts')
+        .select('campaign_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetFactCampaigns = targetFacts.map((r) => String(r.campaign_id));
+      if (targetFactCampaigns.length > 0) {
+        await trx
+          .deleteFrom('campaign_person_facts')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('person_id', '=', input.source_id)
+          .where('campaign_id', 'in', targetFactCampaigns)
+          .execute();
+      }
+      await trx
+        .updateTable('campaign_person_facts')
+        .set({ person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // event_registrations — unique (tenant_id, event_id, person_id)
+      const targetRegs = await trx
+        .selectFrom('event_registrations')
+        .select('event_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetRegEvents = targetRegs.map((r) => String(r.event_id));
+      if (targetRegEvents.length > 0) {
+        await trx
+          .deleteFrom('event_registrations')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('person_id', '=', input.source_id)
+          .where('event_id', 'in', targetRegEvents)
+          .execute();
+      }
+      await trx
+        .updateTable('event_registrations')
+        .set({ person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // volunteer_shifts — no DB unique, but one signup per person+event is the app invariant
+      const targetShifts = await trx
+        .selectFrom('volunteer_shifts')
+        .select('event_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetShiftEvents = targetShifts.map((r) => String(r.event_id));
+      if (targetShiftEvents.length > 0) {
+        await trx
+          .deleteFrom('volunteer_shifts')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('person_id', '=', input.source_id)
+          .where('event_id', 'in', targetShiftEvents)
+          .execute();
+      }
+      await trx
+        .updateTable('volunteer_shifts')
+        .set({ person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // workflow_enrollments — app-level dedupe: someone already in a sequence isn't enrolled twice
+      const targetEnrollments = await trx
+        .selectFrom('workflow_enrollments')
+        .select('workflow_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetEnrollmentWorkflows = targetEnrollments.map((r) => String(r.workflow_id));
+      if (targetEnrollmentWorkflows.length > 0) {
+        await trx
+          .deleteFrom('workflow_enrollments')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('person_id', '=', input.source_id)
+          .where('workflow_id', 'in', targetEnrollmentWorkflows)
+          .execute();
+      }
+      await trx
+        .updateTable('workflow_enrollments')
+        .set({ person_id: input.target_id, updated_at: sql`now()` })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 8. campaign_subscriptions — unique (tenant_id, campaign_id, person_id). Keep the
+      // target's row on collision, but consent is MOST-restrictive: if either record for a
+      // campaign is unsubscribed, the surviving row must be unsubscribed. A merge must never
+      // make someone more contactable.
+      const targetSubs = await trx
+        .selectFrom('campaign_subscriptions')
+        .select(['id', 'campaign_id', 'status'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetSubByCampaign = new Map(targetSubs.map((s) => [String(s.campaign_id), s]));
+      const sourceSubs = await trx
+        .selectFrom('campaign_subscriptions')
+        .select(['id', 'campaign_id', 'status', 'unsubscribed_at'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+      for (const sub of sourceSubs) {
+        const existing = targetSubByCampaign.get(String(sub.campaign_id));
+        if (!existing) {
+          await trx
+            .updateTable('campaign_subscriptions')
+            .set({ person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', sub.id)
+            .execute();
+          continue;
+        }
+        if (sub.status === 'unsubscribed' && existing.status !== 'unsubscribed') {
+          await trx
+            .updateTable('campaign_subscriptions')
+            .set({
+              status: 'unsubscribed',
+              unsubscribed_at: sub.unsubscribed_at ?? sql`now()`,
+              updatedby_id: input.user_id,
+              updated_at: sql`now()`,
+            })
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', existing.id)
+            .execute();
+        }
+        await trx
+          .deleteFrom('campaign_subscriptions')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('id', '=', sub.id)
+          .execute();
+      }
+
+      // 9. person_connections — re-point both edge directions. Drop edges that would become a
+      // self-loop (source connected to target) or collide with an identical existing target
+      // edge (unique on tenant/from/to/relation_type; CHECK forbids from = to).
+      const targetFromEdges = await trx
+        .selectFrom('person_connections')
+        .select(['to_person_id', 'relation_type'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('from_person_id', '=', input.target_id)
+        .execute();
+      const targetFromKeys = new Set(targetFromEdges.map((e) => `${String(e.to_person_id)}|${e.relation_type}`));
+      const sourceFromEdges = await trx
+        .selectFrom('person_connections')
+        .select(['id', 'to_person_id', 'relation_type'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('from_person_id', '=', input.source_id)
+        .execute();
+      for (const edge of sourceFromEdges) {
+        const key = `${String(edge.to_person_id)}|${edge.relation_type}`;
+        if (String(edge.to_person_id) === String(input.target_id) || targetFromKeys.has(key)) {
+          await trx
+            .deleteFrom('person_connections')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', edge.id)
+            .execute();
+        } else {
+          targetFromKeys.add(key);
+          await trx
+            .updateTable('person_connections')
+            .set({ from_person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', edge.id)
+            .execute();
+        }
+      }
+      // (to-side selected after the from-side re-point so freshly moved edges count too)
+      const targetToEdges = await trx
+        .selectFrom('person_connections')
+        .select(['from_person_id', 'relation_type'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('to_person_id', '=', input.target_id)
+        .execute();
+      const targetToKeys = new Set(targetToEdges.map((e) => `${String(e.from_person_id)}|${e.relation_type}`));
+      const sourceToEdges = await trx
+        .selectFrom('person_connections')
+        .select(['id', 'from_person_id', 'relation_type'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('to_person_id', '=', input.source_id)
+        .execute();
+      for (const edge of sourceToEdges) {
+        const key = `${String(edge.from_person_id)}|${edge.relation_type}`;
+        if (String(edge.from_person_id) === String(input.target_id) || targetToKeys.has(key)) {
+          await trx
+            .deleteFrom('person_connections')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', edge.id)
+            .execute();
+        } else {
+          targetToKeys.add(key);
+          await trx
+            .updateTable('person_connections')
+            .set({ to_person_id: input.target_id, updatedby_id: input.user_id, updated_at: sql`now()` })
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', edge.id)
+            .execute();
+        }
+      }
+
+      // 10. Delete source person. Remaining references clean themselves up: the source's
+      // potential_duplicates rows are ON DELETE CASCADE (stale groups are recomputed by the
+      // duplicate-maintenance service), and dismissed_duplicate_groups carries no person FK.
       await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
 
-      // 7. Clean up empty household if source's household is now empty
+      // 11. Clean up empty household if source's household is now empty
       const sourceHhId = source.household_id;
       if (sourceHhId && sourceHhId !== target.household_id) {
         const remainingHhMembers = await trx
@@ -53474,7 +53544,6 @@ import { SettingsController } from './controller';
 const settings = new SettingsController();
 
 export const SettingsRouter = router({
-  getCurrentCampaignId: authProcedure.query(({ ctx }) => settings.getCurrentCampaignId(ctx.auth)),
   getSnapshot: authProcedure.query(({ ctx }) => settings.getSnapshot(ctx.auth)),
   upsert: adminOrOwnerProcedure
     .input(UpsertSettingsInputObj)
@@ -54136,36 +54205,6 @@ export class TaskCommentsRepo extends BaseRepository<'task_comments'> {
 }
 `````
 
-## File: apps/backend/src/app/modules/tasks/repositories/task-subtasks.repo.ts
-`````typescript
-import type { Transaction } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export class TaskSubtasksRepo extends BaseRepository<'task_subtasks'> {
-  constructor() {
-    super('task_subtasks');
-  }
-
-  /**
-   * Ordered read for the task detail page — `position` asc is the manual drag
-   * order; `created_at`/`id` are the deterministic tiebreak so brand-new subtasks
-   * (all `position` 0 by default) still fall in a stable, oldest-first order.
-   */
-  public getByTaskIdOrdered(tenant_id: string, task_id: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .where('task_id', '=', task_id)
-      .orderBy('position', 'asc')
-      .orderBy('created_at', 'asc')
-      .orderBy('id', 'asc')
-      .execute();
-  }
-}
-`````
-
 ## File: apps/backend/src/app/modules/tasks/repositories/tasks.repo.ts
 `````typescript
 import type { RawBuilder, Transaction } from 'kysely';
@@ -54476,872 +54515,6 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
     return this.add(row);
   }
 }
-`````
-
-## File: apps/backend/src/app/modules/tasks/controller.ts
-`````typescript
-import type {
-  AddTaskType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateTaskType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import { env } from '../../../env';
-import { BaseController } from '../../lib/base.controller';
-
-import { TasksRepo } from './repositories/tasks.repo';
-import type { Selectable } from 'kysely';
-import type {
-  Models,
-  OperationDataType,
-  TypeId,
-  TypeTenantId,
-} from '../../../../../../libs/common/src/lib/kysely.models';
-import type { QueryParams } from '../../lib/base.repo';
-import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { notificationEnabled } from '../../lib/profile-preferences';
-import { ImportsRepo } from '../imports/repositories/imports.repo';
-import { StorageService } from '../../lib/storage.service';
-import { TRPCError } from '@trpc/server';
-import { logger } from '../../logger';
-import { TASK_STATUSES, calculateWorkingTimeMs } from '../../../../../../libs/common/src';
-import type { ReorderTasksType } from '../../../../../../libs/common/src';
-import { NotFoundError } from '../../errors/app-errors';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-
-export class TasksController extends BaseController<'tasks', TasksRepo> {
-  private mailService = new TransactionalEmailService();
-
-  constructor() {
-    super(new TasksRepo());
-  }
-
-  public async addTask(payload: AddTaskType, auth: IAuthKeyPayload) {
-    const row = {
-      name: payload.name,
-      details: payload.details,
-      due_at: payload.due_at ?? null,
-      status: payload.status ?? 'todo',
-      priority: payload.priority ?? null,
-      completed_at: payload.completed_at ?? null,
-      position: payload.position ?? 0,
-      assigned_to: payload.assigned_to ?? null,
-      team_id: payload.team_id ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'tasks', 'insert'>;
-    const task = await this.add(row);
-    if (task && payload.assigned_to) {
-      try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: payload.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${payload.name}"`,
-          type: 'task',
-          link: `/tasks/${task.id}`,
-        });
-
-        const assignedTo = payload.assigned_to;
-        if (assignedTo) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', assignedTo)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `New task assigned: ${payload.name}`,
-                text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${payload.name}".\n\nDetails:\n${payload.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${task.id}`,
-                html: `<h2>New task assigned</h2>
-<p>Hi ${assignee.first_name},</p>
-<p>${auth.name} assigned you the task <strong>"${payload.name}"</strong>.</p>
-<div class="panel"><p><strong>Details:</strong><br>${payload.details || 'None'}</p></div>
-<div class="btn-container">
-  <a href="${env.appUrl}/tasks/${task.id}" class="btn">View task</a>
-</div>`,
-              });
-            }
-          }
-        }
-      } catch (nErr) {
-        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
-      }
-    }
-    return task;
-  }
-
-  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
-  }
-
-  public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
-  }
-
-  /** Working-hours SLA config for this tenant, with the same fallbacks used tenant-wide. */
-  private async loadSlaConfig(tenant_id: string): Promise<{
-    taskSlaHours: number;
-    workingDays: number[];
-    workingHoursStart: string;
-    workingHoursEnd: string;
-  }> {
-    const settingsRows = await new SettingsRepo().getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    return {
-      taskSlaHours: Number(settingsMap['sla.tasks_hours'] ?? 24),
-      workingDays: workingDaysStr
-        .split(',')
-        .map((s) => Number(s.trim()))
-        .filter((n) => !isNaN(n)),
-      workingHoursStart: String(settingsMap['sla.working_hours_start'] ?? '09:00'),
-      workingHoursEnd: String(settingsMap['sla.working_hours_end'] ?? '17:00'),
-    };
-  }
-
-  /** Live count of open tasks past the working-hours SLA target — the sidebar badge (spec §4). */
-  public async countSlaBreaches(auth: IAuthKeyPayload): Promise<number> {
-    const { taskSlaHours, workingDays, workingHoursStart, workingHoursEnd } = await this.loadSlaConfig(auth.tenant_id);
-    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
-    const now = new Date();
-
-    const openTasks = await this.getRepo().getOpenForSla(auth.tenant_id);
-    return openTasks.reduce((count, task) => {
-      const workingMs = calculateWorkingTimeMs(
-        new Date(task.created_at),
-        now,
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-      return workingMs > taskSlaMs ? count + 1 : count;
-    }, 0);
-  }
-
-  /**
-   * The count sentence's four numbers in one call (spec §4): "N open tasks · N breaching
-   * SLA · N assigned to you" (list) plus "N waiting for an owner" (board adds this one).
-   */
-  public async getSummaryCounts(auth: IAuthKeyPayload): Promise<{
-    assignedToMe: number;
-    openTotal: number;
-    slaBreaches: number;
-    unassigned: number;
-  }> {
-    const repo = this.getRepo();
-    const [openTotal, unassigned, assignedToMe, slaBreaches] = await Promise.all([
-      repo.countOpen(auth.tenant_id),
-      repo.countOpenUnassigned(auth.tenant_id),
-      repo.countOpenAssignedTo(auth.tenant_id, auth.user_id),
-      this.countSlaBreaches(auth),
-    ]);
-    return { openTotal, unassigned, assignedToMe, slaBreaches };
-  }
-
-  public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
-    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as
-      | Selectable<Models['tasks']>
-      | undefined;
-    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
-    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
-
-    if (updated && row.assigned_to && row.assigned_to !== existingTask?.assigned_to) {
-      try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: row.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${updated.name}"`,
-          type: 'task',
-          link: `/tasks/${id}`,
-        });
-
-        const assignedTo = row.assigned_to;
-        if (assignedTo) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', assignedTo)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `New task assigned: ${updated.name}`,
-                text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${updated.name}".\n\nDetails:\n${updated.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${id}`,
-                html: `<h2>New task assigned</h2>
-<p>Hi ${assignee.first_name},</p>
-<p>${auth.name} assigned you the task <strong>"${updated.name}"</strong>.</p>
-<div class="panel"><p><strong>Details:</strong><br>${updated.details || 'None'}</p></div>
-<div class="btn-container">
-  <a href="${env.appUrl}/tasks/${id}" class="btn">View task</a>
-</div>`,
-              });
-            }
-          }
-        }
-      } catch (nErr) {
-        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
-      }
-    }
-    return updated;
-  }
-
-  /**
-   * Board drag-and-drop persistence (spec §4). Re-seats one or two board columns
-   * in a single transaction: every listed id gets `position = index`, and its
-   * `status` is set to the column it now lives in. Ids are verified to belong to
-   * the tenant first (a foreign or unknown id rejects the whole drop).
-   *
-   * `completed_at` note: the single-task update path (`updateTask` → BaseController)
-   * has NO automatic completed_at behavior — it only writes completed_at when the
-   * client explicitly sends it, and there is no DB trigger on tasks.status. So a
-   * status change here (including to/from `done`) intentionally writes no
-   * completed_at, matching the chevron/setStatus path exactly. The one real status
-   * side effect the single-write path has is the activity-log entry, which we
-   * replicate below for each card whose status actually changed.
-   */
-  public async reorderTasks(auth: IAuthKeyPayload, input: ReorderTasksType) {
-    const allIds = input.columns.flatMap((c) => c.ids);
-    const repo = this.getRepo();
-    return repo.transaction().execute(async (trx) => {
-      const existing = await trx
-        .selectFrom('tasks')
-        .select(['id', 'status', 'name'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', 'in', allIds)
-        .execute();
-      const byId = new Map(existing.map((r) => [String(r.id), r]));
-      for (const id of allIds) {
-        if (!byId.has(String(id))) throw new NotFoundError('One or more tasks were not found');
-      }
-
-      for (const col of input.columns) {
-        let index = 0;
-        for (const id of col.ids) {
-          await trx
-            .updateTable('tasks')
-            .set({
-              position: index,
-              status: col.status,
-              updatedby_id: auth.user_id,
-            } as OperationDataType<'tasks', 'update'>)
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', id)
-            .execute();
-
-          const before = byId.get(String(id));
-          if (before && before.status !== col.status) {
-            await this.userActivity.log(
-              {
-                tenant_id: auth.tenant_id,
-                user_id: auth.user_id,
-                activity: 'update',
-                entity: 'tasks',
-                entity_id: String(id),
-                quantity: 1,
-                metadata: {
-                  task_name: before.name,
-                  changes: { status: { from: before.status ?? null, to: col.status } },
-                },
-              },
-              trx,
-            );
-          }
-          index += 1;
-        }
-      }
-
-      return { ok: true as const, updated: allIds.length };
-    });
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const includeArchived = Boolean(input?.options && input.options?.includeArchived);
-      const result = includeArchived
-        ? await this.getArchivedTasks(auth, input?.options)
-        : await this.getAllTasks(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: includeArchived ? 'tasks_archived' : 'tasks',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-          include_archived: includeArchived,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  private readonly importsRepo = new ImportsRepo();
-  private readonly storageService = new StorageService();
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        name: string;
-        details?: string | null;
-        status?: string | null;
-        priority?: string | null;
-        due_at?: string | null;
-        assigned_to?: string | null;
-      }>;
-      skipped?: number;
-      file_name?: string | null;
-      source_csv?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-Tasks-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'tasks',
-      tag_name: null,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    };
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({
-        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
-        id: importRecordId as TypeId<'data_imports'>,
-      });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    // Keep the original upload downloadable for 90 days (spec §17 History
-    // page footer). Best-effort: a failure here shouldn't fail the import.
-    let sourceFileKey: string | null = null;
-    let sourceFileSize: number | null = null;
-    if (input.source_csv) {
-      try {
-        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
-        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
-        sourceFileSize = sourceBuffer.byteLength;
-        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
-      } catch (err) {
-        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
-        sourceFileKey = null;
-        sourceFileSize = null;
-      }
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-        source_file_key: sourceFileKey,
-        source_file_size: sourceFileSize,
-      },
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          skipped: skippedFromClient,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          source: 'tasks',
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      status: 'pending',
-    };
-  }
-
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    skipped: number,
-    rows: Record<string, string>[],
-  ) {
-    const results = { inserted: 0, errors: 0, skipped: 0 };
-    const errorMessages: string[] = [];
-
-    // Parse status and priority to validate choices
-    const normalize = (v?: string) =>
-      (v || '')
-        .toLowerCase()
-        .trim()
-        .replace(/[_\s-]+/g, '');
-    const validStatuses: readonly string[] = TASK_STATUSES;
-    const validPriorities = ['low', 'medium', 'high', 'urgent'];
-
-    // Map names to users for assigned_to
-    const users = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name', 'email'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      const idStr = String(u.id);
-      userMap.set(idStr, idStr);
-      if (u.email) userMap.set(u.email.toLowerCase().trim(), idStr);
-      if (u.first_name) {
-        userMap.set(u.first_name.toLowerCase().trim(), idStr);
-        if (u.last_name) {
-          userMap.set(`${u.first_name.toLowerCase().trim()} ${u.last_name.toLowerCase().trim()}`, idStr);
-        }
-      }
-    }
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Normalize and filter valid rows upfront
-      const taskRows: any[] = [];
-      for (const raw of chunk) {
-        if (!raw['name'] || !raw['name'].trim()) {
-          results.skipped += 1;
-          continue;
-        }
-
-        let status: string = 'todo';
-        if (raw['status']) {
-          const normStatus = normalize(raw['status']);
-          const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
-          if (matchedStatus) status = matchedStatus;
-        }
-
-        let priority: string | null = null;
-        if (raw['priority']) {
-          const normPriority = normalize(raw['priority']);
-          const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
-          if (matchedPriority) priority = matchedPriority;
-        }
-
-        let assigned_to: string | null = null;
-        if (raw['assigned_to']) {
-          assigned_to = userMap.get(raw['assigned_to'].toLowerCase().trim()) ?? null;
-        }
-
-        let due_at: Date | null = null;
-        if (raw['due_at']) {
-          const parsedDate = new Date(raw['due_at']);
-          if (!isNaN(parsedDate.getTime())) due_at = parsedDate;
-        }
-
-        taskRows.push({
-          tenant_id,
-          createdby_id: user_id,
-          updatedby_id: user_id,
-          name: raw['name'].trim(),
-          details: raw['details'] ?? null,
-          status,
-          priority,
-          assigned_to,
-          due_at,
-          file_id: import_id,
-        });
-      }
-
-      if (taskRows.length > 0) {
-        try {
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              // Chunk inserts to a safe limit (e.g., 2000 rows * 10 cols = 20,000 params)
-              const CHUNK_SIZE = 2000;
-              for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
-                const chunk = taskRows.slice(i, i + CHUNK_SIZE);
-                await trx
-                  .insertInto('tasks')
-                  .values(chunk)
-                  .returningAll() // Adheres to repository rules
-                  .execute();
-              }
-            });
-          results.inserted += taskRows.length;
-        } catch (err: unknown) {
-          results.errors += taskRows.length;
-          errorMessages.push(err instanceof Error ? err.message : String(err));
-        }
-      }
-
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        },
-      });
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      errorMessages,
-    };
-  }
-}
-`````
-
-## File: apps/backend/src/app/modules/tasks/subtasks.controller.ts
-`````typescript
-import type { Transaction, Selectable } from 'kysely';
-import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { IAuthKeyPayload, ReorderSubtasksType } from '../../../../../../libs/common/src';
-import { BaseController } from '../../lib/base.controller';
-import { NotFoundError } from '../../errors/app-errors';
-import { TaskSubtasksRepo } from './repositories/task-subtasks.repo';
-
-export class TaskSubtasksController extends BaseController<'task_subtasks', TaskSubtasksRepo> {
-  constructor() {
-    super(new TaskSubtasksRepo());
-  }
-
-  public getByTaskId(input: { tenant_id: string; task_id: string }) {
-    return this.getRepo().getByTaskIdOrdered(input.tenant_id, input.task_id);
-  }
-
-  /**
-   * Drag-to-reorder the subtasks of one task. `ids` is the full new top-to-bottom
-   * order; every id must belong to the tenant and to `task_id` (a foreign or
-   * unknown id rejects the whole drop). Writes `position = index` per id in one
-   * transaction — never a loop of single-row `updateSubtask` calls.
-   */
-  public async reorderSubtasks(auth: IAuthKeyPayload, input: ReorderSubtasksType) {
-    const repo = this.getRepo();
-    return repo.transaction().execute(async (trx) => {
-      const existing = await trx
-        .selectFrom('task_subtasks')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('task_id', '=', input.task_id)
-        .where('id', 'in', input.ids)
-        .execute();
-      const found = new Set(existing.map((r) => String(r.id)));
-      if (found.size !== input.ids.length || input.ids.some((id) => !found.has(String(id)))) {
-        throw new NotFoundError('One or more subtasks were not found for this task');
-      }
-
-      let index = 0;
-      for (const id of input.ids) {
-        await trx
-          .updateTable('task_subtasks')
-          .set({ position: index, updatedby_id: auth.user_id } as OperationDataType<'task_subtasks', 'update'>)
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .execute();
-        index += 1;
-      }
-
-      return { ok: true as const, updated: input.ids.length };
-    });
-  }
-
-  public override async add(row: OperationDataType<'task_subtasks', 'insert'>, trx?: Transaction<Models>) {
-    const subtask = await super.add(row, trx);
-    if (subtask && row.task_id && row.tenant_id && row.createdby_id) {
-      await this.userActivity.log(
-        {
-          tenant_id: String(row.tenant_id),
-          user_id: String(row.createdby_id),
-          activity: 'update',
-          entity: 'tasks',
-          entity_id: String(row.task_id),
-          quantity: 1,
-          metadata: { action: 'add_subtask', subtask_name: row.name },
-        },
-        trx,
-      );
-    }
-    return subtask;
-  }
-
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'task_subtasks', 'update'>;
-  }) {
-    const subtaskBefore = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as
-      | Selectable<Models['task_subtasks']>
-      | undefined;
-    const result = await super.update(input);
-    if (result && subtaskBefore) {
-      const actorId = input.row.updatedby_id || subtaskBefore.updatedby_id || '';
-      if (input.row.status && input.row.status !== subtaskBefore.status && actorId) {
-        await this.userActivity.log({
-          tenant_id: input.tenant_id,
-          user_id: String(actorId),
-          activity: 'update',
-          entity: 'tasks',
-          entity_id: String(subtaskBefore.task_id),
-          quantity: 1,
-          metadata: {
-            action: 'toggle_subtask',
-            subtask_name: subtaskBefore.name,
-            status: input.row.status,
-          },
-        });
-      }
-    }
-    return result;
-  }
-
-  public updateSubtask(input: { tenant_id: string; id: string; row: OperationDataType<'task_subtasks', 'update'> }) {
-    return this.update({ tenant_id: input.tenant_id, id: input.id, row: input.row });
-  }
-}
-`````
-
-## File: apps/backend/src/app/modules/tasks/trpc.router.ts
-`````typescript
-import {
-  AddTaskObj,
-  ReorderSubtasksObj,
-  ReorderTasksObj,
-  UpdateTaskObj,
-  exportCsvInput,
-  exportCsvResponse,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { authProcedure, router } from '../../../trpc';
-import { TasksController } from './controller';
-import { TaskCommentsController } from './comments.controller';
-import { TaskAttachmentsController } from './attachments.controller';
-import { TaskSubtasksController } from './subtasks.controller';
-
-const tasks = new TasksController();
-
-export const TasksRouter = router({
-  add: authProcedure.input(AddTaskObj).mutation(({ input, ctx }) => tasks.addTask(input, ctx.auth)),
-
-  import: authProcedure
-    .input(
-      z.object({
-        rows: z.array(
-          z.object({
-            name: z.string().trim().min(1, 'Task name is required').max(200, 'Task name is too long'),
-            details: z.string().trim().max(10000).optional().nullable(),
-            status: z.string().trim().max(50).optional().nullable(),
-            priority: z.string().trim().max(50).optional().nullable(),
-            due_at: z.string().trim().max(50).optional().nullable(),
-            assigned_to: z.string().trim().max(50).optional().nullable(),
-          }),
-        ),
-        skipped: z.number().int().nonnegative().optional(),
-        file_name: z.string().trim().min(1).max(255).optional(),
-        source_csv: z.string().max(10_000_000).optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      ctx.res.status(202);
-      return tasks.importRows(input, ctx.auth);
-    }),
-
-  count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
-  countSlaBreaches: authProcedure.query(({ ctx }) => tasks.countSlaBreaches(ctx.auth)),
-  getSummaryCounts: authProcedure.query(({ ctx }) => tasks.getSummaryCounts(ctx.auth)),
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-  deleteMany: authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => tasks.deleteMany(ctx.auth.tenant_id, input)),
-  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getAllTasks(ctx.auth, input)),
-  getArchived: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getArchivedTasks(ctx.auth, input)),
-  exportCsv: authProcedure
-    .input(exportCsvInput)
-    .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => tasks.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
-  getById: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => tasks.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateTaskObj }))
-    .mutation(({ input, ctx }) => tasks.updateTask(input.id, input.data, ctx.auth)),
-  reorder: authProcedure.input(ReorderTasksObj).mutation(({ input, ctx }) => tasks.reorderTasks(ctx.auth, input)),
-  reorderSubtasks: authProcedure
-    .input(ReorderSubtasksObj)
-    .mutation(({ input, ctx }) => new TaskSubtasksController().reorderSubtasks(ctx.auth, input)),
-  getComments: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) =>
-      new TaskCommentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
-    ),
-  addComment: authProcedure
-    .input(
-      z.object({
-        task_id: idSchema,
-        comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long'),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      new TaskCommentsController().add({
-        tenant_id: ctx.auth.tenant_id,
-        task_id: input.task_id,
-        author_id: ctx.auth.user_id,
-        comment: input.comment,
-      } as any),
-    ),
-  getAttachments: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) =>
-      new TaskAttachmentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
-    ),
-  addAttachment: authProcedure
-    .input(
-      z.object({
-        task_id: idSchema,
-        filename: z.string().trim().min(1, 'Filename cannot be empty').max(255, 'Filename is too long'),
-        url: z.string().url('Invalid URL format').optional(),
-        content_type: z.string().trim().max(100).optional(),
-        size_bytes: z.number().int().nonnegative().optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      (new TaskAttachmentsController() as any).add({
-        tenant_id: ctx.auth.tenant_id,
-        task_id: input.task_id,
-        filename: input.filename,
-        url: input.url,
-        content_type: input.content_type,
-        size_bytes: input.size_bytes ?? null,
-        createdby_id: ctx.auth.user_id,
-        updatedby_id: ctx.auth.user_id,
-      }),
-    ),
-  getSubtasks: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) =>
-      new TaskSubtasksController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
-    ),
-  addSubtask: authProcedure
-    .input(
-      z.object({
-        task_id: idSchema,
-        name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long'),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      new TaskSubtasksController().add({
-        tenant_id: ctx.auth.tenant_id,
-        task_id: input.task_id,
-        name: input.name,
-        status: 'todo',
-        createdby_id: ctx.auth.user_id,
-        updatedby_id: ctx.auth.user_id,
-      } as OperationDataType<'task_subtasks', 'insert'>),
-    ),
-  updateSubtask: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        data: z.object({
-          name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long').optional(),
-          status: z.string().trim().max(50).optional(),
-          position: z.number().int().optional(),
-        }),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      new TaskSubtasksController().updateSubtask({
-        tenant_id: ctx.auth.tenant_id,
-        id: input.id,
-        row: { ...(input.data ?? {}), updatedby_id: ctx.auth.user_id } as OperationDataType<'task_subtasks', 'update'>,
-      }),
-    ),
-});
 `````
 
 ## File: apps/backend/src/app/modules/teams/repositories/teams.repo.ts
@@ -57478,96 +56651,6 @@ export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
 });
 `````
 
-## File: apps/backend/eslint.config.cjs
-`````javascript
-/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
-/* Node.js, Fastify, tRPC backend-specific rules only.                         */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-module.exports = [
-  /* Compose the root config so `nx lint backend` enforces the same
-   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
-   * as the pre-commit `eslint` invocation. Previously this file stood alone,
-   * which meant nx lint never saw those rules and plain `eslint` never saw
-   * `local/no-unscoped-db-query` below — two disjoint, non-overlapping
-   * checks. Confirmed zero new violations from this composition. */
-  ...require('../../eslint.config.cjs'),
-
-  /* Extend the base config */
-  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
-    ...cfg,
-    files: ['**/*.{ts,tsx,js,jsx}'],
-    rules: {
-      /* Fastify/tRPC specific style preferences */
-      'prefer-arrow-callback': 'warn',
-      'arrow-body-style': ['warn', 'as-needed'],
-    },
-  })),
-
-  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
-   *
-   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
-   * reaches an execute terminal without a .where('tenant_id', …) filter.
-   *
-   * Scoped to modules/** only — excludes:
-   *   - base.repo.ts          (tenant filtering is callers' responsibility)
-   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
-   *   - _migrations/**        (DDL; no runtime tenant scoping)
-   *   - *.spec.ts             (integration tests do their own scoped cleanup)
-   *   - kyselyinit*.ts        (migration runner)
-   * ─────────────────────────────────────────────────────────────────────── */
-  {
-    files: ['**/src/app/modules/**/*.ts'],
-    ignores: ['**/*.spec.ts'],
-    // `local` is already registered by the root config spread in above —
-    // redeclaring it here for the same file set throws
-    // "Cannot redefine plugin 'local'" under ESLint's flat config.
-    rules: {
-      'local/no-unscoped-db-query': [
-        'error',
-        {
-          // Tables where cross-tenant queries are intentional:
-          //   authusers - login by email, password reset by code (pre-auth, no tenant known yet)
-          //   sessions  - sign-out by session_id hash (no tenant in token)
-          //   tenants   - tenant lookup by id
-          //
-          // Removed 2026-07-04: `tags` (all module queries already scope tenant_id — the old
-          // "join-level scoping" note was wrong) and `ms_oauth_tokens`/`google_oauth_tokens`
-          // (migration 2026-06-26-email-sync-per-tenant re-keyed both on UNIQUE(tenant_id) and
-          // made user_id nullable, so "keyed by user_id" no longer held — these hold OAuth
-          // secrets and must be tenant-scoped). Adding a table here is a security decision:
-          // prove every current and future query on it is safe cross-tenant, not just quiet.
-          ignoreTables: ['authusers', 'sessions', 'tenants'],
-        },
-      ],
-    },
-  },
-
-  /* ── Relax `no-explicit-any` for non-production code ────────────────────────
-   *
-   * `any` in production logic is a real smell we're driving to zero, but two
-   * file classes are intentionally exempt:
-   *   - _migrations/**  DDL history; already applied, append-only, never re-run.
-   *                     Typing pg/Kysely migration builders adds no runtime safety.
-   *   - *.spec.ts       Test doubles/mocks where `any` is the pragmatic shape for
-   *                     a stub; typing them buys nothing and obscures intent.
-   * ─────────────────────────────────────────────────────────────────────── */
-  {
-    files: ['**/src/app/_migrations/**/*.ts', '**/*.spec.ts'],
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-    },
-  },
-];
-`````
-
 ## File: apps/backend/project.json
 `````json
 {
@@ -58006,9 +57089,8 @@ export class ComingSoonPage {
         one thing that matters most: the list is yours, not ours.
       </p>
       <p>
-        pplCRM is built in Canada by a small independent team. Your data lives in Canada unless you choose another
-        region on the Movement plan, everything exports whenever you want, and delete means deleted. We would rather
-        keep those promises than grow fast by breaking them.
+        pplCRM is built in Canada by a small independent team. Your data lives in Canada, everything exports whenever
+        you want, and delete means deleted. We would rather keep those promises than grow fast by breaking them.
       </p>
     </div>
   </div>
@@ -58409,8 +57491,8 @@ export class DataOwnershipPage {
     },
     {
       icon: 'globe-americas',
-      title: 'You choose where it lives',
-      body: 'Your workspace is stored in Canada by default. On the Movement plan you pick the region (Canada, US, EU or UK) when you create your workspace, and your data stays there for processing and backups.',
+      title: 'Hosted in Canada',
+      body: 'Your workspace is stored in Canada, and your data stays there for processing and backups.',
     },
     {
       icon: 'user-group',
@@ -60763,100 +59845,6 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
 ];
 `````
 
-## File: libs/common/src/lib/help/articles/productivity.ts
-`````typescript
-import type { HelpArticle } from '../help-types';
-
-export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
-  {
-    id: 'tasks',
-    category: 'productivity',
-    title: 'Tasks: list and board',
-    summary:
-      'Track the work: assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
-    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
-    related: ['dashboard', 'teams', 'automations'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Tasks capture commitments: call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
-      },
-      { kind: 'h2', id: 'views', text: 'List or board: one dataset, two views' },
-      {
-        kind: 'list',
-        items: [
-          '[Tasks](/tasks) is the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
-          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. Drag a card to another column to change its status, or drag it up and down within a column to set the order you want; the order sticks. Prefer the keyboard? The ‹ › buttons on a card still move it one column and dim at either end of the row. Jump to the board anytime with `g` then `b`.',
-          'Every header carries a swap button (Open board / Open list), so you never have to hunt for the sidebar to switch.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly. A card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
-      },
-      {
-        kind: 'p',
-        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. Break the work into subtasks and drag them by the handle on the left of each row to reorder them. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
-      },
-      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
-      {
-        kind: 'list',
-        items: [
-          'A task with no assignee shows a dashed Unassigned pill. One click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
-          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup. See [The dashboard and SLA health](/help/dashboard).",
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Tasks come from everywhere',
-        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one; "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'files',
-    category: 'productivity',
-    title: 'Storage & attachments',
-    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
-    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
-    related: ['grid-basics', 'newsletters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Files no longer live in their own standalone library. A file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
-      },
-      { kind: 'h2', id: 'attach', text: 'Attach a file' },
-      {
-        kind: 'p',
-        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
-      },
-      { kind: 'h2', id: 'storage', text: 'Check total usage' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Workspace settings → Storage](/workspace/storage)',
-            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
-          },
-          {
-            title: 'Delete a large file',
-            detail:
-              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Quota affects newsletter sending',
-        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments. Free up space first if attachments matter for that send.',
-      },
-    ],
-  },
-];
-`````
-
 ## File: libs/common/src/lib/help/articles/segmentation.ts
 `````typescript
 import type { HelpArticle } from '../help-types';
@@ -61779,6 +60767,151 @@ export const phoneSchema = (fieldName: string) =>
 export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
 `````
 
+## File: libs/common/src/lib/schemas/deliveries.schema.ts
+`````typescript
+import { z } from 'zod';
+
+import { idSchema, notesSchema } from './core.schema';
+
+// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
+// the spec's strings win, including the American spelling "canceled" for route status.
+export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
+export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
+export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
+export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
+
+// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
+// reason — it keeps the stop pending and moves it to the end of the route.
+export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
+
+export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
+
+/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
+export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
+  new: 'Requested',
+  approved: 'Approved',
+  declined: 'Declined',
+  delivered: 'Delivered',
+};
+export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
+export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
+export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
+export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
+
+// ---- Requests --------------------------------------------------------------
+export const AddDeliveryRequestObj = z.object({
+  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  household_id: idSchema,
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+  notes: notesSchema,
+});
+
+export const UpdateDeliveryRequestObj = z.object({
+  notes: notesSchema,
+});
+
+// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
+// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
+export const SetDeliveryRequestStatusObj = z.object({
+  ids: z.array(idSchema).min(1, 'Select at least one request'),
+  status: z.enum(DELIVERY_REQUEST_STATUSES),
+});
+
+// The yard-sign standing lookup for one household in one campaign context.
+export const GetSignStatusObj = z.object({
+  household_id: idSchema,
+  campaign_id: idSchema,
+});
+
+// ---- Planning --------------------------------------------------------------
+// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
+// return trip). Preview is pure — it writes nothing.
+export const PlanDeliveriesObj = z.object({
+  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
+  drivers: z.number().int().min(1).max(50).nullable().optional(),
+  service_minutes: z.number().min(0).max(60).nullable().optional(),
+  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
+  include_return_leg: z.boolean().nullable().optional(),
+});
+
+export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
+  routes: z
+    .array(
+      z.object({
+        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
+      }),
+    )
+    .min(1, 'Nothing to commit'),
+});
+
+// ---- Routes ----------------------------------------------------------------
+export const UpdateDeliveryRouteObj = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
+  scheduled_for: z.string().datetime().nullable().optional(),
+});
+
+export const AssignVolunteerObj = z.object({
+  route_id: idSchema,
+  person_id: idSchema.nullable(),
+});
+
+export const SetDeliveryRouteStatusObj = z.object({
+  route_id: idSchema,
+  status: z.enum(['in_progress', 'completed', 'canceled']),
+});
+
+export const ReorderStopObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  direction: z.enum(['up', 'down']),
+});
+
+// Drag-to-reorder: the full new order of a route's PENDING stops. Delivered/skipped stops are not
+// movable and keep their seq; the backend reassigns only the pending slots to this order.
+export const ReorderStopsObj = z.object({
+  route_id: idSchema,
+  ordered_stop_ids: z.array(idSchema).min(1, 'Provide the new stop order'),
+});
+
+// Staff act on a stop from the route detail page. Same transitions as the public path.
+export const StopActionObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  action: z.enum(['deliver', 'skip', 'remove']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export const RouteIdObj = z.object({ route_id: idSchema });
+
+export const MintShareLinkObj = z.object({
+  route_id: idSchema,
+  regenerate: z.boolean().optional(),
+});
+
+// ---- Public volunteer path (token is the only credential) ------------------
+// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
+export const PublicStopActionObj = z.object({
+  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
+export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
+export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
+export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
+export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
+export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
+export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
+export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
+export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
+export type ReorderStopType = z.infer<typeof ReorderStopObj>;
+export type ReorderStopsType = z.infer<typeof ReorderStopsObj>;
+export type StopActionType = z.infer<typeof StopActionObj>;
+export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
+export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
+`````
+
 ## File: libs/common/src/lib/schemas/donations.schema.ts
 `````typescript
 import { z } from 'zod';
@@ -61842,6 +60975,152 @@ export const STRIPE_CONNECT_COUNTRY_CODES = STRIPE_CONNECT_COUNTRIES.map((c) => 
 ];
 export const stripeConnectCountrySchema = z.enum(STRIPE_CONNECT_COUNTRY_CODES);
 export type StripeConnectCountry = z.infer<typeof stripeConnectCountrySchema>;
+`````
+
+## File: libs/common/src/lib/schemas/events.schema.ts
+`````typescript
+import { z } from 'zod';
+import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
+
+const slugSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(
+    /^(?=.*[a-z])[a-z0-9-]+$/,
+    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
+  );
+
+export const AddEventObj = z.object({
+  /** Campaigns §15 — the context this event belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: nameSchema('Event name', 200),
+  description: descriptionSchema(2000),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
+  start_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'Start date & time is required' }),
+  ),
+  end_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'End date & time is required' }),
+  ),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  slug: slugSchema,
+  is_published: z.boolean().default(false).optional(),
+  send_reminder: z.boolean().default(true).optional(),
+  send_registration_confirmation: z.boolean().default(true).optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+export const EventObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  location_address: z.string().nullable().optional(),
+  start_time: z.coerce.date(),
+  end_time: z.coerce.date(),
+  capacity: z.number().nullable().optional(),
+  contact_email: z.string().nullable().optional(),
+  contact_phone: z.string().nullable().optional(),
+  slug: z.string(),
+  is_published: z.boolean(),
+  send_reminder: z.boolean(),
+  send_registration_confirmation: z.boolean(),
+});
+
+export const UpdateEventObj = z.object({
+  name: nameSchema('Event name', 200).optional(),
+  description: descriptionSchema(2000),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
+  start_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'Start date & time is required' }),
+    )
+    .optional(),
+  end_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'End date & time is required' }),
+    )
+    .optional(),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  slug: slugSchema.optional(),
+  is_published: z.boolean().optional(),
+  send_reminder: z.boolean().optional(),
+  send_registration_confirmation: z.boolean().optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+export const AddTicketTypeObj = z.object({
+  event_id: idSchema,
+  name: nameSchema('Ticket type name', 100),
+  description: descriptionSchema(500),
+  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
+  capacity: z.number().int().positive().nullable().optional(),
+  sort_order: z.number().int().min(0).default(0).optional(),
+});
+
+export const TicketTypeObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  event_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  price_cents: z.number(),
+  capacity: z.number().nullable().optional(),
+  sort_order: z.number(),
+});
+
+export const UpdateTicketTypeObj = z.object({
+  name: nameSchema('Ticket type name', 100).optional(),
+  description: descriptionSchema(500),
+  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
+  capacity: z.number().int().positive().nullable().optional(),
+  sort_order: z.number().int().min(0).optional(),
+});
+
+// Drag-to-reorder ticket types: the full new order of an event's ticket type ids. The backend
+// writes each id's sort_order to its index, so the order shown to attendees matches the form.
+export const ReorderTicketTypesObj = z.object({
+  event_id: idSchema,
+  ordered_ids: z.array(idSchema).min(1, 'Provide the new ticket order'),
+});
+
+const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
+
+export const AddRegistrationObj = z.object({
+  event_id: idSchema,
+  person_id: idSchema,
+  ticket_type_id: idSchema.nullable().optional(),
+  status: registrationStatusEnum.default('registered').optional(),
+  notes: notesSchema,
+});
+
+export const RegistrationObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  event_id: z.string(),
+  person_id: z.string(),
+  ticket_type_id: z.string().nullable().optional(),
+  status: registrationStatusEnum,
+  checked_in_at: z.coerce.date().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export const UpdateRegistrationObj = z.object({
+  ticket_type_id: idSchema.nullable().optional(),
+  status: registrationStatusEnum.optional(),
+  checked_in_at: z.coerce.date().nullable().optional(),
+  notes: notesSchema,
+});
 `````
 
 ## File: libs/common/src/lib/schemas/marketing.schema.ts
@@ -62024,6 +61303,174 @@ export const CreateClickersListResultObj = z.object({
 });
 `````
 
+## File: libs/common/src/lib/schemas/newsletter-templates.schema.ts
+`````typescript
+import { z } from 'zod';
+
+import { nameSchema } from './core.schema';
+
+/** Generous ceiling for a compiled email document (the presets are ~15 KB). */
+const MAX_TEMPLATE_HTML_LENGTH = 500_000;
+const MAX_TEMPLATE_TEXT_LENGTH = 200_000;
+
+/**
+ * Create payload for a user-saved newsletter template.
+ *
+ * html_content is deliberately NOT trimmed or transformed: the wizard stores the
+ * compiled document verbatim so the PPLCRM_VISUAL_BLOCKS_DATA comment survives
+ * the round-trip back into the visual editor. Emptiness is checked on the
+ * trimmed view only.
+ */
+export const AddNewsletterTemplateObj = z.object({
+  name: nameSchema('Name', 120),
+  html_content: z
+    .string()
+    .max(MAX_TEMPLATE_HTML_LENGTH)
+    .refine((value) => value.trim().length > 0, 'Template content is required'),
+  plain_text_content: z.string().max(MAX_TEMPLATE_TEXT_LENGTH).optional(),
+});
+
+/** Rename-only edit payload; the content of a saved template is immutable. */
+export const UpdateNewsletterTemplateObj = z.object({
+  name: nameSchema('Name', 120),
+});
+
+/** Read shape returned by newsletters.templates.getAll. */
+export const NewsletterTemplateObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  html_content: z.string(),
+  plain_text_content: z.string(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export type AddNewsletterTemplateType = z.infer<typeof AddNewsletterTemplateObj>;
+export type UpdateNewsletterTemplateType = z.infer<typeof UpdateNewsletterTemplateObj>;
+export type NewsletterTemplateType = z.infer<typeof NewsletterTemplateObj>;
+`````
+
+## File: libs/common/src/lib/schemas/tasks.schema.ts
+`````typescript
+import { z } from 'zod';
+import { nameSchema, notesSchema, idSchema } from './core.schema';
+
+/**
+ * Canonical task status vocabulary (spec §4). This is the single source of truth —
+ * every layer (DB check constraint, Zod schemas, backend queries, frontend board/list)
+ * derives from this list. Do not hand-roll a parallel status array anywhere.
+ *
+ * `waiting` replaces the old `blocked` name (board column is "Waiting", with an
+ * optional waiting-reason line on the card/row). `archived` absorbs the old `canceled`
+ * state — a canceled task is, in practice, a task nobody is coming back to, which is
+ * exactly what "archived" already means in this app (hidden from the active views,
+ * reachable via the grid's Archived toggle). See the 2026-07-07 migration that
+ * normalizes existing rows to this vocabulary.
+ */
+export const TASK_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'archived'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/** The four board columns (spec §4) — `archived` sits outside the active workflow. */
+export const TASK_BOARD_STATUSES = ['todo', 'in_progress', 'waiting', 'done'] as const;
+export type TaskBoardStatus = (typeof TASK_BOARD_STATUSES)[number];
+
+/** Statuses that count as "open" for SLA-breach and count-sentence purposes. */
+export const TASK_OPEN_STATUSES = ['todo', 'in_progress', 'waiting'] as const;
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: 'To do',
+  in_progress: 'In progress',
+  waiting: 'Waiting',
+  done: 'Done',
+  archived: 'Archived',
+};
+
+/** Type guard — narrows an unknown/loosely-typed status string to the canonical vocabulary. */
+export function isTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
+}
+
+/** Type guard for the four board columns specifically (excludes `archived`). */
+export function isTaskBoardStatus(value: unknown): value is TaskBoardStatus {
+  return typeof value === 'string' && (TASK_BOARD_STATUSES as readonly string[]).includes(value);
+}
+
+const taskStatusEnum = z.enum(TASK_STATUSES);
+const taskPriorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
+
+export const AddTaskObj = z.object({
+  name: nameSchema('Task name', 200),
+  details: z.string().trim().max(10000, 'Details too long').optional(),
+  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  status: taskStatusEnum.default('todo').optional(),
+  priority: taskPriorityEnum.optional(),
+  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  position: z.number().int().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  team_id: idSchema.or(z.literal('')).nullable().optional(),
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+});
+
+export const TasksObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  details: z.string().optional(),
+  due_at: z.coerce.date().optional(),
+  status: taskStatusEnum.nullable().optional(),
+  priority: taskPriorityEnum.nullable().optional(),
+  completed_at: z.coerce.date().optional(),
+  position: z.number().int().optional(),
+  assigned_to: z.string().nullable().optional(),
+  team_id: z.string().nullable().optional(),
+  person_id: z.string().nullable().optional(),
+});
+
+export const UpdateTaskObj = z.object({
+  name: nameSchema('Task name', 200).optional(),
+  details: notesSchema,
+  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  status: taskStatusEnum.optional(),
+  priority: taskPriorityEnum.optional(),
+  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  position: z.number().int().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  team_id: idSchema.or(z.literal('')).nullable().optional(),
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+});
+
+/**
+ * Board drag-and-drop persistence (spec §4). One drop touches one or two board
+ * columns: dragging within a column re-seats that single column; dragging across
+ * two columns re-seats the source and target. Each column lists its cards in the
+ * new top-to-bottom order — the backend writes `position = index` per id and sets
+ * every id's `status` to its column, all in one transaction. `archived` is not a
+ * board column, so only the four `TASK_BOARD_STATUSES` are accepted.
+ */
+export const ReorderTasksObj = z.object({
+  columns: z
+    .array(
+      z.object({
+        status: z.enum(TASK_BOARD_STATUSES),
+        ids: z.array(idSchema).min(1, 'A column must list at least one task').max(1000, 'Too many tasks in one column'),
+      }),
+    )
+    .min(1, 'At least one column is required')
+    .max(2, 'A single drop touches at most two columns'),
+});
+
+/** Subtask drag-to-reorder (task detail): the full ordered id list for one task. */
+export const ReorderSubtasksObj = z.object({
+  task_id: idSchema,
+  ids: z.array(idSchema).min(1, 'At least one subtask is required').max(1000, 'Too many subtasks'),
+});
+
+export type ReorderTasksType = z.infer<typeof ReorderTasksObj>;
+export type ReorderSubtasksType = z.infer<typeof ReorderSubtasksObj>;
+`````
+
 ## File: libs/common/src/lib/schemas/workflows.schema.ts
 `````typescript
 import { z } from 'zod';
@@ -62031,11 +61478,12 @@ import { queryBuilderNodeSchema } from './core.schema';
 
 // Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
 // backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
-// volunteer-events controller) but is not offered as a card. `date_arrives` and
-// `task_sla_breach` stay in the enum for saved-row back-compat but have no picker card:
-// no backend fires them yet, and a dead card is dishonest UI. `supporter_lapsed` is fired
-// by the daily detect_lapsed_supporters cron; its trigger_event_id holds the inactivity
-// threshold in days (default 90).
+// volunteer-events controller) but is not offered as a card. `date_arrives` stays in the
+// enum for saved-row back-compat but has no picker card: no backend fires it yet, and a
+// dead card is dishonest UI. `task_sla_breach` is fired by the hourly
+// detect_task_sla_breaches cron (spec §4 → §16), which enrolls the breached task's linked
+// person. `supporter_lapsed` is fired by the daily detect_lapsed_supporters cron; its
+// trigger_event_id holds the inactivity threshold in days (default 90).
 export const WORKFLOW_TRIGGER_TYPES = [
   'manual',
   'web_form_submitted',
@@ -62197,6 +61645,251 @@ export const WorkflowRunObj = z.object({
 });
 
 export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
+`````
+
+## File: libs/common/src/lib/models.ts
+`````typescript
+import type { z } from 'zod';
+
+import type {
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  AddTeamObj,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  EmailCommentObj,
+  EmailFolderObj,
+  EmailObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  NewsletterReportObj,
+  NewsletterReportBounceObj,
+  NewsletterReportEngagedObj,
+  NewsletterReportLinkObj,
+  NewsletterReportPreviousSendObj,
+  CreateClickersListResultObj,
+  EmailDraftObj,
+  PersonsObj,
+  SettingsEntryObj,
+  SettingsObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  ListsObj,
+  UpdateMarketingEmailObj,
+  UpdateListObj,
+  UpdateTaskObj,
+  UpdateTeamObj,
+  TasksObj,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  sortModelItem,
+  InviteAuthUserObj,
+  ProfilePreferencesObj,
+  UpdateAuthUserObj,
+  Verify2FAObj,
+  ImportListItemObj,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+} from './schema';
+
+export interface INow {
+  now: string;
+}
+
+export type AddTagType = z.infer<typeof AddTagObj>;
+
+export type EmailCommentType = z.infer<typeof EmailCommentObj>;
+
+export type EmailFolderType = z.infer<typeof EmailFolderObj>;
+
+export type EmailType = z.infer<typeof EmailObj>;
+
+export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
+
+export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
+
+export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
+
+export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
+
+export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
+
+export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
+
+export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
+
+export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
+
+export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
+
+export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
+
+export type EmailDraftType = z.infer<typeof EmailDraftObj>;
+
+export type ImportListItem = z.infer<typeof ImportListItemObj>;
+
+export type PERSONINHOUSEHOLDTYPE = {
+  first_name: string;
+  full_name: string;
+  id: string;
+  last_name: string;
+  middle_names: string;
+};
+
+export type PersonsType = z.infer<typeof PersonsObj>;
+
+export type SettingsType = z.infer<typeof SettingsObj>;
+
+export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
+
+export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
+
+export type SortModelType = z.infer<typeof sortModelItem>;
+
+export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
+
+export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
+
+export type UpdateTagType = z.infer<typeof UpdateTagObj>;
+
+export type getAllOptionsType = z.infer<typeof getAllOptions>;
+
+export type AddListType = z.infer<typeof AddListObj>;
+
+export type AddCampaignType = z.infer<typeof AddCampaignObj>;
+
+export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
+
+export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
+
+export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
+
+export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
+
+export type AddTeamType = z.infer<typeof AddTeamObj>;
+
+export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
+
+export type Verify2FAType = z.infer<typeof Verify2FAObj>;
+
+export type ListsType = z.infer<typeof ListsObj>;
+
+export type UpdateListType = z.infer<typeof UpdateListObj>;
+
+export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
+
+export type AddTurfType = z.infer<typeof AddTurfObj>;
+
+export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
+
+export type CutTurfsType = z.infer<typeof CutTurfsObj>;
+
+export type AssignTurfType = z.infer<typeof AssignTurfObj>;
+
+export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
+
+export type LogKnockType = z.infer<typeof LogKnockObj>;
+
+export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
+
+export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
+
+export type AddTaskType = z.infer<typeof AddTaskObj>;
+export type TasksType = z.infer<typeof TasksObj>;
+export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
+export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
+export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
+export type QueueExportInputType = z.infer<typeof queueExportInput>;
+export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
+export type DataExportRecordType = z.infer<typeof dataExportRecord>;
+
+export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
+export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
+export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
+
+export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
+export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
+export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
+
+export type AddWebFormType = z.infer<typeof AddWebFormObj>;
+export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
+export type WebFormsType = z.infer<typeof WebFormsObj>;
+export type CreateFormType = z.infer<typeof CreateFormObj>;
+export type UpdateFormType = z.infer<typeof UpdateFormObj>;
+export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
+
+export type WorkflowsType = z.infer<typeof WorkflowObj>;
+export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
+export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
+export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
+export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
+export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
+export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
+
+export type AddEventType = z.infer<typeof AddEventObj>;
+export type EventType = z.infer<typeof EventObj>;
+export type UpdateEventType = z.infer<typeof UpdateEventObj>;
+
+export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
+export type TicketTypeType = z.infer<typeof TicketTypeObj>;
+export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
+export type ReorderTicketTypesType = z.infer<typeof ReorderTicketTypesObj>;
+
+export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
+export type RegistrationType = z.infer<typeof RegistrationObj>;
+export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
+
+export type AddConnectionType = z.infer<typeof AddConnectionObj>;
+
+export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 `````
 
 ## File: libs/common/src/lib/preflight-lint.ts
@@ -62657,34 +62350,6 @@ export function computeScore(findings: PreflightFinding[]): number {
   const total = findings.reduce((sum, f) => sum + f.deduction, 0);
   return Math.max(0, Math.min(100, Math.round(100 - total)));
 }
-`````
-
-## File: libs/common/src/lib/schema.ts
-`````typescript
-export * from './schemas/core.schema';
-export * from './schemas/activity.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/newsletter-templates.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
-export * from './schemas/campaigns.schema';
-export * from './schemas/canvassing.schema';
-export * from './schemas/deliveries.schema';
-export * from './schemas/donations.schema';
-export * from './schemas/companion-access.schema';
-export * from './schemas/content-check.schema';
 `````
 
 ## File: libs/common/vite.config.ts
@@ -63475,6 +63140,7 @@ import type { Kysely } from 'kysely';
 import { env } from '../../../../env';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../../logger';
+import { NotificationsRepo } from '../../../modules/notifications/repositories/notifications.repo';
 import { notificationEnabled } from '../../profile-preferences';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
 import { SmsService } from '../../sms/sms.service';
@@ -63867,6 +63533,7 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
       .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
       .select([
         'tasks.id as task_id',
+        'tasks.tenant_id as tenant_id',
         'tasks.name as task_name',
         'tasks.due_at',
         'tasks.details',
@@ -63893,12 +63560,25 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
       userTasks.push(row);
     }
 
-    for (const [, tasks] of userTasksMap.entries()) {
+    const notificationsRepo = new NotificationsRepo();
+    for (const [userId, tasks] of userTasksMap.entries()) {
       const firstRow = tasks[0];
       if (!firstRow) continue;
       const userEmail = firstRow.user_email;
       const firstName = firstRow.first_name;
       const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
+      const inAppOptedIn = notificationEnabled(firstRow.profile_preferences, 'task_due_in_app');
+
+      if (inAppOptedIn) {
+        await notificationsRepo.pushNotification({
+          tenant_id: String(firstRow.tenant_id),
+          user_id: userId,
+          title: 'Tasks Due',
+          message: `You have ${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} due or overdue.`,
+          type: 'task',
+          link: '/tasks',
+        });
+      }
 
       if (optedIn && userEmail) {
         let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
@@ -64085,8 +63765,13 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
     html: z.string(),
     text: z.string(),
     unsubscribeUrl: z.string(),
+    // Present on jobs enqueued since quota moved to delivery-time metering: the handler logs
+    // the send into newsletter_send_log only when this is set (and the send succeeded). Absent
+    // on legacy jobs, which were already metered at enqueue time.
+    meterOnSend: z.boolean().optional(),
   }),
   z.object({ type: z.literal('detect_lapsed_supporters') }),
+  z.object({ type: z.literal('detect_task_sla_breaches') }),
   z.object({ type: z.literal('perform_scheduled_deletions') }),
 
   // ── Billing & integrations ───────────────────────────────────────────────
@@ -64204,6 +63889,9 @@ export class BackgroundJobWorker {
     );
     this.ensureLapsedSupportersJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure lapsed supporters job scheduled'),
+    );
+    this.ensureTaskSlaBreachesJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure task SLA breach scan scheduled'),
     );
     this.ensureWorkflowsJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure workflows job scheduled'),
@@ -64668,6 +64356,36 @@ export class BackgroundJobWorker {
     }
   }
 
+  private async ensureTaskSlaBreachesJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'detect_task_sla_breaches')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling hourly task SLA-breach scan background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'detect_task_sla_breaches' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure task SLA breach scan scheduled');
+    }
+  }
+
   /**
    * Fill every free slot in the worker pool with a claimer. Each claimer runs one job (or finds the
    * queue empty) and, on completion, schedules the next drain — so the pool stays topped up to
@@ -65072,8 +64790,25 @@ export class BackgroundJobWorker {
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../logger';
+import { NotificationsRepo } from '../../modules/notifications/repositories/notifications.repo';
 import { notificationEnabled } from '../profile-preferences';
 import { TransactionalEmailService } from './transactional-mail.service';
+
+/** In-app notification links are app-relative paths; comment links arrive absolute. */
+function toRelativeLink(link: string): string {
+  try {
+    const url = new URL(link);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return link;
+  }
+}
+
+/** The notification list clamps long messages; keep the quoted comment short. */
+function truncateComment(text: string, limit = 140): string {
+  const trimmed = text.trim();
+  return trimmed.length <= limit ? trimmed : `${trimmed.slice(0, limit)}…`;
+}
 
 export async function processMentions(
   db: Kysely<Models>,
@@ -65103,6 +64838,7 @@ export async function processMentions(
       .execute();
 
     const mailService = new TransactionalEmailService();
+    const notificationsRepo = new NotificationsRepo();
 
     // Map over matching users and send them notifications
     for (const user of users) {
@@ -65114,6 +64850,17 @@ export async function processMentions(
 
       // Match either @first_name or the email username prefix (e.g. @john)
       const isMentioned = matches.includes(firstNameLower) || matches.includes(emailPrefix);
+
+      if (isMentioned && notificationEnabled(user.profile_preferences, 'mention_in_comment_in_app')) {
+        await notificationsRepo.pushNotification({
+          tenant_id: tenantId,
+          user_id: userIdStr,
+          title: 'Mentioned in a Comment',
+          message: `You were mentioned in a comment: "${truncateComment(commentText)}"`,
+          type: 'mention',
+          link: toRelativeLink(commentLink),
+        });
+      }
 
       if (isMentioned && user.email) {
         if (notificationEnabled(user.profile_preferences, 'mention_in_comment')) {
@@ -65399,406 +65146,6 @@ export class SmsService {
 }
 `````
 
-## File: apps/backend/src/app/lib/base.controller.ts
-`````typescript
-import { TRPCError } from '@trpc/server';
-
-import type {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  getAllOptionsType,
-} from '../../../../../libs/common/src';
-import { env } from '../../env';
-import { logger } from '../logger';
-
-import type { ReferenceExpression, Transaction } from 'kysely';
-
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
-import type { BaseRepository, QueryParams } from './base.repo';
-import { rowsToCsv } from './csv';
-import { notificationEnabled } from './profile-preferences';
-import type { UserActivityType } from './user-activity.repo';
-import { UserActivityRepo } from './user-activity.repo';
-import { TransactionalEmailService } from './mail/transactional-mail.service';
-
-// The inline exportCsv path buffers the whole result set plus the built CSV string in memory and
-// returns it in a single tRPC response, so it must be bounded — a large tenant would otherwise spike
-// backend memory or stall the event loop (SECURITY-REVIEW.md 3.2). Anything past this cap has to go
-// through the queued/streamed background export (ExportsController.queueExport), which writes to
-// storage instead of buffering. Kept generous so ordinary exports are unaffected.
-const MAX_INLINE_EXPORT_ROWS = 50_000;
-
-/** Refuse an oversized inline export with an actionable message pointing at the background export. */
-function assertInlineExportWithinCap(rowCount: number): void {
-  if (rowCount > MAX_INLINE_EXPORT_ROWS) {
-    throw new TRPCError({
-      code: 'PAYLOAD_TOO_LARGE',
-      message: `This export is too large for a direct download (over ${MAX_INLINE_EXPORT_ROWS.toLocaleString()} rows). Use the background export to have it prepared as a downloadable file.`,
-    });
-  }
-}
-
-export class BaseController<T extends keyof Models, R extends BaseRepository<T>> {
-  protected readonly userActivity = new UserActivityRepo();
-
-  constructor(private repo: R) {}
-
-  private getEntityLabel(tableName: string, rowObj: any): string {
-    if (!rowObj) return '';
-    if (tableName === 'tasks') {
-      return String(rowObj['name'] || '');
-    }
-    if (tableName === 'persons') {
-      return `${rowObj['first_name'] || ''} ${rowObj['last_name'] || ''}`.trim();
-    }
-    if (tableName === 'households') {
-      const streetParts = [
-        rowObj['apt'] ? `Apt ${rowObj['apt']}` : null,
-        rowObj['street_num'],
-        rowObj['street1'],
-        rowObj['street2'],
-      ].filter(Boolean);
-      const locationParts = [rowObj['city'], rowObj['state'], rowObj['zip']].filter(Boolean);
-      return [streetParts.join(' '), locationParts.join(', ')].filter(Boolean).join(', ').trim() || 'Household';
-    }
-    if (tableName === 'emails') {
-      return String(rowObj['subject'] || '');
-    }
-    return String(rowObj['name'] || rowObj['subject'] || rowObj['title'] || '');
-  }
-
-  public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
-    const result = await this.repo.add({ row }, trx);
-    try {
-      const rowObj = row as Record<string, unknown>;
-      const actor = rowObj['createdby_id'];
-      const tenant = rowObj['tenant_id'];
-      if (actor != null && tenant != null) {
-        const resultObj = result as Record<string, unknown> | undefined;
-        const resultId = resultObj && 'id' in resultObj ? String(resultObj['id']) : null;
-        const metadata: Record<string, unknown> = resultId ? { id: resultId } : {};
-        if (resultObj) {
-          const tableName = String(this.repo.getTableName());
-          metadata['entity_label'] = this.getEntityLabel(tableName, resultObj);
-        }
-        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
-          metadata['task_name'] = String(resultObj['name']);
-        }
-        await this.userActivity.log(
-          {
-            tenant_id: String(tenant),
-            user_id: String(actor),
-            activity: 'create',
-            entity: String(this.repo.getTableName()),
-            entity_id: resultId,
-            quantity: 1,
-            metadata,
-          },
-          trx,
-        );
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log create activity');
-    }
-    return result;
-  }
-
-  public async addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
-    const result = await this.repo.addMany({ rows }, trx);
-    try {
-      const firstRow = rows[0];
-      if (firstRow) {
-        const rowObj = firstRow as Record<string, unknown>;
-        const actor = rowObj['createdby_id'];
-        const tenant = rowObj['tenant_id'];
-        if (actor != null && tenant != null) {
-          await this.userActivity.log(
-            {
-              tenant_id: String(tenant),
-              user_id: String(actor),
-              activity: 'create',
-              entity: String(this.repo.getTableName()),
-              quantity: rows.length,
-              metadata: { count: rows.length },
-            },
-            trx,
-          );
-        }
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log addMany activity');
-    }
-    return result;
-  }
-
-  public async delete(tenant_id: TypeTenantId<T>, idToDelete: string, userId?: string) {
-    const result = await this.repo.delete({
-      tenant_id,
-      id: idToDelete,
-    });
-    try {
-      if (userId != null) {
-        await this.userActivity.log({
-          tenant_id: String(tenant_id),
-          user_id: String(userId),
-          activity: 'delete',
-          entity: String(this.repo.getTableName()),
-          entity_id: idToDelete ? String(idToDelete) : null,
-          quantity: 1,
-          metadata: { id: idToDelete },
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log delete activity');
-    }
-    return result;
-  }
-
-  public deleteMany(tenant_id: TypeTenantId<T>, idsToDelete: string[]) {
-    return this.repo.deleteMany({
-      ids: idsToDelete,
-      tenant_id,
-    });
-  }
-
-  public find(input: { tenant_id: string; key: string; column: ReferenceExpression<Models, T> }) {
-    return this.repo.find({
-      tenant_id: input.tenant_id,
-      key: input.key,
-      column: input.column,
-    });
-  }
-
-  public getAll(tenant: string, options?: getAllOptionsType) {
-    return this.repo.getAll({
-      tenant_id: tenant,
-      options: options as QueryParams<T>,
-    });
-  }
-
-  public getAllWithCounts(tenant: string, options?: getAllOptionsType) {
-    return this.getRepo().getAllWithCounts({
-      tenant_id: tenant,
-      options: options as QueryParams<any>,
-    });
-  }
-
-  public getCount(tenant_id: string) {
-    return this.repo.count(tenant_id);
-  }
-
-  public getOneById(input: { tenant_id: string; id: string }) {
-    return this.repo.getOneById({ id: input.id, tenant_id: input.tenant_id });
-  }
-
-  public async update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
-    let original: Record<string, unknown> | undefined;
-    try {
-      original = (await this.repo.getOneById({ id: input.id, tenant_id: input.tenant_id })) as
-        | Record<string, unknown>
-        | undefined;
-    } catch (err) {
-      logger.error({ err }, 'Failed to fetch original record for activity log');
-    }
-    const result = await this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
-    try {
-      const rowObj = input.row as Record<string, unknown>;
-      const actor = rowObj['updatedby_id'];
-      if (actor != null) {
-        const metadata: Record<string, unknown> = { id: input.id };
-        const resultObj = result as Record<string, unknown> | undefined;
-        if (original && resultObj) {
-          const skipKeys = [
-            'id',
-            'tenant_id',
-            'createdby_id',
-            'updatedby_id',
-            'created_at',
-            'updated_at',
-            'address_fp_street',
-            'address_fp_full',
-            'password',
-            'password_reset_code',
-            'password_reset_code_created_at',
-          ];
-          const changes: Record<string, unknown> = {};
-          for (const key of Object.keys(rowObj)) {
-            if (skipKeys.includes(key)) continue;
-            const oldVal = original[key];
-            const newVal = resultObj[key];
-            if (oldVal !== newVal) {
-              changes[key] = { from: oldVal ?? null, to: newVal ?? null };
-            }
-          }
-          metadata['changes'] = changes;
-          metadata['entity_label'] = this.getEntityLabel(String(this.repo.getTableName()), resultObj);
-        }
-        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
-          metadata['task_name'] = String(resultObj['name']);
-        }
-        let activity: UserActivityType = 'update';
-        if (String(this.repo.getTableName()) === 'tasks' && 'due_at' in rowObj) {
-          metadata['action'] = 'change_due_date';
-          metadata['due_at'] = rowObj['due_at'];
-        }
-        if (String(this.repo.getTableName()) === 'tasks' && 'assigned_to' in rowObj) {
-          const assigneeId = rowObj['assigned_to'];
-          if (assigneeId == null || assigneeId === '') {
-            activity = 'unassign';
-          } else {
-            activity = 'assign';
-            try {
-              const assignee = await this.repo.db
-                .selectFrom('authusers')
-                .select(['first_name', 'last_name'])
-                .where('id', '=', String(assigneeId))
-                .executeTakeFirst();
-              if (assignee) {
-                metadata['assigned_to_name'] = `${assignee.first_name} ${assignee.last_name || ''}`.trim();
-              }
-            } catch (err) {
-              logger.error({ err }, 'Failed to look up assignee name');
-            }
-          }
-        }
-        await this.userActivity.log({
-          tenant_id: String(input.tenant_id),
-          user_id: String(actor),
-          activity: activity,
-          entity: String(this.repo.getTableName()),
-          entity_id: input.id ? String(input.id) : null,
-          quantity: 1,
-          metadata,
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log update activity');
-    }
-    return result;
-  }
-
-  protected getRepo() {
-    return this.repo;
-  }
-
-  public async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    const options = (input?.options ?? {}) as QueryParams<T>;
-    // Fetch one past the cap so an oversized export is detected and refused (below) instead of
-    // pulling an unbounded table into memory. An explicit limit wins over any derived paging.
-    const cappedOptions = { ...options, limit: MAX_INLINE_EXPORT_ROWS + 1 } as QueryParams<T>;
-    const rows = await this.repo.getAll({ tenant_id: input.tenant_id, options: cappedOptions });
-    assertInlineExportWithinCap(rows.length);
-    const records = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
-    const response = this.buildCsvResponse(records, input) as {
-      csv: string;
-      fileName: string;
-      columns: string[];
-      rowCount: number;
-    };
-
-    if (auth) {
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'export',
-          entity: String(this.repo.getTableName()),
-          quantity: response.rowCount,
-          metadata: {
-            requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-            returned_columns: response.columns.slice(0, 12),
-            file_name: response.fileName,
-          },
-        });
-
-        const user = await this.repo.db
-          .selectFrom('authusers')
-          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-          .select(['authusers.email', 'profiles.preferences as profile_preferences'])
-          .where('authusers.id', '=', auth.user_id)
-          .executeTakeFirst();
-        if (user && user.email) {
-          if (notificationEnabled(user.profile_preferences, 'export_ready')) {
-            const mailService = new TransactionalEmailService();
-            await mailService.sendMail({
-              to: user.email,
-              subject: `Your export is ready: ${response.fileName}`,
-              text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile name: ${response.fileName}\nDownload it here: ${env.appUrl}/downloads/${response.fileName}`,
-              html: `<h2>Your export is ready</h2>
-<p>Hi ${auth.name},</p>
-<p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p>
-<div class="panel"><p><strong>File name:</strong> ${response.fileName}</p></div>
-<div class="btn-container">
-  <a href="${env.appUrl}/downloads/${response.fileName}" class="btn">Download CSV</a>
-</div>`,
-            });
-          }
-        }
-      } catch (err) {
-        // Logging failures should never break export flow; swallow silently
-        logger.error({ err }, 'Failed to log export activity or send email alert');
-      }
-    }
-
-    return response;
-  }
-
-  protected buildCsvResponse(
-    rows: Array<Record<string, unknown>>,
-    input: ExportCsvInputType & { tenant_id: string },
-  ): ExportCsvResponseType {
-    const requestedColumns = Array.isArray(input?.columns)
-      ? (input.columns.filter((c): c is string => Boolean(c)) ?? [])
-      : [];
-    const columns = requestedColumns.length
-      ? requestedColumns
-      : rows.length > 0
-        ? Object.keys(rows[0] as Record<string, unknown>)
-        : [];
-    const fileName = input?.fileName?.trim() || `${String(this.repo.getTableName())}-export.csv`;
-    // Shared safety net for override paths (persons/households/etc.) that fetch rows themselves:
-    // never build an oversized CSV string inline — steer them to the background export too.
-    assertInlineExportWithinCap(rows.length);
-    const csv = columns.length ? rowsToCsv(rows as Array<Record<string, unknown>>, columns) : '';
-    return {
-      csv,
-      columns,
-      fileName,
-      rowCount: rows.length,
-    };
-  }
-
-  protected async resolveCreatorAndUpdater(tenantId: string, record: any, trx?: Transaction<Models>) {
-    if (!record) return record;
-    const db = trx ?? this.repo.db;
-    const userIds: string[] = [record.createdby_id, record.updatedby_id].filter(Boolean);
-    if (userIds.length === 0) return record;
-
-    const users = await db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('id', 'in', userIds)
-      .where('tenant_id', '=', tenantId)
-      .execute();
-
-    const userMap: Record<string, string> = {};
-    for (const u of users) {
-      userMap[String(u.id)] = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || 'Unknown User';
-    }
-
-    return {
-      ...record,
-      created_by_name: record.createdby_id ? (userMap[String(record.createdby_id)] ?? 'Unknown User') : null,
-      updated_by_name: record.updatedby_id ? (userMap[String(record.updatedby_id)] ?? 'Unknown User') : null,
-    };
-  }
-}
-`````
-
 ## File: apps/backend/src/app/modules/auth/repositories/authusers.repo.ts
 `````typescript
 import type { SelectQueryBuilder, Transaction, UpdateResult } from 'kysely';
@@ -66046,1036 +65393,1009 @@ export const CompanionAccessRouter = router({
 });
 `````
 
-## File: apps/backend/src/app/modules/dashboard/controller.ts
+## File: apps/backend/src/app/modules/deliveries/trpc.router.ts
 `````typescript
-import { BaseRepository } from '../../lib/base.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import { sql } from 'kysely';
-import { calculateWorkingTimeMs, TASK_OPEN_STATUSES } from '../../../../../../libs/common/src';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-
-export class DashboardController {
-  private get db() {
-    return BaseRepository.dbInstance;
-  }
-
-  public async getStats(auth: IAuthKeyPayload) {
-    const tenant_id = auth.tenant_id;
-
-    // Fetch SLA settings
-    const settingsRepo = new SettingsRepo();
-    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
-    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n));
-    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
-    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
-
-    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
-    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
-
-    // 1. Fetch all users in the tenant
-    const users = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    // 2. Fetch all inbox emails for this tenant (folder_id '11' is Inbox)
-    const inboxEmails = await this.db
-      .selectFrom('emails')
-      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '11')
-      .execute();
-
-    // 2.3 Fetch all tasks for this tenant
-    const tasks = await this.db
-      .selectFrom('tasks')
-      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    // 2.5 Fetch all close activities for emails in this tenant to determine who closed them
-    const closeActivities = await this.db
-      .selectFrom('user_activity')
-      .select(['entity_id', 'user_id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('activity', '=', 'close')
-      .where('entity', 'in', ['email', 'emails'])
-      .orderBy('created_at', 'asc')
-      .execute();
-
-    const closerMap = new Map<string, string>();
-    for (const act of closeActivities) {
-      if (act.entity_id) {
-        closerMap.set(String(act.entity_id), String(act.user_id));
-      }
-    }
-
-    // 3. Fetch earliest comment times grouped by email_id
-    const earliestComments = await this.db
-      .selectFrom('email_comments')
-      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email_id')
-      .execute();
-    const commentMap = new Map<string, number>(
-      earliestComments
-        .filter((c) => c.email_id && c.earliest_comment_at)
-        .map((c) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
-    );
-
-    // 4. Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
-    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
-    const sentRecipients = await this.db
-      .selectFrom('email_recipients')
-      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
-      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
-      .where('email_recipients.tenant_id', '=', tenant_id)
-      .where('emails.tenant_id', '=', tenant_id)
-      .where('email_recipients.kind', '=', 'to')
-      .where('emails.folder_id', '=', '3')
-      .orderBy('emails.created_at', 'asc')
-      .execute();
-
-    const sentMap = new Map<string, number[]>();
-    for (const sent of sentRecipients) {
-      const e = String(sent.email).toLowerCase().trim();
-      if (!e) continue;
-      let list = sentMap.get(e);
-      if (!list) {
-        list = [];
-        sentMap.set(e, list);
-      }
-      list.push(new Date(sent.created_at).getTime());
-    }
-
-    // Initialize user stats map
-    const userStatsMap: Record<
-      string,
-      {
-        user_id: string;
-        first_name: string;
-        last_name: string;
-        openCount: number;
-        closedCount: number;
-        totalResponseTimeMs: number;
-        responseCount: number;
-        totalTimeToCloseMs: number;
-        timeToCloseCount: number;
-        slaBreaches: number;
-        emailSlaBreaches: number;
-        taskSlaBreaches: number;
-      }
-    > = {};
-
-    for (const u of users) {
-      userStatsMap[u.id] = {
-        user_id: u.id,
-        first_name: u.first_name || '',
-        last_name: u.last_name || '',
-        openCount: 0,
-        closedCount: 0,
-        totalResponseTimeMs: 0,
-        responseCount: 0,
-        totalTimeToCloseMs: 0,
-        timeToCloseCount: 0,
-        slaBreaches: 0,
-        emailSlaBreaches: 0,
-        taskSlaBreaches: 0,
-      };
-    }
-
-    let globalTotalResponseTimeMs = 0;
-    let globalResponseCount = 0;
-    let globalTotalTimeToCloseMs = 0;
-    let globalTimeToCloseCount = 0;
-    let unassignedCount = 0;
-    let unassignedSlaBreaches = 0;
-    let unassignedEmailSlaBreaches = 0;
-    let unassignedTaskSlaBreaches = 0;
-
-    const breachedEmailsList: Array<{
-      id: string;
-      from_email: string | null;
-      subject: string | null;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const breachedTasksList: Array<{
-      id: string;
-      name: string;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const nowMs = Date.now();
-
-    for (const email of inboxEmails) {
-      const assignedUser = (email.assigned_to && userStatsMap[email.assigned_to]) || null;
-
-      // Determine who closed the email (with fallback to assignee)
-      const closerId =
-        email.status === 'closed'
-          ? closerMap.get(String(email.id)) || (email.assigned_to != null ? String(email.assigned_to) : null)
-          : null;
-      const closerUser = closerId && userStatsMap[closerId] ? userStatsMap[closerId] : null;
-
-      // Track open/closed counts
-      if (email.status === 'open') {
-        if (assignedUser) {
-          assignedUser.openCount++;
-        } else {
-          unassignedCount++;
-        }
-      } else if (email.status === 'closed') {
-        if (closerUser) {
-          closerUser.closedCount++;
-        }
-      }
-
-      // Time to close calculation
-      if (email.status === 'closed') {
-        const closeDiff = new Date(email.updated_at).getTime() - new Date(email.created_at).getTime();
-        if (closeDiff > 0) {
-          globalTotalTimeToCloseMs += closeDiff;
-          globalTimeToCloseCount++;
-          if (closerUser) {
-            closerUser.totalTimeToCloseMs += closeDiff;
-            closerUser.timeToCloseCount++;
-          }
-        }
-      }
-
-      // First response calculation
-      const commentTime = commentMap.get(email.id) || null;
-      let outboundTime: number | null = null;
-      if (email.from_email) {
-        const fromEmailClean = email.from_email.toLowerCase().trim();
-        const sentTimes = sentMap.get(fromEmailClean);
-        if (sentTimes) {
-          const emailCreatedTime = new Date(email.created_at).getTime();
-          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
-          if (firstSentAfter) {
-            outboundTime = firstSentAfter;
-          }
-        }
-      }
-
-      let firstResponseTime: number | null = null;
-      if (commentTime && outboundTime) {
-        firstResponseTime = Math.min(commentTime, outboundTime);
-      } else if (commentTime) {
-        firstResponseTime = commentTime;
-      } else if (outboundTime) {
-        firstResponseTime = outboundTime;
-      }
-
-      if (firstResponseTime) {
-        const respDiff = firstResponseTime - new Date(email.created_at).getTime();
-        if (respDiff > 0) {
-          globalTotalResponseTimeMs += respDiff;
-          globalResponseCount++;
-          if (assignedUser) {
-            assignedUser.totalResponseTimeMs += respDiff;
-            assignedUser.responseCount++;
-          }
-        }
-      }
-
-      // SLA Breach calculation: Open inbox email older than target in working hours
-      if (email.status === 'open') {
-        const workingTimeMs = calculateWorkingTimeMs(
-          new Date(email.created_at),
-          new Date(nowMs),
-          workingDays,
-          workingHoursStart,
-          workingHoursEnd,
-        );
-        if (workingTimeMs > emailSlaMs && !firstResponseTime) {
-          if (assignedUser) {
-            assignedUser.emailSlaBreaches++;
-            assignedUser.slaBreaches++; // for backward compatibility
-          } else {
-            unassignedEmailSlaBreaches++;
-            unassignedSlaBreaches++; // for backward compatibility
-          }
-          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
-          breachedEmailsList.push({
-            id: String(email.id),
-            from_email: email.from_email,
-            subject: email.subject || null,
-            created_at: email.created_at,
-            assigned_to: email.assigned_to,
-            assignee_name: assigneeName,
-            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-          });
-        }
-      }
-    }
-
-    // Calculate Task SLA Breaches
-    for (const task of tasks) {
-      const isOpenTask = task.status && (TASK_OPEN_STATUSES as readonly string[]).includes(task.status);
-      if (isOpenTask) {
-        const workingTimeMs = calculateWorkingTimeMs(
-          new Date(task.created_at),
-          new Date(nowMs),
-          workingDays,
-          workingHoursStart,
-          workingHoursEnd,
-        );
-        if (workingTimeMs > taskSlaMs) {
-          const assignedUser = (task.assigned_to && userStatsMap[task.assigned_to]) || null;
-          if (assignedUser) {
-            assignedUser.taskSlaBreaches++;
-          } else {
-            unassignedTaskSlaBreaches++;
-          }
-          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
-          breachedTasksList.push({
-            id: String(task.id),
-            name: task.name,
-            created_at: task.created_at,
-            assigned_to: task.assigned_to,
-            assignee_name: assigneeName,
-            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-          });
-        }
-      }
-    }
-
-    const avgFirstResponseHours =
-      globalResponseCount > 0 ? globalTotalResponseTimeMs / globalResponseCount / (1000 * 60 * 60) : 0;
-    const avgTimeToCloseHours =
-      globalTimeToCloseCount > 0 ? globalTotalTimeToCloseMs / globalTimeToCloseCount / (1000 * 60 * 60) : 0;
-
-    // 5. Contacts Growth (Last 30 days)
-    const growthRows = await this.db
-      .selectFrom('persons')
-      .select([sql<string>`date_trunc('day', created_at)`.as('day'), sql<number>`count(id)`.as('count')])
-      .where('tenant_id', '=', tenant_id)
-      .where('created_at', '>=', sql<Date>`now() - interval '30 days'`)
-      .groupBy(sql`date_trunc('day', created_at)`)
-      .orderBy(sql`date_trunc('day', created_at)`, 'asc')
-      .execute();
-
-    const contactsGrowth = growthRows.map((r) => ({
-      date: r.day ? (new Date(r.day).toISOString().split('T')[0] ?? '') : '',
-      count: Number(r.count || 0),
-    }));
-
-    // 5.1 Oldest unassigned open inbox email → drives the "waiting for an owner" next-action card
-    // (age since arrival + how long until the first-response SLA is due, in working time).
-    let oldestUnassignedCreatedAt: Date | null = null;
-    for (const email of inboxEmails) {
-      if (email.status === 'open' && email.assigned_to == null) {
-        const created = new Date(email.created_at);
-        if (!oldestUnassignedCreatedAt || created < oldestUnassignedCreatedAt) {
-          oldestUnassignedCreatedAt = created;
-        }
-      }
-    }
-    let oldestUnassignedAgeHours: number | null = null;
-    let firstResponseDueHours: number | null = null;
-    if (oldestUnassignedCreatedAt) {
-      oldestUnassignedAgeHours = (nowMs - oldestUnassignedCreatedAt.getTime()) / (1000 * 60 * 60);
-      const workedMs = calculateWorkingTimeMs(
-        oldestUnassignedCreatedAt,
-        new Date(nowMs),
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-      firstResponseDueHours = Math.max(0, (emailSlaMs - workedMs) / (1000 * 60 * 60));
-    }
-
-    // 5.2 Latest unsent (draft) newsletter → "ready to send" next-action card + briefing clause.
-    const draftRow = await this.db
-      .selectFrom('newsletters')
-      .select(['id', 'name', 'total_recipients'])
-      .where('tenant_id', '=', tenant_id)
-      .where('status', '=', 'pending')
-      .orderBy('updated_at', 'desc')
-      .limit(1)
-      .executeTakeFirst();
-    const draftNewsletter = draftRow
-      ? { id: String(draftRow.id), name: draftRow.name, total_recipients: Number(draftRow.total_recipients || 0) }
-      : null;
-
-    // 5.3 Upcoming volunteer events → "coming up" list (real rows only; empty state otherwise).
-    const upcomingRows = await this.db
-      .selectFrom('volunteer_events')
-      .select(['id', 'name', 'start_time', 'capacity', 'location_address'])
-      .where('tenant_id', '=', tenant_id)
-      .where('start_time', '>=', new Date(nowMs))
-      .orderBy('start_time', 'asc')
-      .limit(3)
-      .execute();
-    const upcomingEvents = upcomingRows.map((e) => ({
-      id: String(e.id),
-      name: e.name,
-      start_time: new Date(e.start_time).toISOString(),
-      capacity: e.capacity == null ? null : Number(e.capacity),
-      location_address: e.location_address ?? null,
-    }));
-
-    // Build backward-compatible emailsAssigned
-    const emailsAssigned = Object.values(userStatsMap)
-      .filter((u) => u.openCount > 0)
-      .map((u) => ({
-        user_id: u.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        count: u.openCount,
-      }));
-
-    // Build backward-compatible emailsClosed
-    const emailsClosed = Object.values(userStatsMap)
-      .filter((u) => u.closedCount > 0)
-      .map((u) => ({
-        user_id: u.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        count: u.closedCount,
-      }));
-
-    // Map user stats for representative stats table
-    const userStats = Object.values(userStatsMap).map((u) => {
-      const totalHandled = u.openCount + u.closedCount;
-      const resolutionRate = totalHandled > 0 ? Math.round((u.closedCount / totalHandled) * 100) : 0;
-      const avgFirstResponse = u.responseCount > 0 ? u.totalResponseTimeMs / u.responseCount / (1000 * 60 * 60) : 0;
-      const avgTimeToClose = u.timeToCloseCount > 0 ? u.totalTimeToCloseMs / u.timeToCloseCount / (1000 * 60 * 60) : 0;
-
-      return {
-        user_id: u.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        openCount: u.openCount,
-        closedCount: u.closedCount,
-        resolutionRate,
-        avgFirstResponseHours: avgFirstResponse,
-        avgTimeToCloseHours: avgTimeToClose,
-        slaBreaches: u.slaBreaches,
-        emailSlaBreaches: u.emailSlaBreaches,
-        taskSlaBreaches: u.taskSlaBreaches,
-      };
-    });
-
-    const totalOpenCount = unassignedCount + Object.values(userStatsMap).reduce((acc, cur) => acc + cur.openCount, 0);
-
-    return {
-      avgFirstResponseHours,
-      avgTimeToCloseHours,
-      emailsAssigned,
-      emailsClosed,
-      contactsGrowth,
-      unassignedCount,
-      totalOpenCount,
-      userStats,
-      oldestUnassignedAgeHours,
-      firstResponseDueHours,
-      draftNewsletter,
-      upcomingEvents,
-      unassignedSlaBreaches,
-      unassignedEmailSlaBreaches,
-      unassignedTaskSlaBreaches,
-      breachedEmailsList: [],
-      breachedTasksList: [],
-      taskSlaHours,
-      emailSlaHours,
-      emailSlaWarningThreshold: Number(settingsMap['sla.email_warning_threshold'] ?? 1),
-      emailSlaCriticalThreshold: Number(settingsMap['sla.email_critical_threshold'] ?? 4),
-      taskSlaWarningThreshold: Number(settingsMap['sla.task_warning_threshold'] ?? 1),
-      taskSlaCriticalThreshold: Number(settingsMap['sla.task_critical_threshold'] ?? 4),
-    };
-  }
-
-  public async getBreachedEmails(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
-    const tenant_id = auth.tenant_id;
-    const { page, limit } = input;
-    const offset = (page - 1) * limit;
-
-    // Fetch SLA settings
-    const settingsRepo = new SettingsRepo();
-    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n));
-    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
-    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
-
-    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
-
-    // Fetch all users in the tenant
-    const users = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
-    }
-
-    // Fetch all open inbox emails (folder_id '11' is Inbox, status 'open')
-    const openInboxEmails = await this.db
-      .selectFrom('emails')
-      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '11')
-      .where('status', '=', 'open')
-      .execute();
-
-    // Fetch earliest comment times grouped by email_id
-    const earliestComments = await this.db
-      .selectFrom('email_comments')
-      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email_id')
-      .execute();
-    const commentMap = new Map<string, number>(
-      earliestComments
-        .filter((c) => c.email_id && c.earliest_comment_at)
-        .map((c) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
-    );
-
-    // Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
-    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
-    const sentRecipients = await this.db
-      .selectFrom('email_recipients')
-      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
-      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
-      .where('email_recipients.tenant_id', '=', tenant_id)
-      .where('emails.tenant_id', '=', tenant_id)
-      .where('email_recipients.kind', '=', 'to')
-      .where('emails.folder_id', '=', '3')
-      .orderBy('emails.created_at', 'asc')
-      .execute();
-
-    const sentMap = new Map<string, number[]>();
-    for (const sent of sentRecipients) {
-      const e = String(sent.email).toLowerCase().trim();
-      if (!e) continue;
-      let list = sentMap.get(e);
-      if (!list) {
-        list = [];
-        sentMap.set(e, list);
-      }
-      list.push(new Date(sent.created_at).getTime());
-    }
-
-    const breachedEmailsList: Array<{
-      id: string;
-      from_email: string | null;
-      subject: string | null;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const nowMs = Date.now();
-
-    for (const email of openInboxEmails) {
-      // First response calculation
-      const commentTime = commentMap.get(email.id) || null;
-      let outboundTime: number | null = null;
-      if (email.from_email) {
-        const fromEmailClean = email.from_email.toLowerCase().trim();
-        const sentTimes = sentMap.get(fromEmailClean);
-        if (sentTimes) {
-          const emailCreatedTime = new Date(email.created_at).getTime();
-          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
-          if (firstSentAfter) {
-            outboundTime = firstSentAfter;
-          }
-        }
-      }
-
-      let firstResponseTime: number | null = null;
-      if (commentTime && outboundTime) {
-        firstResponseTime = Math.min(commentTime, outboundTime);
-      } else if (commentTime) {
-        firstResponseTime = commentTime;
-      } else if (outboundTime) {
-        firstResponseTime = outboundTime;
-      }
-
-      const workingTimeMs = calculateWorkingTimeMs(
-        new Date(email.created_at),
-        new Date(nowMs),
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-
-      if (workingTimeMs > emailSlaMs && !firstResponseTime) {
-        const assigneeName = email.assigned_to ? userMap.get(email.assigned_to) || null : null;
-        breachedEmailsList.push({
-          id: String(email.id),
-          from_email: email.from_email,
-          subject: email.subject || null,
-          created_at: email.created_at,
-          assigned_to: email.assigned_to,
-          assignee_name: assigneeName,
-          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-        });
-      }
-    }
-
-    breachedEmailsList.sort((a, b) => b.working_time_hours - a.working_time_hours);
-
-    const totalCount = breachedEmailsList.length;
-    const items = breachedEmailsList.slice(offset, offset + limit);
-
-    return {
-      items,
-      totalCount,
-      hasMore: offset + limit < totalCount,
-    };
-  }
-
-  public async getBreachedTasks(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
-    const tenant_id = auth.tenant_id;
-    const { page, limit } = input;
-    const offset = (page - 1) * limit;
-
-    // Fetch SLA settings
-    const settingsRepo = new SettingsRepo();
-    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n));
-    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
-    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
-
-    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
-
-    // Fetch all users in the tenant
-    const users = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
-    }
-
-    // Fetch open tasks for this tenant
-    const openTasks = await this.db
-      .selectFrom('tasks')
-      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .where('status', 'in', [...TASK_OPEN_STATUSES])
-      .execute();
-
-    const breachedTasksList: Array<{
-      id: string;
-      name: string;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const nowMs = Date.now();
-
-    for (const task of openTasks) {
-      const workingTimeMs = calculateWorkingTimeMs(
-        new Date(task.created_at),
-        new Date(nowMs),
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-      if (workingTimeMs > taskSlaMs) {
-        const assigneeName = task.assigned_to ? userMap.get(task.assigned_to) || null : null;
-        breachedTasksList.push({
-          id: String(task.id),
-          name: task.name,
-          created_at: task.created_at,
-          assigned_to: task.assigned_to,
-          assignee_name: assigneeName,
-          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-        });
-      }
-    }
-
-    breachedTasksList.sort((a, b) => b.working_time_hours - a.working_time_hours);
-
-    const totalCount = breachedTasksList.length;
-    const items = breachedTasksList.slice(offset, offset + limit);
-
-    return {
-      items,
-      totalCount,
-      hasMore: offset + limit < totalCount,
-    };
-  }
-}
+import {
+  AddDeliveryRequestObj,
+  AssignVolunteerObj,
+  CommitDeliveriesObj,
+  GetSignStatusObj,
+  MintShareLinkObj,
+  PlanDeliveriesObj,
+  ReorderStopObj,
+  ReorderStopsObj,
+  RouteIdObj,
+  SetDeliveryRequestStatusObj,
+  SetDeliveryRouteStatusObj,
+  StopActionObj,
+  UpdateDeliveryRequestObj,
+  UpdateDeliveryRouteObj,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+
+import { z } from 'zod';
+
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
+import { DeliveriesController } from './controller';
+
+const controller = new DeliveriesController();
+
+// FEATURE_MATRIX plan gate: deliveries are Movement-only; mutations below are blocked on lower plans.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('deliveries'));
+
+export const DeliveriesRouter = router({
+  // Requests
+  getAllRequests: authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllRequests(ctx.auth.tenant_id, input)),
+  getRequestCounts: authProcedure.query(({ ctx }) => controller.getRequestCounts(ctx.auth.tenant_id)),
+  getReadyCount: authProcedure.query(({ ctx }) => controller.getReadyCount(ctx.auth.tenant_id)),
+  getSignStatus: authProcedure
+    .input(GetSignStatusObj)
+    .query(({ ctx, input }) => controller.getSignStatus(ctx.auth, input)),
+  addRequest: authProcedure
+    .input(AddDeliveryRequestObj)
+    .mutation(({ ctx, input }) => controller.addRequest(ctx.auth, input)),
+  updateRequestNotes: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateDeliveryRequestObj }))
+    .mutation(({ ctx, input }) => controller.updateRequestNotes(ctx.auth, input.id, input.data)),
+  setRequestStatus: authProcedure
+    .input(SetDeliveryRequestStatusObj)
+    .mutation(({ ctx, input }) => controller.setRequestStatus(ctx.auth, input)),
+
+  // Planning
+  getRouteDefaults: authProcedure.query(({ ctx }) => controller.getRouteDefaults(ctx.auth.tenant_id)),
+  previewPlan: authProcedure
+    .input(PlanDeliveriesObj)
+    .mutation(({ ctx, input }) => controller.previewPlan(ctx.auth, input)),
+  commitPlan: authProcedure
+    .input(CommitDeliveriesObj)
+    .mutation(({ ctx, input }) => controller.commitPlan(ctx.auth, input)),
+
+  // Routes
+  getAllRoutes: authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllRoutes(ctx.auth.tenant_id, input)),
+  getRouteById: authProcedure.input(idSchema).query(({ ctx, input }) => controller.getRouteById(ctx.auth, input)),
+  updateRoute: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateDeliveryRouteObj }))
+    .mutation(({ ctx, input }) => controller.updateRoute(ctx.auth, input.id, input.data)),
+  assignVolunteer: authProcedure
+    .input(AssignVolunteerObj)
+    .mutation(({ ctx, input }) => controller.assignVolunteer(ctx.auth, input)),
+  setRouteStatus: authProcedure
+    .input(SetDeliveryRouteStatusObj)
+    .mutation(({ ctx, input }) => controller.setRouteStatus(ctx.auth, input)),
+  deleteRoute: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteRoute(ctx.auth, input)),
+  stopAction: authProcedure.input(StopActionObj).mutation(({ ctx, input }) => controller.stopAction(ctx.auth, input)),
+  reorderStop: authProcedure
+    .input(ReorderStopObj)
+    .mutation(({ ctx, input }) => controller.reorderStop(ctx.auth, input)),
+  reorderStops: authProcedure
+    .input(ReorderStopsObj)
+    .mutation(({ ctx, input }) => controller.reorderStops(ctx.auth, input)),
+  mintShareLink: authProcedure
+    .input(MintShareLinkObj)
+    .mutation(({ ctx, input }) => controller.mintShareLink(ctx.auth, input)),
+  revokeShareLink: authProcedure
+    .input(RouteIdObj)
+    .mutation(({ ctx, input }) => controller.revokeShareLink(ctx.auth, input.route_id)),
+});
 `````
 
-## File: apps/backend/src/app/modules/events/repositories/events.repo.ts
+## File: apps/backend/src/app/modules/events/controller.ts
 `````typescript
+import { TRPCError } from '@trpc/server';
 import type { Transaction } from 'kysely';
-import type { AnyQB } from '../../../lib/base.repo';
 import { sql } from 'kysely';
-import type { JoinedQueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { GridFilterModel } from '../../../../../../../libs/common/src';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { publicOrgName } from '../../lib/public-tenant';
+import { logger } from '../../logger';
+import { WorkflowsController } from '../workflows/controller';
+import { EventsRepo } from './repositories/events.repo';
 
-export class EventsRepo extends BaseRepository<'events'> {
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+const ipRsvpTimestamps = new Map<string, number[]>();
+const RSVP_RATE_LIMIT_MAX = 5;
+const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+export class EventsController extends BaseController<'events', EventsRepo> {
+  private readonly campaignsRepo = new CampaignsRepo();
   constructor() {
-    super('events');
+    super(new EventsRepo());
   }
 
-  public async getAllEventsWithCount(
-    input: { tenant_id: string; options?: any },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: any[]; count: number }> {
-    const options: JoinedQueryParams = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as GridFilterModel;
-
-    const applyFilters = <QB extends AnyQB>(qb: QB) => {
-      let q = qb.where('events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
-        const text = searchStr;
-        return qb2.where(
-          sql<boolean>`(
-            LOWER(events.name) LIKE ${text} OR
-            LOWER(events.description) LIKE ${text} OR
-            LOWER(events.location_address) LIKE ${text}
-          )`,
-        );
-      });
-
-      const includeArchived = (options as { includeArchived?: boolean }).includeArchived === true;
-      if (includeArchived) {
-        q = q.where('events.end_time', '<', new Date());
-      } else {
-        q = q.where('events.end_time', '>=', new Date());
-      }
-
-      q = this.applyColumnFilter(q, 'events.name', filterModel['name']);
-      q = this.applyColumnFilter(q, 'events.location_address', filterModel['location_address']);
-
-      return q;
-    };
-
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count('events.id').as('total')])
-      .execute();
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    const rows = await applyFilters(this.getSelect(trx))
-      .select([
-        'events.id',
-        'events.tenant_id',
-        'events.name',
-        'events.description',
-        'events.location_address',
-        'events.start_time',
-        'events.end_time',
-        'events.capacity',
-        'events.slug',
-        'events.is_published',
-        'events.send_reminder',
-        'events.send_registration_confirmation',
-        'events.created_at',
-        'events.updated_at',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('event_registrations')
-          .whereRef('event_registrations.event_id', '=', 'events.id')
-          .where('event_registrations.status', '!=', 'cancelled')
-          .select(({ fn }) => [fn.count<number>('event_registrations.id').as('registrations_count')])
-          .as('registrations_count'),
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce(
-          (acc: typeof qb, sort: { colId: string; sort: 'asc' | 'desc' }) => acc.orderBy(sort.colId, sort.sort),
-          qb,
-        ),
-      )
-      .$if(!options.sortModel?.length, (qb) => qb.orderBy('events.start_time', 'asc'))
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 0) - (options.startRow ?? 0)),
-      )
-      .execute();
-
-    return { rows, count };
+  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
   }
 
-  public async getTicketTypesForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
-    const db = trx || this.db;
-    return db
-      .selectFrom('event_ticket_types')
-      .selectAll()
-      .where('tenant_id', '=', input.tenant_id)
-      .where('event_id', '=', input.event_id)
-      .orderBy('sort_order', 'asc')
-      .orderBy('created_at', 'asc')
-      .execute();
-  }
-
-  public async addTicketType(
-    input: {
-      tenant_id: string;
-      event_id: string;
-      name: string;
-      description?: string | null;
-      price_cents: number;
-      capacity?: number | null;
-      sort_order?: number;
-      user_id: string;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const db = trx || this.db;
-    return db
-      .insertInto('event_ticket_types')
-      .values({
-        tenant_id: input.tenant_id,
-        event_id: input.event_id,
-        name: input.name,
-        description: input.description ?? null,
-        price_cents: input.price_cents,
-        capacity: input.capacity ?? null,
-        sort_order: input.sort_order ?? 0,
-        createdby_id: input.user_id,
-        updatedby_id: input.user_id,
-      })
-      .returningAll()
+  public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', payload.slug)
       .executeTakeFirst();
+
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
+    }
+
+    const row = {
+      tenant_id: auth.tenant_id,
+      // The context this event belongs to (§15); defaults to the office.
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: payload.campaign_id,
+      }),
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      location_address: payload.location_address ?? null,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      capacity: payload.capacity ?? null,
+      contact_email: payload.contact_email ?? null,
+      contact_phone: payload.contact_phone ?? null,
+      slug: payload.slug,
+      is_published: payload.is_published ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_registration_confirmation: payload.send_registration_confirmation ?? true,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
+    } as OperationDataType<'events', 'insert'>;
+
+    try {
+      return await this.add(row);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
   }
 
-  public async updateTicketType(
-    input: {
-      tenant_id: string;
-      id: string;
-      row: {
-        name?: string;
-        description?: string | null;
-        price_cents?: number;
-        capacity?: number | null;
-        sort_order?: number;
-      };
-      user_id: string;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const db = trx || this.db;
-    return db
-      .updateTable('event_ticket_types')
-      .set({ ...input.row, updatedby_id: input.user_id, updated_at: sql`now()` })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .returningAll()
+  /**
+   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
+   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
+   */
+  public async getEventBySlug(tenantId: string, slug: string) {
+    return this.getRepo()
+      .db.selectFrom('events')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('slug', '=', slug)
+      .where('is_published', '=', true)
       .executeTakeFirst();
   }
 
   /**
-   * Persist a drag-to-reorder of an event's ticket types: write each id's `sort_order` to its index
-   * in `ordered_ids`, atomically. Caller has already verified `ordered_ids` is exactly this event's
-   * ticket types. There is no unique constraint on (event_id, sort_order), so a plain sequential
-   * write is safe — no temp-offset dance needed.
+   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
+   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
    */
-  public async reorderTicketTypes(input: {
-    tenant_id: string;
-    event_id: string;
-    ordered_ids: string[];
-    user_id: string;
-  }): Promise<void> {
-    await this.transaction().execute(async (trx) => {
-      for (let i = 0; i < input.ordered_ids.length; i++) {
-        await trx
-          .updateTable('event_ticket_types')
-          .set({ sort_order: i, updatedby_id: input.user_id, updated_at: sql`now()` })
-          .where('tenant_id', '=', input.tenant_id)
-          .where('event_id', '=', input.event_id)
-          .where('id', '=', input.ordered_ids[i] ?? '')
-          .execute();
+  public async getPublicEventConfig(tenantId: string, slug: string) {
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    const eventId = String(event.id);
+    const [orgName, tickets, regCount] = await Promise.all([
+      publicOrgName(tenantId),
+      this.getTicketTypesByEventId(eventId, tenantId),
+      this.getRegistrationCountForEvent(eventId, tenantId),
+    ]);
+
+    const now = new Date();
+    const isPast = new Date(event.end_time) < now;
+    const isFull = event.capacity !== null && regCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    return {
+      orgName,
+      event: {
+        name: String(event.name),
+        description: event.description ?? null,
+        location_address: event.location_address ?? null,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? null,
+        contact_phone: event.contact_phone ?? null,
+        fields,
+      },
+      tickets: tickets.map((t) => ({
+        name: String(t.name),
+        description: t.description ?? null,
+        price_cents: t.price_cents ?? null,
+        capacity: t.capacity ?? null,
+      })),
+      isPast,
+      isFull,
+      remaining,
+    };
+  }
+
+  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
+    const row = await this.getRepo()
+      .db.selectFrom('event_registrations')
+      .select(({ fn }) => [fn.count('id').as('cnt')])
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', eventId)
+      .where('status', '!=', 'cancelled')
+      .executeTakeFirst();
+    return Number(row?.cnt ?? 0);
+  }
+
+  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('event_ticket_types')
+      .selectAll()
+      .where('event_id', '=', eventId)
+      .where('tenant_id', '=', tenantId)
+      .orderBy('sort_order', 'asc')
+      .execute();
+  }
+
+  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
+  }
+
+  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo()
+        .db.selectFrom('events')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id)
+        .executeTakeFirst();
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
       }
+    }
+
+    const row = {
+      ...payload,
+      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
+      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
+      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'events', 'update'>;
+    let result;
+    try {
+      result = await this.update({ tenant_id: auth.tenant_id, id, row });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+
+    // Manage pending reminder jobs when the toggle changes
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to clean up pending event reminders');
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        const event = await this.getRepo()
+          .db.selectFrom('events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            const registrations = await this.getRepo()
+              .db.selectFrom('event_registrations')
+              .select(['id', 'person_id'])
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('event_id', '=', id)
+              .where('status', '=', 'registered')
+              .execute();
+
+            for (const reg of registrations) {
+              await this.getRepo()
+                .db.deleteFrom('background_jobs')
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
+                .execute();
+
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(id),
+                    personId: String(reg.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to re-schedule event reminders');
+      }
+    }
+
+    return result;
+  }
+
+  // Ticket types
+
+  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().addTicketType({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      price_cents: payload.price_cents ?? 0,
+      capacity: payload.capacity ?? null,
+      sort_order: payload.sort_order ?? 0,
+      user_id: auth.user_id,
     });
   }
 
-  public async deleteTicketType(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
-    const db = trx || this.db;
-    const res = await db
-      .deleteFrom('event_ticket_types')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
+  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
+  }
+
+  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
+  }
+
+  /**
+   * Persist the drag-to-reorder of an event's ticket types. `ordered_ids` must be exactly the set of
+   * this event's ticket type ids (any foreign or missing id is rejected); each id's sort_order is
+   * written to its index so the public /e/:slug page shows tickets in the same order as the form.
+   */
+  public async reorderTicketTypes(payload: { event_id: string; ordered_ids: string[] }, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo().getTicketTypesForEvent({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+    });
+    const existingIds = new Set(existing.map((t) => String(t.id)));
+    const requested = payload.ordered_ids;
+    const sameMembers =
+      requested.length === existingIds.size &&
+      new Set(requested).size === requested.length &&
+      requested.every((id) => existingIds.has(id));
+    if (!sameMembers) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'The new order must list exactly this event’s ticket types.',
+      });
+    }
+    await this.getRepo().reorderTicketTypes({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      ordered_ids: requested,
+      user_id: auth.user_id,
+    });
+    return { reordered: requested.length };
+  }
+
+  // Registrations
+
+  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
+    // Capacity check across the whole event
+    const event = await this.getRepo()
+      .db.selectFrom('events')
+      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', payload.event_id)
       .executeTakeFirst();
-    return Number(res.numDeletedRows || 0) > 0;
+
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    if (event.capacity !== null) {
+      const countRow = await this.getRepo()
+        .db.selectFrom('event_registrations')
+        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('event_id', '=', payload.event_id)
+        .where('status', '!=', 'cancelled')
+        .executeTakeFirst();
+      if (Number(countRow?.cnt || 0) >= event.capacity) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+      }
+    }
+
+    // Per-ticket-type capacity check
+    if (payload.ticket_type_id) {
+      const ticketType = await this.getRepo()
+        .db.selectFrom('event_ticket_types')
+        .select(['capacity'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', payload.ticket_type_id)
+        .executeTakeFirst();
+
+      if (ticketType && ticketType.capacity !== null) {
+        const ticketCountRow = await this.getRepo()
+          .db.selectFrom('event_registrations')
+          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('ticket_type_id', '=', payload.ticket_type_id)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+        if (Number(ticketCountRow?.cnt || 0) >= ticketType.capacity) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
+        }
+      }
+    }
+
+    const result = await this.getRepo().addRegistration({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      person_id: payload.person_id,
+      ticket_type_id: payload.ticket_type_id ?? null,
+      status: payload.status ?? 'registered',
+      notes: payload.notes ?? null,
+      user_id: auth.user_id,
+    });
+
+    if (result) {
+      // Queue registration confirmation email
+      if (event.send_registration_confirmation !== false) {
+        try {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: auth.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-event-registration-confirmation',
+                registrationId: String(result.id),
+                eventId: String(payload.event_id),
+                personId: String(payload.person_id),
+              }),
+              run_at: new Date(),
+            })
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue registration confirmation');
+        }
+      }
+
+      // Queue 24h reminder
+      if (event.send_reminder !== false) {
+        try {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo()
+              .db.insertInto('background_jobs')
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-reminder',
+                  registrationId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue event reminder');
+        }
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'assign',
+          entity: 'event_registrations',
+          entity_id: String(result.id),
+          quantity: 1,
+          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration activity');
+      }
+    }
+
+    return result;
   }
 
-  public async getRegistrationsForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
-    const db = trx || this.db;
-    return db
-      .selectFrom('event_registrations')
-      .innerJoin('persons', 'persons.id', 'event_registrations.person_id')
-      .leftJoin('event_ticket_types', 'event_ticket_types.id', 'event_registrations.ticket_type_id')
-      .select([
-        'event_registrations.id',
-        'event_registrations.event_id',
-        'event_registrations.person_id',
-        'event_registrations.ticket_type_id',
-        'event_registrations.status',
-        'event_registrations.checked_in_at',
-        'event_registrations.notes',
-        'event_registrations.created_at',
-        'event_registrations.updated_at',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'event_ticket_types.name as ticket_type_name',
-        'event_ticket_types.price_cents as ticket_price_cents',
-      ])
-      .where('event_registrations.tenant_id', '=', input.tenant_id)
-      .where('event_registrations.event_id', '=', input.event_id)
-      .orderBy('persons.last_name', 'asc')
-      .execute();
+  public async checkIn(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status: 'attended', checked_in_at: new Date() },
+      user_id: auth.user_id,
+    });
+
+    // Cancel pending reminder — they've already arrived
+    try {
+      await this.getRepo()
+        .db.deleteFrom('background_jobs')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('status', '=', 'pending')
+        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+        .where(sql`payload->>'registrationId'`, '=', String(id))
+        .execute();
+    } catch (err) {
+      logger.error({ err }, 'Failed to cancel event reminder on check-in');
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log check-in activity');
+    }
+
+    return result;
   }
 
-  public async addRegistration(
-    input: {
-      tenant_id: string;
-      event_id: string;
-      person_id: string;
-      ticket_type_id?: string | null;
-      status?: 'registered' | 'attended' | 'no_show' | 'cancelled';
-      notes?: string | null;
-      user_id: string;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const db = trx || this.db;
-    return db
-      .insertInto('event_registrations')
-      .values({
-        tenant_id: input.tenant_id,
-        event_id: input.event_id,
-        person_id: input.person_id,
-        ticket_type_id: input.ticket_type_id ?? null,
-        status: input.status ?? 'registered',
-        notes: input.notes ?? null,
-        createdby_id: input.user_id,
-        updatedby_id: input.user_id,
-      })
-      .returningAll()
-      .executeTakeFirst();
+  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: payload,
+      user_id: auth.user_id,
+    });
+
+    // Cancel reminder if status moves away from 'registered'
+    if (payload.status && payload.status !== 'registered') {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on status change');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: payload.status },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log registration update activity');
+    }
+
+    return result;
   }
 
-  public async updateRegistration(
-    input: {
-      tenant_id: string;
-      id: string;
-      row: {
-        ticket_type_id?: string | null;
-        status?: 'registered' | 'attended' | 'no_show' | 'cancelled';
-        checked_in_at?: Date | null;
-        notes?: string | null;
-      };
-      user_id: string;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const db = trx || this.db;
-    return db
-      .updateTable('event_registrations')
-      .set({ ...input.row, updatedby_id: input.user_id, updated_at: sql`now()` })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .returningAll()
-      .executeTakeFirst();
+  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
+
+    if (result) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'event_registrations',
+          entity_id: id,
+          quantity: 1,
+          metadata: { id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration delete activity');
+      }
+    }
+
+    return result;
   }
 
-  public async deleteRegistration(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
-    const db = trx || this.db;
-    const res = await db
-      .deleteFrom('event_registrations')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .executeTakeFirst();
-    return Number(res.numDeletedRows || 0) > 0;
+  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
   }
 
-  public async getHistoryForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
-    const db = trx || this.db;
-    return db
-      .selectFrom('event_registrations')
-      .innerJoin('events', 'events.id', 'event_registrations.event_id')
-      .leftJoin('event_ticket_types', 'event_ticket_types.id', 'event_registrations.ticket_type_id')
-      .select([
-        'event_registrations.id',
-        'event_registrations.event_id',
-        'event_registrations.status',
-        'event_registrations.checked_in_at',
-        'event_registrations.notes',
-        'event_registrations.created_at',
-        'events.name as event_name',
-        'events.start_time',
-        'events.end_time',
-        'events.location_address',
-        'event_ticket_types.name as ticket_type_name',
-      ])
-      .where('event_registrations.tenant_id', '=', input.tenant_id)
-      .where('event_registrations.person_id', '=', input.person_id)
-      .orderBy('events.start_time', 'desc')
-      .execute();
+  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
   }
 
-  public async getEventStats(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
-    const db = trx || this.db;
-    const result = await db
-      .selectFrom('event_registrations')
-      .select(({ fn }) => [fn.count<number>('id').as('events_count')])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('person_id', '=', input.person_id)
-      .where('status', '=', 'attended')
-      .executeTakeFirst();
-    return { events_count: Number(result?.events_count ?? 0) };
+  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
+    // Rate limiting
+    const now = Date.now();
+    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
+    }
+    timestamps.push(now);
+    ipRsvpTimestamps.set(clientIp, timestamps);
+
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    // Honeypot
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      return { success: true };
+    }
+
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
+    }
+
+    if (new Date(event.end_time) < new Date()) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
+    }
+
+    const firstName = payload['first_name']?.trim() || null;
+    const lastName = payload['last_name']?.trim() || null;
+    const mobile = payload['mobile']?.trim() || null;
+    const notes = payload['notes']?.trim() || null;
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id', 'admin_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        const creatorId = tenantRow?.admin_id;
+
+        if (!householdId || !creatorId) {
+          throw new Error('Tenant configuration is incomplete.');
+        }
+
+        // Check overall capacity
+        if (event.capacity !== null) {
+          const countRow = await trx
+            .selectFrom('event_registrations')
+            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+            .where('tenant_id', '=', tenantId)
+            .where('event_id', '=', String(event.id))
+            .where('status', '!=', 'cancelled')
+            .executeTakeFirst();
+          if (Number(countRow?.cnt || 0) >= event.capacity) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+          }
+        }
+
+        // Find or create person
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (notes) {
+            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
+          }
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
+          // (there is no "campaign-less" person). `persons` also has no address columns
+          // (street1/city/state/zip/country live on `households`, not `persons`), so those
+          // RSVP fields are intentionally not persisted here.
+          const campaignRow = await trx
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .orderBy('created_at', 'asc')
+            .limit(1)
+            .executeTakeFirst();
+
+          if (!campaignRow) {
+            throw new Error('Tenant configuration is incomplete.');
+          }
+          const campaignId = String(campaignRow.id);
+
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            mobile,
+            notes,
+          };
+
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          try {
+            const workflowsCtrl = new WorkflowsController();
+            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
+          }
+        }
+
+        // Check duplicate registration
+        const existingReg = await trx
+          .selectFrom('event_registrations')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', String(event.id))
+          .where('person_id', '=', personId)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+
+        if (existingReg) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
+        }
+
+        // Insert registration
+        const reg = await trx
+          .insertInto('event_registrations')
+          .values({
+            tenant_id: tenantId,
+            event_id: String(event.id),
+            person_id: personId,
+            ticket_type_id: null,
+            status: 'registered',
+            notes: notes ?? null,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        // Queue confirmation email
+        if (event.send_registration_confirmation !== false) {
+          try {
+            await trx
+              .insertInto('background_jobs')
+              .values({
+                tenant_id: tenantId,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-registration-confirmation',
+                  registrationId: String(reg.id),
+                  eventId: String(event.id),
+                  personId,
+                }),
+                run_at: new Date(),
+              })
+              .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue RSVP confirmation');
+          }
+        }
+
+        // Queue 24h reminder
+        if (event.send_reminder !== false) {
+          try {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await trx
+                .insertInto('background_jobs')
+                .values({
+                  tenant_id: tenantId,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(event.id),
+                    personId,
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
+          }
+        }
+      });
+
+    return { success: true };
   }
 }
+`````
+
+## File: apps/backend/src/app/modules/events/trpc.router.ts
+`````typescript
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import {
+  idSchema,
+  getAllOptions,
+  AddEventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
+  AddRegistrationObj,
+  UpdateRegistrationObj,
+} from '../../../../../../libs/common/src';
+import { EventsController } from './controller';
+
+const ctrl = new EventsController();
+
+export const EventsRouter = router({
+  // Events
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
+
+  getById: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+
+  add: authProcedure.input(AddEventObj).mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
+
+  checkSlugUnique: authProcedure
+    .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
+    .query(({ input, ctx }) => ctrl.checkSlugUnique(input.slug, input.excludeId || null, ctx.auth)),
+
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateEventObj }))
+    .mutation(({ input, ctx }) => ctrl.updateEvent(input.id, input.data, ctx.auth)),
+
+  delete: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => ctrl.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  // Ticket types
+  getTicketTypesForEvent: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getTicketTypesForEvent(input, ctx.auth)),
+
+  addTicketType: authProcedure
+    .input(AddTicketTypeObj)
+    .mutation(({ input, ctx }) => ctrl.addTicketType(input, ctx.auth)),
+
+  updateTicketType: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateTicketTypeObj }))
+    .mutation(({ input, ctx }) => ctrl.updateTicketType(input.id, input.data, ctx.auth)),
+
+  deleteTicketType: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteTicketType(input, ctx.auth)),
+
+  reorderTicketTypes: authProcedure
+    .input(ReorderTicketTypesObj)
+    .mutation(({ input, ctx }) => ctrl.reorderTicketTypes(input, ctx.auth)),
+
+  // Registrations
+  getRegistrationsForEvent: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getRegistrationsForEvent(input, ctx.auth)),
+
+  addRegistration: authProcedure
+    .input(AddRegistrationObj)
+    .mutation(({ input, ctx }) => ctrl.addRegistration(input, ctx.auth)),
+
+  checkIn: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.checkIn(input, ctx.auth)),
+
+  updateRegistration: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateRegistrationObj }))
+    .mutation(({ input, ctx }) => ctrl.updateRegistration(input.id, input.data, ctx.auth)),
+
+  deleteRegistration: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => ctrl.deleteRegistration(input, ctx.auth)),
+
+  // Person-specific history & stats
+  getHistoryForPerson: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
+
+  getStatsForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getEventStats(input, ctx.auth)),
+});
 `````
 
 ## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
@@ -67534,17 +66854,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .executeTakeFirst();
 
     return Number((result as { count?: number } | undefined)?.count ?? 0);
-  }
-
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-      .where('households.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
   }
 
   /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
@@ -68261,10 +67570,6 @@ export class HouseholdsController extends BaseController<'households', Household
 
   public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
     return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
-  }
-
-  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getDistinctTags(auth.tenant_id, type);
   }
 
   public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
@@ -69184,6 +68489,7 @@ import type { OperationDataType } from '../../../../../../../libs/common/src/lib
 import { ImportsRepo } from '../../imports/repositories/imports.repo';
 import { ListsRepo } from '../../lists/repositories/lists.repo';
 import { MapListsPersonsRepo } from '../../lists/repositories/map-lists-persons.repo';
+import { NotificationsRepo } from '../../notifications/repositories/notifications.repo';
 import { UserActivityRepo } from '../../../lib/user-activity.repo';
 import { StorageService } from '../../../lib/storage.service';
 import { WorkflowsController } from '../../workflows/controller';
@@ -69278,18 +68584,30 @@ export class PersonsService {
 
       if (payload.assigned_to) {
         try {
+          const assigneeId = String(payload.assigned_to);
           const assignee = await this.personsRepo.db
             .selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
             .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', String(payload.assigned_to))
+            .where('authusers.id', '=', assigneeId)
             .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-              const createdPerson = result as Record<string, unknown>;
-              const personName =
-                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
-              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
+          if (assignee) {
+            const createdPerson = result as Record<string, unknown>;
+            const personName =
+              `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
+            const link = `${env.appUrl}/persons/${createdPerson['id']}`;
+            if (notificationEnabled(assignee.profile_preferences, 'person_assigned_in_app')) {
+              const notificationsRepo = new NotificationsRepo();
+              await notificationsRepo.pushNotification({
+                tenant_id: auth.tenant_id,
+                user_id: assigneeId,
+                title: 'Contact Assigned',
+                message: `You have been assigned ownership of the contact: "${personName}"`,
+                type: 'person',
+                link: `/persons/${createdPerson['id']}`,
+              });
+            }
+            if (assignee.email && notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
               const mailService = new TransactionalEmailService();
               await mailService.sendMail({
                 to: assignee.email,
@@ -69306,7 +68624,7 @@ export class PersonsService {
             }
           }
         } catch (mailErr) {
-          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
+          logger.error({ err: mailErr }, 'Failed to process contact assignment alert/notification in addPerson');
         }
       }
     }
@@ -69376,20 +68694,31 @@ export class PersonsService {
         const newAssigneeId = data.assigned_to;
         if (newAssigneeId) {
           try {
+            // String conversion ensures precision is maintained down to the database driver level
+            const assigneeId = String(newAssigneeId);
             const assignee = await this.personsRepo.db
               .selectFrom('authusers')
               .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
               .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-              // String conversion ensures precision is maintained down to the database driver level
-              .where('authusers.id', '=', String(newAssigneeId))
+              .where('authusers.id', '=', assigneeId)
               .executeTakeFirst();
 
-            if (assignee && assignee.email) {
-              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-                const personName =
-                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
-                  'unnamed contact';
-                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
+            if (assignee) {
+              const personName =
+                `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() || 'unnamed contact';
+              const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
+              if (notificationEnabled(assignee.profile_preferences, 'person_assigned_in_app')) {
+                const notificationsRepo = new NotificationsRepo();
+                await notificationsRepo.pushNotification({
+                  tenant_id: auth.tenant_id,
+                  user_id: assigneeId,
+                  title: 'Contact Assigned',
+                  message: `You have been assigned ownership of the contact: "${personName}"`,
+                  type: 'person',
+                  link: `/persons/${updatedPerson['id']}`,
+                });
+              }
+              if (assignee.email && notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
                 const mailService = new TransactionalEmailService();
                 await mailService.sendMail({
                   to: assignee.email,
@@ -69406,7 +68735,7 @@ export class PersonsService {
               }
             }
           } catch (mailErr) {
-            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
+            logger.error({ err: mailErr }, 'Failed to process contact assignment alert/notification in updatePerson');
           }
         }
       }
@@ -70752,6 +70081,902 @@ export class PersonsService {
     return token.charAt(0).toUpperCase() + token.slice(1);
   }
 }
+`````
+
+## File: apps/backend/src/app/modules/tasks/repositories/task-subtasks.repo.ts
+`````typescript
+import type { Transaction } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export class TaskSubtasksRepo extends BaseRepository<'task_subtasks'> {
+  constructor() {
+    super('task_subtasks');
+  }
+
+  /**
+   * Ordered read for the task detail page — `position` asc is the manual drag
+   * order; `created_at`/`id` are the deterministic tiebreak so brand-new subtasks
+   * (all `position` 0 by default) still fall in a stable, oldest-first order.
+   */
+  public getByTaskIdOrdered(tenant_id: string, task_id: string, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', tenant_id)
+      .where('task_id', '=', task_id)
+      .orderBy('position', 'asc')
+      .orderBy('created_at', 'asc')
+      .orderBy('id', 'asc')
+      .execute();
+  }
+}
+`````
+
+## File: apps/backend/src/app/modules/tasks/controller.ts
+`````typescript
+import type {
+  AddTaskType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateTaskType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import { env } from '../../../env';
+import { BaseController } from '../../lib/base.controller';
+
+import { TasksRepo } from './repositories/tasks.repo';
+import type { Selectable } from 'kysely';
+import type {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTenantId,
+} from '../../../../../../libs/common/src/lib/kysely.models';
+import type { QueryParams } from '../../lib/base.repo';
+import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { notificationEnabled } from '../../lib/profile-preferences';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { StorageService } from '../../lib/storage.service';
+import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
+import { TASK_STATUSES, calculateWorkingTimeMs } from '../../../../../../libs/common/src';
+import type { ReorderTasksType } from '../../../../../../libs/common/src';
+import { NotFoundError } from '../../errors/app-errors';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+
+export class TasksController extends BaseController<'tasks', TasksRepo> {
+  private mailService = new TransactionalEmailService();
+
+  constructor() {
+    super(new TasksRepo());
+  }
+
+  public async addTask(payload: AddTaskType, auth: IAuthKeyPayload) {
+    const row = {
+      name: payload.name,
+      details: payload.details,
+      due_at: payload.due_at ?? null,
+      status: payload.status ?? 'todo',
+      priority: payload.priority ?? null,
+      completed_at: payload.completed_at ?? null,
+      position: payload.position ?? 0,
+      assigned_to: payload.assigned_to ?? null,
+      team_id: payload.team_id ?? null,
+      // '' is the unselected-<select> sentinel the schema admits — store a real NULL.
+      person_id: payload.person_id || null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'tasks', 'insert'>;
+    const task = await this.add(row);
+    if (task && payload.assigned_to) {
+      try {
+        const assignedTo = payload.assigned_to;
+        const assignee = await this.getRepo()
+          .db.selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+          .where('authusers.id', '=', assignedTo)
+          .executeTakeFirst();
+        if (assignee) {
+          if (notificationEnabled(assignee.profile_preferences, 'task_assigned_in_app')) {
+            const notificationsRepo = new NotificationsRepo();
+            await notificationsRepo.pushNotification({
+              tenant_id: auth.tenant_id,
+              user_id: assignedTo,
+              title: 'Task Assigned',
+              message: `You have been assigned the task: "${payload.name}"`,
+              type: 'task',
+              link: `/tasks/${task.id}`,
+            });
+          }
+          if (assignee.email && notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
+            await this.mailService.sendMail({
+              to: assignee.email,
+              subject: `New task assigned: ${payload.name}`,
+              text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${payload.name}".\n\nDetails:\n${payload.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${task.id}`,
+              html: `<h2>New task assigned</h2>
+<p>Hi ${assignee.first_name},</p>
+<p>${auth.name} assigned you the task <strong>"${payload.name}"</strong>.</p>
+<div class="panel"><p><strong>Details:</strong><br>${payload.details || 'None'}</p></div>
+<div class="btn-container">
+  <a href="${env.appUrl}/tasks/${task.id}" class="btn">View task</a>
+</div>`,
+            });
+          }
+        }
+      } catch (nErr) {
+        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
+      }
+    }
+    return task;
+  }
+
+  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
+  }
+
+  public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
+  }
+
+  /** Working-hours SLA config for this tenant, with the same fallbacks used tenant-wide. */
+  private async loadSlaConfig(tenant_id: string): Promise<{
+    taskSlaHours: number;
+    workingDays: number[];
+    workingHoursStart: string;
+    workingHoursEnd: string;
+  }> {
+    const settingsRows = await new SettingsRepo().getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    return {
+      taskSlaHours: Number(settingsMap['sla.tasks_hours'] ?? 24),
+      workingDays: workingDaysStr
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !isNaN(n)),
+      workingHoursStart: String(settingsMap['sla.working_hours_start'] ?? '09:00'),
+      workingHoursEnd: String(settingsMap['sla.working_hours_end'] ?? '17:00'),
+    };
+  }
+
+  /** Live count of open tasks past the working-hours SLA target — the sidebar badge (spec §4). */
+  public async countSlaBreaches(auth: IAuthKeyPayload): Promise<number> {
+    const { taskSlaHours, workingDays, workingHoursStart, workingHoursEnd } = await this.loadSlaConfig(auth.tenant_id);
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+    const now = new Date();
+
+    const openTasks = await this.getRepo().getOpenForSla(auth.tenant_id);
+    return openTasks.reduce((count, task) => {
+      const workingMs = calculateWorkingTimeMs(
+        new Date(task.created_at),
+        now,
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      return workingMs > taskSlaMs ? count + 1 : count;
+    }, 0);
+  }
+
+  /**
+   * The count sentence's four numbers in one call (spec §4): "N open tasks · N breaching
+   * SLA · N assigned to you" (list) plus "N waiting for an owner" (board adds this one).
+   */
+  public async getSummaryCounts(auth: IAuthKeyPayload): Promise<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  }> {
+    const repo = this.getRepo();
+    const [openTotal, unassigned, assignedToMe, slaBreaches] = await Promise.all([
+      repo.countOpen(auth.tenant_id),
+      repo.countOpenUnassigned(auth.tenant_id),
+      repo.countOpenAssignedTo(auth.tenant_id, auth.user_id),
+      this.countSlaBreaches(auth),
+    ]);
+    return { openTotal, unassigned, assignedToMe, slaBreaches };
+  }
+
+  public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
+    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as
+      | Selectable<Models['tasks']>
+      | undefined;
+    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
+    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
+
+    if (updated && row.assigned_to && row.assigned_to !== existingTask?.assigned_to) {
+      try {
+        const assignedTo = row.assigned_to;
+        const assignee = await this.getRepo()
+          .db.selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+          .where('authusers.id', '=', assignedTo)
+          .executeTakeFirst();
+        if (assignee) {
+          if (notificationEnabled(assignee.profile_preferences, 'task_assigned_in_app')) {
+            const notificationsRepo = new NotificationsRepo();
+            await notificationsRepo.pushNotification({
+              tenant_id: auth.tenant_id,
+              user_id: assignedTo,
+              title: 'Task Assigned',
+              message: `You have been assigned the task: "${updated.name}"`,
+              type: 'task',
+              link: `/tasks/${id}`,
+            });
+          }
+          if (assignee.email && notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
+            await this.mailService.sendMail({
+              to: assignee.email,
+              subject: `New task assigned: ${updated.name}`,
+              text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${updated.name}".\n\nDetails:\n${updated.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${id}`,
+              html: `<h2>New task assigned</h2>
+<p>Hi ${assignee.first_name},</p>
+<p>${auth.name} assigned you the task <strong>"${updated.name}"</strong>.</p>
+<div class="panel"><p><strong>Details:</strong><br>${updated.details || 'None'}</p></div>
+<div class="btn-container">
+  <a href="${env.appUrl}/tasks/${id}" class="btn">View task</a>
+</div>`,
+            });
+          }
+        }
+      } catch (nErr) {
+        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
+      }
+    }
+    return updated;
+  }
+
+  /**
+   * Board drag-and-drop persistence (spec §4). Re-seats one or two board columns
+   * in a single transaction: every listed id gets `position = index`, and its
+   * `status` is set to the column it now lives in. Ids are verified to belong to
+   * the tenant first (a foreign or unknown id rejects the whole drop).
+   *
+   * `completed_at` note: the single-task update path (`updateTask` → BaseController)
+   * has NO automatic completed_at behavior — it only writes completed_at when the
+   * client explicitly sends it, and there is no DB trigger on tasks.status. So a
+   * status change here (including to/from `done`) intentionally writes no
+   * completed_at, matching the chevron/setStatus path exactly. The one real status
+   * side effect the single-write path has is the activity-log entry, which we
+   * replicate below for each card whose status actually changed.
+   */
+  public async reorderTasks(auth: IAuthKeyPayload, input: ReorderTasksType) {
+    const allIds = input.columns.flatMap((c) => c.ids);
+    const repo = this.getRepo();
+    return repo.transaction().execute(async (trx) => {
+      const existing = await trx
+        .selectFrom('tasks')
+        .select(['id', 'status', 'name'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', allIds)
+        .execute();
+      const byId = new Map(existing.map((r) => [String(r.id), r]));
+      for (const id of allIds) {
+        if (!byId.has(String(id))) throw new NotFoundError('One or more tasks were not found');
+      }
+
+      for (const col of input.columns) {
+        let index = 0;
+        for (const id of col.ids) {
+          await trx
+            .updateTable('tasks')
+            .set({
+              position: index,
+              status: col.status,
+              updatedby_id: auth.user_id,
+            } as OperationDataType<'tasks', 'update'>)
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', id)
+            .execute();
+
+          const before = byId.get(String(id));
+          if (before && before.status !== col.status) {
+            await this.userActivity.log(
+              {
+                tenant_id: auth.tenant_id,
+                user_id: auth.user_id,
+                activity: 'update',
+                entity: 'tasks',
+                entity_id: String(id),
+                quantity: 1,
+                metadata: {
+                  task_name: before.name,
+                  changes: { status: { from: before.status ?? null, to: col.status } },
+                },
+              },
+              trx,
+            );
+          }
+          index += 1;
+        }
+      }
+
+      return { ok: true as const, updated: allIds.length };
+    });
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const includeArchived = Boolean(input?.options && input.options?.includeArchived);
+      const result = includeArchived
+        ? await this.getArchivedTasks(auth, input?.options)
+        : await this.getAllTasks(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: includeArchived ? 'tasks_archived' : 'tasks',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+          include_archived: includeArchived,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  private readonly importsRepo = new ImportsRepo();
+  private readonly storageService = new StorageService();
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        name: string;
+        details?: string | null;
+        status?: string | null;
+        priority?: string | null;
+        due_at?: string | null;
+        assigned_to?: string | null;
+      }>;
+      skipped?: number;
+      file_name?: string | null;
+      source_csv?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-Tasks-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'tasks',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    };
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({
+        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
+        id: importRecordId as TypeId<'data_imports'>,
+      });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    // Keep the original upload downloadable for 90 days (spec §17 History
+    // page footer). Best-effort: a failure here shouldn't fail the import.
+    let sourceFileKey: string | null = null;
+    let sourceFileSize: number | null = null;
+    if (input.source_csv) {
+      try {
+        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
+        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
+        sourceFileSize = sourceBuffer.byteLength;
+        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
+      } catch (err) {
+        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
+        sourceFileKey = null;
+        sourceFileSize = null;
+      }
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+        source_file_key: sourceFileKey,
+        source_file_size: sourceFileSize,
+      },
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          skipped: skippedFromClient,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'tasks',
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    };
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
+
+    // Parse status and priority to validate choices
+    const normalize = (v?: string) =>
+      (v || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[_\s-]+/g, '');
+    const validStatuses: readonly string[] = TASK_STATUSES;
+    const validPriorities = ['low', 'medium', 'high', 'urgent'];
+
+    // Map names to users for assigned_to
+    const users = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name', 'email'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      const idStr = String(u.id);
+      userMap.set(idStr, idStr);
+      if (u.email) userMap.set(u.email.toLowerCase().trim(), idStr);
+      if (u.first_name) {
+        userMap.set(u.first_name.toLowerCase().trim(), idStr);
+        if (u.last_name) {
+          userMap.set(`${u.first_name.toLowerCase().trim()} ${u.last_name.toLowerCase().trim()}`, idStr);
+        }
+      }
+    }
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Normalize and filter valid rows upfront
+      const taskRows: any[] = [];
+      for (const raw of chunk) {
+        if (!raw['name'] || !raw['name'].trim()) {
+          results.skipped += 1;
+          continue;
+        }
+
+        let status: string = 'todo';
+        if (raw['status']) {
+          const normStatus = normalize(raw['status']);
+          const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
+          if (matchedStatus) status = matchedStatus;
+        }
+
+        let priority: string | null = null;
+        if (raw['priority']) {
+          const normPriority = normalize(raw['priority']);
+          const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
+          if (matchedPriority) priority = matchedPriority;
+        }
+
+        let assigned_to: string | null = null;
+        if (raw['assigned_to']) {
+          assigned_to = userMap.get(raw['assigned_to'].toLowerCase().trim()) ?? null;
+        }
+
+        let due_at: Date | null = null;
+        if (raw['due_at']) {
+          const parsedDate = new Date(raw['due_at']);
+          if (!isNaN(parsedDate.getTime())) due_at = parsedDate;
+        }
+
+        taskRows.push({
+          tenant_id,
+          createdby_id: user_id,
+          updatedby_id: user_id,
+          name: raw['name'].trim(),
+          details: raw['details'] ?? null,
+          status,
+          priority,
+          assigned_to,
+          due_at,
+          file_id: import_id,
+        });
+      }
+
+      if (taskRows.length > 0) {
+        try {
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              // Chunk inserts to a safe limit (e.g., 2000 rows * 10 cols = 20,000 params)
+              const CHUNK_SIZE = 2000;
+              for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
+                const chunk = taskRows.slice(i, i + CHUNK_SIZE);
+                await trx
+                  .insertInto('tasks')
+                  .values(chunk)
+                  .returningAll() // Adheres to repository rules
+                  .execute();
+              }
+            });
+          results.inserted += taskRows.length;
+        } catch (err: unknown) {
+          results.errors += taskRows.length;
+          errorMessages.push(err instanceof Error ? err.message : String(err));
+        }
+      }
+
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        },
+      });
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
+  }
+}
+`````
+
+## File: apps/backend/src/app/modules/tasks/subtasks.controller.ts
+`````typescript
+import type { Transaction, Selectable } from 'kysely';
+import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { IAuthKeyPayload, ReorderSubtasksType } from '../../../../../../libs/common/src';
+import { BaseController } from '../../lib/base.controller';
+import { NotFoundError } from '../../errors/app-errors';
+import { TaskSubtasksRepo } from './repositories/task-subtasks.repo';
+
+export class TaskSubtasksController extends BaseController<'task_subtasks', TaskSubtasksRepo> {
+  constructor() {
+    super(new TaskSubtasksRepo());
+  }
+
+  public getByTaskId(input: { tenant_id: string; task_id: string }) {
+    return this.getRepo().getByTaskIdOrdered(input.tenant_id, input.task_id);
+  }
+
+  /**
+   * Drag-to-reorder the subtasks of one task. `ids` is the full new top-to-bottom
+   * order; every id must belong to the tenant and to `task_id` (a foreign or
+   * unknown id rejects the whole drop). Writes `position = index` per id in one
+   * transaction — never a loop of single-row `updateSubtask` calls.
+   */
+  public async reorderSubtasks(auth: IAuthKeyPayload, input: ReorderSubtasksType) {
+    const repo = this.getRepo();
+    return repo.transaction().execute(async (trx) => {
+      const existing = await trx
+        .selectFrom('task_subtasks')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('task_id', '=', input.task_id)
+        .where('id', 'in', input.ids)
+        .execute();
+      const found = new Set(existing.map((r) => String(r.id)));
+      if (found.size !== input.ids.length || input.ids.some((id) => !found.has(String(id)))) {
+        throw new NotFoundError('One or more subtasks were not found for this task');
+      }
+
+      let index = 0;
+      for (const id of input.ids) {
+        await trx
+          .updateTable('task_subtasks')
+          .set({ position: index, updatedby_id: auth.user_id } as OperationDataType<'task_subtasks', 'update'>)
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .execute();
+        index += 1;
+      }
+
+      return { ok: true as const, updated: input.ids.length };
+    });
+  }
+
+  public override async add(row: OperationDataType<'task_subtasks', 'insert'>, trx?: Transaction<Models>) {
+    const subtask = await super.add(row, trx);
+    if (subtask && row.task_id && row.tenant_id && row.createdby_id) {
+      await this.userActivity.log(
+        {
+          tenant_id: String(row.tenant_id),
+          user_id: String(row.createdby_id),
+          activity: 'update',
+          entity: 'tasks',
+          entity_id: String(row.task_id),
+          quantity: 1,
+          metadata: { action: 'add_subtask', subtask_name: row.name },
+        },
+        trx,
+      );
+    }
+    return subtask;
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'task_subtasks', 'update'>;
+  }) {
+    const subtaskBefore = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as
+      | Selectable<Models['task_subtasks']>
+      | undefined;
+    const result = await super.update(input);
+    if (result && subtaskBefore) {
+      const actorId = input.row.updatedby_id || subtaskBefore.updatedby_id || '';
+      if (input.row.status && input.row.status !== subtaskBefore.status && actorId) {
+        await this.userActivity.log({
+          tenant_id: input.tenant_id,
+          user_id: String(actorId),
+          activity: 'update',
+          entity: 'tasks',
+          entity_id: String(subtaskBefore.task_id),
+          quantity: 1,
+          metadata: {
+            action: 'toggle_subtask',
+            subtask_name: subtaskBefore.name,
+            status: input.row.status,
+          },
+        });
+      }
+    }
+    return result;
+  }
+
+  public updateSubtask(input: { tenant_id: string; id: string; row: OperationDataType<'task_subtasks', 'update'> }) {
+    return this.update({ tenant_id: input.tenant_id, id: input.id, row: input.row });
+  }
+}
+`````
+
+## File: apps/backend/src/app/modules/tasks/trpc.router.ts
+`````typescript
+import {
+  AddTaskObj,
+  ReorderSubtasksObj,
+  ReorderTasksObj,
+  UpdateTaskObj,
+  exportCsvInput,
+  exportCsvResponse,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { authProcedure, router } from '../../../trpc';
+import { TasksController } from './controller';
+import { TaskCommentsController } from './comments.controller';
+import { TaskAttachmentsController } from './attachments.controller';
+import { TaskSubtasksController } from './subtasks.controller';
+
+const tasks = new TasksController();
+
+export const TasksRouter = router({
+  add: authProcedure.input(AddTaskObj).mutation(({ input, ctx }) => tasks.addTask(input, ctx.auth)),
+
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            name: z.string().trim().min(1, 'Task name is required').max(200, 'Task name is too long'),
+            details: z.string().trim().max(10000).optional().nullable(),
+            status: z.string().trim().max(50).optional().nullable(),
+            priority: z.string().trim().max(50).optional().nullable(),
+            due_at: z.string().trim().max(50).optional().nullable(),
+            assigned_to: z.string().trim().max(50).optional().nullable(),
+          }),
+        ),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+        source_csv: z.string().max(10_000_000).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return tasks.importRows(input, ctx.auth);
+    }),
+
+  count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
+  countSlaBreaches: authProcedure.query(({ ctx }) => tasks.countSlaBreaches(ctx.auth)),
+  getSummaryCounts: authProcedure.query(({ ctx }) => tasks.getSummaryCounts(ctx.auth)),
+  delete: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+  deleteMany: authProcedure
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
+    .mutation(({ input, ctx }) => tasks.deleteMany(ctx.auth.tenant_id, input)),
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getAllTasks(ctx.auth, input)),
+  getArchived: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getArchivedTasks(ctx.auth, input)),
+  exportCsv: authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => tasks.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
+  getById: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => tasks.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateTaskObj }))
+    .mutation(({ input, ctx }) => tasks.updateTask(input.id, input.data, ctx.auth)),
+  reorder: authProcedure.input(ReorderTasksObj).mutation(({ input, ctx }) => tasks.reorderTasks(ctx.auth, input)),
+  reorderSubtasks: authProcedure
+    .input(ReorderSubtasksObj)
+    .mutation(({ input, ctx }) => new TaskSubtasksController().reorderSubtasks(ctx.auth, input)),
+  getComments: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) =>
+      new TaskCommentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
+    ),
+  addComment: authProcedure
+    .input(
+      z.object({
+        task_id: idSchema,
+        comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long'),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      new TaskCommentsController().add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        author_id: ctx.auth.user_id,
+        comment: input.comment,
+      } as any),
+    ),
+  getAttachments: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) =>
+      new TaskAttachmentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
+    ),
+  addAttachment: authProcedure
+    .input(
+      z.object({
+        task_id: idSchema,
+        filename: z.string().trim().min(1, 'Filename cannot be empty').max(255, 'Filename is too long'),
+        url: z.string().url('Invalid URL format').optional(),
+        content_type: z.string().trim().max(100).optional(),
+        size_bytes: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      (new TaskAttachmentsController() as any).add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        filename: input.filename,
+        url: input.url,
+        content_type: input.content_type,
+        size_bytes: input.size_bytes ?? null,
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
+      }),
+    ),
+  getSubtasks: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) =>
+      new TaskSubtasksController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
+    ),
+  addSubtask: authProcedure
+    .input(
+      z.object({
+        task_id: idSchema,
+        name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long'),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      new TaskSubtasksController().add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        name: input.name,
+        status: 'todo',
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
+      } as OperationDataType<'task_subtasks', 'insert'>),
+    ),
+  updateSubtask: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        data: z.object({
+          name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long').optional(),
+          status: z.string().trim().max(50).optional(),
+          position: z.number().int().optional(),
+        }),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      new TaskSubtasksController().updateSubtask({
+        tenant_id: ctx.auth.tenant_id,
+        id: input.id,
+        row: { ...(input.data ?? {}), updatedby_id: ctx.auth.user_id } as OperationDataType<'task_subtasks', 'update'>,
+      }),
+    ),
+});
 `````
 
 ## File: apps/backend/src/app/modules/volunteer-events/repositories/volunteer-events.repo.ts
@@ -72622,6 +72847,100 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
 ];
 `````
 
+## File: libs/common/src/lib/help/articles/productivity.ts
+`````typescript
+import type { HelpArticle } from '../help-types';
+
+export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
+  {
+    id: 'tasks',
+    category: 'productivity',
+    title: 'Tasks: list and board',
+    summary:
+      'Track the work: assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
+    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
+    related: ['dashboard', 'teams', 'automations'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tasks capture commitments: call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
+      },
+      { kind: 'h2', id: 'views', text: 'List or board: one dataset, two views' },
+      {
+        kind: 'list',
+        items: [
+          '[Tasks](/tasks) is the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
+          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. Drag a card to another column to change its status, or drag it up and down within a column to set the order you want; the order sticks. Prefer the keyboard? The ‹ › buttons on a card still move it one column and dim at either end of the row. Jump to the board anytime with `g` then `b`.',
+          'Every header carries a swap button (Open board / Open list), so you never have to hunt for the sidebar to switch.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly. A card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
+      },
+      {
+        kind: 'p',
+        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. Break the work into subtasks and drag them by the handle on the left of each row to reorder them. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
+      },
+      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
+      {
+        kind: 'list',
+        items: [
+          'A task with no assignee shows a dashed Unassigned pill. One click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
+          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup. See [The dashboard and SLA health](/help/dashboard).",
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Tasks come from everywhere',
+        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one; "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'files',
+    category: 'productivity',
+    title: 'Storage & attachments',
+    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
+    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
+    related: ['grid-basics', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Files no longer live in their own standalone library. A file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
+      },
+      { kind: 'h2', id: 'attach', text: 'Attach a file' },
+      {
+        kind: 'p',
+        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
+      },
+      { kind: 'h2', id: 'storage', text: 'Check total usage' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Workspace settings → Storage](/workspace/storage)',
+            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
+          },
+          {
+            title: 'Delete a large file',
+            detail:
+              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Quota affects newsletter sending',
+        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments. Free up space first if attachments matter for that send.',
+      },
+    ],
+  },
+];
+`````
+
 ## File: libs/common/src/lib/schemas/content-check.schema.ts
 `````typescript
 import { z } from 'zod';
@@ -72728,6 +73047,34 @@ export const PreflightResultObj = z.object({
   checkedAt: z.string(),
 });
 export type PreflightResult = z.infer<typeof PreflightResultObj>;
+`````
+
+## File: libs/common/src/lib/schema.ts
+`````typescript
+export * from './schemas/core.schema';
+export * from './schemas/activity.schema';
+export * from './schemas/auth.schema';
+export * from './schemas/tags.schema';
+export * from './schemas/lists.schema';
+export * from './schemas/teams.schema';
+export * from './schemas/emails.schema';
+export * from './schemas/marketing.schema';
+export * from './schemas/newsletter-templates.schema';
+export * from './schemas/persons.schema';
+export * from './schemas/settings.schema';
+export * from './schemas/tasks.schema';
+export * from './schemas/volunteer.schema';
+export * from './schemas/web-forms.schema';
+export * from './schemas/workflows.schema';
+export * from './schemas/companies.schema';
+export * from './schemas/events.schema';
+export * from './schemas/connections.schema';
+export * from './schemas/campaigns.schema';
+export * from './schemas/canvassing.schema';
+export * from './schemas/deliveries.schema';
+export * from './schemas/donations.schema';
+export * from './schemas/companion-access.schema';
+export * from './schemas/content-check.schema';
 `````
 
 ## File: apps/backend/src/app/lib/mail/sendgrid-whitelabel.service.ts
@@ -74062,6 +74409,334 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 export default donationsWebhookRoute;
 `````
 
+## File: apps/backend/src/app/modules/events/repositories/events.repo.ts
+`````typescript
+import type { Transaction } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
+import { sql } from 'kysely';
+import type { JoinedQueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { GridFilterModel } from '../../../../../../../libs/common/src';
+
+export class EventsRepo extends BaseRepository<'events'> {
+  constructor() {
+    super('events');
+  }
+
+  public async getAllEventsWithCount(
+    input: { tenant_id: string; options?: any },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: any[]; count: number }> {
+    const options: JoinedQueryParams = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const filterModel = (options.filterModel ?? {}) as GridFilterModel;
+
+    const applyFilters = <QB extends AnyQB>(qb: QB) => {
+      let q = qb.where('events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
+        const text = searchStr;
+        return qb2.where(
+          sql<boolean>`(
+            LOWER(events.name) LIKE ${text} OR
+            LOWER(events.description) LIKE ${text} OR
+            LOWER(events.location_address) LIKE ${text}
+          )`,
+        );
+      });
+
+      const includeArchived = (options as { includeArchived?: boolean }).includeArchived === true;
+      if (includeArchived) {
+        q = q.where('events.end_time', '<', new Date());
+      } else {
+        q = q.where('events.end_time', '>=', new Date());
+      }
+
+      q = this.applyColumnFilter(q, 'events.name', filterModel['name']);
+      q = this.applyColumnFilter(q, 'events.location_address', filterModel['location_address']);
+
+      return q;
+    };
+
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count('events.id').as('total')])
+      .execute();
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    const rows = await applyFilters(this.getSelect(trx))
+      .select([
+        'events.id',
+        'events.tenant_id',
+        'events.name',
+        'events.description',
+        'events.location_address',
+        'events.start_time',
+        'events.end_time',
+        'events.capacity',
+        'events.slug',
+        'events.is_published',
+        'events.send_reminder',
+        'events.send_registration_confirmation',
+        'events.created_at',
+        'events.updated_at',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('event_registrations')
+          .whereRef('event_registrations.event_id', '=', 'events.id')
+          .where('event_registrations.status', '!=', 'cancelled')
+          .select(({ fn }) => [fn.count<number>('event_registrations.id').as('registrations_count')])
+          .as('registrations_count'),
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce(
+          (acc: typeof qb, sort: { colId: string; sort: 'asc' | 'desc' }) => acc.orderBy(sort.colId, sort.sort),
+          qb,
+        ),
+      )
+      .$if(!options.sortModel?.length, (qb) => qb.orderBy('events.start_time', 'asc'))
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 0) - (options.startRow ?? 0)),
+      )
+      .execute();
+
+    return { rows, count };
+  }
+
+  public async getTicketTypesForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
+    const db = trx || this.db;
+    return db
+      .selectFrom('event_ticket_types')
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('event_id', '=', input.event_id)
+      .orderBy('sort_order', 'asc')
+      .orderBy('created_at', 'asc')
+      .execute();
+  }
+
+  public async addTicketType(
+    input: {
+      tenant_id: string;
+      event_id: string;
+      name: string;
+      description?: string | null;
+      price_cents: number;
+      capacity?: number | null;
+      sort_order?: number;
+      user_id: string;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const db = trx || this.db;
+    return db
+      .insertInto('event_ticket_types')
+      .values({
+        tenant_id: input.tenant_id,
+        event_id: input.event_id,
+        name: input.name,
+        description: input.description ?? null,
+        price_cents: input.price_cents,
+        capacity: input.capacity ?? null,
+        sort_order: input.sort_order ?? 0,
+        createdby_id: input.user_id,
+        updatedby_id: input.user_id,
+      })
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  public async updateTicketType(
+    input: {
+      tenant_id: string;
+      id: string;
+      row: {
+        name?: string;
+        description?: string | null;
+        price_cents?: number;
+        capacity?: number | null;
+        sort_order?: number;
+      };
+      user_id: string;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const db = trx || this.db;
+    return db
+      .updateTable('event_ticket_types')
+      .set({ ...input.row, updatedby_id: input.user_id, updated_at: sql`now()` })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  /**
+   * Persist a drag-to-reorder of an event's ticket types: write each id's `sort_order` to its index
+   * in `ordered_ids`, atomically. Caller has already verified `ordered_ids` is exactly this event's
+   * ticket types. There is no unique constraint on (event_id, sort_order), so a plain sequential
+   * write is safe — no temp-offset dance needed.
+   */
+  public async reorderTicketTypes(input: {
+    tenant_id: string;
+    event_id: string;
+    ordered_ids: string[];
+    user_id: string;
+  }): Promise<void> {
+    await this.transaction().execute(async (trx) => {
+      for (let i = 0; i < input.ordered_ids.length; i++) {
+        await trx
+          .updateTable('event_ticket_types')
+          .set({ sort_order: i, updatedby_id: input.user_id, updated_at: sql`now()` })
+          .where('tenant_id', '=', input.tenant_id)
+          .where('event_id', '=', input.event_id)
+          .where('id', '=', input.ordered_ids[i] ?? '')
+          .execute();
+      }
+    });
+  }
+
+  public async deleteTicketType(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
+    const db = trx || this.db;
+    const res = await db
+      .deleteFrom('event_ticket_types')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .executeTakeFirst();
+    return Number(res.numDeletedRows || 0) > 0;
+  }
+
+  public async getRegistrationsForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
+    const db = trx || this.db;
+    return db
+      .selectFrom('event_registrations')
+      .innerJoin('persons', 'persons.id', 'event_registrations.person_id')
+      .leftJoin('event_ticket_types', 'event_ticket_types.id', 'event_registrations.ticket_type_id')
+      .select([
+        'event_registrations.id',
+        'event_registrations.event_id',
+        'event_registrations.person_id',
+        'event_registrations.ticket_type_id',
+        'event_registrations.status',
+        'event_registrations.checked_in_at',
+        'event_registrations.notes',
+        'event_registrations.created_at',
+        'event_registrations.updated_at',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'event_ticket_types.name as ticket_type_name',
+        'event_ticket_types.price_cents as ticket_price_cents',
+      ])
+      .where('event_registrations.tenant_id', '=', input.tenant_id)
+      .where('event_registrations.event_id', '=', input.event_id)
+      .orderBy('persons.last_name', 'asc')
+      .execute();
+  }
+
+  public async addRegistration(
+    input: {
+      tenant_id: string;
+      event_id: string;
+      person_id: string;
+      ticket_type_id?: string | null;
+      status?: 'registered' | 'attended' | 'no_show' | 'cancelled';
+      notes?: string | null;
+      user_id: string;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const db = trx || this.db;
+    return db
+      .insertInto('event_registrations')
+      .values({
+        tenant_id: input.tenant_id,
+        event_id: input.event_id,
+        person_id: input.person_id,
+        ticket_type_id: input.ticket_type_id ?? null,
+        status: input.status ?? 'registered',
+        notes: input.notes ?? null,
+        createdby_id: input.user_id,
+        updatedby_id: input.user_id,
+      })
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  public async updateRegistration(
+    input: {
+      tenant_id: string;
+      id: string;
+      row: {
+        ticket_type_id?: string | null;
+        status?: 'registered' | 'attended' | 'no_show' | 'cancelled';
+        checked_in_at?: Date | null;
+        notes?: string | null;
+      };
+      user_id: string;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const db = trx || this.db;
+    return db
+      .updateTable('event_registrations')
+      .set({ ...input.row, updatedby_id: input.user_id, updated_at: sql`now()` })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  public async deleteRegistration(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
+    const db = trx || this.db;
+    const res = await db
+      .deleteFrom('event_registrations')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .executeTakeFirst();
+    return Number(res.numDeletedRows || 0) > 0;
+  }
+
+  public async getHistoryForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
+    const db = trx || this.db;
+    return db
+      .selectFrom('event_registrations')
+      .innerJoin('events', 'events.id', 'event_registrations.event_id')
+      .leftJoin('event_ticket_types', 'event_ticket_types.id', 'event_registrations.ticket_type_id')
+      .select([
+        'event_registrations.id',
+        'event_registrations.event_id',
+        'event_registrations.status',
+        'event_registrations.checked_in_at',
+        'event_registrations.notes',
+        'event_registrations.created_at',
+        'events.name as event_name',
+        'events.start_time',
+        'events.end_time',
+        'events.location_address',
+        'event_ticket_types.name as ticket_type_name',
+      ])
+      .where('event_registrations.tenant_id', '=', input.tenant_id)
+      .where('event_registrations.person_id', '=', input.person_id)
+      .orderBy('events.start_time', 'desc')
+      .execute();
+  }
+
+  public async getEventStats(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
+    const db = trx || this.db;
+    const result = await db
+      .selectFrom('event_registrations')
+      .select(({ fn }) => [fn.count<number>('id').as('events_count')])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('person_id', '=', input.person_id)
+      .where('status', '=', 'attended')
+      .executeTakeFirst();
+    return { events_count: Number(result?.events_count ?? 0) };
+  }
+}
+`````
+
 ## File: apps/backend/src/app/modules/files/controller.ts
 `````typescript
 import { BaseController } from '../../lib/base.controller';
@@ -74516,7 +75191,7 @@ import { createPublicKey, createVerify } from 'crypto';
 import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import { BaseRepository } from '../../../lib/base.repo';
 import { CampaignSubscriptionsRepo } from '../../campaigns/repositories/campaign-subscriptions.repo';
-import { applyEngagementTripwires } from '../send-guards';
+import { applyAutomationTripwires, applyEngagementTripwires } from '../send-guards';
 import { env } from '../../../../env';
 import { sql } from 'kysely';
 
@@ -74643,6 +75318,23 @@ async function applyAutomationEvent(ev: SendGridEvent): Promise<void> {
       .values({ tenant_id: tenantId, email: ev.email, reason, occurred_at: occurredAt })
       .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
       .execute();
+
+    // Stamp the run for the automation abuse tripwires — hard bounces only (SendGrid `bounce`
+    // with type 'blocked' is a soft failure and never counts against the tenant, matching the
+    // newsletter tripwire's exclusion). COALESCE keeps the stamp idempotent.
+    const isHardBounce = eventType === 'bounce' && ev.type !== 'blocked';
+    if (eventType === 'spamreport' || isHardBounce) {
+      await db
+        .updateTable('workflow_runs')
+        .set(
+          eventType === 'spamreport'
+            ? { spam_reported_at: sql`COALESCE(spam_reported_at, ${occurredAt})` }
+            : { bounced_at: sql`COALESCE(bounced_at, ${occurredAt})` },
+        )
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', runId)
+        .execute();
+    }
   }
 }
 
@@ -74668,6 +75360,9 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
 
     try {
       const processedNewsletters = new Set<string>();
+      // Tenants whose automation sends took a bounce/complaint in this batch — the automation
+      // tripwires re-evaluate for each after all events are applied.
+      const automationTripwireTenants = new Set<string>();
 
       // Insert all events that have newsletter_id and tenant_id
       for (const ev of events) {
@@ -74679,6 +75374,9 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
         if (!ev.newsletter_id && ev.workflow_run_id) {
           try {
             await applyAutomationEvent(ev);
+            if (ev.event === 'bounce' || ev.event === 'spamreport') {
+              automationTripwireTenants.add(String(ev.tenant_id));
+            }
           } catch (automationErr) {
             req.log.error(automationErr, `Failed to apply automation event ${ev.sg_event_id}`);
           }
@@ -74812,6 +75510,12 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
         await applyEngagementTripwires(db, tenantId, newsletterId);
       }
 
+      // Same tripwires for automation volume: newsletters and automation emails alike are
+      // covered — a bad list drip-fed through workflows pauses/suspends just like a blast.
+      for (const tenantId of automationTripwireTenants) {
+        await applyAutomationTripwires(db, tenantId);
+      }
+
       return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
     } catch (err) {
       req.log.error(err, 'SendGrid webhook processing error');
@@ -74894,6 +75598,13 @@ export const DOMAIN_UNVERIFIED_MESSAGE =
   'Before sending, verify the domain you send from (Settings → Domains) and choose a default From address on that domain (Settings → Communications). This protects your deliverability.';
 export const PHONE_UNVERIFIED_MESSAGE =
   'On the Free plan, verify a mobile phone number (Settings → Communications) before your first newsletter send.';
+export const AUTOMATION_PHONE_UNVERIFIED_MESSAGE =
+  'On the Free plan, verify a mobile phone number (Settings → Communications) before automation emails can send. This email was not sent.';
+
+/** Rolling window the automation tripwires aggregate over. Automation emails are one-recipient
+ * sends spread over time (no per-send population like a newsletter), so the "send" a tripwire
+ * judges is the tenant's recent automation volume as a whole. */
+export const AUTOMATION_TRIPWIRE_WINDOW_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -75012,6 +75723,12 @@ export function hasPaymentHold(tenant: SendingTenant): boolean {
   return PLANS_BY_KEY[tenant.plan].purchasable && PAYMENT_HOLD_STATUSES.has(tenant.subscription_status);
 }
 
+/** Free-plan identity gate: a verified mobile number is required before any tenant-originated
+ * email (newsletter or automation) leaves a Free account. Pure, shared by both send paths. */
+export function needsPhoneVerification(tenant: SendingTenant): boolean {
+  return tenant.plan === 'free' && !tenant.sending_phone_verified_at;
+}
+
 /** Throws when the tenant is suspended, tripwire-paused, or on a payment hold. */
 export function assertTenantSendingNotBlocked(tenant: SendingTenant): void {
   if (tenant.suspended_at) throw new ForbiddenError(SENDING_SUSPENDED_MESSAGE);
@@ -75091,7 +75808,7 @@ export async function assertTenantMaySendNewsletter(
   if (!(await hasVerifiedSendingDomain(db, tenantId))) {
     throw new PreconditionFailedError(DOMAIN_UNVERIFIED_MESSAGE);
   }
-  if (tenant.plan === 'free' && !tenant.sending_phone_verified_at) {
+  if (needsPhoneVerification(tenant)) {
     throw new PreconditionFailedError(PHONE_UNVERIFIED_MESSAGE);
   }
 
@@ -75224,87 +75941,62 @@ export async function applyEngagementTripwires(db: Db, tenantId: string, newslet
     await pauseTenantSending(db, tenantId, `hard_bounce_rate:${newsletterId}`);
   }
 }
-`````
 
-## File: apps/backend/src/app/modules/newsletters/trpc.router.ts
-`````typescript
-import {
-  AddMarketingEmailObj,
-  AddNewsletterTemplateObj,
-  RunPreflightObj,
-  UpdateMarketingEmailObj,
-  UpdateNewsletterTemplateObj,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
+/**
+ * The automation counterpart of `applyEngagementTripwires` — same thresholds, same semantics
+ * (`evaluateTripwires`: hard-bounce rate >5% pauses sending, spam-complaint rate >1% suspends
+ * the account, minimum sample of TRIPWIRE_MIN_RECIPIENTS), so automations are not a
+ * side-channel around the account-level abuse wires. Called from the SendGrid event webhook
+ * whenever an automation bounce/complaint event arrives.
+ *
+ * Sample: because automation emails go out one recipient at a time, the population is a rolling
+ * AUTOMATION_TRIPWIRE_WINDOW_DAYS window — sends metered into `newsletter_send_log`
+ * (`source='automation'`, written on actual delivery) vs the hard bounces / spam complaints the
+ * webhook stamps onto `workflow_runs` (`bounced_at` / `spam_reported_at`; soft `blocked`
+ * bounces are never stamped). Send-log retention (32 days) comfortably outlives the window.
+ */
+export async function applyAutomationTripwires(db: Db, tenantId: string): Promise<void> {
+  const since = new Date(Date.now() - AUTOMATION_TRIPWIRE_WINDOW_DAYS * DAY_MS);
 
-import { authProcedure, router } from '../../../trpc';
-import { NewslettersController } from './controller';
-import { NewsletterTemplatesController } from './templates.controller';
-import { createCrudRouter } from '../../lib/crud-router';
+  const sent = await db
+    .selectFrom('newsletter_send_log')
+    .select((eb) => eb.fn.coalesce(eb.fn.sum('recipient_count'), sql<number>`0`).as('total'))
+    .where('tenant_id', '=', tenantId)
+    .where('source', '=', 'automation')
+    .where('created_at', '>=', since)
+    .executeTakeFirst();
+  const totalRecipients = Number(sent?.total ?? 0);
+  if (totalRecipients < TRIPWIRE_MIN_RECIPIENTS) return;
 
-const newsletters = new NewslettersController();
-const templates = new NewsletterTemplatesController();
+  const stats = await db
+    .selectFrom('workflow_runs')
+    .select([
+      sql<number>`COUNT(*) FILTER (WHERE bounced_at >= ${since})`.as('hard_bounces'),
+      sql<number>`COUNT(*) FILTER (WHERE spam_reported_at >= ${since})`.as('spam_reports'),
+    ])
+    .where('tenant_id', '=', tenantId)
+    .where('step_kind', '=', 'send_email')
+    .executeTakeFirst();
 
-const crud = createCrudRouter(newsletters, AddMarketingEmailObj, UpdateMarketingEmailObj);
+  const hardBounces = Number(stats?.hard_bounces ?? 0);
+  const spamReports = Number(stats?.spam_reports ?? 0);
+  const verdict = evaluateTripwires({ totalRecipients, hardBounces, spamReports });
+  if (!verdict) return;
 
-const sendTestSchema = z.object({
-  subject: z.string(),
-  html: z.string(),
-  text: z.string().optional(),
-  to: z.email(),
-  fromName: z.string().optional(),
-  fromEmail: z.string().optional(),
-});
-
-export const NewslettersRouter = router({
-  ...crud,
-
-  getReport: authProcedure.input(idSchema).query(({ input, ctx }) => newsletters.getReport(ctx.auth.tenant_id, input)),
-
-  createClickersList: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => newsletters.createClickersList(ctx.auth, input)),
-
-  send: authProcedure
-    .input(idSchema)
-    .mutation(async ({ input, ctx }) => newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-
-  cancelSchedule: authProcedure
-    .input(idSchema)
-    .mutation(async ({ input, ctx }) => newsletters.cancelSchedule(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-
-  resendToNonOpeners: authProcedure
-    .input(z.object({ id: idSchema, subject: z.string().min(1).max(200) }))
-    .mutation(async ({ input, ctx }) =>
-      newsletters.resendToNonOpeners(ctx.auth.tenant_id, input.id, input.subject, ctx.auth.user_id),
-    ),
-
-  sendTest: authProcedure
-    .input(sendTestSchema)
-    .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
-
-  runPreflight: authProcedure
-    .input(RunPreflightObj)
-    .mutation(async ({ input, ctx }) => newsletters.runPreflight(ctx.auth.tenant_id, input)),
-
-  sendQuota: authProcedure.query(({ ctx }) => newsletters.getSendQuota(ctx.auth.tenant_id)),
-
-  /** User-saved templates — the wizard's "Save as template" / "Your templates" library. */
-  templates: router({
-    getAll: authProcedure.query(({ ctx }) => templates.listTemplates(ctx.auth.tenant_id)),
-
-    add: authProcedure
-      .input(AddNewsletterTemplateObj)
-      .mutation(({ input, ctx }) => templates.addTemplate(ctx.auth, input)),
-
-    rename: authProcedure
-      .input(z.object({ id: idSchema, data: UpdateNewsletterTemplateObj }))
-      .mutation(({ input, ctx }) => templates.renameTemplate(ctx.auth, input.id, input.data)),
-
-    delete: authProcedure.input(idSchema).mutation(({ input, ctx }) => templates.deleteTemplate(ctx.auth, input)),
-  }),
-});
+  if (verdict === 'suspend') {
+    logger.error(
+      { tenantId, totalRecipients, spamReports, windowDays: AUTOMATION_TRIPWIRE_WINDOW_DAYS },
+      '[abuse-tripwire] Automation spam-complaint rate exceeded — tenant suspended pending human review',
+    );
+    await suspendTenant(db, tenantId, 'automation_spam_complaint_rate');
+  } else {
+    logger.error(
+      { tenantId, totalRecipients, hardBounces, windowDays: AUTOMATION_TRIPWIRE_WINDOW_DAYS },
+      '[abuse-tripwire] Automation hard-bounce rate exceeded — tenant sending paused',
+    );
+    await pauseTenantSending(db, tenantId, 'automation_hard_bounce_rate');
+  }
+}
 `````
 
 ## File: apps/backend/src/app/modules/web-forms/controller.ts
@@ -80719,6 +81411,87 @@ export const DonationsRouter = router({
 });
 `````
 
+## File: apps/backend/src/app/modules/newsletters/trpc.router.ts
+`````typescript
+import {
+  AddMarketingEmailObj,
+  AddNewsletterTemplateObj,
+  RunPreflightObj,
+  UpdateMarketingEmailObj,
+  UpdateNewsletterTemplateObj,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { NewslettersController } from './controller';
+import { NewsletterTemplatesController } from './templates.controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const newsletters = new NewslettersController();
+const templates = new NewsletterTemplatesController();
+
+const crud = createCrudRouter(newsletters, AddMarketingEmailObj, UpdateMarketingEmailObj);
+
+const sendTestSchema = z.object({
+  subject: z.string(),
+  html: z.string(),
+  text: z.string().optional(),
+  to: z.email(),
+  fromName: z.string().optional(),
+  fromEmail: z.string().optional(),
+});
+
+export const NewslettersRouter = router({
+  ...crud,
+
+  getReport: authProcedure.input(idSchema).query(({ input, ctx }) => newsletters.getReport(ctx.auth.tenant_id, input)),
+
+  createClickersList: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => newsletters.createClickersList(ctx.auth, input)),
+
+  send: authProcedure
+    .input(idSchema)
+    .mutation(async ({ input, ctx }) => newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  cancelSchedule: authProcedure
+    .input(idSchema)
+    .mutation(async ({ input, ctx }) => newsletters.cancelSchedule(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  resendToNonOpeners: authProcedure
+    .input(z.object({ id: idSchema, subject: z.string().min(1).max(200) }))
+    .mutation(async ({ input, ctx }) =>
+      newsletters.resendToNonOpeners(ctx.auth.tenant_id, input.id, input.subject, ctx.auth.user_id),
+    ),
+
+  sendTest: authProcedure
+    .input(sendTestSchema)
+    .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
+
+  runPreflight: authProcedure
+    .input(RunPreflightObj)
+    .mutation(async ({ input, ctx }) => newsletters.runPreflight(ctx.auth.tenant_id, input)),
+
+  sendQuota: authProcedure.query(({ ctx }) => newsletters.getSendQuota(ctx.auth.tenant_id)),
+
+  /** User-saved templates — the wizard's "Save as template" / "Your templates" library. */
+  templates: router({
+    getAll: authProcedure.query(({ ctx }) => templates.listTemplates(ctx.auth.tenant_id)),
+
+    add: authProcedure
+      .input(AddNewsletterTemplateObj)
+      .mutation(({ input, ctx }) => templates.addTemplate(ctx.auth, input)),
+
+    rename: authProcedure
+      .input(z.object({ id: idSchema, data: UpdateNewsletterTemplateObj }))
+      .mutation(({ input, ctx }) => templates.renameTemplate(ctx.auth, input.id, input.data)),
+
+    delete: authProcedure.input(idSchema).mutation(({ input, ctx }) => templates.deleteTemplate(ctx.auth, input)),
+  }),
+});
+`````
+
 ## File: apps/backend/src/app/modules/settings/controller.ts
 `````typescript
 import { TRPCError } from '@trpc/server';
@@ -81572,7 +82345,7 @@ export const PRIVACY_DOC: LegalDoc = {
   title: 'Privacy policy',
   intro:
     'What we collect, why, where it lives, and the things we will never do with it. Written to be read, not skimmed past.',
-  updated: 'July 18, 2026',
+  updated: 'July 19, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -81637,7 +82410,7 @@ export const PRIVACY_DOC: LegalDoc = {
         '**Addresses and maps.** Household addresses can be geocoded so they appear on maps and turfs. Geocoding sends the street address to the Google Maps Geocoding API and stores the resulting coordinates.',
         '**Synced mailboxes.** If a workspace admin connects Gmail or Microsoft 365, we sync email content into the workspace so conversations sit next to the people they belong to. The OAuth tokens for these connections are encrypted at rest with AES-256-GCM, and you can disconnect at any time. Our use of data received from Google APIs adheres to the Google API Services User Data Policy, including its Limited Use requirements.',
         '**Newsletter engagement.** When an organization sends a newsletter, delivery and engagement events (bounces, unsubscribes, opens and clicks) are recorded so the sender can respect them.',
-        '**Uploaded files.** Imports and attachments are stored in the workspace’s region.',
+        '**Uploaded files.** Imports and attachments are stored in Canada with the rest of your workspace data.',
       ],
     },
     {
@@ -81690,7 +82463,7 @@ export const PRIVACY_DOC: LegalDoc = {
     {
       kind: 'list',
       items: [
-        '**Microsoft Azure.** Hosts the application, database and file storage in your workspace’s region (Canada by default).',
+        '**Microsoft Azure.** Hosts the application, database and file storage in Canada.',
         '**Cloudflare.** Serves the marketing site and the public form, donation and companion pages at the network edge.',
         '**Stripe.** Subscription billing, tax calculation, and card donation processing. Stripe stores payment and donor data in the United States.',
         '**Postmark.** Delivers transactional email such as verification links, security codes and account notices.',
@@ -81709,7 +82482,7 @@ export const PRIVACY_DOC: LegalDoc = {
     },
     {
       kind: 'p',
-      text: 'Workspaces are hosted in Canada by default. On the Movement plan, you choose your workspace’s region (Canada, US, EU or UK) when you create it, and your workspace data stays in that region for processing and backups. Three narrow exceptions apply regardless of region: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, and newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States.',
+      text: 'Workspaces are hosted in Canada, and your workspace data stays in Canada for processing and backups. Three narrow exceptions apply: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, and newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States.',
     },
     {
       kind: 'h2',
@@ -81880,10 +82653,7 @@ const CONTACT_EMAIL = 'hello@pplcrm.com';
           class="mt-12 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line py-5 text-xs text-base-content/45"
         >
           <span>© 2026 pplCRM · pplcrm.com</span>
-          <span
-            >Your data is stored in Canada, or the region you choose on Movement. Export everything anytime. Delete
-            means deleted.</span
-          >
+          <span>Your data is stored in Canada. Export everything anytime. Delete means deleted.</span>
         </div>
       </div>
     </footer>
@@ -84103,6 +84873,265 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 `````
 
+## File: apps/website/src/app/legal/eula-content.ts
+`````typescript
+import type { LegalDoc } from './legal-types';
+
+/**
+ * The end user license agreement (the terms of service for the platform).
+ * Operational specifics (plan caps, sending guards, deletion windows, the 1%
+ * donation platform fee) mirror the product; if the product changes, change
+ * this document in the same commit.
+ */
+export const EULA_DOC: LegalDoc = {
+  eyebrow: 'Legal',
+  title: 'End user license agreement',
+  intro:
+    'The agreement between you and pplCRM when you use the service. Plain language where the law allows it, and no surprises hiding in the numbered clauses.',
+  updated: 'July 18, 2026',
+  blocks: [
+    {
+      kind: 'h2',
+      id: 'agreement',
+      text: '1. The agreement',
+    },
+    {
+      kind: 'p',
+      text: 'These terms are a contract between pplCRM (“we”, “us”) and the organization or person creating an account (“you”). They cover the pplCRM application, the volunteer companion apps, the public pages you publish through us, and the marketing site. By creating an account, or by clicking agree at signup, you accept them. If you are accepting on behalf of an organization, you confirm you have authority to bind it, and “you” means that organization.',
+    },
+    {
+      kind: 'p',
+      text: 'You must be the age of majority in your jurisdiction to create an account. The [privacy policy](/privacy) explains how personal information is handled and is part of this agreement.',
+    },
+    {
+      kind: 'h2',
+      id: 'accounts',
+      text: '2. Accounts and workspaces',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Each organization gets its own workspace, isolated from every other organization on the platform.',
+        'You are responsible for the accuracy of your account information, for keeping credentials confidential, and for what happens under your seats. Tell us at hello@pplcrm.com immediately if you suspect unauthorized access.',
+        'Workspace admins control who has access, including requiring two-factor authentication for the whole workspace, approving field volunteers, and deactivating people who leave.',
+        'Signup requires a working email address; accounts with unverified email cannot sign in.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'plans-billing',
+      text: '3. Plans, billing and taxes',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Current plans, prices and limits are on the [pricing page](/pricing). Paid plans are billed in US dollars through Stripe; prices shown in other currencies are estimates only. Applicable sales taxes are calculated at checkout.',
+        'Paid plans can be billed monthly or annually. Annual billing is paid up front for the year at 10× the monthly price — two months free — and renews yearly unless canceled.',
+        'Paid plans are metered on emailable subscribers, not stored contacts. When your subscriber count crosses into a new bracket, we email your admins, move you to the new bracket, and charge the prorated difference for the remainder of your current billing period on either interval. Growing never interrupts your service. If your count shrinks, the price drops at the next renewal automatically.',
+        'The free plan is free indefinitely, within its published limits (subscriber, sending, seat and storage caps). We may adjust free-plan limits with notice; we will never retroactively charge you.',
+        'If a subscription payment fails, newsletter sending is placed on hold until the payment method is updated — nothing else is restricted, and reading and exporting your data are never affected.',
+        'We may change paid pricing with at least 30 days’ notice; changes take effect at your next billing cycle, and you can cancel before they do.',
+        'Downgrading or lapsing never locks your data. Reading and exporting stay available regardless of plan; features above your plan simply stop being editable.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'cancellation',
+      text: '4. Cancellation and refunds',
+    },
+    {
+      kind: 'p',
+      text: 'You can cancel your subscription at any time. Cancellation stops future renewals; your paid features run until the end of the period you have paid for. Except where the law requires otherwise, fees already paid are not refunded, and partial periods are not prorated. If you believe we have billed you in error, write to hello@pplcrm.com and we will fix genuine mistakes without ceremony.',
+    },
+    {
+      kind: 'h2',
+      id: 'your-data',
+      text: '5. Your data stays yours',
+    },
+    {
+      kind: 'list',
+      items: [
+        'You own the data in your workspace. We claim no rights to it beyond the narrow license needed to run the service for you: storing it, displaying it to your team, sending what you tell us to send, and backing it up.',
+        'We never sell, share, rent or mine workspace data, use it for advertising, or use it to train machine-learning models. These commitments are stated in full in the [privacy policy](/privacy) and on the [data ownership page](/data-ownership).',
+        'You can export everything to CSV at any time, on every plan.',
+        'Workspace deletion is real: after a 30-day grace window it permanently and irreversibly deletes every record in the workspace. Export first; we cannot recover data you asked us to destroy.',
+        'If your organization needs a signed data processing agreement, write to hello@pplcrm.com.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'responsibilities',
+      text: '6. Your responsibilities for the people in your list',
+    },
+    {
+      kind: 'p',
+      text: 'You are the steward of the people in your workspace, and the law sees it the same way: for workspace data you are the controller and we are your service provider. That means you are responsible for:',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Having consent or another lawful basis for the personal information you store and the messages you send, under the laws that apply to you (for example PIPEDA and CASL in Canada, CAN-SPAM in the US, GDPR and PECR in Europe and the UK).',
+        'Complying with the election, campaign finance and donor disclosure laws of your jurisdiction, including any rules about who may donate and what records you must keep.',
+        'Answering access, correction and deletion requests from the people in your list. The product gives you the tools; the obligation is yours.',
+        'What your team and volunteers do with the access you give them.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'acceptable-use',
+      text: '7. Acceptable use',
+    },
+    {
+      kind: 'p',
+      text: 'We built pplCRM for legitimate community, political and non-profit work. You agree not to use it to:',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Send spam. Purchased, scraped or borrowed lists are prohibited; you may only email people who gave you their address with a reasonable expectation of hearing from you.',
+        'Break the law, including privacy, election, anti-harassment and anti-discrimination law.',
+        'Harass, threaten, defame or deceive people, or impersonate another person or organization.',
+        'Probe, disrupt or overload the service, resell access to it, or attempt to access another organization’s workspace.',
+        'Store data you have no right to hold, including data obtained by breach or deception.',
+      ],
+    },
+    {
+      kind: 'p',
+      text: 'We may suspend or terminate accounts that break these rules. Where the situation allows it, we warn first and suspend second; where people are being harmed, we act first.',
+    },
+    {
+      kind: 'h2',
+      id: 'email-rules',
+      text: '8. Email sending rules',
+    },
+    {
+      kind: 'p',
+      text: 'Deliverability is a shared resource, so the platform enforces guardrails and you agree to them:',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address and a working unsubscribe link, and this footer cannot be removed.',
+        'Unsubscribes, bounces and do-not-contact flags are honored automatically on all future sends. Attempting to circumvent suppression is a breach of this agreement.',
+        'New free-plan senders verify a mobile number and warm up gradually under a daily cap.',
+        'Each plan includes a monthly newsletter-email allowance (shown on the [pricing page](/pricing)), and it is enforced at send time: a send larger than what remains of your allowance is declined with the exact numbers, and the allowance resets each billing month. Emails sent by automations count toward the same allowance. Growing your list raises your bracket — and your allowance — automatically.',
+        'Every newsletter passes a deliverability check before it sends. Content that scores in the blocked band — phishing-shaped links, scam patterns, or commercial marketing unrelated to your organization’s cause — will not send until fixed. Fundraising, auctions and event promotion are normal newsletter content and are not affected.',
+        'Sending pauses automatically if your hard-bounce rate exceeds 5%, and is suspended if your spam-complaint rate exceeds 1%. We do this to protect both your sending reputation and everyone else’s; write to us to review and resume.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'donations',
+      text: '9. Donations',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Donation payments are processed by Stripe. We are not a payment processor, and card details never touch our servers.',
+        'Card donations processed through Stripe carry a 1% platform fee in addition to Stripe’s own processing fees, as shown in the product.',
+        'You are responsible for your eligibility to accept donations, for issuing any receipts the law requires, and for compliance with contribution limits and disclosure rules.',
+        'Refunds and chargebacks are handled through the payment processor; the product reflects them against the donation record automatically.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'volunteers',
+      text: '10. Volunteer companion access',
+    },
+    {
+      kind: 'p',
+      text: 'Companion links give volunteers access to exactly the turf or route you assign, without an account. Volunteers verify with a one-time code and each must be approved once by an admin. You are responsible for who you approve, and you can revoke a volunteer or regenerate a link at any time. Companion sessions and links expire automatically unless you configure otherwise.',
+    },
+    {
+      kind: 'h2',
+      id: 'ip',
+      text: '11. Intellectual property',
+    },
+    {
+      kind: 'p',
+      text: 'We own the pplCRM software, design and brand. We grant you a non-exclusive, non-transferable right to use the service while this agreement is in effect. You may not copy, modify, reverse engineer or create derivative works of the service except where the law grants that right regardless of contract. If you send us feedback or feature ideas, we may use them without obligation; that license covers the idea, never your data.',
+    },
+    {
+      kind: 'h2',
+      id: 'availability',
+      text: '12. Availability and support',
+    },
+    {
+      kind: 'p',
+      text: 'We work to keep the service fast and available, and we maintain automated backups, but we do not promise uninterrupted service and self-serve plans carry no formal SLA. We may change the service as we improve it; if we materially remove functionality your plan depends on, we will give you notice and time to export. Support is by email at hello@pplcrm.com, and a human replies.',
+    },
+    {
+      kind: 'h2',
+      id: 'suspension-termination',
+      text: '13. Suspension and termination',
+    },
+    {
+      kind: 'list',
+      items: [
+        'You may stop using the service and delete your workspace at any time; section 5 describes how deletion works.',
+        'We may suspend or terminate for breach of these terms, non-payment, legal requirement, or genuine risk to the platform or other customers. Except in urgent cases, we give notice and a chance to fix the problem first.',
+        'On termination we will not withhold your data: export remains available for a reasonable wind-down period before deletion, except where the law forbids it.',
+        'Sections that by their nature should survive (data commitments, disclaimers, liability limits, governing law) survive termination.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'disclaimers',
+      text: '14. Disclaimers',
+    },
+    {
+      kind: 'p',
+      text: 'The service is provided “as is” and “as available”. To the maximum extent the law allows, we disclaim implied warranties of merchantability, fitness for a particular purpose and non-infringement. pplCRM is a tool: we do not provide legal advice, and using features like consent tracking, suppression lists or receipts does not by itself make you compliant with the laws that apply to you.',
+    },
+    {
+      kind: 'h2',
+      id: 'liability',
+      text: '15. Limitation of liability',
+    },
+    {
+      kind: 'p',
+      text: 'To the maximum extent the law allows: neither party is liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, revenues or data; and our total liability under this agreement is capped at the amounts you paid us in the 12 months before the event giving rise to the claim (or 100 US dollars if you are on the free plan). Nothing in this section limits liability that cannot lawfully be limited, and nothing in it weakens our data commitments in section 5.',
+    },
+    {
+      kind: 'h2',
+      id: 'indemnity',
+      text: '16. Indemnity',
+    },
+    {
+      kind: 'p',
+      text: 'You will defend and indemnify us against third-party claims arising from your data, your messages, or your breach of sections 6 through 9, provided we tell you promptly about the claim and let you control the defense.',
+    },
+    {
+      kind: 'h2',
+      id: 'law',
+      text: '17. Governing law',
+    },
+    {
+      kind: 'p',
+      text: 'This agreement is governed by the laws of the Province of Ontario and the federal laws of Canada applicable in it, and the courts of Ontario have exclusive jurisdiction, except that either party may seek injunctive relief for misuse of data or intellectual property in any competent court. If you are a consumer somewhere whose law gives you mandatory protections, those protections are unaffected.',
+    },
+    {
+      kind: 'h2',
+      id: 'changes',
+      text: '18. Changes to these terms',
+    },
+    {
+      kind: 'p',
+      text: 'When these terms change materially, we will email workspace admins at least 30 days before the change takes effect, and update the date at the top. If you keep using the service after that date, the new terms apply; if you do not agree, cancel and export before it, and we will help.',
+    },
+    {
+      kind: 'h2',
+      id: 'contact',
+      text: '19. Contact',
+    },
+    {
+      kind: 'p',
+      text: 'Questions about these terms go to hello@pplcrm.com. If anything here seems to conflict with the plain-language promises on the [data ownership page](/data-ownership), tell us; the stricter protection for you is the one we intend.',
+    },
+  ],
+};
+`````
+
 ## File: libs/common/src/lib/help/articles/engagement.ts
 `````typescript
 import type { HelpArticle } from '../help-types';
@@ -85166,6 +86195,10 @@ export interface Tasks extends RecordType {
   assigned_to: string | null;
   team_id: string | null;
   file_id: string | null;
+  /** Optional link to the contact the task is about — the person the task_sla_breach automation enrolls. */
+  person_id: string | null;
+  /** Once-only marker: when the hourly scan first found this task past its working-hours SLA target. */
+  sla_breached_at: Timestamp | null;
 }
 
 // Unlike every other record table, tenants.createdby_id is NULLABLE in the schema — the tenant
@@ -85755,6 +86788,10 @@ export interface WorkflowRuns {
    * webhook via the workflow_run_id custom arg). Step conditions and exit goals read these. */
   opened_at: Timestamp | null;
   clicked_at: Timestamp | null;
+  /** First hard bounce / spam complaint for the automation email this run sent (stamped by the
+   * same webhook). The automation abuse tripwires aggregate these per tenant. */
+  bounced_at: Timestamp | null;
+  spam_reported_at: Timestamp | null;
   created_at: Generated<Timestamp>;
 }
 
@@ -85826,265 +86863,6 @@ export type PersonsdCol = keyof Models['persons'];
 export type HouseholdWithExtras = SelectShape<Models['households']> & {
   persons_count: number;
   tags: string[] | null;
-};
-`````
-
-## File: apps/website/src/app/legal/eula-content.ts
-`````typescript
-import type { LegalDoc } from './legal-types';
-
-/**
- * The end user license agreement (the terms of service for the platform).
- * Operational specifics (plan caps, sending guards, deletion windows, the 1%
- * donation platform fee) mirror the product; if the product changes, change
- * this document in the same commit.
- */
-export const EULA_DOC: LegalDoc = {
-  eyebrow: 'Legal',
-  title: 'End user license agreement',
-  intro:
-    'The agreement between you and pplCRM when you use the service. Plain language where the law allows it, and no surprises hiding in the numbered clauses.',
-  updated: 'July 18, 2026',
-  blocks: [
-    {
-      kind: 'h2',
-      id: 'agreement',
-      text: '1. The agreement',
-    },
-    {
-      kind: 'p',
-      text: 'These terms are a contract between pplCRM (“we”, “us”) and the organization or person creating an account (“you”). They cover the pplCRM application, the volunteer companion apps, the public pages you publish through us, and the marketing site. By creating an account, or by clicking agree at signup, you accept them. If you are accepting on behalf of an organization, you confirm you have authority to bind it, and “you” means that organization.',
-    },
-    {
-      kind: 'p',
-      text: 'You must be the age of majority in your jurisdiction to create an account. The [privacy policy](/privacy) explains how personal information is handled and is part of this agreement.',
-    },
-    {
-      kind: 'h2',
-      id: 'accounts',
-      text: '2. Accounts and workspaces',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Each organization gets its own workspace, isolated from every other organization on the platform.',
-        'You are responsible for the accuracy of your account information, for keeping credentials confidential, and for what happens under your seats. Tell us at hello@pplcrm.com immediately if you suspect unauthorized access.',
-        'Workspace admins control who has access, including requiring two-factor authentication for the whole workspace, approving field volunteers, and deactivating people who leave.',
-        'Signup requires a working email address; accounts with unverified email cannot sign in.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'plans-billing',
-      text: '3. Plans, billing and taxes',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Current plans, prices and limits are on the [pricing page](/pricing). Paid plans are billed in US dollars through Stripe; prices shown in other currencies are estimates only. Applicable sales taxes are calculated at checkout.',
-        'Paid plans can be billed monthly or annually. Annual billing is paid up front for the year at 10× the monthly price — two months free — and renews yearly unless canceled.',
-        'Paid plans are metered on emailable subscribers, not stored contacts. When your subscriber count crosses into a new bracket, we email your admins, move you to the new bracket, and charge the prorated difference for the remainder of your current billing period on either interval. Growing never interrupts your service. If your count shrinks, the price drops at the next renewal automatically.',
-        'The free plan is free indefinitely, within its published limits (subscriber, sending, seat and storage caps). We may adjust free-plan limits with notice; we will never retroactively charge you.',
-        'If a subscription payment fails, newsletter sending is placed on hold until the payment method is updated — nothing else is restricted, and reading and exporting your data are never affected.',
-        'We may change paid pricing with at least 30 days’ notice; changes take effect at your next billing cycle, and you can cancel before they do.',
-        'Downgrading or lapsing never locks your data. Reading and exporting stay available regardless of plan; features above your plan simply stop being editable.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'cancellation',
-      text: '4. Cancellation and refunds',
-    },
-    {
-      kind: 'p',
-      text: 'You can cancel your subscription at any time. Cancellation stops future renewals; your paid features run until the end of the period you have paid for. Except where the law requires otherwise, fees already paid are not refunded, and partial periods are not prorated. If you believe we have billed you in error, write to hello@pplcrm.com and we will fix genuine mistakes without ceremony.',
-    },
-    {
-      kind: 'h2',
-      id: 'your-data',
-      text: '5. Your data stays yours',
-    },
-    {
-      kind: 'list',
-      items: [
-        'You own the data in your workspace. We claim no rights to it beyond the narrow license needed to run the service for you: storing it, displaying it to your team, sending what you tell us to send, and backing it up.',
-        'We never sell, share, rent or mine workspace data, use it for advertising, or use it to train machine-learning models. These commitments are stated in full in the [privacy policy](/privacy) and on the [data ownership page](/data-ownership).',
-        'You can export everything to CSV at any time, on every plan.',
-        'Workspace deletion is real: after a 30-day grace window it permanently and irreversibly deletes every record in the workspace. Export first; we cannot recover data you asked us to destroy.',
-        'If your organization needs a signed data processing agreement, write to hello@pplcrm.com.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'responsibilities',
-      text: '6. Your responsibilities for the people in your list',
-    },
-    {
-      kind: 'p',
-      text: 'You are the steward of the people in your workspace, and the law sees it the same way: for workspace data you are the controller and we are your service provider. That means you are responsible for:',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Having consent or another lawful basis for the personal information you store and the messages you send, under the laws that apply to you (for example PIPEDA and CASL in Canada, CAN-SPAM in the US, GDPR and PECR in Europe and the UK).',
-        'Complying with the election, campaign finance and donor disclosure laws of your jurisdiction, including any rules about who may donate and what records you must keep.',
-        'Answering access, correction and deletion requests from the people in your list. The product gives you the tools; the obligation is yours.',
-        'What your team and volunteers do with the access you give them.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'acceptable-use',
-      text: '7. Acceptable use',
-    },
-    {
-      kind: 'p',
-      text: 'We built pplCRM for legitimate community, political and non-profit work. You agree not to use it to:',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Send spam. Purchased, scraped or borrowed lists are prohibited; you may only email people who gave you their address with a reasonable expectation of hearing from you.',
-        'Break the law, including privacy, election, anti-harassment and anti-discrimination law.',
-        'Harass, threaten, defame or deceive people, or impersonate another person or organization.',
-        'Probe, disrupt or overload the service, resell access to it, or attempt to access another organization’s workspace.',
-        'Store data you have no right to hold, including data obtained by breach or deception.',
-      ],
-    },
-    {
-      kind: 'p',
-      text: 'We may suspend or terminate accounts that break these rules. Where the situation allows it, we warn first and suspend second; where people are being harmed, we act first.',
-    },
-    {
-      kind: 'h2',
-      id: 'email-rules',
-      text: '8. Email sending rules',
-    },
-    {
-      kind: 'p',
-      text: 'Deliverability is a shared resource, so the platform enforces guardrails and you agree to them:',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address and a working unsubscribe link, and this footer cannot be removed.',
-        'Unsubscribes, bounces and do-not-contact flags are honored automatically on all future sends. Attempting to circumvent suppression is a breach of this agreement.',
-        'New free-plan senders verify a mobile number and warm up gradually under a daily cap.',
-        'Each plan includes a monthly newsletter-email allowance (shown on the [pricing page](/pricing)), and it is enforced at send time: a send larger than what remains of your allowance is declined with the exact numbers, and the allowance resets each billing month. Emails sent by automations count toward the same allowance. Growing your list raises your bracket — and your allowance — automatically.',
-        'Every newsletter passes a deliverability check before it sends. Content that scores in the blocked band — phishing-shaped links, scam patterns, or commercial marketing unrelated to your organization’s cause — will not send until fixed. Fundraising, auctions and event promotion are normal newsletter content and are not affected.',
-        'Sending pauses automatically if your hard-bounce rate exceeds 5%, and is suspended if your spam-complaint rate exceeds 1%. We do this to protect both your sending reputation and everyone else’s; write to us to review and resume.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'donations',
-      text: '9. Donations',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Donation payments are processed by Stripe. We are not a payment processor, and card details never touch our servers.',
-        'Card donations processed through Stripe carry a 1% platform fee in addition to Stripe’s own processing fees, as shown in the product.',
-        'You are responsible for your eligibility to accept donations, for issuing any receipts the law requires, and for compliance with contribution limits and disclosure rules.',
-        'Refunds and chargebacks are handled through the payment processor; the product reflects them against the donation record automatically.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'volunteers',
-      text: '10. Volunteer companion access',
-    },
-    {
-      kind: 'p',
-      text: 'Companion links give volunteers access to exactly the turf or route you assign, without an account. Volunteers verify with a one-time code and each must be approved once by an admin. You are responsible for who you approve, and you can revoke a volunteer or regenerate a link at any time. Companion sessions and links expire automatically unless you configure otherwise.',
-    },
-    {
-      kind: 'h2',
-      id: 'ip',
-      text: '11. Intellectual property',
-    },
-    {
-      kind: 'p',
-      text: 'We own the pplCRM software, design and brand. We grant you a non-exclusive, non-transferable right to use the service while this agreement is in effect. You may not copy, modify, reverse engineer or create derivative works of the service except where the law grants that right regardless of contract. If you send us feedback or feature ideas, we may use them without obligation; that license covers the idea, never your data.',
-    },
-    {
-      kind: 'h2',
-      id: 'availability',
-      text: '12. Availability and support',
-    },
-    {
-      kind: 'p',
-      text: 'We work to keep the service fast and available, and we maintain automated backups, but we do not promise uninterrupted service and self-serve plans carry no formal SLA. We may change the service as we improve it; if we materially remove functionality your plan depends on, we will give you notice and time to export. Support is by email at hello@pplcrm.com, and a human replies.',
-    },
-    {
-      kind: 'h2',
-      id: 'suspension-termination',
-      text: '13. Suspension and termination',
-    },
-    {
-      kind: 'list',
-      items: [
-        'You may stop using the service and delete your workspace at any time; section 5 describes how deletion works.',
-        'We may suspend or terminate for breach of these terms, non-payment, legal requirement, or genuine risk to the platform or other customers. Except in urgent cases, we give notice and a chance to fix the problem first.',
-        'On termination we will not withhold your data: export remains available for a reasonable wind-down period before deletion, except where the law forbids it.',
-        'Sections that by their nature should survive (data commitments, disclaimers, liability limits, governing law) survive termination.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'disclaimers',
-      text: '14. Disclaimers',
-    },
-    {
-      kind: 'p',
-      text: 'The service is provided “as is” and “as available”. To the maximum extent the law allows, we disclaim implied warranties of merchantability, fitness for a particular purpose and non-infringement. pplCRM is a tool: we do not provide legal advice, and using features like consent tracking, suppression lists or receipts does not by itself make you compliant with the laws that apply to you.',
-    },
-    {
-      kind: 'h2',
-      id: 'liability',
-      text: '15. Limitation of liability',
-    },
-    {
-      kind: 'p',
-      text: 'To the maximum extent the law allows: neither party is liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, revenues or data; and our total liability under this agreement is capped at the amounts you paid us in the 12 months before the event giving rise to the claim (or 100 US dollars if you are on the free plan). Nothing in this section limits liability that cannot lawfully be limited, and nothing in it weakens our data commitments in section 5.',
-    },
-    {
-      kind: 'h2',
-      id: 'indemnity',
-      text: '16. Indemnity',
-    },
-    {
-      kind: 'p',
-      text: 'You will defend and indemnify us against third-party claims arising from your data, your messages, or your breach of sections 6 through 9, provided we tell you promptly about the claim and let you control the defense.',
-    },
-    {
-      kind: 'h2',
-      id: 'law',
-      text: '17. Governing law',
-    },
-    {
-      kind: 'p',
-      text: 'This agreement is governed by the laws of the Province of Ontario and the federal laws of Canada applicable in it, and the courts of Ontario have exclusive jurisdiction, except that either party may seek injunctive relief for misuse of data or intellectual property in any competent court. If you are a consumer somewhere whose law gives you mandatory protections, those protections are unaffected.',
-    },
-    {
-      kind: 'h2',
-      id: 'changes',
-      text: '18. Changes to these terms',
-    },
-    {
-      kind: 'p',
-      text: 'When these terms change materially, we will email workspace admins at least 30 days before the change takes effect, and update the date at the top. If you keep using the service after that date, the new terms apply; if you do not agree, cancel and export before it, and we will help.',
-    },
-    {
-      kind: 'h2',
-      id: 'contact',
-      text: '19. Contact',
-    },
-    {
-      kind: 'p',
-      text: 'Questions about these terms go to hello@pplcrm.com. If anything here seems to conflict with the plain-language promises on the [data ownership page](/data-ownership), tell us; the stricter protection for you is the one we intend.',
-    },
-  ],
 };
 `````
 
@@ -86430,8 +87208,10 @@ export async function handleSendNewsletter(
   await queueUsageLimitCheck(tenantId, db);
 }
 
-// Send-log rows only feed rolling-window caps (24h max) — 30 days is generous ops headroom.
-const SEND_LOG_RETENTION_DAYS = 30;
+// Send-log rows meter the monthly plan allowance over the tenant's billing cycle (sendWindow in
+// send-guards.ts), and a cycle can span a 31-day month — 32 days keeps every row of the longest
+// possible cycle alive (plus a day of slack) so the meter never undercounts near renewal.
+const SEND_LOG_RETENTION_DAYS = 32;
 
 export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
   await pruneNewsletterEvents(db);
@@ -87701,9 +88481,15 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
    * the transition, but nothing reads it for behavior anymore).
    */
   public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
+    const pending = row as Record<string, unknown>;
+    // Scheduling is server-validated here because it has no dedicated endpoint (the router only
+    // has send/cancelSchedule): a `scheduled` row with a null send_date would sit invisible
+    // forever — the cron fires `send_date <= now`, which NULL never matches.
+    if (pending['status'] === 'scheduled') {
+      this.assertSchedulable(pending['send_date'], true);
+    }
     // Every newsletter belongs to a campaign (§15). Callers that predate the
     // context switcher fall back to the tenant's office context.
-    const pending = row as Record<string, unknown>;
     if (!pending['campaign_id']) {
       const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id: String(pending['tenant_id']) });
       const office = campaigns.find((c) => c.kind === 'office');
@@ -87730,27 +88516,68 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
    * TOCTOU), so they are frozen once the newsletter leaves the draft/paused states. */
   private static readonly SCORED_CONTENT_FIELDS = ['subject', 'html_content', 'plain_text_content'] as const;
 
+  /** A `scheduled` newsletter must carry a real send_date (the frontend enforces this, but
+   * scheduling flows through generic CRUD add/update, so the backend must too). `requireFuture`
+   * additionally rejects past dates when the caller is actively (re)scheduling. */
+  private assertSchedulable(sendDate: unknown, requireFuture: boolean): void {
+    if (sendDate == null) {
+      throw new BadRequestError(
+        'Scheduling a newsletter requires a send date. Pick a date and time, or save it as a draft.',
+      );
+    }
+    const when = sendDate instanceof Date ? sendDate : new Date(String(sendDate));
+    if (Number.isNaN(when.getTime())) {
+      throw new BadRequestError('The scheduled send date is not a valid date.');
+    }
+    if (requireFuture && when.getTime() <= Date.now()) {
+      throw new BadRequestError('The scheduled send time must be in the future.');
+    }
+  }
+
   public override async update(input: {
     tenant_id: string;
     id: string;
     row: OperationDataType<'newsletters', 'update'>;
   }) {
-    const editsScoredContent = NewslettersController.SCORED_CONTENT_FIELDS.some(
-      (field) => (input.row as Record<string, unknown>)[field] !== undefined,
-    );
-    if (editsScoredContent) {
-      const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as
+    const rowObj = input.row as Record<string, unknown>;
+    // The current row is needed by both the frozen-content and the scheduling checks — fetch it
+    // lazily, at most once.
+    let current: Record<string, unknown> | undefined;
+    const loadCurrent = async (): Promise<Record<string, unknown> | undefined> => {
+      current ??= (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as
         | Record<string, unknown>
         | undefined;
-      const status = current?.['status'];
+      return current;
+    };
+
+    const editsScoredContent = NewslettersController.SCORED_CONTENT_FIELDS.some((field) => rowObj[field] !== undefined);
+    if (editsScoredContent) {
+      const status = (await loadCurrent())?.['status'];
       if (status === 'queuing' || status === 'sending' || status === 'sent') {
         throw new BadRequestError(
           'This newsletter is already sending or has been sent — its content can no longer be edited.',
         );
       }
     }
+
+    // Scheduling guard (see `add`): a newsletter that is (or stays) `scheduled` must keep a
+    // non-null send_date. The future-time requirement applies only when this update itself
+    // (re)schedules — sets the status or a new date; an update that merely edits other fields
+    // of an already-scheduled newsletter must not fail just because its send time has arrived
+    // (the cron is about to fire it, and a past-but-set date fires fine).
+    const providesSendDate = rowObj['send_date'] !== undefined;
+    const effectiveStatus =
+      rowObj['status'] !== undefined
+        ? rowObj['status']
+        : providesSendDate
+          ? (await loadCurrent())?.['status']
+          : undefined;
+    if (effectiveStatus === 'scheduled') {
+      const effectiveSendDate = providesSendDate ? rowObj['send_date'] : (await loadCurrent())?.['send_date'];
+      this.assertSchedulable(effectiveSendDate, rowObj['status'] === 'scheduled' || providesSendDate);
+    }
+
     const result = await super.update(input);
-    const rowObj = input.row as Record<string, unknown>;
     const resultObj = result as Record<string, unknown> | undefined;
     if (rowObj['target_lists'] !== undefined) {
       await this.syncTargetLists(
@@ -88779,7 +89606,7 @@ export const SECURITY_DOC: LegalDoc = {
   title: 'Security',
   intro:
     'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
-  updated: 'July 18, 2026',
+  updated: 'July 19, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -88880,9 +89707,9 @@ export const SECURITY_DOC: LegalDoc = {
     {
       kind: 'list',
       items: [
-        'The platform runs on Microsoft Azure, with workspaces hosted in Canada by default; Movement workspaces choose their region (Canada, US, EU or UK) at creation and stay there for processing and backups.',
+        'The platform runs on Microsoft Azure, with workspaces hosted in Canada; workspace data stays there for processing and backups.',
         'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
-        'Databases are backed up automatically every day, with backups retained for 7 days in the workspace’s region. Deleted data therefore leaves backups within 7 days of leaving the live database.',
+        'Databases are backed up automatically every day, with backups retained for 7 days in Canada. Deleted data therefore leaves backups within 7 days of leaving the live database.',
       ],
     },
     {
@@ -89022,7 +89849,6 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       'communications',
       'appearance',
       'billing',
-      'integrations',
       'sla settings',
       'workspace',
     ],
@@ -89052,7 +89878,6 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
           '**Teams & access**: default role for invitations and the MFA requirement.',
           '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
           '**Appearance**: default theme and date format for the workspace.',
-          '**Integrations & API**: webhook keys and connected services.',
           '**Billing**: your plan, live usage, and payment details.',
         ],
       },
@@ -89066,7 +89891,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         items: [
           '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
           '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
-          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
+          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus priority support.',
           '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
         ],
       },
@@ -90311,7 +91136,7 @@ const STEP_UP_LABELS: Readonly<Record<string, string>> = {
   free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
   grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
   movement:
-    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers, A/B testing and data residency.',
+    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers and priority support.',
 };
 
 @Component({
@@ -90435,402 +91260,6 @@ export class PricingPage {
     return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
   }
 }
-`````
-
-## File: libs/common/src/lib/help/articles/outreach.ts
-`````typescript
-import type { HelpArticle } from '../help-types';
-
-export const OUTREACH_ARTICLES: HelpArticle[] = [
-  {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
-    summary:
-      'Template to audience to send: the full path, plus scheduling, resending to non-openers, the compliance footer, and how sending progress is shown.',
-    keywords: [
-      'newsletter',
-      'campaign',
-      'email blast',
-      'send',
-      'schedule',
-      'resend',
-      'template',
-      'saved templates',
-      'save as template',
-      'audience',
-      'unsubscribe',
-      'deliverability',
-      'score',
-    ],
-    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections', 'deliverability'],
-    blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail:
-              'Start from a template or a blank canvas. Every template card shows a live preview of the design, so you can see what you are picking before you pick it.',
-          },
-          {
-            title: 'Design in the visual editor',
-            detail:
-              'Drag blocks from the Blocks panel onto the canvas, or click one to add it. Rearrange blocks by their drag handle, and use the plus button between blocks to insert one exactly where you want it. What you see is what subscribers get.',
-          },
-          {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Personalize with merge fields',
-        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
-      },
-      { kind: 'h2', id: 'templates', text: 'Save and reuse your own templates' },
-      {
-        kind: 'p',
-        text: 'When a design is worth keeping, click **Save as template** on the Content step and give it a name. It joins the **Your templates** section of the Template step, live preview included, and is shared with everyone in your workspace; selecting it starts the next newsletter from that design. Delete a template from its card when it has outlived its usefulness. Newsletters already created from it keep their content. A workspace can hold up to 50 saved templates.',
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
-      {
-        kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
-      },
-      { kind: 'h2', id: 'send', text: 'Send now or schedule for later' },
-      {
-        kind: 'p',
-        text: 'Send now, or pick **Schedule for later** with a date and time; a scheduled newsletter goes out within a few minutes of that time. Until then it shows as **Scheduled** on the [Newsletters](/newsletters) list, where **Cancel schedule** moves it back to drafts; opening it also offers **Send now**. If something blocks a scheduled send when its time comes (a failed deliverability check, a sending pause), it returns to drafts and you are notified with the reason. A finished draft can also go out straight from the list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Newsletter or automation?',
-        text: 'Newsletters are calendar-driven: you pick the time, and everyone in the audience gets the same issue. To email each supporter when *they* do something (join, donate, volunteer), use an [Automation](/help/automations) instead.',
-      },
-      { kind: 'h2', id: 'resend', text: 'Resend to non-openers' },
-      {
-        kind: 'p',
-        text: 'A sent newsletter’s page offers **Resend to non-openers**: one follow-up, only to the people who received it but never opened or clicked it, with a new subject line (required; a fresh angle beats a tweak). Wait two to three days after the original so slow readers have had their chance, and know that each newsletter can be resent only once. Anyone who engages with the original before the resend goes out is dropped automatically. One caveat: Apple Mail marks many emails as opened on its own, so some quiet readers look like openers and will not receive the resend.',
-      },
-      {
-        kind: 'p',
-        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'preflight', text: 'The deliverability check' },
-      {
-        kind: 'p',
-        text: 'The **Review & send** step scores your email **0–100** for deliverability. **80 or higher** means you are good to go; **50–79** lists items worth fixing before you send; **below 50, sending is disabled** until the flagged items are fixed. Every finding shows the points it costs and how to fix it. A quick check runs as you edit; **Run full check** (also next to *Send test email* on the Content step) adds a spam-filter score and an AI review of the copy. See [Get your newsletters delivered](/help/deliverability) for what the checks look for and why.',
-      },
-      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
-      {
-        kind: 'p',
-        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
-      },
-      {
-        kind: 'p',
-        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
-      },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
-      {
-        kind: 'list',
-        items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
-      },
-      {
-        kind: 'p',
-        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
-      },
-    ],
-  },
-  {
-    id: 'sending-protections',
-    category: 'outreach',
-    title: 'Sending protections and verification',
-    summary:
-      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
-    keywords: [
-      'verify domain',
-      'verify phone',
-      'sms code',
-      'sending paused',
-      'suspended',
-      'bounce rate',
-      'spam complaint',
-      'warm-up',
-      'daily limit',
-      'deliverability',
-      'anti-spam',
-    ],
-    related: ['newsletters', 'settings', 'forms', 'deliverability'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
-      },
-      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Verify your sending domain',
-            detail:
-              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
-          },
-          {
-            title: 'Verify a mobile number (Free plan)',
-            detail:
-              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
-      {
-        kind: 'p',
-        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
-      },
-      { kind: 'h2', id: 'monthly-allowance', text: 'The monthly email allowance' },
-      {
-        kind: 'p',
-        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. Emails sent by [automations](/help/automations) count toward the same allowance and limits. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
-      },
-      { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
-      {
-        kind: 'p',
-        text: 'Every send must also clear the **deliverability check**: a 0–100 score built from content best practices, an optional spam-filter score, and an AI review that catches scam-like patterns and content outside the acceptable-use policy. pplCRM sending is for community, political and nonprofit updates — fundraising appeals, auctions and event promotion included; unrelated commercial product blasts are not. Scores **below 50 block the send** on every plan; 50–79 sends with a warning. The AI review runs on every check — the ones you run while drafting and the automatic check on every send. It reads only the newsletter content itself and is processed by Anthropic (listed with our other service providers in the privacy policy). See [Get your newsletters delivered](/help/deliverability).',
-      },
-      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
-      {
-        kind: 'list',
-        items: [
-          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
-          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'How to never hit these',
-        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
-      },
-      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
-      {
-        kind: 'p',
-        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
-      },
-    ],
-  },
-  {
-    id: 'deliverability',
-    category: 'outreach',
-    title: 'Get your newsletters delivered',
-    summary:
-      'What actually decides inbox versus spam — sender reputation, list quality, engagement — and the content habits the deliverability check scores.',
-    keywords: [
-      'spam',
-      'junk',
-      'inbox',
-      'deliverability',
-      'images',
-      'subject line',
-      'dmarc',
-      'postmaster',
-      'score',
-      'preflight',
-      'open rate',
-    ],
-    related: ['newsletters', 'sending-protections', 'forms', 'lists'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Whether an email lands in the inbox is decided mostly by **your sending reputation and how recipients engage** — opens, clicks, replies, deletes and spam reports — not by magic keywords. The content checks below matter, but the foundation is sending mail people asked for, from a domain that vouches for you.',
-      },
-      { kind: 'h2', id: 'foundation', text: 'The foundation: identity and reputation' },
-      {
-        kind: 'list',
-        items: [
-          '**Send from your verified domain.** pplCRM requires this before any broadcast — it is what lets Gmail and Outlook trust the mail is really yours.',
-          '**Add a DMARC record.** It is optional for verification but Gmail, Yahoo and Microsoft require it of bulk senders; even a monitor-only policy (`p=none`) counts. Your DNS checklist under **Workspace → Domains** shows the record.',
-          '**Keep your identity steady.** Same from-name and address every send, a regular cadence, and no sudden jumps in volume.',
-          '**Watch your reputation where the inboxes do.** Enroll your domain in [Google Postmaster Tools](https://postmaster.google.com) — keep the spam-rate graph under 0.1% and never past 0.3%.',
-        ],
-      },
-      { kind: 'h2', id: 'list-quality', text: 'List quality beats everything' },
-      {
-        kind: 'list',
-        items: [
-          'Only email people who **opted in** through your [forms](/help/forms), events or sign-ups. Purchased and scraped lists bounce hard, get reported, and trip the automatic pauses.',
-          'Unsubscribes and bounces are honored automatically — never re-import around them.',
-          'Consider **double opt-in** on public forms, and rest people who have not opened anything in months; mailing the unengaged drags down delivery for everyone else on your list.',
-        ],
-      },
-      { kind: 'h2', id: 'content', text: 'Content habits the check scores' },
-      {
-        kind: 'list',
-        items: [
-          '**Subject:** sentence case, under ~70 characters, no stacked exclamation marks or currency symbols, and never a fake “Re:”.',
-          '**Body:** keep the HTML under ~100KB (Gmail clips beyond that and hides your footer), and keep a healthy balance of real text to images. A plain-text version is generated automatically for every send.',
-          '**Images:** host them on regular `https://` URLs, keep each roughly 600px wide and comfortably under 200KB, and give every image alt text — that is what people see while images load or stay blocked.',
-          '**Links:** link real destinations on domains you control — no URL shorteners, no bare IP addresses, and make the visible text match where the link goes.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Test before the big send',
-        text: 'Use **Check deliverability** and **Send test email** on the Content step, and read the test in Gmail and Outlook. Small copy fixes before a send are worth more than any amount of analysis after it.',
-      },
-      { kind: 'h2', id: 'the-check', text: 'How the deliverability check scores you' },
-      {
-        kind: 'p',
-        text: 'The check starts at 100 and subtracts points per finding, each shown with its cost and fix. **80+** is ready to send, **50–79** is worth fixing first, and **below 50 sending is disabled**. The full check adds a spam-filter (SpamAssassin) score and an AI read of the copy that flags deceptive patterns — manufactured urgency, misleading claims, look-alike links — and content outside the acceptable-use policy. Fundraising appeals, donation asks, auctions and event promotion are all normal newsletter content here; unrelated commercial product blasts and anything phishing-shaped are not.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'A good score is not a delivery guarantee',
-        text: 'The score covers what can be checked before sending. Reputation and engagement — built over many sends to a clean list — remain the larger factors, which is why the [sending protections](/help/sending-protections) watch bounces and complaints after every send.',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The Inbox belongs to your active campaign',
-        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
-      },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
-      {
-        kind: 'list',
-        items: [
-          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
-          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
-          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
-      },
-    ],
-  },
-  {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
-    summary:
-      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went. For one update that goes to everyone at a time you pick, use a [newsletter](/help/newsletters) instead; automations are for per-person journeys.',
-      },
-      { kind: 'h2', id: 'recipes', text: 'Start from a recipe' },
-      {
-        kind: 'p',
-        text: 'New automation offers four ready-made recipes with starter copy: **Welcome new supporters** (three emails over two weeks, ending early if they donate), **Thank every donor** (a same-day thank-you plus a personal-note task), **Follow up after a shift** (thanks, then the next invitation), and **Re-engage quiet supporters** (a gentle win-back where the second email only goes to people who didn’t open the first, and any engagement ends the sequence). A recipe lands as a draft; review every email, adjust the waits, then activate. Or start from scratch with a bare trigger.',
-      },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
-      {
-        kind: 'list',
-        items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
-          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
-          '**Email conditions**: from the second email on, a Send email step can be gated on what the person did with the previous email in the sequence, for example **Only if they didn’t open the previous email**. Put a Wait before a conditioned email so people have time to engage; a skipped step shows as a neutral **Skipped** with the reason.',
-          '**End early when** sets sequence goals on the right rail: end the sequence the moment they donate, open any email in it, or click any email in it. Someone who converts stops getting the rest of the asks.',
-          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
-          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Clicks beat opens',
-        text: 'Apple Mail opens many emails automatically for privacy, so "opened" over-counts and "didn’t open" reaches fewer people than truly went quiet. When a click is a realistic ask, prefer click-based conditions and goals; they are the reliable signal.',
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a recipe, or a trigger from the cards. That’s the event that enrolls people.',
-          },
-          {
-            title: 'Build the sequence',
-            detail:
-              'Use the + between steps to add a wait, an email, a tag, a task, or a team notification. Drag a step by its handle to reorder it; steps run top to bottom.',
-          },
-          {
-            title: 'Name it and set it Active',
-            detail:
-              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'consent', text: 'Consent and sending limits' },
-      {
-        kind: 'p',
-        text: 'Automation emails follow the same rules as newsletters. People who unsubscribed, bounced, or are marked do-not-contact are skipped automatically (the run shows a neutral **Skipped** with the reason, not a failure). Every automation email carries an unsubscribe link and counts toward your plan’s monthly email allowance and sending limits; if your workspace’s sending is paused, the step waits and retries instead of losing the email.',
-      },
-      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
-      {
-        kind: 'p',
-        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Every run is logged',
-        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
-      },
-    ],
-  },
-];
 `````
 
 ## File: apps/backend/src/env.ts
@@ -91342,6 +91771,402 @@ export const env = {
 <pc-site-footer />
 `````
 
+## File: libs/common/src/lib/help/articles/outreach.ts
+`````typescript
+import type { HelpArticle } from '../help-types';
+
+export const OUTREACH_ARTICLES: HelpArticle[] = [
+  {
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, resending to non-openers, the compliance footer, and how sending progress is shown.',
+    keywords: [
+      'newsletter',
+      'campaign',
+      'email blast',
+      'send',
+      'schedule',
+      'resend',
+      'template',
+      'saved templates',
+      'save as template',
+      'audience',
+      'unsubscribe',
+      'deliverability',
+      'score',
+    ],
+    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections', 'deliverability'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail:
+              'Start from a template or a blank canvas. Every template card shows a live preview of the design, so you can see what you are picking before you pick it.',
+          },
+          {
+            title: 'Design in the visual editor',
+            detail:
+              'Drag blocks from the Blocks panel onto the canvas, or click one to add it. Rearrange blocks by their drag handle, and use the plus button between blocks to insert one exactly where you want it. What you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'templates', text: 'Save and reuse your own templates' },
+      {
+        kind: 'p',
+        text: 'When a design is worth keeping, click **Save as template** on the Content step and give it a name. It joins the **Your templates** section of the Template step, live preview included, and is shared with everyone in your workspace; selecting it starts the next newsletter from that design. Delete a template from its card when it has outlived its usefulness. Newsletters already created from it keep their content. A workspace can hold up to 50 saved templates.',
+      },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      {
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send now or schedule for later' },
+      {
+        kind: 'p',
+        text: 'Send now, or pick **Schedule for later** with a date and time; a scheduled newsletter goes out within a few minutes of that time. Until then it shows as **Scheduled** on the [Newsletters](/newsletters) list, where **Cancel schedule** moves it back to drafts; opening it also offers **Send now**. If something blocks a scheduled send when its time comes (a failed deliverability check, a sending pause), it returns to drafts and you are notified with the reason. A finished draft can also go out straight from the list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Newsletter or automation?',
+        text: 'Newsletters are calendar-driven: you pick the time, and everyone in the audience gets the same issue. To email each supporter when *they* do something (join, donate, volunteer), use an [Automation](/help/automations) instead.',
+      },
+      { kind: 'h2', id: 'resend', text: 'Resend to non-openers' },
+      {
+        kind: 'p',
+        text: 'A sent newsletter’s page offers **Resend to non-openers**: one follow-up, only to the people who received it but never opened or clicked it, with a new subject line (required; a fresh angle beats a tweak). Wait two to three days after the original so slow readers have had their chance, and know that each newsletter can be resent only once. Anyone who engages with the original before the resend goes out is dropped automatically. One caveat: Apple Mail marks many emails as opened on its own, so some quiet readers look like openers and will not receive the resend.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'preflight', text: 'The deliverability check' },
+      {
+        kind: 'p',
+        text: 'The **Review & send** step scores your email **0–100** for deliverability. **80 or higher** means you are good to go; **50–79** lists items worth fixing before you send; **below 50, sending is disabled** until the flagged items are fixed. Every finding shows the points it costs and how to fix it. A quick check runs as you edit; **Run full check** (also next to *Send test email* on the Content step) adds a spam-filter score and an AI review of the copy. See [Get your newsletters delivered](/help/deliverability) for what the checks look for and why.',
+      },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+      },
+      {
+        kind: 'p',
+        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
+      },
+    ],
+  },
+  {
+    id: 'sending-protections',
+    category: 'outreach',
+    title: 'Sending protections and verification',
+    summary:
+      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+    keywords: [
+      'verify domain',
+      'verify phone',
+      'sms code',
+      'sending paused',
+      'suspended',
+      'bounce rate',
+      'spam complaint',
+      'warm-up',
+      'daily limit',
+      'deliverability',
+      'anti-spam',
+    ],
+    related: ['newsletters', 'settings', 'forms', 'deliverability'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
+      },
+      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Verify your sending domain',
+            detail:
+              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+          },
+          {
+            title: 'Verify a mobile number (Free plan)',
+            detail:
+              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
+      {
+        kind: 'p',
+        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
+      },
+      { kind: 'h2', id: 'monthly-allowance', text: 'The monthly email allowance' },
+      {
+        kind: 'p',
+        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. Emails sent by [automations](/help/automations) count toward the same allowance and limits. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
+      },
+      { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
+      {
+        kind: 'p',
+        text: 'Every send must also clear the **deliverability check**: a 0–100 score built from content best practices, an optional spam-filter score, and an AI review that catches scam-like patterns and content outside the acceptable-use policy. pplCRM sending is for community, political and nonprofit updates — fundraising appeals, auctions and event promotion included; unrelated commercial product blasts are not. Scores **below 50 block the send** on every plan; 50–79 sends with a warning. The AI review runs on every check — the ones you run while drafting and the automatic check on every send. It reads only the newsletter content itself and is processed by Anthropic (listed with our other service providers in the privacy policy). See [Get your newsletters delivered](/help/deliverability).',
+      },
+      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
+      {
+        kind: 'list',
+        items: [
+          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
+          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'How to never hit these',
+        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
+      },
+      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
+      {
+        kind: 'p',
+        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
+      },
+    ],
+  },
+  {
+    id: 'deliverability',
+    category: 'outreach',
+    title: 'Get your newsletters delivered',
+    summary:
+      'What actually decides inbox versus spam — sender reputation, list quality, engagement — and the content habits the deliverability check scores.',
+    keywords: [
+      'spam',
+      'junk',
+      'inbox',
+      'deliverability',
+      'images',
+      'subject line',
+      'dmarc',
+      'postmaster',
+      'score',
+      'preflight',
+      'open rate',
+    ],
+    related: ['newsletters', 'sending-protections', 'forms', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Whether an email lands in the inbox is decided mostly by **your sending reputation and how recipients engage** — opens, clicks, replies, deletes and spam reports — not by magic keywords. The content checks below matter, but the foundation is sending mail people asked for, from a domain that vouches for you.',
+      },
+      { kind: 'h2', id: 'foundation', text: 'The foundation: identity and reputation' },
+      {
+        kind: 'list',
+        items: [
+          '**Send from your verified domain.** pplCRM requires this before any broadcast — it is what lets Gmail and Outlook trust the mail is really yours.',
+          '**Add a DMARC record.** It is optional for verification but Gmail, Yahoo and Microsoft require it of bulk senders; even a monitor-only policy (`p=none`) counts. Your DNS checklist under **Workspace → Domains** shows the record.',
+          '**Keep your identity steady.** Same from-name and address every send, a regular cadence, and no sudden jumps in volume.',
+          '**Watch your reputation where the inboxes do.** Enroll your domain in [Google Postmaster Tools](https://postmaster.google.com) — keep the spam-rate graph under 0.1% and never past 0.3%.',
+        ],
+      },
+      { kind: 'h2', id: 'list-quality', text: 'List quality beats everything' },
+      {
+        kind: 'list',
+        items: [
+          'Only email people who **opted in** through your [forms](/help/forms), events or sign-ups. Purchased and scraped lists bounce hard, get reported, and trip the automatic pauses.',
+          'Unsubscribes and bounces are honored automatically — never re-import around them.',
+          'Consider **double opt-in** on public forms, and rest people who have not opened anything in months; mailing the unengaged drags down delivery for everyone else on your list.',
+        ],
+      },
+      { kind: 'h2', id: 'content', text: 'Content habits the check scores' },
+      {
+        kind: 'list',
+        items: [
+          '**Subject:** sentence case, under ~70 characters, no stacked exclamation marks or currency symbols, and never a fake “Re:”.',
+          '**Body:** keep the HTML under ~100KB (Gmail clips beyond that and hides your footer), and keep a healthy balance of real text to images. A plain-text version is generated automatically for every send.',
+          '**Images:** host them on regular `https://` URLs, keep each roughly 600px wide and comfortably under 200KB, and give every image alt text — that is what people see while images load or stay blocked.',
+          '**Links:** link real destinations on domains you control — no URL shorteners, no bare IP addresses, and make the visible text match where the link goes.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test before the big send',
+        text: 'Use **Check deliverability** and **Send test email** on the Content step, and read the test in Gmail and Outlook. Small copy fixes before a send are worth more than any amount of analysis after it.',
+      },
+      { kind: 'h2', id: 'the-check', text: 'How the deliverability check scores you' },
+      {
+        kind: 'p',
+        text: 'The check starts at 100 and subtracts points per finding, each shown with its cost and fix. **80+** is ready to send, **50–79** is worth fixing first, and **below 50 sending is disabled**. The full check adds a spam-filter (SpamAssassin) score and an AI read of the copy that flags deceptive patterns — manufactured urgency, misleading claims, look-alike links — and content outside the acceptable-use policy. Fundraising appeals, donation asks, auctions and event promotion are all normal newsletter content here; unrelated commercial product blasts and anything phishing-shaped are not.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'A good score is not a delivery guarantee',
+        text: 'The score covers what can be checked before sending. Reputation and engagement — built over many sends to a clean list — remain the larger factors, which is why the [sending protections](/help/sending-protections) watch bounces and complaints after every send.',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
+          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
+      },
+    ],
+  },
+  {
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
+    summary:
+      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went. For one update that goes to everyone at a time you pick, use a [newsletter](/help/newsletters) instead; automations are for per-person journeys.',
+      },
+      { kind: 'h2', id: 'recipes', text: 'Start from a recipe' },
+      {
+        kind: 'p',
+        text: 'New automation offers four ready-made recipes with starter copy: **Welcome new supporters** (three emails over two weeks, ending early if they donate), **Thank every donor** (a same-day thank-you plus a personal-note task), **Follow up after a shift** (thanks, then the next invitation), and **Re-engage quiet supporters** (a gentle win-back where the second email only goes to people who didn’t open the first, and any engagement ends the sequence). A recipe lands as a draft; review every email, adjust the waits, then activate. Or start from scratch with a bare trigger.',
+      },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching its SLA (the person the task is linked to enrolls), a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Email conditions**: from the second email on, a Send email step can be gated on what the person did with the previous email in the sequence, for example **Only if they didn’t open the previous email**. Put a Wait before a conditioned email so people have time to engage; a skipped step shows as a neutral **Skipped** with the reason.',
+          '**End early when** sets sequence goals on the right rail: end the sequence the moment they donate, open any email in it, or click any email in it. Someone who converts stops getting the rest of the asks.',
+          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Clicks beat opens',
+        text: 'Apple Mail opens many emails automatically for privacy, so "opened" over-counts and "didn’t open" reaches fewer people than truly went quiet. When a click is a realistic ask, prefer click-based conditions and goals; they are the reliable signal.',
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a recipe, or a trigger from the cards. That’s the event that enrolls people.',
+          },
+          {
+            title: 'Build the sequence',
+            detail:
+              'Use the + between steps to add a wait, an email, a tag, a task, or a team notification. Drag a step by its handle to reorder it; steps run top to bottom.',
+          },
+          {
+            title: 'Name it and set it Active',
+            detail:
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'consent', text: 'Consent and sending limits' },
+      {
+        kind: 'p',
+        text: 'Automation emails follow the same rules as newsletters. People who unsubscribed, bounced, or are marked do-not-contact are skipped automatically (the run shows a neutral **Skipped** with the reason, not a failure). Every automation email carries an unsubscribe link and counts toward your plan’s monthly email allowance and sending limits; if your workspace’s sending is paused, the step waits and retries instead of losing the email.',
+      },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'p',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
+      },
+    ],
+  },
+];
+`````
+
 ## File: apps/libs/STRUCTURE.md
 `````markdown
 This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
@@ -91421,6 +92246,7 @@ libs/
           events.schema.ts
           lists.schema.ts
           marketing.schema.ts
+          newsletter-templates.schema.ts
           persons.schema.ts
           settings.schema.ts
           tags.schema.ts
@@ -92318,6 +93144,13 @@ export const ReorderStopObj = z.object({
   direction: z.enum(['up', 'down']),
 });
 
+// Drag-to-reorder: the full new order of a route's PENDING stops. Delivered/skipped stops are not
+// movable and keep their seq; the backend reassigns only the pending slots to this order.
+export const ReorderStopsObj = z.object({
+  route_id: idSchema,
+  ordered_stop_ids: z.array(idSchema).min(1, 'Provide the new stop order'),
+});
+
 // Staff act on a stop from the route detail page. Same transitions as the public path.
 export const StopActionObj = z.object({
   route_id: idSchema,
@@ -92350,6 +93183,7 @@ export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
 export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
 export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
 export type ReorderStopType = z.infer<typeof ReorderStopObj>;
+export type ReorderStopsType = z.infer<typeof ReorderStopsObj>;
 export type StopActionType = z.infer<typeof StopActionObj>;
 export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
 export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
@@ -92530,6 +93364,13 @@ export const UpdateTicketTypeObj = z.object({
   sort_order: z.number().int().min(0).optional(),
 });
 
+// Drag-to-reorder ticket types: the full new order of an event's ticket type ids. The backend
+// writes each id's sort_order to its index, so the order shown to attendees matches the form.
+export const ReorderTicketTypesObj = z.object({
+  event_id: idSchema,
+  ordered_ids: z.array(idSchema).min(1, 'Provide the new ticket order'),
+});
+
 const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
 
 export const AddRegistrationObj = z.object({
@@ -92641,184 +93482,54 @@ export const ImportListItemObj = z.object({
 });
 ````
 
-## File: libs/common/src/lib/schemas/marketing.schema.ts
+## File: libs/common/src/lib/schemas/newsletter-templates.schema.ts
 ````typescript
 import { z } from 'zod';
 
-import { idSchema } from './core.schema';
+import { nameSchema } from './core.schema';
 
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
+/** Generous ceiling for a compiled email document (the presets are ~15 KB). */
+const MAX_TEMPLATE_HTML_LENGTH = 500_000;
+const MAX_TEMPLATE_TEXT_LENGTH = 200_000;
+
+/**
+ * Create payload for a user-saved newsletter template.
+ *
+ * html_content is deliberately NOT trimmed or transformed: the wizard stores the
+ * compiled document verbatim so the PPLCRM_VISUAL_BLOCKS_DATA comment survives
+ * the round-trip back into the visual editor. Emptiness is checked on the
+ * trimmed view only.
+ */
+export const AddNewsletterTemplateObj = z.object({
+  name: nameSchema('Name', 120),
+  html_content: z
+    .string()
+    .max(MAX_TEMPLATE_HTML_LENGTH)
+    .refine((value) => value.trim().length > 0, 'Template content is required'),
+  plain_text_content: z.string().max(MAX_TEMPLATE_TEXT_LENGTH).optional(),
 });
 
-export const MarketingEmailObj = z.object({
+/** Rename-only edit payload; the content of a saved template is immutable. */
+export const UpdateNewsletterTemplateObj = z.object({
+  name: nameSchema('Name', 120),
+});
+
+/** Read shape returned by newsletters.templates.getAll. */
+export const NewsletterTemplateObj = z.object({
   id: z.string(),
   tenant_id: z.string(),
   name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  /** The sent newsletter this row is a non-opener follow-up of; null for originals. */
-  resend_of_id: z.string().nullable().optional(),
-  updated_at: z.coerce.date(),
+  html_content: z.string(),
+  plain_text_content: z.string(),
   created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
   createdby_id: z.string(),
   updatedby_id: z.string(),
 });
 
-export const AddMarketingEmailObj = z.object({
-  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-});
-
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-
-/* ------------------------------------------------------------------ */
-/* Newsletter report — the shape of newsletters.getReport             */
-/* ------------------------------------------------------------------ */
-
-/** A CRM person matched by email — enough to render a link to their record. */
-export const NewsletterReportPersonObj = z.object({
-  id: z.string(),
-  /** Opaque public id — the canonical /people/:id route key. */
-  public_id: z.string().nullable(),
-  name: z.string(),
-});
-
-export const NewsletterReportBounceObj = z.object({
-  email: z.string(),
-  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
-  kind: z.enum(['hard', 'soft', 'dropped']),
-  reason: z.string().nullable(),
-  occurred_at: z.coerce.date().nullable(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportEngagedObj = z.object({
-  email: z.string(),
-  opens: z.number().int().nonnegative(),
-  clicks: z.number().int().nonnegative(),
-  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
-  links: z.number().int().nonnegative(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-  /** Unique clickers of this link — null when unknown (raw events already pruned). */
-  people: z.number().int().nonnegative().nullable(),
-});
-
-export const NewsletterReportPreviousSendObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  send_date: z.coerce.date().nullable(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unsubscribe_rate: z.number(),
-  bounce_rate: z.number(),
-});
-
-export const NewsletterReportObj = z.object({
-  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
-  timeline: z.array(
-    z.object({
-      time: z.string(),
-      opens: z.number().int().nonnegative(),
-      clicks: z.number().int().nonnegative(),
-    }),
-  ),
-  /** Share of all opens that landed within 24h of send — null when not computable. */
-  opens_in_24h_pct: z.number().nullable(),
-  bounces: z.object({
-    total: z.number().int().nonnegative(),
-    hard: z.number().int().nonnegative(),
-    soft: z.number().int().nonnegative(),
-    dropped: z.number().int().nonnegative(),
-    rows: z.array(NewsletterReportBounceObj),
-  }),
-  top_links: z.array(NewsletterReportLinkObj),
-  tracked_links: z.number().int().nonnegative(),
-  total_clicks: z.number().int().nonnegative(),
-  unique_clickers: z.number().int().nonnegative(),
-  most_engaged: z.array(NewsletterReportEngagedObj),
-  unsubscribes: z.object({
-    total: z.number().int().nonnegative(),
-    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
-    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
-  }),
-  spam_reports: z.object({
-    total: z.number().int().nonnegative(),
-    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
-  }),
-  audience: z.object({
-    lists: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        mode: z.enum(['include', 'exclude']),
-        members: z.number().int().nonnegative(),
-      }),
-    ),
-    /** Members in more than one included list, counted once. */
-    overlap_removed: z.number().int().nonnegative(),
-    /** Included members whose address is on the suppression list. */
-    suppressed_skipped: z.number().int().nonnegative(),
-  }),
-  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
-  previous_sends: z.array(NewsletterReportPreviousSendObj),
-  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
-});
-
-export const CreateClickersListResultObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  members: z.number().int().nonnegative(),
-});
+export type AddNewsletterTemplateType = z.infer<typeof AddNewsletterTemplateObj>;
+export type UpdateNewsletterTemplateType = z.infer<typeof UpdateNewsletterTemplateObj>;
+export type NewsletterTemplateType = z.infer<typeof NewsletterTemplateObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/persons.schema.ts
@@ -93049,6 +93760,35 @@ export const UpdateTaskObj = z.object({
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
   team_id: idSchema.or(z.literal('')).nullable().optional(),
 });
+
+/**
+ * Board drag-and-drop persistence (spec §4). One drop touches one or two board
+ * columns: dragging within a column re-seats that single column; dragging across
+ * two columns re-seats the source and target. Each column lists its cards in the
+ * new top-to-bottom order — the backend writes `position = index` per id and sets
+ * every id's `status` to its column, all in one transaction. `archived` is not a
+ * board column, so only the four `TASK_BOARD_STATUSES` are accepted.
+ */
+export const ReorderTasksObj = z.object({
+  columns: z
+    .array(
+      z.object({
+        status: z.enum(TASK_BOARD_STATUSES),
+        ids: z.array(idSchema).min(1, 'A column must list at least one task').max(1000, 'Too many tasks in one column'),
+      }),
+    )
+    .min(1, 'At least one column is required')
+    .max(2, 'A single drop touches at most two columns'),
+});
+
+/** Subtask drag-to-reorder (task detail): the full ordered id list for one task. */
+export const ReorderSubtasksObj = z.object({
+  task_id: idSchema,
+  ids: z.array(idSchema).min(1, 'At least one subtask is required').max(1000, 'Too many subtasks'),
+});
+
+export type ReorderTasksType = z.infer<typeof ReorderTasksObj>;
+export type ReorderSubtasksType = z.infer<typeof ReorderSubtasksObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/teams.schema.ts
@@ -93466,181 +94206,6 @@ export const FormSubmissionObj = z.object({
   answers: z.record(z.string(), z.unknown()),
   created_at: z.union([z.date(), z.string()]),
 });
-````
-
-## File: libs/common/src/lib/schemas/workflows.schema.ts
-````typescript
-import { z } from 'zod';
-import { queryBuilderNodeSchema } from './core.schema';
-
-// Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
-// backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
-// volunteer-events controller) but is not offered as a card. `date_arrives` and
-// `task_sla_breach` stay in the enum for saved-row back-compat but have no picker card:
-// no backend fires them yet, and a dead card is dishonest UI. `supporter_lapsed` is fired
-// by the daily detect_lapsed_supporters cron; its trigger_event_id holds the inactivity
-// threshold in days (default 90).
-export const WORKFLOW_TRIGGER_TYPES = [
-  'manual',
-  'web_form_submitted',
-  'contact_created',
-  'tag_added',
-  'list_joined',
-  'donation_recorded',
-  'payment_event',
-  'volunteer_shift_status',
-  'task_sla_breach',
-  'new_subscriber',
-  'new_unsubscriber',
-  'supporter_lapsed',
-  'date_arrives',
-  'volunteer_signup',
-] as const;
-
-export type WorkflowTriggerType = (typeof WORKFLOW_TRIGGER_TYPES)[number];
-
-const triggerTypeSchema = z.enum(WORKFLOW_TRIGGER_TYPES);
-
-// Spec §16 sequence editor — the five step kinds offered by the ADD A STEP menu.
-export const WORKFLOW_STEP_KINDS = ['wait', 'send_email', 'add_tag', 'create_task', 'notify_team'] as const;
-
-export type WorkflowStepKind = (typeof WORKFLOW_STEP_KINDS)[number];
-
-const stepKindSchema = z.enum(WORKFLOW_STEP_KINDS);
-
-// Engagement condition on a send_email step: gate the send on what the recipient did with the
-// PREVIOUS email in this sequence (the industry-standard delay-then-check drip shape — pair it
-// with a wait step so people have time to engage). Absent/null = always send. A click also
-// stamps an open, so "not opened" implies "not clicked" was true as well.
-export const WORKFLOW_SEND_CONDITIONS = [
-  'previous_not_opened',
-  'previous_not_clicked',
-  'previous_opened',
-  'previous_clicked',
-] as const;
-
-export type WorkflowSendCondition = (typeof WORKFLOW_SEND_CONDITIONS)[number];
-
-// Sequence-level goals: an enrollment ends early ('exited') the moment one is met. Evaluated
-// each time the enrollment comes due, before any step runs.
-export const WORKFLOW_EXIT_CONDITIONS = ['donated', 'opened_any_email', 'clicked_any_email'] as const;
-
-export type WorkflowExitCondition = (typeof WORKFLOW_EXIT_CONDITIONS)[number];
-
-// Per-kind config payload (persisted to workflow_steps.config as jsonb). Every field is optional
-// at the schema boundary; the controller maps each kind's meaningful fields when executing.
-export const WorkflowStepConfigObj = z
-  .object({
-    // add_tag
-    tag_id: z.string().nullable().optional(),
-    tag_name: z.string().nullable().optional(),
-    // create_task
-    task_title: z.string().nullable().optional(),
-    // notify_team
-    notify_user_id: z.string().nullable().optional(),
-    notify_user_name: z.string().nullable().optional(),
-    notify_message: z.string().nullable().optional(),
-    // send_email
-    send_condition: z.enum(WORKFLOW_SEND_CONDITIONS).nullable().optional(),
-  })
-  .strict();
-
-export type WorkflowStepConfigType = z.infer<typeof WorkflowStepConfigObj>;
-
-export const WorkflowObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  trigger_type: triggerTypeSchema.default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft'),
-  conditions: queryBuilderNodeSchema.nullable().optional(),
-  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const AddWorkflowObj = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  description: z.string().nullable().optional(),
-  trigger_type: triggerTypeSchema.default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
-  conditions: queryBuilderNodeSchema.nullable().optional(),
-  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
-});
-
-export const UpdateWorkflowObj = AddWorkflowObj.partial();
-
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-
-export const WorkflowStepObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  step_number: z.number().int().positive(),
-  kind: stepKindSchema,
-  config: WorkflowStepConfigObj.nullable().optional(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-// Input shape for saveSteps — order is implied by array position, so no step_number here.
-export const AddWorkflowStepObj = z.object({
-  kind: stepKindSchema,
-  config: WorkflowStepConfigObj.nullable().optional(),
-  delay_days: z.number().int().nonnegative().default(0),
-  delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-});
-
-export const UpdateWorkflowStepObj = AddWorkflowStepObj.partial();
-
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-
-export const WorkflowEnrollmentObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  person_id: z.string(),
-  status: z.enum(['active', 'completed', 'cancelled', 'exited']).default('active'),
-  current_step_number: z.number().int().nonnegative(),
-  next_run_at: z.coerce.date().nullable().optional(),
-  enrolled_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const WorkflowRunObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  enrollment_id: z.string().nullable().optional(),
-  person_id: z.string().nullable().optional(),
-  step_number: z.number().int().nullable().optional(),
-  step_kind: z.string().nullable().optional(),
-  status: z.enum(['success', 'failed', 'skipped']),
-  error: z.string().nullable().optional(),
-  opened_at: z.coerce.date().nullable().optional(),
-  clicked_at: z.coerce.date().nullable().optional(),
-  created_at: z.coerce.date(),
-});
-
-export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
 ````
 
 ## File: libs/common/src/lib/auth.ts
@@ -94166,6 +94731,7 @@ import type {
   AddTicketTypeObj,
   TicketTypeObj,
   UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
   AddRegistrationObj,
   RegistrationObj,
   UpdateRegistrationObj,
@@ -94313,6 +94879,7 @@ export type UpdateEventType = z.infer<typeof UpdateEventObj>;
 export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
 export type TicketTypeType = z.infer<typeof TicketTypeObj>;
 export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
+export type ReorderTicketTypesType = z.infer<typeof ReorderTicketTypesObj>;
 
 export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
 export type RegistrationType = z.infer<typeof RegistrationObj>;
@@ -99846,7 +100413,7 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '[Tasks](/tasks) is the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
-          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. The ‹ › buttons on a card move it one column; they dim at either end of the row. Jump there anytime with `g` then `b`.',
+          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. Drag a card to another column to change its status, or drag it up and down within a column to set the order you want; the order sticks. Prefer the keyboard? The ‹ › buttons on a card still move it one column and dim at either end of the row. Jump to the board anytime with `g` then `b`.',
           'Every header carries a swap button (Open board / Open list), so you never have to hunt for the sidebar to switch.',
         ],
       },
@@ -99856,7 +100423,7 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
+        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. Break the work into subtasks and drag them by the handle on the left of each row to reorder them. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
       },
       { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
       {
@@ -100904,6 +101471,361 @@ export const stripeConnectCountrySchema = z.enum(STRIPE_CONNECT_COUNTRY_CODES);
 export type StripeConnectCountry = z.infer<typeof stripeConnectCountrySchema>;
 ````
 
+## File: libs/common/src/lib/schemas/marketing.schema.ts
+````typescript
+import { z } from 'zod';
+
+import { idSchema } from './core.schema';
+
+export const marketingEmailTopLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+});
+
+export const MarketingEmailObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  bounce_count: z.number().int().nonnegative(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unique_opens: z.number().int().nonnegative(),
+  unique_clicks: z.number().int().nonnegative(),
+  unsubscribe_count: z.number().int().nonnegative(),
+  spam_complaint_count: z.number().int().nonnegative(),
+  reply_count: z.number().int().nonnegative(),
+  send_date: z.coerce.date().nullable(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  /** The sent newsletter this row is a non-opener follow-up of; null for originals. */
+  resend_of_id: z.string().nullable().optional(),
+  updated_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export const AddMarketingEmailObj = z.object({
+  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative().default(0).optional(),
+  delivered_count: z.number().int().nonnegative().default(0).optional(),
+  bounce_count: z.number().int().nonnegative().default(0).optional(),
+  open_rate: z.number().min(0).max(100).default(0).optional(),
+  click_rate: z.number().min(0).max(100).default(0).optional(),
+  unique_opens: z.number().int().nonnegative().default(0).optional(),
+  unique_clicks: z.number().int().nonnegative().default(0).optional(),
+  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
+  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
+  reply_count: z.number().int().nonnegative().default(0).optional(),
+  send_date: z.coerce.date().nullable().optional(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+});
+
+export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
+
+/* ------------------------------------------------------------------ */
+/* Newsletter report — the shape of newsletters.getReport             */
+/* ------------------------------------------------------------------ */
+
+/** A CRM person matched by email — enough to render a link to their record. */
+export const NewsletterReportPersonObj = z.object({
+  id: z.string(),
+  /** Opaque public id — the canonical /people/:id route key. */
+  public_id: z.string().nullable(),
+  name: z.string(),
+});
+
+export const NewsletterReportBounceObj = z.object({
+  email: z.string(),
+  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
+  kind: z.enum(['hard', 'soft', 'dropped']),
+  reason: z.string().nullable(),
+  occurred_at: z.coerce.date().nullable(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportEngagedObj = z.object({
+  email: z.string(),
+  opens: z.number().int().nonnegative(),
+  clicks: z.number().int().nonnegative(),
+  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
+  links: z.number().int().nonnegative(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+  /** Unique clickers of this link — null when unknown (raw events already pruned). */
+  people: z.number().int().nonnegative().nullable(),
+});
+
+export const NewsletterReportPreviousSendObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  send_date: z.coerce.date().nullable(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unsubscribe_rate: z.number(),
+  bounce_rate: z.number(),
+});
+
+export const NewsletterReportObj = z.object({
+  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
+  timeline: z.array(
+    z.object({
+      time: z.string(),
+      opens: z.number().int().nonnegative(),
+      clicks: z.number().int().nonnegative(),
+    }),
+  ),
+  /** Share of all opens that landed within 24h of send — null when not computable. */
+  opens_in_24h_pct: z.number().nullable(),
+  bounces: z.object({
+    total: z.number().int().nonnegative(),
+    hard: z.number().int().nonnegative(),
+    soft: z.number().int().nonnegative(),
+    dropped: z.number().int().nonnegative(),
+    rows: z.array(NewsletterReportBounceObj),
+  }),
+  top_links: z.array(NewsletterReportLinkObj),
+  tracked_links: z.number().int().nonnegative(),
+  total_clicks: z.number().int().nonnegative(),
+  unique_clickers: z.number().int().nonnegative(),
+  most_engaged: z.array(NewsletterReportEngagedObj),
+  unsubscribes: z.object({
+    total: z.number().int().nonnegative(),
+    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
+    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
+  }),
+  spam_reports: z.object({
+    total: z.number().int().nonnegative(),
+    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
+  }),
+  audience: z.object({
+    lists: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        mode: z.enum(['include', 'exclude']),
+        members: z.number().int().nonnegative(),
+      }),
+    ),
+    /** Members in more than one included list, counted once. */
+    overlap_removed: z.number().int().nonnegative(),
+    /** Included members whose address is on the suppression list. */
+    suppressed_skipped: z.number().int().nonnegative(),
+  }),
+  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
+  previous_sends: z.array(NewsletterReportPreviousSendObj),
+  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
+});
+
+export const CreateClickersListResultObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  members: z.number().int().nonnegative(),
+});
+````
+
+## File: libs/common/src/lib/schemas/workflows.schema.ts
+````typescript
+import { z } from 'zod';
+import { queryBuilderNodeSchema } from './core.schema';
+
+// Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
+// backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
+// volunteer-events controller) but is not offered as a card. `date_arrives` and
+// `task_sla_breach` stay in the enum for saved-row back-compat but have no picker card:
+// no backend fires them yet, and a dead card is dishonest UI. `supporter_lapsed` is fired
+// by the daily detect_lapsed_supporters cron; its trigger_event_id holds the inactivity
+// threshold in days (default 90).
+export const WORKFLOW_TRIGGER_TYPES = [
+  'manual',
+  'web_form_submitted',
+  'contact_created',
+  'tag_added',
+  'list_joined',
+  'donation_recorded',
+  'payment_event',
+  'volunteer_shift_status',
+  'task_sla_breach',
+  'new_subscriber',
+  'new_unsubscriber',
+  'supporter_lapsed',
+  'date_arrives',
+  'volunteer_signup',
+] as const;
+
+export type WorkflowTriggerType = (typeof WORKFLOW_TRIGGER_TYPES)[number];
+
+const triggerTypeSchema = z.enum(WORKFLOW_TRIGGER_TYPES);
+
+// Spec §16 sequence editor — the five step kinds offered by the ADD A STEP menu.
+export const WORKFLOW_STEP_KINDS = ['wait', 'send_email', 'add_tag', 'create_task', 'notify_team'] as const;
+
+export type WorkflowStepKind = (typeof WORKFLOW_STEP_KINDS)[number];
+
+const stepKindSchema = z.enum(WORKFLOW_STEP_KINDS);
+
+// Engagement condition on a send_email step: gate the send on what the recipient did with the
+// PREVIOUS email in this sequence (the industry-standard delay-then-check drip shape — pair it
+// with a wait step so people have time to engage). Absent/null = always send. A click also
+// stamps an open, so "not opened" implies "not clicked" was true as well.
+export const WORKFLOW_SEND_CONDITIONS = [
+  'previous_not_opened',
+  'previous_not_clicked',
+  'previous_opened',
+  'previous_clicked',
+] as const;
+
+export type WorkflowSendCondition = (typeof WORKFLOW_SEND_CONDITIONS)[number];
+
+// Sequence-level goals: an enrollment ends early ('exited') the moment one is met. Evaluated
+// each time the enrollment comes due, before any step runs.
+export const WORKFLOW_EXIT_CONDITIONS = ['donated', 'opened_any_email', 'clicked_any_email'] as const;
+
+export type WorkflowExitCondition = (typeof WORKFLOW_EXIT_CONDITIONS)[number];
+
+// Per-kind config payload (persisted to workflow_steps.config as jsonb). Every field is optional
+// at the schema boundary; the controller maps each kind's meaningful fields when executing.
+export const WorkflowStepConfigObj = z
+  .object({
+    // add_tag
+    tag_id: z.string().nullable().optional(),
+    tag_name: z.string().nullable().optional(),
+    // create_task
+    task_title: z.string().nullable().optional(),
+    // notify_team
+    notify_user_id: z.string().nullable().optional(),
+    notify_user_name: z.string().nullable().optional(),
+    notify_message: z.string().nullable().optional(),
+    // send_email
+    send_condition: z.enum(WORKFLOW_SEND_CONDITIONS).nullable().optional(),
+  })
+  .strict();
+
+export type WorkflowStepConfigType = z.infer<typeof WorkflowStepConfigObj>;
+
+export const WorkflowObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  trigger_type: triggerTypeSchema.default('manual'),
+  trigger_event_id: z.string().nullable().optional(),
+  status: z.enum(['draft', 'active', 'paused']).default('draft'),
+  conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+
+export const AddWorkflowObj = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  description: z.string().nullable().optional(),
+  trigger_type: triggerTypeSchema.default('manual'),
+  trigger_event_id: z.string().nullable().optional(),
+  status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
+  conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
+});
+
+export const UpdateWorkflowObj = AddWorkflowObj.partial();
+
+export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
+export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
+
+export const WorkflowStepObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  step_number: z.number().int().positive(),
+  kind: stepKindSchema,
+  config: WorkflowStepConfigObj.nullable().optional(),
+  delay_days: z.number().int().nonnegative(),
+  delay_unit: z.enum(['days', 'hours']).default('days'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+
+// Input shape for saveSteps — order is implied by array position, so no step_number here.
+export const AddWorkflowStepObj = z.object({
+  kind: stepKindSchema,
+  config: WorkflowStepConfigObj.nullable().optional(),
+  delay_days: z.number().int().nonnegative().default(0),
+  delay_unit: z.enum(['days', 'hours']).default('days'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+});
+
+export const UpdateWorkflowStepObj = AddWorkflowStepObj.partial();
+
+export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
+export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
+
+export const WorkflowEnrollmentObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  person_id: z.string(),
+  status: z.enum(['active', 'completed', 'cancelled', 'exited']).default('active'),
+  current_step_number: z.number().int().nonnegative(),
+  next_run_at: z.coerce.date().nullable().optional(),
+  enrolled_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+
+export const WorkflowRunObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  enrollment_id: z.string().nullable().optional(),
+  person_id: z.string().nullable().optional(),
+  step_number: z.number().int().nullable().optional(),
+  step_kind: z.string().nullable().optional(),
+  status: z.enum(['success', 'failed', 'skipped']),
+  error: z.string().nullable().optional(),
+  opened_at: z.coerce.date().nullable().optional(),
+  clicked_at: z.coerce.date().nullable().optional(),
+  created_at: z.coerce.date(),
+});
+
+export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
+````
+
 ## File: libs/common/src/lib/preflight-lint.ts
 ````typescript
 import type { AiPreflightVerdict, PreflightFinding, PreflightSeverity } from './schemas/content-check.schema';
@@ -101374,6 +102296,7 @@ export * from './schemas/lists.schema';
 export * from './schemas/teams.schema';
 export * from './schemas/emails.schema';
 export * from './schemas/marketing.schema';
+export * from './schemas/newsletter-templates.schema';
 export * from './schemas/persons.schema';
 export * from './schemas/settings.schema';
 export * from './schemas/tasks.schema';
@@ -102925,6 +103848,380 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
 ];
 ````
 
+## File: libs/common/src/lib/help/articles/engagement.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+      'stripe',
+      'processor',
+      'residency',
+      'paused',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
+      },
+      {
+        kind: 'p',
+        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
+      },
+      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
+      {
+        kind: 'p',
+        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
+      },
+      {
+        kind: 'p',
+        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
+      },
+      {
+        kind: 'p',
+        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Donations are paused until you confirm residency',
+        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page: your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Add ticket tiers and set their order',
+            detail:
+              'On the event’s edit page, add ticket types under **Ticket types** (leave it empty for a free RSVP). Drag a ticket by its handle to set the order; the order you set is the order attendees see on the public page.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Drag a field by its handle to reorder it; the order you set is the order people see on the public form. Changes apply to the live form instantly. There is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Donation forms show here too',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
+      {
+        kind: 'p',
+        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
+      },
+      {
+        kind: 'p',
+        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/kysely.models.ts
 ````typescript
 // tsco:ignore
@@ -102989,6 +104286,7 @@ export interface Models {
   donation_pledges: DonationPledges;
   emails: Emails;
   newsletters: Newsletters;
+  newsletter_templates: NewsletterTemplates;
   newsletter_events: NewsletterEvents;
   newsletter_send_log: NewsletterSendLog;
   newsletter_content_checks: NewsletterContentChecks;
@@ -103705,6 +105003,15 @@ interface Newsletters extends RecordType {
   resend_of_id: string | null;
 }
 
+/** A user-saved newsletter design. Tenant-wide (no campaign_id — pure content, no audience or
+ * consent, so it is a shared asset per Campaigns §15). html_content stores the compiled document
+ * verbatim, including the PPLCRM_VISUAL_BLOCKS_DATA comment the visual editor round-trips on. */
+interface NewsletterTemplates extends RecordType {
+  name: string;
+  html_content: string;
+  plain_text_content: Generated<string>;
+}
+
 export interface NewsletterEvents {
   id: Generated<string>;
   tenant_id: string;
@@ -104267,375 +105574,6 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
 };
 ````
 
-## File: libs/common/src/lib/help/articles/engagement.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-      'stripe',
-      'processor',
-      'residency',
-      'paused',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
-      },
-      {
-        kind: 'p',
-        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
-      },
-      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
-      {
-        kind: 'p',
-        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
-      },
-      {
-        kind: 'p',
-        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
-      },
-      {
-        kind: 'p',
-        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Donations are paused until you confirm residency',
-        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page: your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly. There is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
-      {
-        kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
-      },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
-      {
-        kind: 'list',
-        items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Donation forms show here too',
-        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
-      },
-    ],
-  },
-  {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
-    summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
-      },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
-          },
-          {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
-          },
-          {
-            title: 'Confirm',
-            detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
-      {
-        kind: 'p',
-        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Before you assign',
-        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      {
-        kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
-      },
-      {
-        kind: 'p',
-        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
-      },
-      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
-      {
-        kind: 'p',
-        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
-      },
-      {
-        kind: 'p',
-        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
-      },
-    ],
-  },
-];
-````
-
 ## File: libs/common/src/lib/help/articles/administration.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -104982,6 +105920,8 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       'schedule',
       'resend',
       'template',
+      'saved templates',
+      'save as template',
       'audience',
       'unsubscribe',
       'deliverability',
@@ -104995,11 +105935,13 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail: 'Start from a template or a blank canvas.',
+            detail:
+              'Start from a template or a blank canvas. Every template card shows a live preview of the design, so you can see what you are picking before you pick it.',
           },
           {
             title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
+            detail:
+              'Drag blocks from the Blocks panel onto the canvas, or click one to add it. Rearrange blocks by their drag handle, and use the plus button between blocks to insert one exactly where you want it. What you see is what subscribers get.',
           },
           {
             title: 'Name it clearly',
@@ -105012,6 +105954,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         tone: 'tip',
         title: 'Personalize with merge fields',
         text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'templates', text: 'Save and reuse your own templates' },
+      {
+        kind: 'p',
+        text: 'When a design is worth keeping, click **Save as template** on the Content step and give it a name. It joins the **Your templates** section of the Template step, live preview included, and is shared with everyone in your workspace; selecting it starts the next newsletter from that design. Delete a template from its card when it has outlived its usefulness. Newsletters already created from it keep their content. A workspace can hold up to 50 saved templates.',
       },
       { kind: 'h2', id: 'audience', text: 'Choose the audience' },
       {
@@ -105319,7 +106266,8 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
           },
           {
             title: 'Build the sequence',
-            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+            detail:
+              'Use the + between steps to add a wait, an email, a tag, a task, or a team notification. Drag a step by its handle to reorder it; steps run top to bottom.',
           },
           {
             title: 'Name it and set it Active',
@@ -105351,1120 +106299,6 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
 
 ## File: libs/common/src/index.ts
 ````typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
-
-export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
-
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  AddCampaignType,
-  UpdateCampaignType,
-  UpsertCampaignPersonFactType,
-  SetCampaignSubscriptionType,
-  CarryOverCampaignType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  NewsletterReportType,
-  NewsletterReportBounceType,
-  NewsletterReportEngagedType,
-  NewsletterReportLinkType,
-  NewsletterReportPreviousSendType,
-  CreateClickersListResultType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  ProfilePreferencesType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  LogInstantExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  CreateFormType,
-  UpdateFormType,
-  FormSubmissionType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-  AddTurfType,
-  UpdateTurfType,
-  CutTurfsType,
-  AssignTurfType,
-  FieldReportRangeType,
-  LogKnockType,
-} from './lib/models';
-
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  TASK_STATUSES,
-  TASK_BOARD_STATUSES,
-  TASK_OPEN_STATUSES,
-  TASK_STATUS_LABELS,
-  isTaskStatus,
-  isTaskBoardStatus,
-  AddTeamObj,
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  SUBSCRIPTION_STATUSES,
-  CONSENT_SOURCES,
-  CAMPAIGN_KINDS,
-  CAMPAIGN_STATUSES,
-  SUPPORT_LEVELS,
-  SUPPORT_LEVEL_LABELS,
-  VOTING_STATUSES,
-  VOTING_STATUS_LABELS,
-  FACT_SOURCES,
-  DNC_CHANNELS,
-  VOLUNTEER_STATUSES,
-  VOLUNTEER_STATUS_LABELS,
-  STAFF_STATUSES,
-  STAFF_STATUS_LABELS,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  ProfilePreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  folderIdSchema,
-  regularFolderIdSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  FormFieldObj,
-  FormTypeEnum,
-  FORM_TYPES,
-  FORM_STATUSES,
-  FORM_TEMPLATES,
-  FORM_STANDARD_CATALOG,
-  FORM_EMAIL_FIELD,
-  normForm,
-  fieldsForTemplate,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  WorkflowRunObj,
-  WorkflowStepConfigObj,
-  WORKFLOW_TRIGGER_TYPES,
-  WORKFLOW_STEP_KINDS,
-  CompanyInputObj,
-  CompanyEnrichmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  TURF_STATUSES,
-  KNOCK_OUTCOMES,
-  KNOCK_RESPONSES,
-  KNOCK_RESPONSE_LABELS,
-  DOORS_PER_TURF_PRESETS,
-  turfStatusSchema,
-  knockOutcomeSchema,
-  knockResponseSchema,
-  isTurfStatus,
-  isKnockOutcome,
-  CompanionSurveyObj,
-  CompanionPersonResultObj,
-  CompanionDoorOutcomeObj,
-  CompanionClearOutcomeObj,
-  CompanionPersonCreateObj,
-  CompanionOpObj,
-  CompanionResultsObj,
-  UpdateCompanionSettingsObj,
-  AddDeliveryRequestObj,
-  UpdateDeliveryRequestObj,
-  SetDeliveryRequestStatusObj,
-  PlanDeliveriesObj,
-  CommitDeliveriesObj,
-  UpdateDeliveryRouteObj,
-  AssignVolunteerObj,
-  SetDeliveryRouteStatusObj,
-  ReorderStopObj,
-  StopActionObj,
-  RouteIdObj,
-  MintShareLinkObj,
-  PublicStopActionObj,
-  GetSignStatusObj,
-  DELIVERY_REQUEST_STATUSES,
-  DELIVERY_REQUEST_STATUS_LABELS,
-  DELIVERY_ROUTE_STATUSES,
-  DELIVERY_STOP_STATUSES,
-  DELIVERY_SOURCES,
-  DELIVERY_SKIP_REASONS,
-  DONATION_METHODS,
-  DONATION_METHOD_LABELS,
-  donationMethodSchema,
-  RecordDonationObj,
-  INTERACTION_TYPES,
-  INTERACTION_TYPE_LABELS,
-  interactionTypeSchema,
-  LogInteractionObj,
-  CompanionAccessQueryObj,
-  CompanionVerifyStartObj,
-  CompanionVerifyConfirmObj,
-  COMPANION_LINK_KINDS,
-  COMPANION_VERIFY_CHANNELS,
-  COMPANION_VOLUNTEER_STATUSES,
-  COMPANION_ACCESS_STATES,
-} from './lib/schema';
-
-export type {
-  CompanionLinkKind,
-  CompanionVerifyChannel,
-  CompanionVolunteerStatus,
-  CompanionAccessState,
-  CompanionContact,
-  CompanionAccessPayload,
-  CompanionVerifyConfirmResult,
-  CompanionVolunteerRow,
-} from './lib/schemas/companion-access.schema';
-
-export type {
-  CampaignKind,
-  CampaignStatus,
-  SupportLevel,
-  VotingStatus,
-  FactSource,
-  SubscriptionStatus,
-  ConsentSource,
-} from './lib/schemas/campaigns.schema';
-export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
-export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
-
-export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
-
-export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
-export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
-
-export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
-export type {
-  WorkflowTriggerType,
-  WorkflowStepKind,
-  WorkflowStepConfigType,
-  WorkflowRunType,
-  WorkflowSendCondition,
-  WorkflowExitCondition,
-} from './lib/schemas/workflows.schema';
-export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
-export type {
-  TurfStatus,
-  KnockOutcome,
-  KnockResponse,
-  CompanionSurveyType,
-  CompanionOpType,
-  CompanionResultsType,
-  CompanionOpAck,
-  CompanionSurveyPrefill,
-  CompanionPersonResult,
-  CompanionPerson,
-  CompanionDoorOutcome,
-  CompanionHousehold,
-  CompanionTurfPayload,
-  UpdateCompanionSettingsType,
-} from './lib/schemas/canvassing.schema';
-export type {
-  AddDeliveryRequestType,
-  UpdateDeliveryRequestType,
-  SetDeliveryRequestStatusType,
-  PlanDeliveriesType,
-  CommitDeliveriesType,
-  UpdateDeliveryRouteType,
-  AssignVolunteerType,
-  SetDeliveryRouteStatusType,
-  ReorderStopType,
-  StopActionType,
-  MintShareLinkType,
-  PublicStopActionType,
-  GetSignStatusType,
-  DeliveryRequestStatus,
-  DeliveryRouteStatus,
-  DeliveryStopStatus,
-  DeliverySource,
-  DeliverySkipReason,
-} from './lib/schemas/deliveries.schema';
-
-export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
-export {
-  CROCKFORD_ALPHABET,
-  PUBLIC_ID_LENGTH,
-  encodeCrockford,
-  normalizeCrockford,
-  extractPublicIdFromSlug,
-  buildPersonSlug,
-} from './lib/public-id';
-export { calculateWorkingTimeMs } from './lib/sla';
-
-export {
-  AI_CONTENT_TYPES,
-  AI_REVIEW_STATUSES,
-  AiPreflightVerdictObj,
-  PREFLIGHT_BANDS,
-  PREFLIGHT_BLOCK,
-  PREFLIGHT_GOOD,
-  PREFLIGHT_SEVERITIES,
-  PreflightFindingObj,
-  PreflightResultObj,
-  RunPreflightObj,
-  preflightBand,
-} from './lib/schemas/content-check.schema';
-export type {
-  AiContentType,
-  AiPreflightVerdict,
-  AiReviewStatus,
-  PreflightBand,
-  PreflightFinding,
-  PreflightResult,
-  PreflightSeverity,
-  RunPreflightType,
-} from './lib/schemas/content-check.schema';
-export {
-  buildAiFindings,
-  buildSpamAssassinFinding,
-  computeScore,
-  lintNewsletterContent,
-  preflightHashInput,
-} from './lib/preflight-lint';
-export type { PreflightInput } from './lib/preflight-lint';
-
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
-
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
-
-export {
-  GB,
-  PLANS,
-  PLANS_BY_KEY,
-  PURCHASABLE_PLAN_KEYS,
-  LEGACY_PLAN_ALIASES,
-  FEATURE_MATRIX,
-  getPlanDef,
-  planDisplayName,
-  bracketIndexForSubscribers,
-  maxQuantity,
-  bracketForQuantity,
-  subscriberCapForQuantity,
-  emailCapForQuantity,
-  priceForQuantity,
-  annualPriceForQuantity,
-  monthlyEquivalentUsd,
-  startingPriceLabel,
-  startingPriceUsd,
-  priceLabelAt,
-  cadenceLabel,
-  BILLING_INTERVALS,
-  ANNUAL_MONTHS_FREE,
-  ANNUAL_PRICE_MULTIPLIER,
-  GATED_FEATURES,
-  planAllowsFeature,
-  GEOCODING_MIN_PLAN,
-  planAllowsGeocoding,
-  DATA_RESIDENCY_REGIONS,
-  DATA_RESIDENCY_LABEL,
-} from './lib/billing/plans';
-export type {
-  PlanKey,
-  GatedFeature,
-  PurchasablePlanKey,
-  BillingInterval,
-  PlanDef,
-  PriceBracket,
-  TierPricing,
-  FeatureMatrixRow,
-  FeatureMatrixGroup,
-  DataResidencyRegion,
-} from './lib/billing/plans';
-export {
-  CURRENCY_CODES,
-  SUPPORTED_CURRENCIES,
-  COUNTRY_TO_CURRENCY,
-  isCurrencyCode,
-  currencyForCountry,
-  convertFromUsd,
-  formatCurrency,
-  currencyPriceSymbol,
-} from './lib/billing/currency';
-export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
-
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
-
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
-
-export type {
-  HelpArticle,
-  HelpBlock,
-  HelpCategory,
-  HelpCategoryId,
-  HelpStep,
-  HelpKeyRow,
-  HelpInlineSegment,
-} from './lib/help/help-types';
-export {
-  parseHelpInline,
-  stripHelpInline,
-  blockToPlainText,
-  articleToPlainText,
-  readingMinutes,
-} from './lib/help/help-types';
-
-export {
-  HELP_CATEGORIES,
-  HELP_ARTICLES,
-  POPULAR_ARTICLE_IDS,
-  getHelpArticle,
-  getHelpCategory,
-  articlesInCategory,
-  relatedArticles,
-  categoryNeighbors,
-} from './lib/help/help-content';
-
-export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
-export { searchHelp, highlightTerms } from './lib/help/help-search';
-
-export type { HelpRouteTarget } from './lib/help/help-links';
-export { classifyHelpRoute } from './lib/help/help-links';
-
-export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
-````
-
-## File: libs/common/src/lib/billing/plans.ts
-````typescript
-/**
- * Subscription plans — the single source of truth for tiers, prices and limits.
- *
- * Consumed by:
- *  - backend enforcement  (modules/billing/usage-limits.ts, controller.ts, trpc.router.ts)
- *  - the CRM billing page (experiences/settings/billing)
- *  - the marketing website pricing page + home teaser
- *
- * Pricing model (decision log, 2026-07-14 — supersedes the flat-price 5-column model):
- *  - Three FEATURE tiers (Free / Grassroots / Movement). Which tier you're on is a feature
- *    decision. Within a tier, PRICE scales smoothly by emailable-subscriber bracket instead of
- *    stair-stepping between tiers — the old model jumped a customer 3.4× (Starter $29 →
- *    Representative $99) the moment they crossed one subscriber count. `representative` is
- *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
- *    including Free; forms, donations, automations, lists (segments) and volunteer management
- *    (teams & events) are the paid step-up (Grassroots and up); the field-ops surface — both
- *    companion apps (canvassing & deliveries), companion volunteer access & monitoring, yard
- *    signs, turf cutting, walk lists & routes, field reports, route optimization — plus A/B
- *    testing and the optional dedicated sending IP are Movement-only.
- *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
- *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
- *    can actually email. This is the differentiator vs. contact-metered tools.
- *  - Stripe never learns about "subscribers" — each purchasable tier has ONE graduated Stripe
- *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
- *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
- *    data; Stripe just multiplies quantity by its graduated unit amounts.
- *  - Emails/month = 8× the bracket's subscriber cap on Grassroots (between Mailchimp
- *    Essentials' 10× and a weekly-send cadence) and 12× on Movement (matches Mailchimp
- *    Standard / Constant Contact Standard so the flagship spec-sheet line shows no smaller).
- *    Free keeps 2×. Enforced at send time since 2026-07-18 (send-guards.ts monthly allowance),
- *    not just alerted on.
- *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
- *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
- *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
- *    Movement-only. (Revised 2026-07-16: companion volunteer access itself moved to
- *    Movement-only. On Grassroots it was a dead grant — volunteer links are minted only by
- *    turf assignments and delivery routes, both Movement-gated — so the old "15 volunteers"
- *    could never be used. Staff-side volunteer management — teams & volunteer events — stays
- *    Grassroots.)
- *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
- *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
- *  - All prices are USD.
- *  - Annual billing (added 2026-07-18): each purchasable tier also has a yearly Stripe price at
- *    exactly 10× the monthly unit amounts — "2 months free" (`ANNUAL_PRICE_MULTIPLIER`). The
- *    graduated ladder is linear in quantity, so 10× holds at every bracket and the whole
- *    quantity-as-bracket-index mechanism carries over unchanged. Display is the monthly
- *    equivalent rounded to the nearest dollar, with the EXACT annual total always alongside
- *    plus a rounding disclaimer ("$24 per month, billed annually as $290") — the checkable
- *    number is the annual total, which is what's actually charged. The website pricing page
- *    defaults to Annual (marketing convention: 2026-07-18); the in-app billing page keeps
- *    Monthly as its default (electoral campaigns end in November — don't nudge existing
- *    customers into prepay). Mid-year bracket GROWTH on an annual subscription is
- *    invoiced prorated immediately (see backend subscription-sync.ts); downgrades still defer
- *    to renewal on both intervals. Send/usage caps stay MONTHLY regardless of billing interval.
- *
- * Market calibration (competitive research 2026-07-14; final ladder locked 2026-07-15, monthly
- * billing): Grassroots beats every full-suite competitor at every count — $69 vs $75 (Mailchimp
- * Essentials) at 5k, $89 vs $110 at 10k, $129 vs $230 at 20k, $219 vs beehiiv Scale's $199 at
- * 50k is the one near-miss (beehiiv is newsletter-only). Movement beats Mailchimp Standard at
- * every count — $125 vs $100 at 5k is the exception early on, but $195 vs $230 at 15k,
- * $365 vs $450 at 50k, $565 vs $800 at 100k. Roughly 1.8× Grassroots at every bracket —
- * "cheapest full-featured option" rather than "suspiciously cheap".
- *
- * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
- * `quantity` = the bracket index from `bracketIndexForSubscribers`):
- *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 7, unit_amount: 2000 }, { up_to: 'inf', unit_amount: 7000 }]
- *    → qty 1 = $29, qty 2–7 add $20/step (→ $149), qty 8–10 add $70/step (→ $359; the
- *    piecewise step change at the 25,000-subscriber boundary — see GRASSROOTS_BRACKETS below).
- *  - Movement: [{ up_to: 1, unit_amount: 5500 }, { up_to: 7, unit_amount: 3500 }, { up_to: 'inf', unit_amount: 10000 }]
- *    → qty 1 = $55, qty 2–7 add $35/step (→ $265), qty 8–11 add $100/step (→ $665; same
- *    piecewise step change at the 25,000-subscriber boundary — see MOVEMENT_BRACKETS below).
- *  - Grassroots annual (interval = year): [{ up_to: 1, unit_amount: 29000 }, { up_to: 7, unit_amount: 20000 }, { up_to: 'inf', unit_amount: 70000 }]
- *  - Movement annual (interval = year): [{ up_to: 1, unit_amount: 55000 }, { up_to: 7, unit_amount: 35000 }, { up_to: 'inf', unit_amount: 100000 }]
- *    (exactly 10× the monthly unit amounts. Same graduated shape, same quantity semantics,
- *    exclusive tax on the price. Created 2026-07-18 in BOTH modes — test-mode IDs are set in
- *    .env.production, live-mode IDs are in its comments for the launch swap. A default billing
- *    portal configuration with subscription_update enabled (price switches only, proration
- *    always_invoice) exists in test mode so monthly customers can self-switch to annual; the
- *    live-mode portal needs the same configuration at launch alongside the sk_live swap.)
- *
- * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
- * price IDs. Display names are intentionally allowed to differ from keys, but here they are
- * kept aligned (`grassroots`→"Grassroots", `movement`→"Movement", …) except the free key,
- * which presents as "Free" (renamed from "Starter" in the 2026-07-14 overhaul —
- * `LEGACY_PLAN_ALIASES` resolves stale `starter` values written before the rename).
- */
-
-export const GB = 1024 * 1024 * 1024;
-
-/** Every plan key that can appear in `tenants.subscription_plan`. */
-export type PlanKey = 'free' | 'grassroots' | 'movement' | 'enterprise';
-
-/** Paid plans bought via self-serve Stripe checkout (excludes free and contact-sales enterprise). */
-export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'movement'] as const;
-export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
-
-/** Billing intervals a purchasable plan can be bought on. Monthly is the default everywhere;
- * annual is 10× the monthly bracket price — "2 months free". */
-export const BILLING_INTERVALS = ['month', 'year'] as const;
-export type BillingInterval = (typeof BILLING_INTERVALS)[number];
-
-/** Months a customer doesn't pay for on annual billing — the marketing claim "2 months free". */
-export const ANNUAL_MONTHS_FREE = 2;
-
-/** Annual price = monthly bracket price × this. Derived from ANNUAL_MONTHS_FREE so the
- * marketing claim and the multiplier can't drift apart. */
-export const ANNUAL_PRICE_MULTIPLIER = 12 - ANNUAL_MONTHS_FREE;
-
-/** One row of a tier's price ladder. `upTo` is the inclusive emailable-subscriber cap; the
- * bracket's position in `TierPricing.brackets` (1-based) is the Stripe `quantity` billed for it. */
-export interface PriceBracket {
-  /** Emailable-subscriber cap of this bracket (inclusive). */
-  readonly upTo: number;
-  /** USD/month at this bracket (annual billing charges ×`ANNUAL_PRICE_MULTIPLIER` per year). */
-  readonly price: number;
-}
-
-/** A purchasable (or free) tier's full price ladder. `null` on `PlanDef.pricing` means the
- * tier has no ladder at all — currently only `enterprise` (custom, negotiated pricing). */
-export interface TierPricing {
-  /** Ascending by `upTo`. Index + 1 = the Stripe `quantity` for that bracket; the last
-   * bracket's `upTo` is the tier's hard subscriber max. */
-  readonly brackets: readonly PriceBracket[];
-  /** Monthly send cap = this × the current bracket's `upTo` (12 on paid tiers, 2 on Free). */
-  readonly emailsPerSubscriber: number;
-}
-
-export interface PlanDef {
-  readonly key: PlanKey;
-  /** Customer-facing name (may differ from key). */
-  readonly name: string;
-  /** Display cadence, e.g. 'per month' / 'forever' / 'contact us'. */
-  readonly cadence: string;
-  readonly blurb: string;
-  /** Bracket price ladder. `null` = enterprise custom pricing (no ladder, no Stripe quantity). */
-  readonly pricing: TierPricing | null;
-  /** File-storage quota in bytes. null = unlimited / custom. */
-  readonly storageBytes: number | null;
-  /** Included staff seats. null = unlimited. */
-  readonly seats: number | null;
-  /** Included companion volunteers. 0 = none, null = unlimited. */
-  readonly volunteers: number | null;
-  /** Bought via self-serve Stripe checkout (false for free + enterprise). */
-  readonly purchasable: boolean;
-  /** Highlighted as the recommended tier. */
-  readonly featured: boolean;
-  /** Shown as a priced column on pricing surfaces (false = enterprise, footnote-only). */
-  readonly displayed: boolean;
-  /** Marketing feature bullets shown on app-side billing cards (see FEATURE_MATRIX below for
-   * the website's comparison-table view of the same feature split — keep both in sync). */
-  readonly features: readonly string[];
-}
-
-/**
- * Grassroots ladder (final 2026-07-15 pricing) — $29 ≤1,000, +$20/bracket through 25,000, then
- * +$70/bracket to the 100,000 tier max (10 brackets). Bracket widths are non-uniform (1k → 2.5k
- * → 5k-wide steps → 25k-wide steps), so the ladder is spelled out literally rather than
- * generated. Price deltas stay Stripe-graduatable: +$20 ×6, then +$70 ×3 (see Stripe ops above).
- */
-const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 1_000, price: 29 },
-  { upTo: 2_500, price: 49 },
-  { upTo: 5_000, price: 69 },
-  { upTo: 10_000, price: 89 },
-  { upTo: 15_000, price: 109 },
-  { upTo: 20_000, price: 129 },
-  { upTo: 25_000, price: 149 },
-  { upTo: 50_000, price: 219 },
-  { upTo: 75_000, price: 289 },
-  { upTo: 100_000, price: 359 },
-];
-
-/**
- * Movement ladder (final 2026-07-15 pricing) — $55 ≤1,000, +$35/bracket through 25,000, then
- * +$100/bracket to the 200,000 tier max (11 brackets). Same stops as Grassroots plus a final
- * 200,000 bracket; roughly 1.8× Grassroots at every shared stop. Price deltas stay
- * Stripe-graduatable: +$35 ×6, then +$100 ×4 (see Stripe ops above).
- */
-const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 1_000, price: 55 },
-  { upTo: 2_500, price: 90 },
-  { upTo: 5_000, price: 125 },
-  { upTo: 10_000, price: 160 },
-  { upTo: 15_000, price: 195 },
-  { upTo: 20_000, price: 230 },
-  { upTo: 25_000, price: 265 },
-  { upTo: 50_000, price: 365 },
-  { upTo: 75_000, price: 465 },
-  { upTo: 100_000, price: 565 },
-  { upTo: 200_000, price: 665 },
-];
-
-export const PLANS: readonly PlanDef[] = [
-  {
-    key: 'free',
-    name: 'Free',
-    cadence: 'forever',
-    blurb: 'For getting your bearings and running a small list.',
-    pricing: { brackets: [{ upTo: 1_000, price: 0 }], emailsPerSubscriber: 2 },
-    storageBytes: 1 * GB,
-    seats: 2,
-    volunteers: 0,
-    purchasable: false,
-    featured: false,
-    displayed: true,
-    features: [
-      'Unlimited contacts & households',
-      'Demo workspace with sample data',
-      'Up to 1,000 email subscribers',
-      '2,000 emails / month',
-      '2 staff seats · 1 GB storage',
-      'Shared inbox, people CRM & CSV import/export',
-      'Newsletters, templates, scheduling & dynamic content',
-      'AI deliverability check on every newsletter',
-      'Custom reports, role-based access & 300+ integrations',
-      'Community support',
-    ],
-  },
-  {
-    key: 'grassroots',
-    name: 'Grassroots',
-    cadence: 'per month',
-    blurb: 'For a local candidate or small campaign getting to work.',
-    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 8 },
-    storageBytes: 10 * GB,
-    seats: 5,
-    volunteers: 0,
-    purchasable: true,
-    featured: false,
-    displayed: true,
-    features: [
-      'Everything in Free, plus:',
-      'Scales smoothly from $29/month as your list grows',
-      'Save 2 months with annual billing',
-      'Up to 100,000 email subscribers · 8× emails/month',
-      '5 staff seats · 10 GB storage',
-      'Forms & donations',
-      'Automations & lists (segments)',
-      'Volunteer management (teams & events)',
-      'Email support',
-    ],
-  },
-  {
-    key: 'movement',
-    name: 'Movement',
-    cadence: 'per month',
-    blurb: 'For a large campaign or advocacy operation at full tilt.',
-    pricing: { brackets: MOVEMENT_BRACKETS, emailsPerSubscriber: 12 },
-    storageBytes: 200 * GB,
-    seats: null,
-    volunteers: null,
-    purchasable: true,
-    featured: true,
-    displayed: true,
-    features: [
-      'Everything in Grassroots, plus:',
-      'Scales smoothly from $55/month as your list grows',
-      'Save 2 months with annual billing',
-      'Up to 200,000 email subscribers · 12× emails/month',
-      'Unlimited staff seats & volunteers · 200 GB storage',
-      'Canvassing & deliveries companion apps',
-      'Companion volunteer access & field monitoring',
-      'Yard signs & route optimization',
-      'Turf cutting, walk lists & routes, field reports',
-      'A/B testing & optional dedicated sending IP',
-      'Choose your data residency region (US, EU, Canada or UK)',
-      'Priority support & onboarding',
-    ],
-  },
-  {
-    key: 'enterprise',
-    name: 'Enterprise',
-    cadence: 'contact us',
-    blurb: 'For federations, parties and multi-office operations.',
-    pricing: null,
-    storageBytes: null,
-    seats: null,
-    volunteers: null,
-    purchasable: false,
-    featured: false,
-    displayed: false,
-    features: [
-      'Everything in Movement, plus:',
-      'Unlimited subscribers & sends',
-      'Multiple linked workspaces',
-      'Single sign-on (SSO)',
-      'Data residency by region',
-      'Dedicated IP & custom integrations',
-      'SLA support & guided onboarding',
-    ],
-  },
-];
-
-export const PLANS_BY_KEY: Record<PlanKey, PlanDef> = PLANS.reduce(
-  (acc, plan) => {
-    acc[plan.key] = plan;
-    return acc;
-  },
-  {} as Record<PlanKey, PlanDef>,
-);
-
-/** Stale plan values that must still resolve after the 2026-07-14 tier rename/retirement:
- * `representative` (retired, features split into grassroots/movement — nearest fit is
- * movement) and `starter` (renamed to `free`). Resolved case-insensitively by `getPlanDef`. */
-export const LEGACY_PLAN_ALIASES: Readonly<Record<string, PlanKey>> = {
-  representative: 'movement',
-  starter: 'free',
-};
-
-/** Resolve a (possibly mixed-case, possibly legacy) stored plan value to its definition. */
-export function getPlanDef(planName: string | null | undefined): PlanDef | undefined {
-  if (!planName) return undefined;
-  const key = planName.toLowerCase();
-  const resolvedKey = LEGACY_PLAN_ALIASES[key] ?? key;
-  return (PLANS_BY_KEY as Record<string, PlanDef | undefined>)[resolvedKey];
-}
-
-/** Customer-facing display name for a stored plan value (falls back to the raw value). */
-export function planDisplayName(planName: string | null | undefined): string {
-  return getPlanDef(planName)?.name ?? (planName ? planName : 'Free');
-}
-
-/**
- * 1-based Stripe quantity for an emailable-subscriber count on the given plan, or `null` when
- * the count exceeds the tier's max bracket (caller should treat this as "outgrown the tier").
- * A count of 0 still bills quantity 1 (every purchasable plan has a non-zero minimum charge).
- * Plans with no pricing ladder (enterprise) always return `null` — quantity is meaningless there.
- */
-export function bracketIndexForSubscribers(key: PlanKey, count: number): number | null {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  if (!pricing) return null;
-  const normalizedCount = Math.max(count, 0);
-  const index = pricing.brackets.findIndex((bracket) => normalizedCount <= bracket.upTo);
-  return index === -1 ? null : index + 1;
-}
-
-/** The highest valid Stripe quantity (= number of brackets) for a plan. `Infinity` for plans
- * with no pricing ladder (enterprise — no quantity ceiling applies). */
-export function maxQuantity(key: PlanKey): number {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  return pricing ? pricing.brackets.length : Infinity;
-}
-
-/** The price bracket for a given Stripe quantity, clamping `qty` into the valid `[1, maxQuantity]`
- * range. Throws only if called against a plan with no pricing ladder (enterprise) — callers
- * should guard with `PLANS_BY_KEY[key].pricing !== null` first; purchasable/free plans always
- * have at least one bracket. */
-export function bracketForQuantity(key: PlanKey, qty: number): PriceBracket {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  if (!pricing) {
-    throw new Error(`plan "${key}" has no pricing ladder (enterprise is custom-priced)`);
-  }
-  const max = pricing.brackets.length;
-  const clampedIndex = Math.min(Math.max(qty, 1), max) - 1;
-  const bracket = pricing.brackets[clampedIndex];
-  if (!bracket) {
-    // Unreachable: clampedIndex is always within [0, brackets.length - 1] above.
-    throw new Error(`unreachable: no bracket at index ${clampedIndex} for plan "${key}"`);
-  }
-  return bracket;
-}
-
-/** Emailable-subscriber cap for a Stripe quantity on a plan. */
-export function subscriberCapForQuantity(key: PlanKey, qty: number): number {
-  return bracketForQuantity(key, qty).upTo;
-}
-
-/** Monthly email-send cap for a Stripe quantity on a plan (= subscriber cap × the plan's
- * `emailsPerSubscriber` multiplier). */
-export function emailCapForQuantity(key: PlanKey, qty: number): number {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  const multiplier = pricing?.emailsPerSubscriber ?? 0;
-  return subscriberCapForQuantity(key, qty) * multiplier;
-}
-
-/** USD/month price for a Stripe quantity on a plan. */
-export function priceForQuantity(key: PlanKey, qty: number): number {
-  return bracketForQuantity(key, qty).price;
-}
-
-/** USD/year price for a Stripe quantity on a plan — exactly `ANNUAL_PRICE_MULTIPLIER`× the
- * monthly bracket price ("2 months free"). */
-export function annualPriceForQuantity(key: PlanKey, qty: number): number {
-  return priceForQuantity(key, qty) * ANNUAL_PRICE_MULTIPLIER;
-}
-
-/** Monthly-equivalent of an annual USD total, rounded to the nearest whole dollar (290 → 24).
- * The customer-facing framing for annual prices: "$24 per month, billed annually as $290" —
- * surfaces that show it must keep the exact annual total alongside and carry the rounding
- * disclaimer, since equivalent × 12 ≠ the billed total. */
-export function monthlyEquivalentUsd(annualUsd: number): number {
-  return Math.round(annualUsd / 12);
-}
-
-/** "$29" for whole dollars; tolerates cent amounts defensively ("$24.17"). */
-function usdLabel(amount: number): string {
-  return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
-}
-
-/** Cadence line for surfaces with a monthly/annual toggle. Non-purchasable plans keep their
- * static cadence ('forever' / 'contact us'); paid plans read 'per month' or
- * 'per month, billed annually'. */
-export function cadenceLabel(plan: PlanDef, interval: BillingInterval): string {
-  if (!plan.purchasable) return plan.cadence;
-  return interval === 'year' ? 'per month, billed annually' : plan.cadence;
-}
-
-/** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
- * 'From $55' (movement), 'Custom' (enterprise). With `interval: 'year'`, paid plans show the
- * rounded monthly-equivalent of the annual price, e.g. 'From $24'. */
-export function startingPriceLabel(plan: PlanDef, interval: BillingInterval = 'month'): string {
-  const usd = startingPriceUsd(plan, interval);
-  if (usd === null) return 'Custom';
-  return usd === 0 ? '$0' : `From ${usdLabel(usd)}`;
-}
-
-/** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
- * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
- * display currency (the marketing site's home teaser). With `interval: 'year'`, returns the
- * rounded monthly-equivalent of the annual price. */
-export function startingPriceUsd(plan: PlanDef, interval: BillingInterval = 'month'): number | null {
-  if (!plan.pricing) return null;
-  const first = plan.pricing.brackets[0];
-  if (!first) {
-    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
-    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
-  }
-  if (interval === 'year') return monthlyEquivalentUsd(first.price * ANNUAL_PRICE_MULTIPLIER);
-  return first.price;
-}
-
-/** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
- * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). With
- * `interval: 'year'`, the label is the rounded monthly-equivalent of the annual price ('$58').
- * Used by the website pricing slider and the frontend billing upgrade cards. */
-export function priceLabelAt(plan: PlanDef, subscribers: number, interval: BillingInterval = 'month'): string {
-  if (!plan.pricing) return 'Custom';
-  const index = bracketIndexForSubscribers(plan.key, subscribers);
-  if (index === null) return 'Contact us';
-  const monthly = priceForQuantity(plan.key, index);
-  if (interval === 'year') {
-    return usdLabel(monthlyEquivalentUsd(monthly * ANNUAL_PRICE_MULTIPLIER));
-  }
-  return usdLabel(monthly);
-}
-
-/** Capability ordering of the tiers — used by `planAllowsFeature` for min-plan gating. */
-const PLAN_RANK: Record<PlanKey, number> = { free: 0, grassroots: 1, movement: 2, enterprise: 3 };
-
-/**
- * Server-enforced feature gates — the machine-readable core of FEATURE_MATRIX below (keep the
- * two in sync when a feature moves between tiers). The backend's plan-gate middleware
- * (apps/backend modules/billing/plan-gate.ts) blocks mutations in a gated module for tenants
- * below the feature's minimum plan.
- */
-export const GATED_FEATURES = {
-  forms: { minPlan: 'grassroots', label: 'Forms' },
-  donations: { minPlan: 'grassroots', label: 'Donations' },
-  automations: { minPlan: 'grassroots', label: 'Automations' },
-  lists: { minPlan: 'grassroots', label: 'Lists (segments)' },
-  volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
-  canvassing: { minPlan: 'movement', label: 'Canvassing' },
-  deliveries: { minPlan: 'movement', label: 'Deliveries' },
-  companions: { minPlan: 'movement', label: 'Companion volunteer access' },
-} as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
-
-export type GatedFeature = keyof typeof GATED_FEATURES;
-
-/** Whether a (possibly legacy/mixed-case) stored plan value includes a gated feature. */
-export function planAllowsFeature(planName: string | null | undefined, feature: GatedFeature): boolean {
-  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
-  return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
-}
-
-/**
- * Minimum plan for real (paid) household geocoding. Kept OUT of `GATED_FEATURES`/`FEATURE_MATRIX`
- * deliberately: this is a backend cost control, not a marketed tRPC-module feature — the heavy
- * geocoding consumers (canvassing turf-cutting, delivery routing) are already Movement-gated via
- * `GATED_FEATURES`, and this just stops lower tiers from incurring Google Geocoding API spend on
- * plain household map pins / ward enrichment. Mock/test geocoding is free and stays ungated.
- */
-export const GEOCODING_MIN_PLAN: PlanKey = 'movement';
-
-/** Whether a stored plan value may incur real (paid) geocoding — Movement and up. See `GEOCODING_MIN_PLAN`. */
-export function planAllowsGeocoding(planName: string | null | undefined): boolean {
-  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
-  return PLAN_RANK[plan.key] >= PLAN_RANK[GEOCODING_MIN_PLAN];
-}
-
-/** Regions a Movement customer can choose to store their data in, set when they create their
- * workspace. Single-sourced so the plan bullet, the comparison-table cell and any FAQ/help copy
- * stay in agreement. (Display-only on the marketing site; the actual choice happens at signup.) */
-export const DATA_RESIDENCY_REGIONS = ['US', 'EU', 'Canada', 'UK'] as const;
-export type DataResidencyRegion = (typeof DATA_RESIDENCY_REGIONS)[number];
-
-/** The residency regions as a single comparison-cell / bullet label, e.g. "US · EU · Canada · UK". */
-export const DATA_RESIDENCY_LABEL = DATA_RESIDENCY_REGIONS.join(' · ');
-
-/**
- * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
- * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
- * `features[]` bullet list (which drives the app-side billing cards): `features[]` is a short,
- * narrative "everything in X, plus Y" list; `FEATURE_MATRIX` is an exhaustive row-by-row grid.
- * They describe the same feature split from two different plan keys, so keep them in sync by
- * hand when a feature moves between tiers — there is no single source both surfaces read from.
- */
-export interface FeatureMatrixRow {
-  readonly label: string;
-  /** true = ✓, false = ✗, string = a text cell (e.g. "Up to 1,000", "2 seats"). */
-  readonly values: Readonly<Record<'free' | 'grassroots' | 'movement', boolean | string>>;
-}
-
-export interface FeatureMatrixGroup {
-  readonly category: string;
-  readonly rows: readonly FeatureMatrixRow[];
-}
-
-export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
-  {
-    category: 'Usage',
-    rows: [
-      {
-        label: 'Emailable subscribers',
-        values: { free: 'Up to 1,000', grassroots: 'Up to 100,000', movement: 'Up to 200,000' },
-      },
-      {
-        label: 'Emails / month',
-        values: { free: '2,000', grassroots: '8× your subscriber cap', movement: '12× your subscriber cap' },
-      },
-      { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
-      { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
-      { label: 'Companion volunteers', values: { free: '0', grassroots: '0', movement: 'Unlimited' } },
-    ],
-  },
-  {
-    category: 'Everything in every plan',
-    rows: [
-      { label: 'Unlimited contacts & households', values: { free: true, grassroots: true, movement: true } },
-      { label: 'People CRM + shared inbox', values: { free: true, grassroots: true, movement: true } },
-      { label: 'CSV import/export', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Newsletters', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Send from your own verified domain', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
-      { label: 'AI deliverability check on every send', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },
-      { label: '300+ integrations', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Demo workspace', values: { free: true, grassroots: true, movement: true } },
-    ],
-  },
-  {
-    category: 'Grow & engage',
-    rows: [
-      { label: 'Forms', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Donations', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
-      {
-        label: 'Volunteer management (teams & events)',
-        values: { free: false, grassroots: true, movement: true },
-      },
-    ],
-  },
-  {
-    category: 'Canvassing',
-    rows: [
-      { label: 'Canvassing companion app', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Turf cutting', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Walk lists & routes', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Field reports', values: { free: false, grassroots: false, movement: true } },
-    ],
-  },
-  {
-    category: 'Deliveries',
-    rows: [
-      { label: 'Deliveries companion app', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Yard sign requests', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Route optimization', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Delivery monitoring', values: { free: false, grassroots: false, movement: true } },
-    ],
-  },
-  {
-    category: 'Movement only',
-    rows: [
-      {
-        label: 'Companion volunteer access & monitoring',
-        values: { free: false, grassroots: false, movement: true },
-      },
-      { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
-      {
-        label: 'Data residency',
-        values: { free: false, grassroots: false, movement: DATA_RESIDENCY_LABEL },
-      },
-      {
-        label: 'Support',
-        values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
-      },
-    ],
-  },
-];
-````
-`````
-
-## File: libs/common/src/index.ts
-`````typescript
 export type {
   IAuthKeyPayload,
   IAuthUser,
@@ -106983,177 +106817,10 @@ export type { HelpRouteTarget } from './lib/help/help-links';
 export { classifyHelpRoute } from './lib/help/help-links';
 
 export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
-`````
-
-## File: apps/website/src/app/faq/faq-page.ts
-`````typescript
-import { Component, inject } from '@angular/core';
-
-import { SeoService } from '../ui/seo';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Group {
-  readonly label: string;
-  readonly items: readonly Qa[];
-}
-
-@Component({
-  selector: 'pc-faq-page',
-  imports: [SiteHeader, SiteFooter],
-  templateUrl: './faq-page.html',
-})
-export class FaqPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  private readonly seo = inject(SeoService);
-
-  constructor() {
-    // FAQPage rich-result data, built from the same Q&A shown on the page.
-    this.seo.setJsonLd('faq', {
-      '@context': 'https://schema.org',
-      '@type': 'FAQPage',
-      mainEntity: this.groups.flatMap((group) =>
-        group.items.map((item) => ({
-          '@type': 'Question',
-          name: item.q,
-          acceptedAnswer: { '@type': 'Answer', text: item.a },
-        })),
-      ),
-    });
-  }
-
-  protected readonly groups: readonly Group[] = [
-    {
-      label: 'Getting started',
-      items: [
-        {
-          q: 'Is the free plan really free?',
-          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
-        },
-        {
-          q: 'What is the demo workspace?',
-          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
-        },
-        {
-          q: 'Do I need training to get started?',
-          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
-        },
-        {
-          q: 'How do I move from the demo to real work?',
-          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
-        },
-      ],
-    },
-    {
-      label: 'Your data',
-      items: [
-        {
-          q: 'Who owns the data?',
-          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
-        },
-        {
-          q: 'Can I get my data back out?',
-          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
-        },
-        {
-          q: 'Is my workspace shared with other organizations?',
-          a: 'No. Each organization runs in its own isolated workspace.',
-        },
-        {
-          q: 'Where is my data stored?',
-          a: 'In Canada, unless you decide otherwise. On the Movement plan you choose the region your data lives in (Canada, US, EU or UK) when you create your workspace, and it stays there for processing and backups.',
-        },
-        {
-          q: 'What happens when I delete something?',
-          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
-        },
-      ],
-    },
-    {
-      label: 'Newsletters',
-      items: [
-        {
-          q: 'Will my newsletter land in spam?',
-          a: 'Your mail goes out from your own verified domain, so inbox providers judge you on your own sending record, not on the worst spammer sharing your pipe. And before every send, an AI deliverability check scores your draft 0–100 against spam patterns and shows you exactly what to fix — on every plan, including Free.',
-        },
-        {
-          q: 'Why do I verify a domain before sending?',
-          a: 'Verification proves to inbox providers that the mail really comes from you. It is the single most effective thing that keeps a newsletter out of spam, and it means the reputation you build belongs to you.',
-        },
-        {
-          q: 'What about unsubscribes and do-not-contact?',
-          a: 'Honored automatically, everywhere. When someone unsubscribes or is marked do-not-contact, every future send skips them; nobody has to remember.',
-        },
-      ],
-    },
-    {
-      label: 'Field apps',
-      items: [
-        {
-          q: 'What do volunteers see?',
-          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
-        },
-        {
-          q: 'Do the apps work offline?',
-          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
-        },
-        {
-          q: 'Do field volunteers need their own seats?',
-          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Companion volunteers are part of the Movement plan, and they’re unlimited.',
-        },
-      ],
-    },
-    {
-      label: 'Pricing',
-      items: [
-        {
-          q: 'How much does it cost?',
-          a: 'Grassroots starts at $29/month and Movement at $55/month, each covering your first 1,000 emailable subscribers. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
-        },
-        {
-          q: 'Can I pay annually?',
-          a: 'Yes. Annual billing costs exactly 10× the monthly price — 2 months free — at every subscriber bracket, paid up front for the year. Monthly stays the default: campaigns that wrap up mid-year shouldn’t prepay twelve months. If your list grows into a higher bracket mid-year, the prorated difference for the rest of your current billing period is charged right away on either interval.',
-        },
-        {
-          q: 'How is pricing metered?',
-          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
-        },
-        {
-          q: 'Are there fees on donations?',
-          a: 'Donations processed through Stripe carry a 1% platform fee on top of Stripe’s own processing fees, shown transparently in the product. Subscriptions have no hidden fees.',
-        },
-        {
-          q: 'Can I see prices in euros, pounds or Canadian dollars?',
-          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
-        },
-        {
-          q: 'What happens when my list grows?',
-          a: 'Nothing surprising, and nothing ever blocks. When your emailable subscribers cross into a new bracket we email your admins, move you to the new bracket, and charge the prorated difference for the rest of your current billing period — so your monthly email allowance grows the moment your list does. If your list shrinks, the price drops at the next renewal automatically.',
-        },
-        {
-          q: 'Do you have a plan for larger organizations?',
-          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
-        },
-        {
-          q: 'Can I talk to a human before committing?',
-          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
-        },
-      ],
-    },
-  ];
-}
-`````
+````
 
 ## File: libs/common/src/lib/billing/plans.ts
-`````typescript
+````typescript
 /**
  * Subscription plans — the single source of truth for tiers, prices and limits.
  *
@@ -107758,6 +107425,1283 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
     ],
   },
 ];
+````
+`````
+
+## File: apps/website/src/app/faq/faq-page.ts
+`````typescript
+import { Component, inject } from '@angular/core';
+
+import { SeoService } from '../ui/seo';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+interface Qa {
+  readonly q: string;
+  readonly a: string;
+}
+
+interface Group {
+  readonly label: string;
+  readonly items: readonly Qa[];
+}
+
+@Component({
+  selector: 'pc-faq-page',
+  imports: [SiteHeader, SiteFooter],
+  templateUrl: './faq-page.html',
+})
+export class FaqPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  private readonly seo = inject(SeoService);
+
+  constructor() {
+    // FAQPage rich-result data, built from the same Q&A shown on the page.
+    this.seo.setJsonLd('faq', {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: this.groups.flatMap((group) =>
+        group.items.map((item) => ({
+          '@type': 'Question',
+          name: item.q,
+          acceptedAnswer: { '@type': 'Answer', text: item.a },
+        })),
+      ),
+    });
+  }
+
+  protected readonly groups: readonly Group[] = [
+    {
+      label: 'Getting started',
+      items: [
+        {
+          q: 'Is the free plan really free?',
+          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
+        },
+        {
+          q: 'What is the demo workspace?',
+          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
+        },
+        {
+          q: 'Do I need training to get started?',
+          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
+        },
+        {
+          q: 'How do I move from the demo to real work?',
+          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
+        },
+      ],
+    },
+    {
+      label: 'Your data',
+      items: [
+        {
+          q: 'Who owns the data?',
+          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
+        },
+        {
+          q: 'Can I get my data back out?',
+          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
+        },
+        {
+          q: 'Is my workspace shared with other organizations?',
+          a: 'No. Each organization runs in its own isolated workspace.',
+        },
+        {
+          q: 'Where is my data stored?',
+          a: 'In Canada. Your workspace data stays there for processing and backups.',
+        },
+        {
+          q: 'What happens when I delete something?',
+          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
+        },
+      ],
+    },
+    {
+      label: 'Newsletters',
+      items: [
+        {
+          q: 'Will my newsletter land in spam?',
+          a: 'Your mail goes out from your own verified domain, so inbox providers judge you on your own sending record, not on the worst spammer sharing your pipe. And before every send, an AI deliverability check scores your draft 0–100 against spam patterns and shows you exactly what to fix — on every plan, including Free.',
+        },
+        {
+          q: 'Why do I verify a domain before sending?',
+          a: 'Verification proves to inbox providers that the mail really comes from you. It is the single most effective thing that keeps a newsletter out of spam, and it means the reputation you build belongs to you.',
+        },
+        {
+          q: 'What about unsubscribes and do-not-contact?',
+          a: 'Honored automatically, everywhere. When someone unsubscribes or is marked do-not-contact, every future send skips them; nobody has to remember.',
+        },
+      ],
+    },
+    {
+      label: 'Field apps',
+      items: [
+        {
+          q: 'What do volunteers see?',
+          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
+        },
+        {
+          q: 'Do the apps work offline?',
+          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
+        },
+        {
+          q: 'Do field volunteers need their own seats?',
+          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Companion volunteers are part of the Movement plan, and they’re unlimited.',
+        },
+      ],
+    },
+    {
+      label: 'Pricing',
+      items: [
+        {
+          q: 'How much does it cost?',
+          a: 'Grassroots starts at $29/month and Movement at $55/month, each covering your first 1,000 emailable subscribers. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
+        },
+        {
+          q: 'Can I pay annually?',
+          a: 'Yes. Annual billing costs exactly 10× the monthly price — 2 months free — at every subscriber bracket, paid up front for the year. Monthly stays the default: campaigns that wrap up mid-year shouldn’t prepay twelve months. If your list grows into a higher bracket mid-year, the prorated difference for the rest of your current billing period is charged right away on either interval.',
+        },
+        {
+          q: 'How is pricing metered?',
+          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
+        },
+        {
+          q: 'Are there fees on donations?',
+          a: 'Donations processed through Stripe carry a 1% platform fee on top of Stripe’s own processing fees, shown transparently in the product. Subscriptions have no hidden fees.',
+        },
+        {
+          q: 'Can I see prices in euros, pounds or Canadian dollars?',
+          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
+        },
+        {
+          q: 'What happens when my list grows?',
+          a: 'Nothing surprising, and nothing ever blocks. When your emailable subscribers cross into a new bracket we email your admins, move you to the new bracket, and charge the prorated difference for the rest of your current billing period — so your monthly email allowance grows the moment your list does. If your list shrinks, the price drops at the next renewal automatically.',
+        },
+        {
+          q: 'Do you have a plan for larger organizations?',
+          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO and multiple linked workspaces. Write to hello@pplcrm.com and we’ll tailor it.',
+        },
+        {
+          q: 'Can I talk to a human before committing?',
+          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
+        },
+      ],
+    },
+  ];
+}
+`````
+
+## File: libs/common/src/lib/billing/plans.ts
+`````typescript
+/**
+ * Subscription plans — the single source of truth for tiers, prices and limits.
+ *
+ * Consumed by:
+ *  - backend enforcement  (modules/billing/usage-limits.ts, controller.ts, trpc.router.ts)
+ *  - the CRM billing page (experiences/settings/billing)
+ *  - the marketing website pricing page + home teaser
+ *
+ * Pricing model (decision log, 2026-07-14 — supersedes the flat-price 5-column model):
+ *  - Three FEATURE tiers (Free / Grassroots / Movement). Which tier you're on is a feature
+ *    decision. Within a tier, PRICE scales smoothly by emailable-subscriber bracket instead of
+ *    stair-stepping between tiers — the old model jumped a customer 3.4× (Starter $29 →
+ *    Representative $99) the moment they crossed one subscriber count. `representative` is
+ *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
+ *    including Free; forms, donations, automations, lists (segments) and volunteer management
+ *    (teams & events) are the paid step-up (Grassroots and up); the field-ops surface — both
+ *    companion apps (canvassing & deliveries), companion volunteer access & monitoring, yard
+ *    signs, turf cutting, walk lists & routes, field reports, route optimization — is
+ *    Movement-only.
+ *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
+ *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
+ *    can actually email. This is the differentiator vs. contact-metered tools.
+ *  - Stripe never learns about "subscribers" — each purchasable tier has ONE graduated Stripe
+ *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
+ *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
+ *    data; Stripe just multiplies quantity by its graduated unit amounts.
+ *  - Emails/month = 8× the bracket's subscriber cap on Grassroots (between Mailchimp
+ *    Essentials' 10× and a weekly-send cadence) and 12× on Movement (matches Mailchimp
+ *    Standard / Constant Contact Standard so the flagship spec-sheet line shows no smaller).
+ *    Free keeps 2×. Enforced at send time since 2026-07-18 (send-guards.ts monthly allowance),
+ *    not just alerted on.
+ *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
+ *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
+ *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
+ *    Movement-only. (Revised 2026-07-16: companion volunteer access itself moved to
+ *    Movement-only. On Grassroots it was a dead grant — volunteer links are minted only by
+ *    turf assignments and delivery routes, both Movement-gated — so the old "15 volunteers"
+ *    could never be used. Staff-side volunteer management — teams & volunteer events — stays
+ *    Grassroots.)
+ *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
+ *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
+ *  - All prices are USD.
+ *  - Annual billing (added 2026-07-18): each purchasable tier also has a yearly Stripe price at
+ *    exactly 10× the monthly unit amounts — "2 months free" (`ANNUAL_PRICE_MULTIPLIER`). The
+ *    graduated ladder is linear in quantity, so 10× holds at every bracket and the whole
+ *    quantity-as-bracket-index mechanism carries over unchanged. Display is the monthly
+ *    equivalent rounded to the nearest dollar, with the EXACT annual total always alongside
+ *    plus a rounding disclaimer ("$24 per month, billed annually as $290") — the checkable
+ *    number is the annual total, which is what's actually charged. The website pricing page
+ *    defaults to Annual (marketing convention: 2026-07-18); the in-app billing page keeps
+ *    Monthly as its default (electoral campaigns end in November — don't nudge existing
+ *    customers into prepay). Mid-year bracket GROWTH on an annual subscription is
+ *    invoiced prorated immediately (see backend subscription-sync.ts); downgrades still defer
+ *    to renewal on both intervals. Send/usage caps stay MONTHLY regardless of billing interval.
+ *
+ * Market calibration (competitive research 2026-07-14; final ladder locked 2026-07-15, monthly
+ * billing): Grassroots beats every full-suite competitor at every count — $69 vs $75 (Mailchimp
+ * Essentials) at 5k, $89 vs $110 at 10k, $129 vs $230 at 20k, $219 vs beehiiv Scale's $199 at
+ * 50k is the one near-miss (beehiiv is newsletter-only). Movement beats Mailchimp Standard at
+ * every count — $125 vs $100 at 5k is the exception early on, but $195 vs $230 at 15k,
+ * $365 vs $450 at 50k, $565 vs $800 at 100k. Roughly 1.8× Grassroots at every bracket —
+ * "cheapest full-featured option" rather than "suspiciously cheap".
+ *
+ * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
+ * `quantity` = the bracket index from `bracketIndexForSubscribers`):
+ *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 7, unit_amount: 2000 }, { up_to: 'inf', unit_amount: 7000 }]
+ *    → qty 1 = $29, qty 2–7 add $20/step (→ $149), qty 8–10 add $70/step (→ $359; the
+ *    piecewise step change at the 25,000-subscriber boundary — see GRASSROOTS_BRACKETS below).
+ *  - Movement: [{ up_to: 1, unit_amount: 5500 }, { up_to: 7, unit_amount: 3500 }, { up_to: 'inf', unit_amount: 10000 }]
+ *    → qty 1 = $55, qty 2–7 add $35/step (→ $265), qty 8–11 add $100/step (→ $665; same
+ *    piecewise step change at the 25,000-subscriber boundary — see MOVEMENT_BRACKETS below).
+ *  - Grassroots annual (interval = year): [{ up_to: 1, unit_amount: 29000 }, { up_to: 7, unit_amount: 20000 }, { up_to: 'inf', unit_amount: 70000 }]
+ *  - Movement annual (interval = year): [{ up_to: 1, unit_amount: 55000 }, { up_to: 7, unit_amount: 35000 }, { up_to: 'inf', unit_amount: 100000 }]
+ *    (exactly 10× the monthly unit amounts. Same graduated shape, same quantity semantics,
+ *    exclusive tax on the price. Created 2026-07-18 in BOTH modes — test-mode IDs are set in
+ *    .env.production, live-mode IDs are in its comments for the launch swap. A default billing
+ *    portal configuration with subscription_update enabled (price switches only, proration
+ *    always_invoice) exists in test mode so monthly customers can self-switch to annual; the
+ *    live-mode portal needs the same configuration at launch alongside the sk_live swap.)
+ *
+ * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
+ * price IDs. Display names are intentionally allowed to differ from keys, but here they are
+ * kept aligned (`grassroots`→"Grassroots", `movement`→"Movement", …) except the free key,
+ * which presents as "Free" (renamed from "Starter" in the 2026-07-14 overhaul —
+ * `LEGACY_PLAN_ALIASES` resolves stale `starter` values written before the rename).
+ */
+
+export const GB = 1024 * 1024 * 1024;
+
+/** Every plan key that can appear in `tenants.subscription_plan`. */
+export type PlanKey = 'free' | 'grassroots' | 'movement' | 'enterprise';
+
+/** Paid plans bought via self-serve Stripe checkout (excludes free and contact-sales enterprise). */
+export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'movement'] as const;
+export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
+
+/** Billing intervals a purchasable plan can be bought on. Monthly is the default everywhere;
+ * annual is 10× the monthly bracket price — "2 months free". */
+export const BILLING_INTERVALS = ['month', 'year'] as const;
+export type BillingInterval = (typeof BILLING_INTERVALS)[number];
+
+/** Months a customer doesn't pay for on annual billing — the marketing claim "2 months free". */
+export const ANNUAL_MONTHS_FREE = 2;
+
+/** Annual price = monthly bracket price × this. Derived from ANNUAL_MONTHS_FREE so the
+ * marketing claim and the multiplier can't drift apart. */
+export const ANNUAL_PRICE_MULTIPLIER = 12 - ANNUAL_MONTHS_FREE;
+
+/** One row of a tier's price ladder. `upTo` is the inclusive emailable-subscriber cap; the
+ * bracket's position in `TierPricing.brackets` (1-based) is the Stripe `quantity` billed for it. */
+export interface PriceBracket {
+  /** Emailable-subscriber cap of this bracket (inclusive). */
+  readonly upTo: number;
+  /** USD/month at this bracket (annual billing charges ×`ANNUAL_PRICE_MULTIPLIER` per year). */
+  readonly price: number;
+}
+
+/** A purchasable (or free) tier's full price ladder. `null` on `PlanDef.pricing` means the
+ * tier has no ladder at all — currently only `enterprise` (custom, negotiated pricing). */
+export interface TierPricing {
+  /** Ascending by `upTo`. Index + 1 = the Stripe `quantity` for that bracket; the last
+   * bracket's `upTo` is the tier's hard subscriber max. */
+  readonly brackets: readonly PriceBracket[];
+  /** Monthly send cap = this × the current bracket's `upTo` (12 on paid tiers, 2 on Free). */
+  readonly emailsPerSubscriber: number;
+}
+
+export interface PlanDef {
+  readonly key: PlanKey;
+  /** Customer-facing name (may differ from key). */
+  readonly name: string;
+  /** Display cadence, e.g. 'per month' / 'forever' / 'contact us'. */
+  readonly cadence: string;
+  readonly blurb: string;
+  /** Bracket price ladder. `null` = enterprise custom pricing (no ladder, no Stripe quantity). */
+  readonly pricing: TierPricing | null;
+  /** File-storage quota in bytes. null = unlimited / custom. */
+  readonly storageBytes: number | null;
+  /** Included staff seats. null = unlimited. */
+  readonly seats: number | null;
+  /** Included companion volunteers. 0 = none, null = unlimited. */
+  readonly volunteers: number | null;
+  /** Bought via self-serve Stripe checkout (false for free + enterprise). */
+  readonly purchasable: boolean;
+  /** Highlighted as the recommended tier. */
+  readonly featured: boolean;
+  /** Shown as a priced column on pricing surfaces (false = enterprise, footnote-only). */
+  readonly displayed: boolean;
+  /** Marketing feature bullets shown on app-side billing cards (see FEATURE_MATRIX below for
+   * the website's comparison-table view of the same feature split — keep both in sync). */
+  readonly features: readonly string[];
+}
+
+/**
+ * Grassroots ladder (final 2026-07-15 pricing) — $29 ≤1,000, +$20/bracket through 25,000, then
+ * +$70/bracket to the 100,000 tier max (10 brackets). Bracket widths are non-uniform (1k → 2.5k
+ * → 5k-wide steps → 25k-wide steps), so the ladder is spelled out literally rather than
+ * generated. Price deltas stay Stripe-graduatable: +$20 ×6, then +$70 ×3 (see Stripe ops above).
+ */
+const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
+  { upTo: 1_000, price: 29 },
+  { upTo: 2_500, price: 49 },
+  { upTo: 5_000, price: 69 },
+  { upTo: 10_000, price: 89 },
+  { upTo: 15_000, price: 109 },
+  { upTo: 20_000, price: 129 },
+  { upTo: 25_000, price: 149 },
+  { upTo: 50_000, price: 219 },
+  { upTo: 75_000, price: 289 },
+  { upTo: 100_000, price: 359 },
+];
+
+/**
+ * Movement ladder (final 2026-07-15 pricing) — $55 ≤1,000, +$35/bracket through 25,000, then
+ * +$100/bracket to the 200,000 tier max (11 brackets). Same stops as Grassroots plus a final
+ * 200,000 bracket; roughly 1.8× Grassroots at every shared stop. Price deltas stay
+ * Stripe-graduatable: +$35 ×6, then +$100 ×4 (see Stripe ops above).
+ */
+const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
+  { upTo: 1_000, price: 55 },
+  { upTo: 2_500, price: 90 },
+  { upTo: 5_000, price: 125 },
+  { upTo: 10_000, price: 160 },
+  { upTo: 15_000, price: 195 },
+  { upTo: 20_000, price: 230 },
+  { upTo: 25_000, price: 265 },
+  { upTo: 50_000, price: 365 },
+  { upTo: 75_000, price: 465 },
+  { upTo: 100_000, price: 565 },
+  { upTo: 200_000, price: 665 },
+];
+
+export const PLANS: readonly PlanDef[] = [
+  {
+    key: 'free',
+    name: 'Free',
+    cadence: 'forever',
+    blurb: 'For getting your bearings and running a small list.',
+    pricing: { brackets: [{ upTo: 1_000, price: 0 }], emailsPerSubscriber: 2 },
+    storageBytes: 1 * GB,
+    seats: 2,
+    volunteers: 0,
+    purchasable: false,
+    featured: false,
+    displayed: true,
+    features: [
+      'Unlimited contacts & households',
+      'Demo workspace with sample data',
+      'Up to 1,000 email subscribers',
+      '2,000 emails / month',
+      '2 staff seats · 1 GB storage',
+      'Shared inbox, people CRM & CSV import/export',
+      'Newsletters, templates, scheduling & dynamic content',
+      'AI deliverability check on every newsletter',
+      'Custom reports, role-based access & 300+ integrations',
+      'Community support',
+    ],
+  },
+  {
+    key: 'grassroots',
+    name: 'Grassroots',
+    cadence: 'per month',
+    blurb: 'For a local candidate or small campaign getting to work.',
+    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 8 },
+    storageBytes: 10 * GB,
+    seats: 5,
+    volunteers: 0,
+    purchasable: true,
+    featured: false,
+    displayed: true,
+    features: [
+      'Everything in Free, plus:',
+      'Scales smoothly from $29/month as your list grows',
+      'Save 2 months with annual billing',
+      'Up to 100,000 email subscribers · 8× emails/month',
+      '5 staff seats · 10 GB storage',
+      'Forms & donations',
+      'Automations & lists (segments)',
+      'Volunteer management (teams & events)',
+      'Email support',
+    ],
+  },
+  {
+    key: 'movement',
+    name: 'Movement',
+    cadence: 'per month',
+    blurb: 'For a large campaign or advocacy operation at full tilt.',
+    pricing: { brackets: MOVEMENT_BRACKETS, emailsPerSubscriber: 12 },
+    storageBytes: 200 * GB,
+    seats: null,
+    volunteers: null,
+    purchasable: true,
+    featured: true,
+    displayed: true,
+    features: [
+      'Everything in Grassroots, plus:',
+      'Scales smoothly from $55/month as your list grows',
+      'Save 2 months with annual billing',
+      'Up to 200,000 email subscribers · 12× emails/month',
+      'Unlimited staff seats & volunteers · 200 GB storage',
+      'Canvassing & deliveries companion apps',
+      'Companion volunteer access & field monitoring',
+      'Yard signs & route optimization',
+      'Turf cutting, walk lists & routes, field reports',
+      'Priority support & onboarding',
+    ],
+  },
+  {
+    key: 'enterprise',
+    name: 'Enterprise',
+    cadence: 'contact us',
+    blurb: 'For federations, parties and multi-office operations.',
+    pricing: null,
+    storageBytes: null,
+    seats: null,
+    volunteers: null,
+    purchasable: false,
+    featured: false,
+    displayed: false,
+    features: [
+      'Everything in Movement, plus:',
+      'Unlimited subscribers & sends',
+      'Multiple linked workspaces',
+      'Single sign-on (SSO)',
+      'Custom integrations',
+      'SLA support & guided onboarding',
+    ],
+  },
+];
+
+export const PLANS_BY_KEY: Record<PlanKey, PlanDef> = PLANS.reduce(
+  (acc, plan) => {
+    acc[plan.key] = plan;
+    return acc;
+  },
+  {} as Record<PlanKey, PlanDef>,
+);
+
+/** Stale plan values that must still resolve after the 2026-07-14 tier rename/retirement:
+ * `representative` (retired, features split into grassroots/movement — nearest fit is
+ * movement) and `starter` (renamed to `free`). Resolved case-insensitively by `getPlanDef`. */
+export const LEGACY_PLAN_ALIASES: Readonly<Record<string, PlanKey>> = {
+  representative: 'movement',
+  starter: 'free',
+};
+
+/** Resolve a (possibly mixed-case, possibly legacy) stored plan value to its definition. */
+export function getPlanDef(planName: string | null | undefined): PlanDef | undefined {
+  if (!planName) return undefined;
+  const key = planName.toLowerCase();
+  const resolvedKey = LEGACY_PLAN_ALIASES[key] ?? key;
+  return (PLANS_BY_KEY as Record<string, PlanDef | undefined>)[resolvedKey];
+}
+
+/** Customer-facing display name for a stored plan value (falls back to the raw value). */
+export function planDisplayName(planName: string | null | undefined): string {
+  return getPlanDef(planName)?.name ?? (planName ? planName : 'Free');
+}
+
+/**
+ * 1-based Stripe quantity for an emailable-subscriber count on the given plan, or `null` when
+ * the count exceeds the tier's max bracket (caller should treat this as "outgrown the tier").
+ * A count of 0 still bills quantity 1 (every purchasable plan has a non-zero minimum charge).
+ * Plans with no pricing ladder (enterprise) always return `null` — quantity is meaningless there.
+ */
+export function bracketIndexForSubscribers(key: PlanKey, count: number): number | null {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  if (!pricing) return null;
+  const normalizedCount = Math.max(count, 0);
+  const index = pricing.brackets.findIndex((bracket) => normalizedCount <= bracket.upTo);
+  return index === -1 ? null : index + 1;
+}
+
+/** The highest valid Stripe quantity (= number of brackets) for a plan. `Infinity` for plans
+ * with no pricing ladder (enterprise — no quantity ceiling applies). */
+export function maxQuantity(key: PlanKey): number {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  return pricing ? pricing.brackets.length : Infinity;
+}
+
+/** The price bracket for a given Stripe quantity, clamping `qty` into the valid `[1, maxQuantity]`
+ * range. Throws only if called against a plan with no pricing ladder (enterprise) — callers
+ * should guard with `PLANS_BY_KEY[key].pricing !== null` first; purchasable/free plans always
+ * have at least one bracket. */
+export function bracketForQuantity(key: PlanKey, qty: number): PriceBracket {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  if (!pricing) {
+    throw new Error(`plan "${key}" has no pricing ladder (enterprise is custom-priced)`);
+  }
+  const max = pricing.brackets.length;
+  const clampedIndex = Math.min(Math.max(qty, 1), max) - 1;
+  const bracket = pricing.brackets[clampedIndex];
+  if (!bracket) {
+    // Unreachable: clampedIndex is always within [0, brackets.length - 1] above.
+    throw new Error(`unreachable: no bracket at index ${clampedIndex} for plan "${key}"`);
+  }
+  return bracket;
+}
+
+/** Emailable-subscriber cap for a Stripe quantity on a plan. */
+export function subscriberCapForQuantity(key: PlanKey, qty: number): number {
+  return bracketForQuantity(key, qty).upTo;
+}
+
+/** Monthly email-send cap for a Stripe quantity on a plan (= subscriber cap × the plan's
+ * `emailsPerSubscriber` multiplier). */
+export function emailCapForQuantity(key: PlanKey, qty: number): number {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  const multiplier = pricing?.emailsPerSubscriber ?? 0;
+  return subscriberCapForQuantity(key, qty) * multiplier;
+}
+
+/** USD/month price for a Stripe quantity on a plan. */
+export function priceForQuantity(key: PlanKey, qty: number): number {
+  return bracketForQuantity(key, qty).price;
+}
+
+/** USD/year price for a Stripe quantity on a plan — exactly `ANNUAL_PRICE_MULTIPLIER`× the
+ * monthly bracket price ("2 months free"). */
+export function annualPriceForQuantity(key: PlanKey, qty: number): number {
+  return priceForQuantity(key, qty) * ANNUAL_PRICE_MULTIPLIER;
+}
+
+/** Monthly-equivalent of an annual USD total, rounded to the nearest whole dollar (290 → 24).
+ * The customer-facing framing for annual prices: "$24 per month, billed annually as $290" —
+ * surfaces that show it must keep the exact annual total alongside and carry the rounding
+ * disclaimer, since equivalent × 12 ≠ the billed total. */
+export function monthlyEquivalentUsd(annualUsd: number): number {
+  return Math.round(annualUsd / 12);
+}
+
+/** "$29" for whole dollars; tolerates cent amounts defensively ("$24.17"). */
+function usdLabel(amount: number): string {
+  return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
+}
+
+/** Cadence line for surfaces with a monthly/annual toggle. Non-purchasable plans keep their
+ * static cadence ('forever' / 'contact us'); paid plans read 'per month' or
+ * 'per month, billed annually'. */
+export function cadenceLabel(plan: PlanDef, interval: BillingInterval): string {
+  if (!plan.purchasable) return plan.cadence;
+  return interval === 'year' ? 'per month, billed annually' : plan.cadence;
+}
+
+/** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
+ * 'From $55' (movement), 'Custom' (enterprise). With `interval: 'year'`, paid plans show the
+ * rounded monthly-equivalent of the annual price, e.g. 'From $24'. */
+export function startingPriceLabel(plan: PlanDef, interval: BillingInterval = 'month'): string {
+  const usd = startingPriceUsd(plan, interval);
+  if (usd === null) return 'Custom';
+  return usd === 0 ? '$0' : `From ${usdLabel(usd)}`;
+}
+
+/** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
+ * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
+ * display currency (the marketing site's home teaser). With `interval: 'year'`, returns the
+ * rounded monthly-equivalent of the annual price. */
+export function startingPriceUsd(plan: PlanDef, interval: BillingInterval = 'month'): number | null {
+  if (!plan.pricing) return null;
+  const first = plan.pricing.brackets[0];
+  if (!first) {
+    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
+    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
+  }
+  if (interval === 'year') return monthlyEquivalentUsd(first.price * ANNUAL_PRICE_MULTIPLIER);
+  return first.price;
+}
+
+/** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
+ * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). With
+ * `interval: 'year'`, the label is the rounded monthly-equivalent of the annual price ('$58').
+ * Used by the website pricing slider and the frontend billing upgrade cards. */
+export function priceLabelAt(plan: PlanDef, subscribers: number, interval: BillingInterval = 'month'): string {
+  if (!plan.pricing) return 'Custom';
+  const index = bracketIndexForSubscribers(plan.key, subscribers);
+  if (index === null) return 'Contact us';
+  const monthly = priceForQuantity(plan.key, index);
+  if (interval === 'year') {
+    return usdLabel(monthlyEquivalentUsd(monthly * ANNUAL_PRICE_MULTIPLIER));
+  }
+  return usdLabel(monthly);
+}
+
+/** Capability ordering of the tiers — used by `planAllowsFeature` for min-plan gating. */
+const PLAN_RANK: Record<PlanKey, number> = { free: 0, grassroots: 1, movement: 2, enterprise: 3 };
+
+/**
+ * Server-enforced feature gates — the machine-readable core of FEATURE_MATRIX below (keep the
+ * two in sync when a feature moves between tiers). The backend's plan-gate middleware
+ * (apps/backend modules/billing/plan-gate.ts) blocks mutations in a gated module for tenants
+ * below the feature's minimum plan.
+ */
+export const GATED_FEATURES = {
+  forms: { minPlan: 'grassroots', label: 'Forms' },
+  donations: { minPlan: 'grassroots', label: 'Donations' },
+  automations: { minPlan: 'grassroots', label: 'Automations' },
+  lists: { minPlan: 'grassroots', label: 'Lists (segments)' },
+  volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
+  canvassing: { minPlan: 'movement', label: 'Canvassing' },
+  deliveries: { minPlan: 'movement', label: 'Deliveries' },
+  companions: { minPlan: 'movement', label: 'Companion volunteer access' },
+} as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
+
+export type GatedFeature = keyof typeof GATED_FEATURES;
+
+/** Whether a (possibly legacy/mixed-case) stored plan value includes a gated feature. */
+export function planAllowsFeature(planName: string | null | undefined, feature: GatedFeature): boolean {
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
+}
+
+/**
+ * Minimum plan for real (paid) household geocoding. Kept OUT of `GATED_FEATURES`/`FEATURE_MATRIX`
+ * deliberately: this is a backend cost control, not a marketed tRPC-module feature — the heavy
+ * geocoding consumers (canvassing turf-cutting, delivery routing) are already Movement-gated via
+ * `GATED_FEATURES`, and this just stops lower tiers from incurring Google Geocoding API spend on
+ * plain household map pins / ward enrichment. Mock/test geocoding is free and stays ungated.
+ */
+export const GEOCODING_MIN_PLAN: PlanKey = 'movement';
+
+/** Whether a stored plan value may incur real (paid) geocoding — Movement and up. See `GEOCODING_MIN_PLAN`. */
+export function planAllowsGeocoding(planName: string | null | undefined): boolean {
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return PLAN_RANK[plan.key] >= PLAN_RANK[GEOCODING_MIN_PLAN];
+}
+
+/**
+ * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
+ * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
+ * `features[]` bullet list (which drives the app-side billing cards): `features[]` is a short,
+ * narrative "everything in X, plus Y" list; `FEATURE_MATRIX` is an exhaustive row-by-row grid.
+ * They describe the same feature split from two different plan keys, so keep them in sync by
+ * hand when a feature moves between tiers — there is no single source both surfaces read from.
+ */
+export interface FeatureMatrixRow {
+  readonly label: string;
+  /** true = ✓, false = ✗, string = a text cell (e.g. "Up to 1,000", "2 seats"). */
+  readonly values: Readonly<Record<'free' | 'grassroots' | 'movement', boolean | string>>;
+}
+
+export interface FeatureMatrixGroup {
+  readonly category: string;
+  readonly rows: readonly FeatureMatrixRow[];
+}
+
+export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
+  {
+    category: 'Usage',
+    rows: [
+      {
+        label: 'Emailable subscribers',
+        values: { free: 'Up to 1,000', grassroots: 'Up to 100,000', movement: 'Up to 200,000' },
+      },
+      {
+        label: 'Emails / month',
+        values: { free: '2,000', grassroots: '8× your subscriber cap', movement: '12× your subscriber cap' },
+      },
+      { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
+      { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
+      { label: 'Companion volunteers', values: { free: '0', grassroots: '0', movement: 'Unlimited' } },
+    ],
+  },
+  {
+    category: 'Everything in every plan',
+    rows: [
+      { label: 'Unlimited contacts & households', values: { free: true, grassroots: true, movement: true } },
+      { label: 'People CRM + shared inbox', values: { free: true, grassroots: true, movement: true } },
+      { label: 'CSV import/export', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Newsletters', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Send from your own verified domain', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
+      { label: 'AI deliverability check on every send', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },
+      { label: '300+ integrations', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Demo workspace', values: { free: true, grassroots: true, movement: true } },
+    ],
+  },
+  {
+    category: 'Grow & engage',
+    rows: [
+      { label: 'Forms', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Donations', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
+      {
+        label: 'Volunteer management (teams & events)',
+        values: { free: false, grassroots: true, movement: true },
+      },
+    ],
+  },
+  {
+    category: 'Canvassing',
+    rows: [
+      { label: 'Canvassing companion app', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Turf cutting', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Walk lists & routes', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Field reports', values: { free: false, grassroots: false, movement: true } },
+    ],
+  },
+  {
+    category: 'Deliveries',
+    rows: [
+      { label: 'Deliveries companion app', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Yard sign requests', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Route optimization', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Delivery monitoring', values: { free: false, grassroots: false, movement: true } },
+    ],
+  },
+  {
+    category: 'Movement only',
+    rows: [
+      {
+        label: 'Companion volunteer access & monitoring',
+        values: { free: false, grassroots: false, movement: true },
+      },
+      {
+        label: 'Support',
+        values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
+      },
+    ],
+  },
+];
+`````
+
+## File: libs/common/src/index.ts
+`````typescript
+export type {
+  IAuthKeyPayload,
+  IAuthUser,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  IUserStatsSnapshot,
+  IToken,
+  signInInputType,
+  signUpInputType,
+} from './lib/auth';
+
+export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
+
+export type {
+  INow,
+  AddTagType,
+  AddListType,
+  AddMarketingEmailType,
+  AddTaskType,
+  AddTeamType,
+  AddCampaignType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  SetCampaignSubscriptionType,
+  CarryOverCampaignType,
+  InviteAuthUserType,
+  Verify2FAType,
+  PERSONINHOUSEHOLDTYPE,
+  PersonsType,
+  MarketingEmailType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportPreviousSendType,
+  CreateClickersListResultType,
+  TasksType,
+  ListsType,
+  SettingsType,
+  SettingsEntryType,
+  UpsertSettingsInputType,
+  SortModelType,
+  UpdateHouseholdsType,
+  UpdatePersonsType,
+  UpdateTagType,
+  UpdateListType,
+  UpdateTeamType,
+  UpdateAuthUserType,
+  ProfilePreferencesType,
+  UpdateMarketingEmailType,
+  UpdateTaskType,
+  getAllOptionsType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  QueueExportInputType,
+  LogInstantExportInputType,
+  DataExportRecordType,
+  ImportListItem,
+  AddVolunteerEventType,
+  VolunteerEventsType,
+  UpdateVolunteerEventType,
+  AddVolunteerShiftType,
+  VolunteerShiftsType,
+  UpdateVolunteerShiftType,
+  AddWebFormType,
+  UpdateWebFormType,
+  WebFormsType,
+  CreateFormType,
+  UpdateFormType,
+  FormSubmissionType,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowsType,
+  AddWorkflowType,
+  UpdateWorkflowType,
+  WorkflowStepsType,
+  AddWorkflowStepType,
+  UpdateWorkflowStepType,
+  WorkflowEnrollmentsType,
+  AddEventType,
+  EventType,
+  UpdateEventType,
+  AddTicketTypeType,
+  TicketTypeType,
+  UpdateTicketTypeType,
+  ReorderTicketTypesType,
+  AddRegistrationType,
+  RegistrationType,
+  UpdateRegistrationType,
+  AddConnectionType,
+  AddTurfType,
+  UpdateTurfType,
+  CutTurfsType,
+  AssignTurfType,
+  FieldReportRangeType,
+  LogKnockType,
+} from './lib/models';
+
+export {
+  cloneQueryBuilderNode,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  TASK_STATUSES,
+  TASK_BOARD_STATUSES,
+  TASK_OPEN_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskStatus,
+  isTaskBoardStatus,
+  AddTeamObj,
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  SUBSCRIPTION_STATUSES,
+  CONSENT_SOURCES,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STATUSES,
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  FACT_SOURCES,
+  DNC_CHANNELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
+  InviteAuthUserObj,
+  Verify2FAObj,
+  PersonsObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  TasksObj,
+  ReorderTasksObj,
+  ReorderSubtasksObj,
+  ListsObj,
+  SettingsObj,
+  SettingsEntryObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  UpdateListObj,
+  UpdateTeamObj,
+  UpdateAuthUserObj,
+  NotificationPreferencesObj,
+  ProfilePreferencesObj,
+  UpdateMarketingEmailObj,
+  UpdateTaskObj,
+  sortModelItem,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  ImportListItemObj,
+  dbIdSchema,
+  uuidSchema,
+  addressSchema,
+  idSchema,
+  folderIdSchema,
+  regularFolderIdSchema,
+  nameSchema,
+  descriptionSchema,
+  emailSchema,
+  phoneSchema,
+  notesSchema,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  FormFieldObj,
+  FormTypeEnum,
+  FORM_TYPES,
+  FORM_STATUSES,
+  FORM_TEMPLATES,
+  FORM_STANDARD_CATALOG,
+  FORM_EMAIL_FIELD,
+  normForm,
+  fieldsForTemplate,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  WorkflowRunObj,
+  WorkflowStepConfigObj,
+  WORKFLOW_TRIGGER_TYPES,
+  WORKFLOW_STEP_KINDS,
+  CompanyInputObj,
+  CompanyEnrichmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+  RELATION_TYPES,
+  RELATION_TYPE_LABELS,
+  relationTypeSchema,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  TURF_STATUSES,
+  KNOCK_OUTCOMES,
+  KNOCK_RESPONSES,
+  KNOCK_RESPONSE_LABELS,
+  DOORS_PER_TURF_PRESETS,
+  turfStatusSchema,
+  knockOutcomeSchema,
+  knockResponseSchema,
+  isTurfStatus,
+  isKnockOutcome,
+  CompanionSurveyObj,
+  CompanionPersonResultObj,
+  CompanionDoorOutcomeObj,
+  CompanionClearOutcomeObj,
+  CompanionPersonCreateObj,
+  CompanionOpObj,
+  CompanionResultsObj,
+  UpdateCompanionSettingsObj,
+  AddDeliveryRequestObj,
+  UpdateDeliveryRequestObj,
+  SetDeliveryRequestStatusObj,
+  PlanDeliveriesObj,
+  CommitDeliveriesObj,
+  UpdateDeliveryRouteObj,
+  AssignVolunteerObj,
+  SetDeliveryRouteStatusObj,
+  ReorderStopObj,
+  ReorderStopsObj,
+  StopActionObj,
+  RouteIdObj,
+  MintShareLinkObj,
+  PublicStopActionObj,
+  GetSignStatusObj,
+  DELIVERY_REQUEST_STATUSES,
+  DELIVERY_REQUEST_STATUS_LABELS,
+  DELIVERY_ROUTE_STATUSES,
+  DELIVERY_STOP_STATUSES,
+  DELIVERY_SOURCES,
+  DELIVERY_SKIP_REASONS,
+  DONATION_METHODS,
+  DONATION_METHOD_LABELS,
+  donationMethodSchema,
+  RecordDonationObj,
+  INTERACTION_TYPES,
+  INTERACTION_TYPE_LABELS,
+  interactionTypeSchema,
+  LogInteractionObj,
+  CompanionAccessQueryObj,
+  CompanionVerifyStartObj,
+  CompanionVerifyConfirmObj,
+  COMPANION_LINK_KINDS,
+  COMPANION_VERIFY_CHANNELS,
+  COMPANION_VOLUNTEER_STATUSES,
+  COMPANION_ACCESS_STATES,
+} from './lib/schema';
+
+export type {
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVolunteerStatus,
+  CompanionAccessState,
+  CompanionContact,
+  CompanionAccessPayload,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+} from './lib/schemas/companion-access.schema';
+
+export type {
+  CampaignKind,
+  CampaignStatus,
+  SupportLevel,
+  VotingStatus,
+  FactSource,
+  SubscriptionStatus,
+  ConsentSource,
+} from './lib/schemas/campaigns.schema';
+export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
+export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
+
+export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
+
+export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
+export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
+
+export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
+export type { TaskStatus, TaskBoardStatus, ReorderTasksType, ReorderSubtasksType } from './lib/schemas/tasks.schema';
+export type {
+  WorkflowTriggerType,
+  WorkflowStepKind,
+  WorkflowStepConfigType,
+  WorkflowRunType,
+  WorkflowSendCondition,
+  WorkflowExitCondition,
+} from './lib/schemas/workflows.schema';
+export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
+export type {
+  TurfStatus,
+  KnockOutcome,
+  KnockResponse,
+  CompanionSurveyType,
+  CompanionOpType,
+  CompanionResultsType,
+  CompanionOpAck,
+  CompanionSurveyPrefill,
+  CompanionPersonResult,
+  CompanionPerson,
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionTurfPayload,
+  UpdateCompanionSettingsType,
+} from './lib/schemas/canvassing.schema';
+export type {
+  AddDeliveryRequestType,
+  UpdateDeliveryRequestType,
+  SetDeliveryRequestStatusType,
+  PlanDeliveriesType,
+  CommitDeliveriesType,
+  UpdateDeliveryRouteType,
+  AssignVolunteerType,
+  SetDeliveryRouteStatusType,
+  ReorderStopType,
+  ReorderStopsType,
+  StopActionType,
+  MintShareLinkType,
+  PublicStopActionType,
+  GetSignStatusType,
+  DeliveryRequestStatus,
+  DeliveryRouteStatus,
+  DeliveryStopStatus,
+  DeliverySource,
+  DeliverySkipReason,
+} from './lib/schemas/deliveries.schema';
+
+export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
+export {
+  CROCKFORD_ALPHABET,
+  PUBLIC_ID_LENGTH,
+  encodeCrockford,
+  normalizeCrockford,
+  extractPublicIdFromSlug,
+  buildPersonSlug,
+} from './lib/public-id';
+export { calculateWorkingTimeMs } from './lib/sla';
+
+export {
+  AddNewsletterTemplateObj,
+  NewsletterTemplateObj,
+  UpdateNewsletterTemplateObj,
+} from './lib/schemas/newsletter-templates.schema';
+export type {
+  AddNewsletterTemplateType,
+  NewsletterTemplateType,
+  UpdateNewsletterTemplateType,
+} from './lib/schemas/newsletter-templates.schema';
+
+export {
+  AI_CONTENT_TYPES,
+  AI_REVIEW_STATUSES,
+  AiPreflightVerdictObj,
+  PREFLIGHT_BANDS,
+  PREFLIGHT_BLOCK,
+  PREFLIGHT_GOOD,
+  PREFLIGHT_SEVERITIES,
+  PreflightFindingObj,
+  PreflightResultObj,
+  RunPreflightObj,
+  preflightBand,
+} from './lib/schemas/content-check.schema';
+export type {
+  AiContentType,
+  AiPreflightVerdict,
+  AiReviewStatus,
+  PreflightBand,
+  PreflightFinding,
+  PreflightResult,
+  PreflightSeverity,
+  RunPreflightType,
+} from './lib/schemas/content-check.schema';
+export {
+  buildAiFindings,
+  buildSpamAssassinFinding,
+  computeScore,
+  lintNewsletterContent,
+  preflightHashInput,
+} from './lib/preflight-lint';
+export type { PreflightInput } from './lib/preflight-lint';
+
+export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
+
+export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+
+export {
+  GB,
+  PLANS,
+  PLANS_BY_KEY,
+  PURCHASABLE_PLAN_KEYS,
+  LEGACY_PLAN_ALIASES,
+  FEATURE_MATRIX,
+  getPlanDef,
+  planDisplayName,
+  bracketIndexForSubscribers,
+  maxQuantity,
+  bracketForQuantity,
+  subscriberCapForQuantity,
+  emailCapForQuantity,
+  priceForQuantity,
+  annualPriceForQuantity,
+  monthlyEquivalentUsd,
+  startingPriceLabel,
+  startingPriceUsd,
+  priceLabelAt,
+  cadenceLabel,
+  BILLING_INTERVALS,
+  ANNUAL_MONTHS_FREE,
+  ANNUAL_PRICE_MULTIPLIER,
+  GATED_FEATURES,
+  planAllowsFeature,
+  GEOCODING_MIN_PLAN,
+  planAllowsGeocoding,
+} from './lib/billing/plans';
+export type {
+  PlanKey,
+  GatedFeature,
+  PurchasablePlanKey,
+  BillingInterval,
+  PlanDef,
+  PriceBracket,
+  TierPricing,
+  FeatureMatrixRow,
+  FeatureMatrixGroup,
+} from './lib/billing/plans';
+export {
+  CURRENCY_CODES,
+  SUPPORTED_CURRENCIES,
+  COUNTRY_TO_CURRENCY,
+  isCurrencyCode,
+  currencyForCountry,
+  convertFromUsd,
+  formatCurrency,
+  currencyPriceSymbol,
+} from './lib/billing/currency';
+export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
+
+export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
+
+export type {
+  JSend,
+  JSendSuccessInterface as JSendSuccess,
+  JSendFailInterface as JSendFail,
+  JSendStatus,
+  JSendErrorInterface as JSendError,
+} from './lib/jsend';
+
+export type {
+  HelpArticle,
+  HelpBlock,
+  HelpCategory,
+  HelpCategoryId,
+  HelpStep,
+  HelpKeyRow,
+  HelpInlineSegment,
+} from './lib/help/help-types';
+export {
+  parseHelpInline,
+  stripHelpInline,
+  blockToPlainText,
+  articleToPlainText,
+  readingMinutes,
+} from './lib/help/help-types';
+
+export {
+  HELP_CATEGORIES,
+  HELP_ARTICLES,
+  POPULAR_ARTICLE_IDS,
+  getHelpArticle,
+  getHelpCategory,
+  articlesInCategory,
+  relatedArticles,
+  categoryNeighbors,
+} from './lib/help/help-content';
+
+export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
+export { searchHelp, highlightTerms } from './lib/help/help-search';
+
+export type { HelpRouteTarget } from './lib/help/help-links';
+export { classifyHelpRoute } from './lib/help/help-links';
+
+export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
 `````
 
 ## File: apps/website/src/app/home/home-page.ts
@@ -107916,7 +108860,7 @@ export class HomePage {
     {
       icon: 'lock-closed',
       title: 'Your list is yours',
-      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada (or the region you pick on Movement) in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
+      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
     },
     {
       icon: 'paper-airplane',
@@ -108054,7 +108998,7 @@ export class HomePage {
     },
     {
       q: 'Where does my data live?',
-      a: 'In Canada, isolated from every other organization’s workspace. On the Movement plan you choose the region yourself: Canada, US, EU or UK.',
+      a: 'In Canada, isolated from every other organization’s workspace.',
     },
     {
       q: 'Will my newsletter land in spam?',

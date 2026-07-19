@@ -56,6 +56,9 @@ export class BackgroundJobWorker {
     this.ensureLapsedSupportersJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure lapsed supporters job scheduled'),
     );
+    this.ensureTaskSlaBreachesJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure task SLA breach scan scheduled'),
+    );
     this.ensureWorkflowsJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure workflows job scheduled'),
     );
@@ -516,6 +519,36 @@ export class BackgroundJobWorker {
       });
     } catch (err) {
       logger.error({ err }, 'Failed to ensure lapsed supporters job scheduled');
+    }
+  }
+
+  private async ensureTaskSlaBreachesJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'detect_task_sla_breaches')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling hourly task SLA-breach scan background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'detect_task_sla_breaches' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure task SLA breach scan scheduled');
     }
   }
 

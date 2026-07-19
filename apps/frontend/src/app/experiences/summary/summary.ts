@@ -56,7 +56,6 @@ export class Summary implements OnInit {
   }
 
   private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
   protected readonly isRefreshing = signal(false);
 
   // Greeting + date line (§1 "where am I": name the person and the day)
@@ -137,7 +136,7 @@ export class Summary implements OnInit {
   protected readonly areaPath = signal('');
   protected readonly linePoints = signal<Array<{ x: number; y: number; date: string; count: number }>>([]);
   /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
-  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
+  protected readonly isInitialLoading = computed(() => !this._loading.loaded());
   protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
   protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
 

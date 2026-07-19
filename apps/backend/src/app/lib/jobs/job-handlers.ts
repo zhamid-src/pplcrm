@@ -33,7 +33,11 @@ import {
   handleSendWebformNotifications,
 } from './handlers/notifications.handlers';
 import { handleGoogleSync, handleMsSync, handleScheduleSyncJobs } from './handlers/sync.handlers';
-import { handleDetectLapsedSupporters, handleProcessDripWorkflows } from './handlers/workflows.handlers';
+import {
+  handleDetectLapsedSupporters,
+  handleDetectTaskSlaBreaches,
+  handleProcessDripWorkflows,
+} from './handlers/workflows.handlers';
 import { handleSendAutomationEmail } from './handlers/automation-mail.handlers';
 
 export { checkDueTasks } from './handlers/notifications.handlers';
@@ -139,6 +143,9 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
       break;
     case 'detect_lapsed_supporters':
       await handleDetectLapsedSupporters(db);
+      break;
+    case 'detect_task_sla_breaches':
+      await handleDetectTaskSlaBreaches(db);
       break;
     case 'perform_scheduled_deletions':
       await handlePerformScheduledDeletions(db);

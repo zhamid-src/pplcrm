@@ -546,7 +546,7 @@
         </tr>
       </thead>
       <tbody class="bg-base-100">
-        @if (hasActiveFilters() && !visibleTableRows().length) {
+        @if (hasLoaded() && hasActiveFilters() && !visibleTableRows().length) {
         <tr>
           <td
             [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
@@ -575,7 +575,7 @@
             </div>
           </td>
         </tr>
-        } @else if (!visibleTableRows().length) {
+        } @else if (isEmptyState()) {
         <tr>
           <td
             [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"

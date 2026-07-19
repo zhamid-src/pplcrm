@@ -3,11 +3,12 @@ import { queryBuilderNodeSchema } from './core.schema';
 
 // Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
 // backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
-// volunteer-events controller) but is not offered as a card. `date_arrives` and
-// `task_sla_breach` stay in the enum for saved-row back-compat but have no picker card:
-// no backend fires them yet, and a dead card is dishonest UI. `supporter_lapsed` is fired
-// by the daily detect_lapsed_supporters cron; its trigger_event_id holds the inactivity
-// threshold in days (default 90).
+// volunteer-events controller) but is not offered as a card. `date_arrives` stays in the
+// enum for saved-row back-compat but has no picker card: no backend fires it yet, and a
+// dead card is dishonest UI. `task_sla_breach` is fired by the hourly
+// detect_task_sla_breaches cron (spec §4 → §16), which enrolls the breached task's linked
+// person. `supporter_lapsed` is fired by the daily detect_lapsed_supporters cron; its
+// trigger_event_id holds the inactivity threshold in days (default 90).
 export const WORKFLOW_TRIGGER_TYPES = [
   'manual',
   'web_form_submitted',

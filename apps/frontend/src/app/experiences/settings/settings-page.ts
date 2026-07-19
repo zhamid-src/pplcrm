@@ -309,33 +309,6 @@ export class SettingsPage implements OnInit {
     }
   }
 
-  protected copyToClipboard(val: string | null | undefined) {
-    if (!val) return;
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alerts.showSuccess('Copied to clipboard!');
-      })
-      .catch(() => {
-        this.alerts.showError('Failed to copy to clipboard.');
-      });
-  }
-
-  protected generateWebhookCredentials(section: SectionState) {
-    const key = 'pk_live_' + this.randomHex(24);
-    const secret = 'whsec_' + this.randomHex(32);
-
-    section.payload.update((p) => ({
-      ...p,
-      integrations_webhook_api_key: key,
-      integrations_webhook_api_secret: secret,
-    }));
-
-    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
-    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
-    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
-  }
-
   // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
   protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
     { value: 1, label: 'Mon' },
@@ -762,15 +735,6 @@ export class SettingsPage implements OnInit {
       default:
         return value ?? '';
     }
-  }
-
-  private randomHex(len: number): string {
-    const chars = '0123456789abcdef';
-    let result = '';
-    for (let i = 0; i < len; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
   }
 
   private startEmailCooldown(email: string) {

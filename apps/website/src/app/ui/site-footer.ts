@@ -66,10 +66,7 @@ const CONTACT_EMAIL = 'hello@pplcrm.com';
           class="mt-12 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line py-5 text-xs text-base-content/45"
         >
           <span>© 2026 pplCRM · pplcrm.com</span>
-          <span
-            >Your data is stored in Canada, or the region you choose on Movement. Export everything anytime. Delete
-            means deleted.</span
-          >
+          <span>Your data is stored in Canada. Export everything anytime. Delete means deleted.</span>
         </div>
       </div>
     </footer>

@@ -46,7 +46,7 @@ const STEP_UP_LABELS: Readonly<Record<string, string>> = {
   free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
   grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
   movement:
-    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers, A/B testing and data residency.',
+    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers and priority support.',
 };
 
 @Component({

@@ -454,17 +454,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     return Number((result as { count?: number } | undefined)?.count ?? 0);
   }
 
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-      .where('households.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
-
   /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
   public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
     let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);

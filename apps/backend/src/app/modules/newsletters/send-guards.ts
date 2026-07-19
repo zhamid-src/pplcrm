@@ -65,6 +65,13 @@ export const DOMAIN_UNVERIFIED_MESSAGE =
   'Before sending, verify the domain you send from (Settings → Domains) and choose a default From address on that domain (Settings → Communications). This protects your deliverability.';
 export const PHONE_UNVERIFIED_MESSAGE =
   'On the Free plan, verify a mobile phone number (Settings → Communications) before your first newsletter send.';
+export const AUTOMATION_PHONE_UNVERIFIED_MESSAGE =
+  'On the Free plan, verify a mobile phone number (Settings → Communications) before automation emails can send. This email was not sent.';
+
+/** Rolling window the automation tripwires aggregate over. Automation emails are one-recipient
+ * sends spread over time (no per-send population like a newsletter), so the "send" a tripwire
+ * judges is the tenant's recent automation volume as a whole. */
+export const AUTOMATION_TRIPWIRE_WINDOW_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -183,6 +190,12 @@ export function hasPaymentHold(tenant: SendingTenant): boolean {
   return PLANS_BY_KEY[tenant.plan].purchasable && PAYMENT_HOLD_STATUSES.has(tenant.subscription_status);
 }
 
+/** Free-plan identity gate: a verified mobile number is required before any tenant-originated
+ * email (newsletter or automation) leaves a Free account. Pure, shared by both send paths. */
+export function needsPhoneVerification(tenant: SendingTenant): boolean {
+  return tenant.plan === 'free' && !tenant.sending_phone_verified_at;
+}
+
 /** Throws when the tenant is suspended, tripwire-paused, or on a payment hold. */
 export function assertTenantSendingNotBlocked(tenant: SendingTenant): void {
   if (tenant.suspended_at) throw new ForbiddenError(SENDING_SUSPENDED_MESSAGE);
@@ -262,7 +275,7 @@ export async function assertTenantMaySendNewsletter(
   if (!(await hasVerifiedSendingDomain(db, tenantId))) {
     throw new PreconditionFailedError(DOMAIN_UNVERIFIED_MESSAGE);
   }
-  if (tenant.plan === 'free' && !tenant.sending_phone_verified_at) {
+  if (needsPhoneVerification(tenant)) {
     throw new PreconditionFailedError(PHONE_UNVERIFIED_MESSAGE);
   }
 
@@ -393,5 +406,61 @@ export async function applyEngagementTripwires(db: Db, tenantId: string, newslet
       '[abuse-tripwire] Hard-bounce rate exceeded — tenant sending paused',
     );
     await pauseTenantSending(db, tenantId, `hard_bounce_rate:${newsletterId}`);
+  }
+}
+
+/**
+ * The automation counterpart of `applyEngagementTripwires` — same thresholds, same semantics
+ * (`evaluateTripwires`: hard-bounce rate >5% pauses sending, spam-complaint rate >1% suspends
+ * the account, minimum sample of TRIPWIRE_MIN_RECIPIENTS), so automations are not a
+ * side-channel around the account-level abuse wires. Called from the SendGrid event webhook
+ * whenever an automation bounce/complaint event arrives.
+ *
+ * Sample: because automation emails go out one recipient at a time, the population is a rolling
+ * AUTOMATION_TRIPWIRE_WINDOW_DAYS window — sends metered into `newsletter_send_log`
+ * (`source='automation'`, written on actual delivery) vs the hard bounces / spam complaints the
+ * webhook stamps onto `workflow_runs` (`bounced_at` / `spam_reported_at`; soft `blocked`
+ * bounces are never stamped). Send-log retention (32 days) comfortably outlives the window.
+ */
+export async function applyAutomationTripwires(db: Db, tenantId: string): Promise<void> {
+  const since = new Date(Date.now() - AUTOMATION_TRIPWIRE_WINDOW_DAYS * DAY_MS);
+
+  const sent = await db
+    .selectFrom('newsletter_send_log')
+    .select((eb) => eb.fn.coalesce(eb.fn.sum('recipient_count'), sql<number>`0`).as('total'))
+    .where('tenant_id', '=', tenantId)
+    .where('source', '=', 'automation')
+    .where('created_at', '>=', since)
+    .executeTakeFirst();
+  const totalRecipients = Number(sent?.total ?? 0);
+  if (totalRecipients < TRIPWIRE_MIN_RECIPIENTS) return;
+
+  const stats = await db
+    .selectFrom('workflow_runs')
+    .select([
+      sql<number>`COUNT(*) FILTER (WHERE bounced_at >= ${since})`.as('hard_bounces'),
+      sql<number>`COUNT(*) FILTER (WHERE spam_reported_at >= ${since})`.as('spam_reports'),
+    ])
+    .where('tenant_id', '=', tenantId)
+    .where('step_kind', '=', 'send_email')
+    .executeTakeFirst();
+
+  const hardBounces = Number(stats?.hard_bounces ?? 0);
+  const spamReports = Number(stats?.spam_reports ?? 0);
+  const verdict = evaluateTripwires({ totalRecipients, hardBounces, spamReports });
+  if (!verdict) return;
+
+  if (verdict === 'suspend') {
+    logger.error(
+      { tenantId, totalRecipients, spamReports, windowDays: AUTOMATION_TRIPWIRE_WINDOW_DAYS },
+      '[abuse-tripwire] Automation spam-complaint rate exceeded — tenant suspended pending human review',
+    );
+    await suspendTenant(db, tenantId, 'automation_spam_complaint_rate');
+  } else {
+    logger.error(
+      { tenantId, totalRecipients, hardBounces, windowDays: AUTOMATION_TRIPWIRE_WINDOW_DAYS },
+      '[abuse-tripwire] Automation hard-bounce rate exceeded — tenant sending paused',
+    );
+    await pauseTenantSending(db, tenantId, 'automation_hard_bounce_rate');
   }
 }

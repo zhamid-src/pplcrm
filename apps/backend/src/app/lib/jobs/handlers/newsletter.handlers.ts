@@ -338,8 +338,10 @@ export async function handleSendNewsletter(
   await queueUsageLimitCheck(tenantId, db);
 }
 
-// Send-log rows only feed rolling-window caps (24h max) — 30 days is generous ops headroom.
-const SEND_LOG_RETENTION_DAYS = 30;
+// Send-log rows meter the monthly plan allowance over the tenant's billing cycle (sendWindow in
+// send-guards.ts), and a cycle can span a 31-day month — 32 days keeps every row of the longest
+// possible cycle alive (plus a day of slack) so the meter never undercounts near renewal.
+const SEND_LOG_RETENTION_DAYS = 32;
 
 export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
   await pruneNewsletterEvents(db);

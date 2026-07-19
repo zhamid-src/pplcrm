@@ -337,7 +337,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching its SLA (the person the task is linked to enrolls), a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
           '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
           '**Email conditions**: from the second email on, a Send email step can be gated on what the person did with the previous email in the sequence, for example **Only if they didn’t open the previous email**. Put a Wait before a conditioned email so people have time to engage; a skipped step shows as a neutral **Skipped** with the reason.',
           '**End early when** sets sequence goals on the right rail: end the sequence the moment they donate, open any email in it, or click any email in it. Someone who converts stops getting the rest of the asks.',

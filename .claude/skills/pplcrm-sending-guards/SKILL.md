@@ -97,6 +97,15 @@ tenantId, newsletterRow)` (`modules/newsletters/preflight.service.ts`), called i
    recompute (`newsletters-webhook.route.ts`). On sends ≥20 recipients: hard-bounce rate >5% →
    `pauseTenantSending`; spam-complaint rate >1% → `suspendTenant` (sets `suspended_at`, blocks
    sign-in, pending human review). Both log `[abuse-tripwire]` errors via Pino.
+   **Automation sends are covered too (2026-07-19):** `applyAutomationTripwires` (same file as the
+   newsletter one, same thresholds/min-sample via `evaluateTripwires`) runs from the webhook for
+   every tenant whose automation events included a bounce/complaint. Because automation emails are
+   one-recipient sends spread over time, the sample is a rolling 7-day window
+   (`AUTOMATION_TRIPWIRE_WINDOW_DAYS`): delivered sends from `newsletter_send_log`
+   (`source='automation'`) vs hard bounces / spam complaints the webhook stamps onto
+   `workflow_runs.bounced_at` / `spam_reported_at` (migration `2026-07-20-f`; soft `blocked`
+   bounces never stamp). Pause reason strings: `automation_hard_bounce_rate` /
+   `automation_spam_complaint_rate`.
 
 **To un-pause / un-suspend** (support action, no UI): clear `tenants.sending_paused_at` (+
 `sending_paused_reason`) or `tenants.suspended_at` in the DB. A paused newsletter is then
@@ -122,16 +131,26 @@ complaints into `email_suppressions`.
 **Signup:** disposable-email domains are rejected in `auth/controller.ts signUp` via
 `lib/mail/disposable-email-domains.ts` (curated Set — extend it, don't replace with a huge list).
 
-**Automation emails obey the same layer (2026-07-18):** the workflow `send_email` step
-(`lib/jobs/handlers/workflows.handlers.ts`) checks the step's engagement condition
+**Automation emails obey the same layer (2026-07-18; tightened 2026-07-19):** the drip worker
+(`handleProcessDripWorkflows`) first applies the **plan gate at processing time** — a tenant whose
+plan lacks the `automations` feature (below Grassroots; `planAllowsFeature`) has its due
+enrollments deferred an hour (nothing sends, nothing advances, nothing deleted — behaves like
+paused, logged once per tenant per tick as `[plan-gate]`), so a downgrade actually stops running
+automations. The workflow `send_email` step then checks the step's engagement condition
 (`config.send_condition`, evaluated against the previous email run's `opened_at`/`clicked_at` —
 unmet → `skipped` run), consent via `modules/workflows/automation-consent.ts` (suppressed / DNC /
 unsubscribed-from-all-campaigns → run recorded as `skipped`, not failed), checks
-`assertTenantSendingNotBlocked` + `remainingSendAllowance` (blocked → enrollment deferred 1h,
-not advanced) + `hasVerifiedSendingDomain` (missing → failed run with the fix named), and
-meters each send into `newsletter_send_log` with `source='automation'`, `newsletter_id NULL` — so
-`sentEmailsSince` (and therefore the warm-up/hourly/monthly caps) includes automation volume
-automatically. **Delivery is SendGrid, not Postmark** (Postmark = pplCRM-to-user mail only): the
+`assertTenantSendingNotBlocked` (blocked → enrollment deferred 1h, not advanced), the identity
+gates — `hasVerifiedSendingDomain` and, on Free, phone verification (`needsPhoneVerification` →
+`AUTOMATION_PHONE_UNVERIFIED_MESSAGE`); either missing → failed run with the fix named — and the
+allowance: `remainingSendAllowance` minus the tenant's enqueued-but-unsent `send-automation-email`
+jobs (in-flight accounting). **Quota is metered on actual delivery, not enqueue:** the delivery
+handler (`automation-mail.handlers.ts`) writes the `newsletter_send_log` row
+(`source='automation'`, `newsletter_id NULL`) after SendGrid accepts the send, gated by the job
+payload's `meterOnSend` flag (legacy flagless jobs were metered at enqueue; a job that exhausts
+its retries consumes nothing). `sentEmailsSince` (and therefore the warm-up/hourly/monthly caps)
+includes automation volume automatically. Send-log retention is 32 days
+(`SEND_LOG_RETENTION_DAYS`, newsletter.handlers.ts) so the meter outlives a 31-day billing cycle. **Delivery is SendGrid, not Postmark** (Postmark = pplCRM-to-user mail only): the
 step inserts its `workflow_runs` row first, then enqueues `send-automation-email`
 (`lib/jobs/handlers/automation-mail.handlers.ts`) which resolves the tenant's sending identity
 (same settings keys + free-tier subuser as newsletters) and sends with
@@ -148,6 +167,11 @@ all the person's `campaign_subscriptions` to unsubscribed) in a server-appended 
 **Scheduled newsletters:** `process_scheduled_newsletters` (5-min cron,
 `lib/jobs/handlers/newsletter.handlers.ts`) fires `status='scheduled'` rows through
 `sendNewsletter`, so guards + preflight run at fire time; failures revert to draft + notify.
+Scheduling itself flows through generic CRUD add/update, so `NewslettersController.add/update`
+validate server-side (`assertSchedulable`): setting `status='scheduled'` requires a non-null,
+future `send_date` (BAD_REQUEST otherwise) — a NULL date would never match the cron's
+`send_date <= now` and sit invisible forever. Updates that merely edit other fields of an
+already-scheduled row are exempt from the future check (a just-arrived send time is about to fire).
 (Recurring newsletters were removed entirely 2026-07-18 — first the auto-send mode, then the
 whole feature: draft-per-cadence added little over "Schedule for later". Migration
 `2026-07-20-d` drops `newsletter_schedules` and `newsletters.schedule_id`.)

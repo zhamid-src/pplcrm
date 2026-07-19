@@ -175,7 +175,7 @@
     </button>
   </pc-grid-header>
 
-  @if (forms().length === 0) {
+  @if (loaded() && forms().length === 0) {
   <pc-empty-state
     icon="clipboard-document-list"
     title="No forms yet. Create one to start collecting signups, RSVPs and more."

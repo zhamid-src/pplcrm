@@ -11,7 +11,7 @@ export const PRIVACY_DOC: LegalDoc = {
   title: 'Privacy policy',
   intro:
     'What we collect, why, where it lives, and the things we will never do with it. Written to be read, not skimmed past.',
-  updated: 'July 18, 2026',
+  updated: 'July 19, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -76,7 +76,7 @@ export const PRIVACY_DOC: LegalDoc = {
         '**Addresses and maps.** Household addresses can be geocoded so they appear on maps and turfs. Geocoding sends the street address to the Google Maps Geocoding API and stores the resulting coordinates.',
         '**Synced mailboxes.** If a workspace admin connects Gmail or Microsoft 365, we sync email content into the workspace so conversations sit next to the people they belong to. The OAuth tokens for these connections are encrypted at rest with AES-256-GCM, and you can disconnect at any time. Our use of data received from Google APIs adheres to the Google API Services User Data Policy, including its Limited Use requirements.',
         '**Newsletter engagement.** When an organization sends a newsletter, delivery and engagement events (bounces, unsubscribes, opens and clicks) are recorded so the sender can respect them.',
-        '**Uploaded files.** Imports and attachments are stored in the workspace’s region.',
+        '**Uploaded files.** Imports and attachments are stored in Canada with the rest of your workspace data.',
       ],
     },
     {
@@ -129,7 +129,7 @@ export const PRIVACY_DOC: LegalDoc = {
     {
       kind: 'list',
       items: [
-        '**Microsoft Azure.** Hosts the application, database and file storage in your workspace’s region (Canada by default).',
+        '**Microsoft Azure.** Hosts the application, database and file storage in Canada.',
         '**Cloudflare.** Serves the marketing site and the public form, donation and companion pages at the network edge.',
         '**Stripe.** Subscription billing, tax calculation, and card donation processing. Stripe stores payment and donor data in the United States.',
         '**Postmark.** Delivers transactional email such as verification links, security codes and account notices.',
@@ -148,7 +148,7 @@ export const PRIVACY_DOC: LegalDoc = {
     },
     {
       kind: 'p',
-      text: 'Workspaces are hosted in Canada by default. On the Movement plan, you choose your workspace’s region (Canada, US, EU or UK) when you create it, and your workspace data stays in that region for processing and backups. Three narrow exceptions apply regardless of region: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, and newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States.',
+      text: 'Workspaces are hosted in Canada, and your workspace data stays in Canada for processing and backups. Three narrow exceptions apply: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, and newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States.',
     },
     {
       kind: 'h2',

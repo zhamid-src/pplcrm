@@ -131,6 +131,7 @@ export class FormsPageComponent implements OnInit {
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
+  protected readonly loaded = this._loading.loaded;
 
   protected readonly forms = signal<FormDetail[]>([]);
   protected readonly selectedId = signal<string | null>(null);

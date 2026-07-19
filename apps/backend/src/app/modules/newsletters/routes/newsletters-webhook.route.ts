@@ -2,7 +2,7 @@ import { createPublicKey, createVerify } from 'crypto';
 import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import { BaseRepository } from '../../../lib/base.repo';
 import { CampaignSubscriptionsRepo } from '../../campaigns/repositories/campaign-subscriptions.repo';
-import { applyEngagementTripwires } from '../send-guards';
+import { applyAutomationTripwires, applyEngagementTripwires } from '../send-guards';
 import { env } from '../../../../env';
 import { sql } from 'kysely';
 
@@ -129,6 +129,23 @@ async function applyAutomationEvent(ev: SendGridEvent): Promise<void> {
       .values({ tenant_id: tenantId, email: ev.email, reason, occurred_at: occurredAt })
       .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
       .execute();
+
+    // Stamp the run for the automation abuse tripwires — hard bounces only (SendGrid `bounce`
+    // with type 'blocked' is a soft failure and never counts against the tenant, matching the
+    // newsletter tripwire's exclusion). COALESCE keeps the stamp idempotent.
+    const isHardBounce = eventType === 'bounce' && ev.type !== 'blocked';
+    if (eventType === 'spamreport' || isHardBounce) {
+      await db
+        .updateTable('workflow_runs')
+        .set(
+          eventType === 'spamreport'
+            ? { spam_reported_at: sql`COALESCE(spam_reported_at, ${occurredAt})` }
+            : { bounced_at: sql`COALESCE(bounced_at, ${occurredAt})` },
+        )
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', runId)
+        .execute();
+    }
   }
 }
 
@@ -154,6 +171,9 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
 
     try {
       const processedNewsletters = new Set<string>();
+      // Tenants whose automation sends took a bounce/complaint in this batch — the automation
+      // tripwires re-evaluate for each after all events are applied.
+      const automationTripwireTenants = new Set<string>();
 
       // Insert all events that have newsletter_id and tenant_id
       for (const ev of events) {
@@ -165,6 +185,9 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
         if (!ev.newsletter_id && ev.workflow_run_id) {
           try {
             await applyAutomationEvent(ev);
+            if (ev.event === 'bounce' || ev.event === 'spamreport') {
+              automationTripwireTenants.add(String(ev.tenant_id));
+            }
           } catch (automationErr) {
             req.log.error(automationErr, `Failed to apply automation event ${ev.sg_event_id}`);
           }
@@ -296,6 +319,12 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
         // high spam-complaint rate suspends the account pending human review. Runs after the
         // aggregates so an in-flight send's worker loop sees the flag on its next batch.
         await applyEngagementTripwires(db, tenantId, newsletterId);
+      }
+
+      // Same tripwires for automation volume: newsletters and automation emails alike are
+      // covered — a bad list drip-fed through workflows pauses/suspends just like a blast.
+      for (const tenantId of automationTripwireTenants) {
+        await applyAutomationTripwires(db, tenantId);
       }
 
       return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });

@@ -45,8 +45,8 @@ export class DataOwnershipPage {
     },
     {
       icon: 'globe-americas',
-      title: 'You choose where it lives',
-      body: 'Your workspace is stored in Canada by default. On the Movement plan you pick the region (Canada, US, EU or UK) when you create your workspace, and your data stays there for processing and backups.',
+      title: 'Hosted in Canada',
+      body: 'Your workspace is stored in Canada, and your data stays there for processing and backups.',
     },
     {
       icon: 'user-group',

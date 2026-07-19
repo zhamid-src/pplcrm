@@ -109,7 +109,7 @@
         }
       </td>
     </tr>
-    } @empty {
+    } @empty { @if (_loading.loaded()) {
     <tr>
       <td colspan="5">
         <pc-empty-state
@@ -125,7 +125,7 @@
         </pc-empty-state>
       </td>
     </tr>
-    } @if (totalGiftCount() > recentGifts().length) {
+    } } @if (totalGiftCount() > recentGifts().length) {
     <div pcTableFooter class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
       Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
     </div>

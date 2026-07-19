@@ -349,26 +349,4 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
       },
     ],
   },
-  {
-    id: 'integrations',
-    title: 'Integrations & API',
-    description: 'Storage, webhooks, analytics, and external vendor keys.',
-    icon: 'cloud-arrow-up',
-    fields: [
-      {
-        key: 'integrations.webhook_api_key',
-        label: 'Webhook API key',
-        type: 'text',
-        placeholder: 'Not generated yet',
-        defaultValue: '',
-      },
-      {
-        key: 'integrations.webhook_api_secret',
-        label: 'Webhook API secret',
-        type: 'password',
-        placeholder: 'Not generated yet',
-        defaultValue: '',
-      },
-    ],
-  },
 ];

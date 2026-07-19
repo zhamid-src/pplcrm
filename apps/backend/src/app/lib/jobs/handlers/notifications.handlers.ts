@@ -2,6 +2,7 @@ import type { Kysely } from 'kysely';
 import { env } from '../../../../env';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../../logger';
+import { NotificationsRepo } from '../../../modules/notifications/repositories/notifications.repo';
 import { notificationEnabled } from '../../profile-preferences';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
 import { SmsService } from '../../sms/sms.service';
@@ -394,6 +395,7 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
       .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
       .select([
         'tasks.id as task_id',
+        'tasks.tenant_id as tenant_id',
         'tasks.name as task_name',
         'tasks.due_at',
         'tasks.details',
@@ -420,12 +422,25 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
       userTasks.push(row);
     }
 
-    for (const [, tasks] of userTasksMap.entries()) {
+    const notificationsRepo = new NotificationsRepo();
+    for (const [userId, tasks] of userTasksMap.entries()) {
       const firstRow = tasks[0];
       if (!firstRow) continue;
       const userEmail = firstRow.user_email;
       const firstName = firstRow.first_name;
       const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
+      const inAppOptedIn = notificationEnabled(firstRow.profile_preferences, 'task_due_in_app');
+
+      if (inAppOptedIn) {
+        await notificationsRepo.pushNotification({
+          tenant_id: String(firstRow.tenant_id),
+          user_id: userId,
+          title: 'Tasks Due',
+          message: `You have ${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} due or overdue.`,
+          type: 'task',
+          link: '/tasks',
+        });
+      }
 
       if (optedIn && userEmail) {
         let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;

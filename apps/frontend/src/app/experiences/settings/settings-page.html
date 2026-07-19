@@ -113,26 +113,6 @@
               Some may immediately count as breached (or clear) on the dashboard.
             </p>
           </div>
-          } @if (section.config.id === 'integrations') {
-          <div class="border-b border-base-200 pb-6 mb-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-xs font-bold text-base-content/90">Webhook API credentials</h4>
-                <p class="text-xs text-base-content/50">
-                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary shrink-0"
-                (click)="generateWebhookCredentials(section)"
-              >
-                Generate credentials
-              </button>
-            </div>
-          </div>
           } @if (section.config.id === 'communications') {
           <!-- Compliance copy (§3): outbound email is regulated (CAN-SPAM / CASL); the platform can't guarantee it -->
           <div class="flex items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3.5 py-2.5">
@@ -216,27 +196,7 @@
                 </button>
                 }
               </div>
-              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
-              'integrations.webhook_api_secret') {
-              <div class="flex gap-2">
-                <input
-                  [id]="field.controlName"
-                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
-                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-xs"
-                  [attr.placeholder]="field.config.placeholder ?? ''"
-                  [value]="section.form[field.controlName]().value() || ''"
-                  readonly
-                />
-                <button
-                  type="button"
-                  class="btn btn-square btn-outline btn-secondary shrink-0"
-                  (click)="copyToClipboard(section.form[field.controlName]().value())"
-                  title="Copy to clipboard"
-                >
-                  <pc-icon name="document-duplicate"></pc-icon>
-                </button>
-              </div>
-              } @else {
+              } @default {
               <input
                 [id]="field.controlName"
                 [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
@@ -244,7 +204,7 @@
                 [attr.placeholder]="field.config.placeholder ?? ''"
                 [formField]="section.form[field.controlName]"
               />
-              } } } @if (field.config.helper) {
+              } } @if (field.config.helper) {
               <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
               } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
               <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">

@@ -123,6 +123,39 @@ describe('DataGrid', () => {
     });
   });
 
+  describe('empty state first-load gating', () => {
+    const isEmptyState = () => (component as unknown as { isEmptyState: () => boolean }).isEmptyState();
+
+    it('does not show the empty state while the first fetch is still pending', async () => {
+      let resolveFetch!: (value: { rows: unknown[]; count: number }) => void;
+      mockGridSvc.getAll.mockReturnValue(
+        new Promise<{ rows: unknown[]; count: number }>((resolve) => {
+          resolveFetch = resolve;
+        }),
+      );
+
+      await init();
+
+      expect(isEmptyState()).toBe(false);
+      expect(fixture.nativeElement.textContent).not.toContain('Nothing here yet');
+
+      resolveFetch({ rows: [], count: 0 });
+      await init();
+
+      expect(isEmptyState()).toBe(true);
+      expect(fixture.nativeElement.textContent).toContain('Nothing here yet');
+    });
+
+    it('shows no empty state once rows have loaded', async () => {
+      mockGridSvc.getAll.mockResolvedValue({ rows: [{ id: '1', name: 'Alice', amount: 10 }], count: 1 });
+
+      await init();
+
+      expect(isEmptyState()).toBe(false);
+      expect(fixture.nativeElement.textContent).not.toContain('Nothing here yet');
+    });
+  });
+
   describe('toId', () => {
     it('stringifies the id field of a row', async () => {
       await init();

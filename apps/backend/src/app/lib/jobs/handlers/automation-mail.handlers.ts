@@ -3,7 +3,7 @@ import type { Kysely } from 'kysely';
 import { env } from '../../../../env';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
-import { loadSendingTenant } from '../../../modules/newsletters/send-guards';
+import { loadSendingTenant, logAutomationSend } from '../../../modules/newsletters/send-guards';
 
 const mailService = new NewsletterEmailService();
 
@@ -15,6 +15,9 @@ export interface SendAutomationEmailPayload {
   html: string;
   text: string;
   unsubscribeUrl: string;
+  /** Set on jobs enqueued since quota moved to delivery-time metering — this handler logs the
+   * send after SendGrid accepts it. Legacy jobs (flag absent) were metered at enqueue time. */
+  meterOnSend?: boolean;
 }
 
 /**
@@ -80,7 +83,7 @@ export async function handleSendAutomationEmail(
     settingsMap['communications.footer_disclaimer'],
   );
 
-  await mailService.sendNewsletter({
+  const delivered = await mailService.sendNewsletter({
     fromName,
     fromEmail,
     replyTo,
@@ -96,6 +99,13 @@ export async function handleSendAutomationEmail(
     // subscription), so SendGrid's subscription tracking stays off.
     subscriptionTracking: false,
   });
+
+  // Meter the send only after SendGrid accepted it — a job that fails (and exhausts its
+  // retries) must not consume the tenant's allowance. Legacy jobs without `meterOnSend` were
+  // already metered at enqueue time; logging them again would double-count.
+  if (payload.meterOnSend && delivered > 0) {
+    await logAutomationSend(db, tenantId);
+  }
 }
 
 /**

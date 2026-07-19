@@ -130,6 +130,7 @@ describe('EmailsController Integration', () => {
   afterEach(async () => {
     await db.deleteFrom('email_read_states').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('email_trash').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('email_headers').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('emails').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
@@ -211,6 +212,64 @@ describe('EmailsController Integration', () => {
     for (const id of secondPageIds) {
       expect(firstPageIds).not.toContain(id);
     }
+  });
+
+  it('pages stably when emails share the same date_sent (id tiebreaker)', async () => {
+    // Five more emails whose headers all carry an IDENTICAL date_sent — exactly
+    // what a bulk sync produces. The sort key alone is then ambiguous: without a
+    // unique tiebreaker Postgres may order ties differently per query, so
+    // limit/offset pages can repeat or skip rows.
+    const sameInstant = new Date('2026-07-01T12:00:00.000Z');
+    const tiedIds: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const eid = rand();
+      tiedIds.push(eid);
+      await db
+        .insertInto('emails')
+        .values({
+          id: eid,
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          folder_id: '11',
+          from_email: 'bulk@example.com',
+          to_email: 'recipient@example.com',
+          subject: `Bulk Email ${i}`,
+          preview: 'Preview',
+          is_favourite: false,
+          status: 'open',
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+      await db
+        .insertInto('email_headers')
+        .values({
+          id: rand(),
+          tenant_id: tenantId,
+          email_id: eid,
+          date_sent: sameInstant,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+
+    // Page through two at a time; the concatenated pages must reconstruct the
+    // whole folder with no repeats and no gaps.
+    const pageSize = 2;
+    const collected: string[] = [];
+    for (let offset = 0; offset < 20; offset += pageSize) {
+      const page = await controller.getEmails(userId, tenantId, campaignId, '11', pageSize, offset);
+      collected.push(...page.map((e: any) => String(e.id)));
+      if (page.length < pageSize) break;
+    }
+
+    expect(collected.length).toBe(6); // 5 tied + the seeded email
+    expect(new Set(collected).size).toBe(6); // no duplicates across pages
+
+    // Ties on date_sent resolve by id desc — a total, stable order.
+    const tiedInResult = collected.filter((id) => tiedIds.includes(id));
+    expect(tiedInResult).toEqual([...tiedIds].sort((a, b) => Number(b) - Number(a)));
   });
 
   it('should correctly move to trash, delete email_trash records via deleteByEmailIds on restore, and allow deleteMany to delete by primary key', async () => {

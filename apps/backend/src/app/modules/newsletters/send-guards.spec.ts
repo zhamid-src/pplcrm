@@ -1,12 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   FREE_WARMUP_DAILY_CAP,
   FREE_WARMUP_DAYS,
   TRIPWIRE_MIN_RECIPIENTS,
+  applyAutomationTripwires,
   evaluateTripwires,
   hasPaymentHold,
   monthlyEmailCap,
+  needsPhoneVerification,
   planKeyOf,
   sendWindow,
   warmupDailyCap,
@@ -165,5 +167,85 @@ describe('evaluateTripwires', () => {
 
   it('stays quiet on a healthy send', () => {
     expect(evaluateTripwires({ totalRecipients: 1000, hardBounces: 10, spamReports: 0 })).toBeNull();
+  });
+});
+
+describe('needsPhoneVerification', () => {
+  it('requires verification only on Free without a verified number', () => {
+    expect(needsPhoneVerification(tenantWith({ plan: 'free' }))).toBe(true);
+    expect(needsPhoneVerification(tenantWith({ plan: 'free', sending_phone_verified_at: new Date() }))).toBe(false);
+    expect(needsPhoneVerification(tenantWith({ plan: 'grassroots' }))).toBe(false);
+  });
+});
+
+/**
+ * Minimal Kysely stand-in for `applyAutomationTripwires`: the send-log SUM and the
+ * workflow_runs bounce/complaint aggregate come back canned, and every `updateTable(...).set`
+ * is recorded so the pause/suspend writes can be asserted.
+ */
+function makeTripwireDb(opts: { sent: number; hardBounces: number; spamReports: number }) {
+  const updates: { table: string; values: Record<string, unknown> }[] = [];
+  const selectBuilder = (table: string): Record<string, unknown> => {
+    const b: Record<string, unknown> = {};
+    b['select'] = vi.fn(() => b);
+    b['where'] = vi.fn(() => b);
+    b['executeTakeFirst'] = vi.fn(async () =>
+      table === 'newsletter_send_log'
+        ? { total: opts.sent }
+        : { hard_bounces: opts.hardBounces, spam_reports: opts.spamReports },
+    );
+    return b;
+  };
+  const db = {
+    selectFrom: vi.fn(selectBuilder),
+    updateTable: vi.fn((table: string) => {
+      const u: Record<string, unknown> = {};
+      u['set'] = vi.fn((values: Record<string, unknown>): Record<string, unknown> => {
+        updates.push({ table, values });
+        return u;
+      });
+      u['where'] = vi.fn(() => u);
+      u['execute'] = vi.fn(async () => []);
+      return u;
+    }),
+  };
+  return { db, updates };
+}
+
+describe('applyAutomationTripwires', () => {
+  it('pauses sending when the automation hard-bounce rate exceeds 5%', async () => {
+    const { db, updates } = makeTripwireDb({ sent: 100, hardBounces: 6, spamReports: 0 });
+    await applyAutomationTripwires(db as any, '1');
+    expect(updates).toHaveLength(1);
+    expect(updates[0].table).toBe('tenants');
+    expect(updates[0].values['sending_paused_at']).toBeInstanceOf(Date);
+    expect(updates[0].values['sending_paused_reason']).toBe('automation_hard_bounce_rate');
+  });
+
+  it('suspends the tenant when the automation spam-complaint rate exceeds 1%', async () => {
+    const { db, updates } = makeTripwireDb({ sent: 100, hardBounces: 0, spamReports: 2 });
+    await applyAutomationTripwires(db as any, '1');
+    // suspendTenant sets suspended_at, then also pauses sending.
+    expect(updates.map((u) => u.table)).toEqual(['tenants', 'tenants']);
+    expect(updates[0].values['suspended_at']).toBeInstanceOf(Date);
+    expect(updates[1].values['sending_paused_reason']).toBe('automation_spam_complaint_rate');
+  });
+
+  it('does nothing below the minimum sample, however bad the rates', async () => {
+    const { db, updates } = makeTripwireDb({
+      sent: TRIPWIRE_MIN_RECIPIENTS - 1,
+      hardBounces: TRIPWIRE_MIN_RECIPIENTS - 1,
+      spamReports: TRIPWIRE_MIN_RECIPIENTS - 1,
+    });
+    await applyAutomationTripwires(db as any, '1');
+    expect(updates).toHaveLength(0);
+    // Short-circuits after the send-log SUM — the runs aggregate is never queried.
+    expect(db.selectFrom).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet exactly at the thresholds (5% bounces / 1% complaints)', async () => {
+    const { db, updates } = makeTripwireDb({ sent: 100, hardBounces: 5, spamReports: 1 });
+    await applyAutomationTripwires(db as any, '1');
+    expect(updates).toHaveLength(0);
   });
 });

@@ -102,7 +102,11 @@ export class EmailRepo extends BaseRepository<'emails'> {
       .where('emails.tenant_id', '=', tenant_id)
       .where('emails.campaign_id', '=', campaign_id)
       .where((eb) => whereForFolder(eb))
-      .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc');
+      .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc')
+      // Paging tiebreaker: timestamps collide (bulk syncs land whole batches with
+      // identical date_sent), and without a unique sort key limit/offset pages can
+      // repeat or skip rows. `emails.id` makes the order total and stable.
+      .orderBy('emails.id', 'desc');
 
     if (typeof limit === 'number') q = q.limit(limit);
     if (typeof offset === 'number') q = q.offset(offset);

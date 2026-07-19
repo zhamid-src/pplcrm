@@ -75,7 +75,6 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
     return this.api.emails.getActivities.query(emailId);
   }
 
-  // TODO: paging and infinite scrolling
   public async getEmails(folderId: string, limit?: number, offset?: number) {
     const campaignId = await this.campaignId();
     return this.api.emails.getEmails.query({ campaignId, folderId, limit, offset });

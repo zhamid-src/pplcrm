@@ -30,7 +30,7 @@
   </div>
 
   <!-- Pledges table -->
-  @if (!_loading.visible() && pledges().length === 0) {
+  @if (_loading.loaded() && pledges().length === 0) {
   <pc-empty-state
     icon="arrow-path"
     title="No pledges yet"

@@ -860,7 +860,6 @@ export const RELATION_TYPE_LABELS: Record<(typeof RELATION_TYPES)[number], strin
 };
 
 export const relationTypeSchema = z.enum(RELATION_TYPES);
-export type RelationTypeSchema = z.infer<typeof relationTypeSchema>;
 
 export const AddConnectionObj = z.object({
   to_person_id: idSchema,
@@ -871,151 +870,6 @@ export const AddConnectionObj = z.object({
 });
 
 export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-````
-
-## File: libs/common/src/lib/schemas/deliveries.schema.ts
-````typescript
-import { z } from 'zod';
-
-import { idSchema, notesSchema } from './core.schema';
-
-// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
-// the spec's strings win, including the American spelling "canceled" for route status.
-export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
-export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
-export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
-export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
-
-// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
-// reason — it keeps the stop pending and moves it to the end of the route.
-export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
-
-export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
-
-/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
-export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
-  new: 'Requested',
-  approved: 'Approved',
-  declined: 'Declined',
-  delivered: 'Delivered',
-};
-export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
-export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
-export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
-export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
-
-// ---- Requests --------------------------------------------------------------
-export const AddDeliveryRequestObj = z.object({
-  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  household_id: idSchema,
-  person_id: idSchema.or(z.literal('')).nullable().optional(),
-  notes: notesSchema,
-});
-
-export const UpdateDeliveryRequestObj = z.object({
-  notes: notesSchema,
-});
-
-// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
-// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
-export const SetDeliveryRequestStatusObj = z.object({
-  ids: z.array(idSchema).min(1, 'Select at least one request'),
-  status: z.enum(DELIVERY_REQUEST_STATUSES),
-});
-
-// The yard-sign standing lookup for one household in one campaign context.
-export const GetSignStatusObj = z.object({
-  household_id: idSchema,
-  campaign_id: idSchema,
-});
-
-// ---- Planning --------------------------------------------------------------
-// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
-// return trip). Preview is pure — it writes nothing.
-export const PlanDeliveriesObj = z.object({
-  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
-  drivers: z.number().int().min(1).max(50).nullable().optional(),
-  service_minutes: z.number().min(0).max(60).nullable().optional(),
-  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
-  include_return_leg: z.boolean().nullable().optional(),
-});
-
-export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
-  routes: z
-    .array(
-      z.object({
-        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
-      }),
-    )
-    .min(1, 'Nothing to commit'),
-});
-
-// ---- Routes ----------------------------------------------------------------
-export const UpdateDeliveryRouteObj = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
-  scheduled_for: z.string().datetime().nullable().optional(),
-});
-
-export const AssignVolunteerObj = z.object({
-  route_id: idSchema,
-  person_id: idSchema.nullable(),
-});
-
-export const SetDeliveryRouteStatusObj = z.object({
-  route_id: idSchema,
-  status: z.enum(['in_progress', 'completed', 'canceled']),
-});
-
-export const ReorderStopObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  direction: z.enum(['up', 'down']),
-});
-
-// Drag-to-reorder: the full new order of a route's PENDING stops. Delivered/skipped stops are not
-// movable and keep their seq; the backend reassigns only the pending slots to this order.
-export const ReorderStopsObj = z.object({
-  route_id: idSchema,
-  ordered_stop_ids: z.array(idSchema).min(1, 'Provide the new stop order'),
-});
-
-// Staff act on a stop from the route detail page. Same transitions as the public path.
-export const StopActionObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  action: z.enum(['deliver', 'skip', 'remove']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export const RouteIdObj = z.object({ route_id: idSchema });
-
-export const MintShareLinkObj = z.object({
-  route_id: idSchema,
-  regenerate: z.boolean().optional(),
-});
-
-// ---- Public volunteer path (token is the only credential) ------------------
-// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
-export const PublicStopActionObj = z.object({
-  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
-export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
-export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
-export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
-export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
-export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
-export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
-export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
-export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
-export type ReorderStopType = z.infer<typeof ReorderStopObj>;
-export type ReorderStopsType = z.infer<typeof ReorderStopsObj>;
-export type StopActionType = z.infer<typeof StopActionObj>;
-export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
-export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/emails.schema.ts
@@ -1080,152 +934,6 @@ export const EmailObj = z.object({
   is_read: z.boolean().optional(),
   sender_first_name: z.string().nullish(),
   sender_last_name: z.string().nullish(),
-});
-````
-
-## File: libs/common/src/lib/schemas/events.schema.ts
-````typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-const slugSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .regex(
-    /^(?=.*[a-z])[a-z0-9-]+$/,
-    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-  );
-
-export const AddEventObj = z.object({
-  /** Campaigns §15 — the context this event belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema,
-  is_published: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_registration_confirmation: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const EventObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  slug: z.string(),
-  is_published: z.boolean(),
-  send_reminder: z.boolean(),
-  send_registration_confirmation: z.boolean(),
-});
-
-export const UpdateEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema.optional(),
-  is_published: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_registration_confirmation: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const AddTicketTypeObj = z.object({
-  event_id: idSchema,
-  name: nameSchema('Ticket type name', 100),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).default(0).optional(),
-});
-
-export const TicketTypeObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  price_cents: z.number(),
-  capacity: z.number().nullable().optional(),
-  sort_order: z.number(),
-});
-
-export const UpdateTicketTypeObj = z.object({
-  name: nameSchema('Ticket type name', 100).optional(),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).optional(),
-});
-
-// Drag-to-reorder ticket types: the full new order of an event's ticket type ids. The backend
-// writes each id's sort_order to its index, so the order shown to attendees matches the form.
-export const ReorderTicketTypesObj = z.object({
-  event_id: idSchema,
-  ordered_ids: z.array(idSchema).min(1, 'Provide the new ticket order'),
-});
-
-const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
-
-export const AddRegistrationObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.default('registered').optional(),
-  notes: notesSchema,
-});
-
-export const RegistrationObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  ticket_type_id: z.string().nullable().optional(),
-  status: registrationStatusEnum,
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateRegistrationObj = z.object({
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.optional(),
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: notesSchema,
 });
 ````
 
@@ -1309,56 +1017,6 @@ export const ImportListItemObj = z.object({
   canDownloadSource: z.boolean(),
   canDownloadSkipped: z.boolean(),
 });
-````
-
-## File: libs/common/src/lib/schemas/newsletter-templates.schema.ts
-````typescript
-import { z } from 'zod';
-
-import { nameSchema } from './core.schema';
-
-/** Generous ceiling for a compiled email document (the presets are ~15 KB). */
-const MAX_TEMPLATE_HTML_LENGTH = 500_000;
-const MAX_TEMPLATE_TEXT_LENGTH = 200_000;
-
-/**
- * Create payload for a user-saved newsletter template.
- *
- * html_content is deliberately NOT trimmed or transformed: the wizard stores the
- * compiled document verbatim so the PPLCRM_VISUAL_BLOCKS_DATA comment survives
- * the round-trip back into the visual editor. Emptiness is checked on the
- * trimmed view only.
- */
-export const AddNewsletterTemplateObj = z.object({
-  name: nameSchema('Name', 120),
-  html_content: z
-    .string()
-    .max(MAX_TEMPLATE_HTML_LENGTH)
-    .refine((value) => value.trim().length > 0, 'Template content is required'),
-  plain_text_content: z.string().max(MAX_TEMPLATE_TEXT_LENGTH).optional(),
-});
-
-/** Rename-only edit payload; the content of a saved template is immutable. */
-export const UpdateNewsletterTemplateObj = z.object({
-  name: nameSchema('Name', 120),
-});
-
-/** Read shape returned by newsletters.templates.getAll. */
-export const NewsletterTemplateObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  html_content: z.string(),
-  plain_text_content: z.string(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
-
-export type AddNewsletterTemplateType = z.infer<typeof AddNewsletterTemplateObj>;
-export type UpdateNewsletterTemplateType = z.infer<typeof UpdateNewsletterTemplateObj>;
-export type NewsletterTemplateType = z.infer<typeof NewsletterTemplateObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/persons.schema.ts
@@ -1503,121 +1161,6 @@ export const UpdateTagObj = z.object({
     .optional(),
   type: z.enum(['tag', 'issue']).optional(),
 });
-````
-
-## File: libs/common/src/lib/schemas/tasks.schema.ts
-````typescript
-import { z } from 'zod';
-import { nameSchema, notesSchema, idSchema } from './core.schema';
-
-/**
- * Canonical task status vocabulary (spec §4). This is the single source of truth —
- * every layer (DB check constraint, Zod schemas, backend queries, frontend board/list)
- * derives from this list. Do not hand-roll a parallel status array anywhere.
- *
- * `waiting` replaces the old `blocked` name (board column is "Waiting", with an
- * optional waiting-reason line on the card/row). `archived` absorbs the old `canceled`
- * state — a canceled task is, in practice, a task nobody is coming back to, which is
- * exactly what "archived" already means in this app (hidden from the active views,
- * reachable via the grid's Archived toggle). See the 2026-07-07 migration that
- * normalizes existing rows to this vocabulary.
- */
-export const TASK_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'archived'] as const;
-export type TaskStatus = (typeof TASK_STATUSES)[number];
-
-/** The four board columns (spec §4) — `archived` sits outside the active workflow. */
-export const TASK_BOARD_STATUSES = ['todo', 'in_progress', 'waiting', 'done'] as const;
-export type TaskBoardStatus = (typeof TASK_BOARD_STATUSES)[number];
-
-/** Statuses that count as "open" for SLA-breach and count-sentence purposes. */
-export const TASK_OPEN_STATUSES = ['todo', 'in_progress', 'waiting'] as const;
-
-export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  todo: 'To do',
-  in_progress: 'In progress',
-  waiting: 'Waiting',
-  done: 'Done',
-  archived: 'Archived',
-};
-
-/** Type guard — narrows an unknown/loosely-typed status string to the canonical vocabulary. */
-export function isTaskStatus(value: unknown): value is TaskStatus {
-  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
-}
-
-/** Type guard for the four board columns specifically (excludes `archived`). */
-export function isTaskBoardStatus(value: unknown): value is TaskBoardStatus {
-  return typeof value === 'string' && (TASK_BOARD_STATUSES as readonly string[]).includes(value);
-}
-
-const taskStatusEnum = z.enum(TASK_STATUSES);
-const taskPriorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
-
-export const AddTaskObj = z.object({
-  name: nameSchema('Task name', 200),
-  details: z.string().trim().max(10000, 'Details too long').optional(),
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: taskStatusEnum.default('todo').optional(),
-  priority: taskPriorityEnum.optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-
-export const TasksObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  details: z.string().optional(),
-  due_at: z.coerce.date().optional(),
-  status: taskStatusEnum.nullable().optional(),
-  priority: taskPriorityEnum.nullable().optional(),
-  completed_at: z.coerce.date().optional(),
-  position: z.number().int().optional(),
-  assigned_to: z.string().nullable().optional(),
-  team_id: z.string().nullable().optional(),
-});
-
-export const UpdateTaskObj = z.object({
-  name: nameSchema('Task name', 200).optional(),
-  details: notesSchema,
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: taskStatusEnum.optional(),
-  priority: taskPriorityEnum.optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-
-/**
- * Board drag-and-drop persistence (spec §4). One drop touches one or two board
- * columns: dragging within a column re-seats that single column; dragging across
- * two columns re-seats the source and target. Each column lists its cards in the
- * new top-to-bottom order — the backend writes `position = index` per id and sets
- * every id's `status` to its column, all in one transaction. `archived` is not a
- * board column, so only the four `TASK_BOARD_STATUSES` are accepted.
- */
-export const ReorderTasksObj = z.object({
-  columns: z
-    .array(
-      z.object({
-        status: z.enum(TASK_BOARD_STATUSES),
-        ids: z.array(idSchema).min(1, 'A column must list at least one task').max(1000, 'Too many tasks in one column'),
-      }),
-    )
-    .min(1, 'At least one column is required')
-    .max(2, 'A single drop touches at most two columns'),
-});
-
-/** Subtask drag-to-reorder (task detail): the full ordered id list for one task. */
-export const ReorderSubtasksObj = z.object({
-  task_id: idSchema,
-  ids: z.array(idSchema).min(1, 'At least one subtask is required').max(1000, 'Too many subtasks'),
-});
-
-export type ReorderTasksType = z.infer<typeof ReorderTasksObj>;
-export type ReorderSubtasksType = z.infer<typeof ReorderSubtasksObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/teams.schema.ts
@@ -2472,251 +2015,6 @@ export const jsend = {
     throw new Error('Unknown JSend shape');
   },
 };
-````
-
-## File: libs/common/src/lib/models.ts
-````typescript
-import type { z } from 'zod';
-
-import type {
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  EmailCommentObj,
-  EmailFolderObj,
-  EmailObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  NewsletterReportObj,
-  NewsletterReportBounceObj,
-  NewsletterReportEngagedObj,
-  NewsletterReportLinkObj,
-  NewsletterReportPreviousSendObj,
-  CreateClickersListResultObj,
-  EmailDraftObj,
-  PersonsObj,
-  SettingsEntryObj,
-  SettingsObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  ListsObj,
-  UpdateMarketingEmailObj,
-  UpdateListObj,
-  UpdateTaskObj,
-  UpdateTeamObj,
-  TasksObj,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  sortModelItem,
-  InviteAuthUserObj,
-  ProfilePreferencesObj,
-  UpdateAuthUserObj,
-  Verify2FAObj,
-  ImportListItemObj,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  ReorderTicketTypesObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-} from './schema';
-
-export interface INow {
-  now: string;
-}
-
-export type AddTagType = z.infer<typeof AddTagObj>;
-
-export type EmailCommentType = z.infer<typeof EmailCommentObj>;
-
-export type EmailFolderType = z.infer<typeof EmailFolderObj>;
-
-export type EmailType = z.infer<typeof EmailObj>;
-
-export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
-
-export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
-
-export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
-
-export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
-
-export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
-
-export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
-
-export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
-
-export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
-
-export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
-
-export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
-
-export type EmailDraftType = z.infer<typeof EmailDraftObj>;
-
-export type ImportListItem = z.infer<typeof ImportListItemObj>;
-
-export type PERSONINHOUSEHOLDTYPE = {
-  first_name: string;
-  full_name: string;
-  id: string;
-  last_name: string;
-  middle_names: string;
-};
-
-export type PersonsType = z.infer<typeof PersonsObj>;
-
-export type SettingsType = z.infer<typeof SettingsObj>;
-
-export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
-
-export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
-
-export type SortModelType = z.infer<typeof sortModelItem>;
-
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
-
-export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
-
-export type UpdateTagType = z.infer<typeof UpdateTagObj>;
-
-export type getAllOptionsType = z.infer<typeof getAllOptions>;
-
-export type AddListType = z.infer<typeof AddListObj>;
-
-export type AddCampaignType = z.infer<typeof AddCampaignObj>;
-
-export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
-
-export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
-
-export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
-
-export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
-
-export type AddTeamType = z.infer<typeof AddTeamObj>;
-
-export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
-
-export type Verify2FAType = z.infer<typeof Verify2FAObj>;
-
-export type ListsType = z.infer<typeof ListsObj>;
-
-export type UpdateListType = z.infer<typeof UpdateListObj>;
-
-export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
-
-export type AddTurfType = z.infer<typeof AddTurfObj>;
-
-export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
-
-export type CutTurfsType = z.infer<typeof CutTurfsObj>;
-
-export type AssignTurfType = z.infer<typeof AssignTurfObj>;
-
-export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
-
-export type LogKnockType = z.infer<typeof LogKnockObj>;
-
-export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
-
-export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
-
-export type AddTaskType = z.infer<typeof AddTaskObj>;
-export type TasksType = z.infer<typeof TasksObj>;
-export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
-export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
-export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
-export type QueueExportInputType = z.infer<typeof queueExportInput>;
-export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
-export type DataExportRecordType = z.infer<typeof dataExportRecord>;
-
-export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
-export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
-export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
-
-export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
-export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
-export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
-
-export type AddWebFormType = z.infer<typeof AddWebFormObj>;
-export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
-export type WebFormsType = z.infer<typeof WebFormsObj>;
-export type CreateFormType = z.infer<typeof CreateFormObj>;
-export type UpdateFormType = z.infer<typeof UpdateFormObj>;
-export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
-
-export type WorkflowsType = z.infer<typeof WorkflowObj>;
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
-
-export type AddEventType = z.infer<typeof AddEventObj>;
-export type EventType = z.infer<typeof EventObj>;
-export type UpdateEventType = z.infer<typeof UpdateEventObj>;
-
-export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
-export type TicketTypeType = z.infer<typeof TicketTypeObj>;
-export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
-export type ReorderTicketTypesType = z.infer<typeof ReorderTicketTypesObj>;
-
-export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
-export type RegistrationType = z.infer<typeof RegistrationObj>;
-export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-
-export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 ````
 
 ## File: libs/common/src/lib/public-id.ts
@@ -8219,100 +7517,6 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
 ];
 ````
 
-## File: libs/common/src/lib/help/articles/productivity.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
-  {
-    id: 'tasks',
-    category: 'productivity',
-    title: 'Tasks: list and board',
-    summary:
-      'Track the work: assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
-    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
-    related: ['dashboard', 'teams', 'automations'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Tasks capture commitments: call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
-      },
-      { kind: 'h2', id: 'views', text: 'List or board: one dataset, two views' },
-      {
-        kind: 'list',
-        items: [
-          '[Tasks](/tasks) is the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
-          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. Drag a card to another column to change its status, or drag it up and down within a column to set the order you want; the order sticks. Prefer the keyboard? The ‹ › buttons on a card still move it one column and dim at either end of the row. Jump to the board anytime with `g` then `b`.',
-          'Every header carries a swap button (Open board / Open list), so you never have to hunt for the sidebar to switch.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly. A card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
-      },
-      {
-        kind: 'p',
-        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. Break the work into subtasks and drag them by the handle on the left of each row to reorder them. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
-      },
-      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
-      {
-        kind: 'list',
-        items: [
-          'A task with no assignee shows a dashed Unassigned pill. One click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
-          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup. See [The dashboard and SLA health](/help/dashboard).",
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Tasks come from everywhere',
-        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one; "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'files',
-    category: 'productivity',
-    title: 'Storage & attachments',
-    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
-    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
-    related: ['grid-basics', 'newsletters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Files no longer live in their own standalone library. A file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
-      },
-      { kind: 'h2', id: 'attach', text: 'Attach a file' },
-      {
-        kind: 'p',
-        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
-      },
-      { kind: 'h2', id: 'storage', text: 'Check total usage' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Workspace settings → Storage](/workspace/storage)',
-            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
-          },
-          {
-            title: 'Delete a large file',
-            detail:
-              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Quota affects newsletter sending',
-        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments. Free up space first if attachments matter for that send.',
-      },
-    ],
-  },
-];
-````
-
 ## File: libs/common/src/lib/help/articles/segmentation.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -9235,6 +8439,151 @@ export const phoneSchema = (fieldName: string) =>
 export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
 ````
 
+## File: libs/common/src/lib/schemas/deliveries.schema.ts
+````typescript
+import { z } from 'zod';
+
+import { idSchema, notesSchema } from './core.schema';
+
+// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
+// the spec's strings win, including the American spelling "canceled" for route status.
+export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
+export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
+export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
+export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
+
+// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
+// reason — it keeps the stop pending and moves it to the end of the route.
+export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
+
+export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
+
+/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
+export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
+  new: 'Requested',
+  approved: 'Approved',
+  declined: 'Declined',
+  delivered: 'Delivered',
+};
+export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
+export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
+export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
+export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
+
+// ---- Requests --------------------------------------------------------------
+export const AddDeliveryRequestObj = z.object({
+  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  household_id: idSchema,
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+  notes: notesSchema,
+});
+
+export const UpdateDeliveryRequestObj = z.object({
+  notes: notesSchema,
+});
+
+// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
+// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
+export const SetDeliveryRequestStatusObj = z.object({
+  ids: z.array(idSchema).min(1, 'Select at least one request'),
+  status: z.enum(DELIVERY_REQUEST_STATUSES),
+});
+
+// The yard-sign standing lookup for one household in one campaign context.
+export const GetSignStatusObj = z.object({
+  household_id: idSchema,
+  campaign_id: idSchema,
+});
+
+// ---- Planning --------------------------------------------------------------
+// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
+// return trip). Preview is pure — it writes nothing.
+export const PlanDeliveriesObj = z.object({
+  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
+  drivers: z.number().int().min(1).max(50).nullable().optional(),
+  service_minutes: z.number().min(0).max(60).nullable().optional(),
+  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
+  include_return_leg: z.boolean().nullable().optional(),
+});
+
+export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
+  routes: z
+    .array(
+      z.object({
+        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
+      }),
+    )
+    .min(1, 'Nothing to commit'),
+});
+
+// ---- Routes ----------------------------------------------------------------
+export const UpdateDeliveryRouteObj = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
+  scheduled_for: z.string().datetime().nullable().optional(),
+});
+
+export const AssignVolunteerObj = z.object({
+  route_id: idSchema,
+  person_id: idSchema.nullable(),
+});
+
+export const SetDeliveryRouteStatusObj = z.object({
+  route_id: idSchema,
+  status: z.enum(['in_progress', 'completed', 'canceled']),
+});
+
+export const ReorderStopObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  direction: z.enum(['up', 'down']),
+});
+
+// Drag-to-reorder: the full new order of a route's PENDING stops. Delivered/skipped stops are not
+// movable and keep their seq; the backend reassigns only the pending slots to this order.
+export const ReorderStopsObj = z.object({
+  route_id: idSchema,
+  ordered_stop_ids: z.array(idSchema).min(1, 'Provide the new stop order'),
+});
+
+// Staff act on a stop from the route detail page. Same transitions as the public path.
+export const StopActionObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  action: z.enum(['deliver', 'skip', 'remove']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export const RouteIdObj = z.object({ route_id: idSchema });
+
+export const MintShareLinkObj = z.object({
+  route_id: idSchema,
+  regenerate: z.boolean().optional(),
+});
+
+// ---- Public volunteer path (token is the only credential) ------------------
+// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
+export const PublicStopActionObj = z.object({
+  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
+export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
+export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
+export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
+export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
+export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
+export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
+export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
+export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
+export type ReorderStopType = z.infer<typeof ReorderStopObj>;
+export type ReorderStopsType = z.infer<typeof ReorderStopsObj>;
+export type StopActionType = z.infer<typeof StopActionObj>;
+export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
+export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
+````
+
 ## File: libs/common/src/lib/schemas/donations.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -9298,6 +8647,152 @@ export const STRIPE_CONNECT_COUNTRY_CODES = STRIPE_CONNECT_COUNTRIES.map((c) => 
 ];
 export const stripeConnectCountrySchema = z.enum(STRIPE_CONNECT_COUNTRY_CODES);
 export type StripeConnectCountry = z.infer<typeof stripeConnectCountrySchema>;
+````
+
+## File: libs/common/src/lib/schemas/events.schema.ts
+````typescript
+import { z } from 'zod';
+import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
+
+const slugSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(
+    /^(?=.*[a-z])[a-z0-9-]+$/,
+    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
+  );
+
+export const AddEventObj = z.object({
+  /** Campaigns §15 — the context this event belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: nameSchema('Event name', 200),
+  description: descriptionSchema(2000),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
+  start_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'Start date & time is required' }),
+  ),
+  end_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'End date & time is required' }),
+  ),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  slug: slugSchema,
+  is_published: z.boolean().default(false).optional(),
+  send_reminder: z.boolean().default(true).optional(),
+  send_registration_confirmation: z.boolean().default(true).optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+export const EventObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  location_address: z.string().nullable().optional(),
+  start_time: z.coerce.date(),
+  end_time: z.coerce.date(),
+  capacity: z.number().nullable().optional(),
+  contact_email: z.string().nullable().optional(),
+  contact_phone: z.string().nullable().optional(),
+  slug: z.string(),
+  is_published: z.boolean(),
+  send_reminder: z.boolean(),
+  send_registration_confirmation: z.boolean(),
+});
+
+export const UpdateEventObj = z.object({
+  name: nameSchema('Event name', 200).optional(),
+  description: descriptionSchema(2000),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
+  start_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'Start date & time is required' }),
+    )
+    .optional(),
+  end_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'End date & time is required' }),
+    )
+    .optional(),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  slug: slugSchema.optional(),
+  is_published: z.boolean().optional(),
+  send_reminder: z.boolean().optional(),
+  send_registration_confirmation: z.boolean().optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+export const AddTicketTypeObj = z.object({
+  event_id: idSchema,
+  name: nameSchema('Ticket type name', 100),
+  description: descriptionSchema(500),
+  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
+  capacity: z.number().int().positive().nullable().optional(),
+  sort_order: z.number().int().min(0).default(0).optional(),
+});
+
+export const TicketTypeObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  event_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  price_cents: z.number(),
+  capacity: z.number().nullable().optional(),
+  sort_order: z.number(),
+});
+
+export const UpdateTicketTypeObj = z.object({
+  name: nameSchema('Ticket type name', 100).optional(),
+  description: descriptionSchema(500),
+  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
+  capacity: z.number().int().positive().nullable().optional(),
+  sort_order: z.number().int().min(0).optional(),
+});
+
+// Drag-to-reorder ticket types: the full new order of an event's ticket type ids. The backend
+// writes each id's sort_order to its index, so the order shown to attendees matches the form.
+export const ReorderTicketTypesObj = z.object({
+  event_id: idSchema,
+  ordered_ids: z.array(idSchema).min(1, 'Provide the new ticket order'),
+});
+
+const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
+
+export const AddRegistrationObj = z.object({
+  event_id: idSchema,
+  person_id: idSchema,
+  ticket_type_id: idSchema.nullable().optional(),
+  status: registrationStatusEnum.default('registered').optional(),
+  notes: notesSchema,
+});
+
+export const RegistrationObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  event_id: z.string(),
+  person_id: z.string(),
+  ticket_type_id: z.string().nullable().optional(),
+  status: registrationStatusEnum,
+  checked_in_at: z.coerce.date().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export const UpdateRegistrationObj = z.object({
+  ticket_type_id: idSchema.nullable().optional(),
+  status: registrationStatusEnum.optional(),
+  checked_in_at: z.coerce.date().nullable().optional(),
+  notes: notesSchema,
+});
 ````
 
 ## File: libs/common/src/lib/schemas/marketing.schema.ts
@@ -9480,6 +8975,174 @@ export const CreateClickersListResultObj = z.object({
 });
 ````
 
+## File: libs/common/src/lib/schemas/newsletter-templates.schema.ts
+````typescript
+import { z } from 'zod';
+
+import { nameSchema } from './core.schema';
+
+/** Generous ceiling for a compiled email document (the presets are ~15 KB). */
+const MAX_TEMPLATE_HTML_LENGTH = 500_000;
+const MAX_TEMPLATE_TEXT_LENGTH = 200_000;
+
+/**
+ * Create payload for a user-saved newsletter template.
+ *
+ * html_content is deliberately NOT trimmed or transformed: the wizard stores the
+ * compiled document verbatim so the PPLCRM_VISUAL_BLOCKS_DATA comment survives
+ * the round-trip back into the visual editor. Emptiness is checked on the
+ * trimmed view only.
+ */
+export const AddNewsletterTemplateObj = z.object({
+  name: nameSchema('Name', 120),
+  html_content: z
+    .string()
+    .max(MAX_TEMPLATE_HTML_LENGTH)
+    .refine((value) => value.trim().length > 0, 'Template content is required'),
+  plain_text_content: z.string().max(MAX_TEMPLATE_TEXT_LENGTH).optional(),
+});
+
+/** Rename-only edit payload; the content of a saved template is immutable. */
+export const UpdateNewsletterTemplateObj = z.object({
+  name: nameSchema('Name', 120),
+});
+
+/** Read shape returned by newsletters.templates.getAll. */
+export const NewsletterTemplateObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  html_content: z.string(),
+  plain_text_content: z.string(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export type AddNewsletterTemplateType = z.infer<typeof AddNewsletterTemplateObj>;
+export type UpdateNewsletterTemplateType = z.infer<typeof UpdateNewsletterTemplateObj>;
+export type NewsletterTemplateType = z.infer<typeof NewsletterTemplateObj>;
+````
+
+## File: libs/common/src/lib/schemas/tasks.schema.ts
+````typescript
+import { z } from 'zod';
+import { nameSchema, notesSchema, idSchema } from './core.schema';
+
+/**
+ * Canonical task status vocabulary (spec §4). This is the single source of truth —
+ * every layer (DB check constraint, Zod schemas, backend queries, frontend board/list)
+ * derives from this list. Do not hand-roll a parallel status array anywhere.
+ *
+ * `waiting` replaces the old `blocked` name (board column is "Waiting", with an
+ * optional waiting-reason line on the card/row). `archived` absorbs the old `canceled`
+ * state — a canceled task is, in practice, a task nobody is coming back to, which is
+ * exactly what "archived" already means in this app (hidden from the active views,
+ * reachable via the grid's Archived toggle). See the 2026-07-07 migration that
+ * normalizes existing rows to this vocabulary.
+ */
+export const TASK_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'archived'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/** The four board columns (spec §4) — `archived` sits outside the active workflow. */
+export const TASK_BOARD_STATUSES = ['todo', 'in_progress', 'waiting', 'done'] as const;
+export type TaskBoardStatus = (typeof TASK_BOARD_STATUSES)[number];
+
+/** Statuses that count as "open" for SLA-breach and count-sentence purposes. */
+export const TASK_OPEN_STATUSES = ['todo', 'in_progress', 'waiting'] as const;
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: 'To do',
+  in_progress: 'In progress',
+  waiting: 'Waiting',
+  done: 'Done',
+  archived: 'Archived',
+};
+
+/** Type guard — narrows an unknown/loosely-typed status string to the canonical vocabulary. */
+export function isTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
+}
+
+/** Type guard for the four board columns specifically (excludes `archived`). */
+export function isTaskBoardStatus(value: unknown): value is TaskBoardStatus {
+  return typeof value === 'string' && (TASK_BOARD_STATUSES as readonly string[]).includes(value);
+}
+
+const taskStatusEnum = z.enum(TASK_STATUSES);
+const taskPriorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
+
+export const AddTaskObj = z.object({
+  name: nameSchema('Task name', 200),
+  details: z.string().trim().max(10000, 'Details too long').optional(),
+  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  status: taskStatusEnum.default('todo').optional(),
+  priority: taskPriorityEnum.optional(),
+  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  position: z.number().int().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  team_id: idSchema.or(z.literal('')).nullable().optional(),
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+});
+
+export const TasksObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  details: z.string().optional(),
+  due_at: z.coerce.date().optional(),
+  status: taskStatusEnum.nullable().optional(),
+  priority: taskPriorityEnum.nullable().optional(),
+  completed_at: z.coerce.date().optional(),
+  position: z.number().int().optional(),
+  assigned_to: z.string().nullable().optional(),
+  team_id: z.string().nullable().optional(),
+  person_id: z.string().nullable().optional(),
+});
+
+export const UpdateTaskObj = z.object({
+  name: nameSchema('Task name', 200).optional(),
+  details: notesSchema,
+  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  status: taskStatusEnum.optional(),
+  priority: taskPriorityEnum.optional(),
+  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  position: z.number().int().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  team_id: idSchema.or(z.literal('')).nullable().optional(),
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+});
+
+/**
+ * Board drag-and-drop persistence (spec §4). One drop touches one or two board
+ * columns: dragging within a column re-seats that single column; dragging across
+ * two columns re-seats the source and target. Each column lists its cards in the
+ * new top-to-bottom order — the backend writes `position = index` per id and sets
+ * every id's `status` to its column, all in one transaction. `archived` is not a
+ * board column, so only the four `TASK_BOARD_STATUSES` are accepted.
+ */
+export const ReorderTasksObj = z.object({
+  columns: z
+    .array(
+      z.object({
+        status: z.enum(TASK_BOARD_STATUSES),
+        ids: z.array(idSchema).min(1, 'A column must list at least one task').max(1000, 'Too many tasks in one column'),
+      }),
+    )
+    .min(1, 'At least one column is required')
+    .max(2, 'A single drop touches at most two columns'),
+});
+
+/** Subtask drag-to-reorder (task detail): the full ordered id list for one task. */
+export const ReorderSubtasksObj = z.object({
+  task_id: idSchema,
+  ids: z.array(idSchema).min(1, 'At least one subtask is required').max(1000, 'Too many subtasks'),
+});
+
+export type ReorderTasksType = z.infer<typeof ReorderTasksObj>;
+export type ReorderSubtasksType = z.infer<typeof ReorderSubtasksObj>;
+````
+
 ## File: libs/common/src/lib/schemas/workflows.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -9487,11 +9150,12 @@ import { queryBuilderNodeSchema } from './core.schema';
 
 // Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
 // backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
-// volunteer-events controller) but is not offered as a card. `date_arrives` and
-// `task_sla_breach` stay in the enum for saved-row back-compat but have no picker card:
-// no backend fires them yet, and a dead card is dishonest UI. `supporter_lapsed` is fired
-// by the daily detect_lapsed_supporters cron; its trigger_event_id holds the inactivity
-// threshold in days (default 90).
+// volunteer-events controller) but is not offered as a card. `date_arrives` stays in the
+// enum for saved-row back-compat but has no picker card: no backend fires it yet, and a
+// dead card is dishonest UI. `task_sla_breach` is fired by the hourly
+// detect_task_sla_breaches cron (spec §4 → §16), which enrolls the breached task's linked
+// person. `supporter_lapsed` is fired by the daily detect_lapsed_supporters cron; its
+// trigger_event_id holds the inactivity threshold in days (default 90).
 export const WORKFLOW_TRIGGER_TYPES = [
   'manual',
   'web_form_submitted',
@@ -9653,6 +9317,251 @@ export const WorkflowRunObj = z.object({
 });
 
 export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
+````
+
+## File: libs/common/src/lib/models.ts
+````typescript
+import type { z } from 'zod';
+
+import type {
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  AddTeamObj,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  EmailCommentObj,
+  EmailFolderObj,
+  EmailObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  NewsletterReportObj,
+  NewsletterReportBounceObj,
+  NewsletterReportEngagedObj,
+  NewsletterReportLinkObj,
+  NewsletterReportPreviousSendObj,
+  CreateClickersListResultObj,
+  EmailDraftObj,
+  PersonsObj,
+  SettingsEntryObj,
+  SettingsObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  ListsObj,
+  UpdateMarketingEmailObj,
+  UpdateListObj,
+  UpdateTaskObj,
+  UpdateTeamObj,
+  TasksObj,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  sortModelItem,
+  InviteAuthUserObj,
+  ProfilePreferencesObj,
+  UpdateAuthUserObj,
+  Verify2FAObj,
+  ImportListItemObj,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+} from './schema';
+
+export interface INow {
+  now: string;
+}
+
+export type AddTagType = z.infer<typeof AddTagObj>;
+
+export type EmailCommentType = z.infer<typeof EmailCommentObj>;
+
+export type EmailFolderType = z.infer<typeof EmailFolderObj>;
+
+export type EmailType = z.infer<typeof EmailObj>;
+
+export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
+
+export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
+
+export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
+
+export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
+
+export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
+
+export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
+
+export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
+
+export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
+
+export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
+
+export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
+
+export type EmailDraftType = z.infer<typeof EmailDraftObj>;
+
+export type ImportListItem = z.infer<typeof ImportListItemObj>;
+
+export type PERSONINHOUSEHOLDTYPE = {
+  first_name: string;
+  full_name: string;
+  id: string;
+  last_name: string;
+  middle_names: string;
+};
+
+export type PersonsType = z.infer<typeof PersonsObj>;
+
+export type SettingsType = z.infer<typeof SettingsObj>;
+
+export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
+
+export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
+
+export type SortModelType = z.infer<typeof sortModelItem>;
+
+export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
+
+export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
+
+export type UpdateTagType = z.infer<typeof UpdateTagObj>;
+
+export type getAllOptionsType = z.infer<typeof getAllOptions>;
+
+export type AddListType = z.infer<typeof AddListObj>;
+
+export type AddCampaignType = z.infer<typeof AddCampaignObj>;
+
+export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
+
+export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
+
+export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
+
+export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
+
+export type AddTeamType = z.infer<typeof AddTeamObj>;
+
+export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
+
+export type Verify2FAType = z.infer<typeof Verify2FAObj>;
+
+export type ListsType = z.infer<typeof ListsObj>;
+
+export type UpdateListType = z.infer<typeof UpdateListObj>;
+
+export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
+
+export type AddTurfType = z.infer<typeof AddTurfObj>;
+
+export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
+
+export type CutTurfsType = z.infer<typeof CutTurfsObj>;
+
+export type AssignTurfType = z.infer<typeof AssignTurfObj>;
+
+export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
+
+export type LogKnockType = z.infer<typeof LogKnockObj>;
+
+export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
+
+export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
+
+export type AddTaskType = z.infer<typeof AddTaskObj>;
+export type TasksType = z.infer<typeof TasksObj>;
+export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
+export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
+export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
+export type QueueExportInputType = z.infer<typeof queueExportInput>;
+export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
+export type DataExportRecordType = z.infer<typeof dataExportRecord>;
+
+export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
+export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
+export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
+
+export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
+export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
+export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
+
+export type AddWebFormType = z.infer<typeof AddWebFormObj>;
+export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
+export type WebFormsType = z.infer<typeof WebFormsObj>;
+export type CreateFormType = z.infer<typeof CreateFormObj>;
+export type UpdateFormType = z.infer<typeof UpdateFormObj>;
+export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
+
+export type WorkflowsType = z.infer<typeof WorkflowObj>;
+export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
+export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
+export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
+export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
+export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
+export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
+
+export type AddEventType = z.infer<typeof AddEventObj>;
+export type EventType = z.infer<typeof EventObj>;
+export type UpdateEventType = z.infer<typeof UpdateEventObj>;
+
+export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
+export type TicketTypeType = z.infer<typeof TicketTypeObj>;
+export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
+export type ReorderTicketTypesType = z.infer<typeof ReorderTicketTypesObj>;
+
+export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
+export type RegistrationType = z.infer<typeof RegistrationObj>;
+export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
+
+export type AddConnectionType = z.infer<typeof AddConnectionObj>;
+
+export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 ````
 
 ## File: libs/common/src/lib/preflight-lint.ts
@@ -10113,34 +10022,6 @@ export function computeScore(findings: PreflightFinding[]): number {
   const total = findings.reduce((sum, f) => sum + f.deduction, 0);
   return Math.max(0, Math.min(100, Math.round(100 - total)));
 }
-````
-
-## File: libs/common/src/lib/schema.ts
-````typescript
-export * from './schemas/core.schema';
-export * from './schemas/activity.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/newsletter-templates.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
-export * from './schemas/campaigns.schema';
-export * from './schemas/canvassing.schema';
-export * from './schemas/deliveries.schema';
-export * from './schemas/donations.schema';
-export * from './schemas/companion-access.schema';
-export * from './schemas/content-check.schema';
 ````
 
 ## File: libs/common/vite.config.ts
@@ -11041,6 +10922,100 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
 ];
 ````
 
+## File: libs/common/src/lib/help/articles/productivity.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
+  {
+    id: 'tasks',
+    category: 'productivity',
+    title: 'Tasks: list and board',
+    summary:
+      'Track the work: assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
+    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
+    related: ['dashboard', 'teams', 'automations'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tasks capture commitments: call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
+      },
+      { kind: 'h2', id: 'views', text: 'List or board: one dataset, two views' },
+      {
+        kind: 'list',
+        items: [
+          '[Tasks](/tasks) is the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
+          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. Drag a card to another column to change its status, or drag it up and down within a column to set the order you want; the order sticks. Prefer the keyboard? The ‹ › buttons on a card still move it one column and dim at either end of the row. Jump to the board anytime with `g` then `b`.',
+          'Every header carries a swap button (Open board / Open list), so you never have to hunt for the sidebar to switch.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly. A card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
+      },
+      {
+        kind: 'p',
+        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. Break the work into subtasks and drag them by the handle on the left of each row to reorder them. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
+      },
+      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
+      {
+        kind: 'list',
+        items: [
+          'A task with no assignee shows a dashed Unassigned pill. One click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
+          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup. See [The dashboard and SLA health](/help/dashboard).",
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Tasks come from everywhere',
+        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one; "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'files',
+    category: 'productivity',
+    title: 'Storage & attachments',
+    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
+    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
+    related: ['grid-basics', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Files no longer live in their own standalone library. A file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
+      },
+      { kind: 'h2', id: 'attach', text: 'Attach a file' },
+      {
+        kind: 'p',
+        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
+      },
+      { kind: 'h2', id: 'storage', text: 'Check total usage' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Workspace settings → Storage](/workspace/storage)',
+            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
+          },
+          {
+            title: 'Delete a large file',
+            detail:
+              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Quota affects newsletter sending',
+        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments. Free up space first if attachments matter for that send.',
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/schemas/content-check.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -11147,6 +11122,34 @@ export const PreflightResultObj = z.object({
   checkedAt: z.string(),
 });
 export type PreflightResult = z.infer<typeof PreflightResultObj>;
+````
+
+## File: libs/common/src/lib/schema.ts
+````typescript
+export * from './schemas/core.schema';
+export * from './schemas/activity.schema';
+export * from './schemas/auth.schema';
+export * from './schemas/tags.schema';
+export * from './schemas/lists.schema';
+export * from './schemas/teams.schema';
+export * from './schemas/emails.schema';
+export * from './schemas/marketing.schema';
+export * from './schemas/newsletter-templates.schema';
+export * from './schemas/persons.schema';
+export * from './schemas/settings.schema';
+export * from './schemas/tasks.schema';
+export * from './schemas/volunteer.schema';
+export * from './schemas/web-forms.schema';
+export * from './schemas/workflows.schema';
+export * from './schemas/companies.schema';
+export * from './schemas/events.schema';
+export * from './schemas/connections.schema';
+export * from './schemas/campaigns.schema';
+export * from './schemas/canvassing.schema';
+export * from './schemas/deliveries.schema';
+export * from './schemas/donations.schema';
+export * from './schemas/companion-access.schema';
+export * from './schemas/content-check.schema';
 ````
 
 ## File: libs/common/src/lib/billing/currency.ts
@@ -12740,6 +12743,10 @@ export interface Tasks extends RecordType {
   assigned_to: string | null;
   team_id: string | null;
   file_id: string | null;
+  /** Optional link to the contact the task is about — the person the task_sla_breach automation enrolls. */
+  person_id: string | null;
+  /** Once-only marker: when the hourly scan first found this task past its working-hours SLA target. */
+  sla_breached_at: Timestamp | null;
 }
 
 // Unlike every other record table, tenants.createdby_id is NULLABLE in the schema — the tenant
@@ -13329,6 +13336,10 @@ export interface WorkflowRuns {
    * webhook via the workflow_run_id custom arg). Step conditions and exit goals read these. */
   opened_at: Timestamp | null;
   clicked_at: Timestamp | null;
+  /** First hard bounce / spam complaint for the automation email this run sent (stamped by the
+   * same webhook). The automation abuse tripwires aggregate these per tenant. */
+  bounced_at: Timestamp | null;
+  spam_reported_at: Timestamp | null;
   created_at: Generated<Timestamp>;
 }
 
@@ -13509,7 +13520,6 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       'communications',
       'appearance',
       'billing',
-      'integrations',
       'sla settings',
       'workspace',
     ],
@@ -13539,7 +13549,6 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
           '**Teams & access**: default role for invitations and the MFA requirement.',
           '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
           '**Appearance**: default theme and date format for the workspace.',
-          '**Integrations & API**: webhook keys and connected services.',
           '**Billing**: your plan, live usage, and payment details.',
         ],
       },
@@ -13553,7 +13562,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         items: [
           '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
           '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
-          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
+          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus priority support.',
           '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
         ],
       },
@@ -14071,7 +14080,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching its SLA (the person the task is linked to enrolls), a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
           '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
           '**Email conditions**: from the second email on, a Send email step can be gated on what the person did with the previous email in the sequence, for example **Only if they didn’t open the previous email**. Put a Wait before a conditioned email so people have time to engage; a skipped step shows as a neutral **Skipped** with the reason.',
           '**End early when** sets sequence goals on the right rail: end the sequence the moment they donate, open any email in it, or click any email in it. Someone who converts stops getting the rest of the asks.',
@@ -14120,6 +14129,596 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         tone: 'tip',
         title: 'Every run is logged',
         text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/billing/plans.ts
+````typescript
+/**
+ * Subscription plans — the single source of truth for tiers, prices and limits.
+ *
+ * Consumed by:
+ *  - backend enforcement  (modules/billing/usage-limits.ts, controller.ts, trpc.router.ts)
+ *  - the CRM billing page (experiences/settings/billing)
+ *  - the marketing website pricing page + home teaser
+ *
+ * Pricing model (decision log, 2026-07-14 — supersedes the flat-price 5-column model):
+ *  - Three FEATURE tiers (Free / Grassroots / Movement). Which tier you're on is a feature
+ *    decision. Within a tier, PRICE scales smoothly by emailable-subscriber bracket instead of
+ *    stair-stepping between tiers — the old model jumped a customer 3.4× (Starter $29 →
+ *    Representative $99) the moment they crossed one subscriber count. `representative` is
+ *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
+ *    including Free; forms, donations, automations, lists (segments) and volunteer management
+ *    (teams & events) are the paid step-up (Grassroots and up); the field-ops surface — both
+ *    companion apps (canvassing & deliveries), companion volunteer access & monitoring, yard
+ *    signs, turf cutting, walk lists & routes, field reports, route optimization — is
+ *    Movement-only.
+ *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
+ *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
+ *    can actually email. This is the differentiator vs. contact-metered tools.
+ *  - Stripe never learns about "subscribers" — each purchasable tier has ONE graduated Stripe
+ *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
+ *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
+ *    data; Stripe just multiplies quantity by its graduated unit amounts.
+ *  - Emails/month = 8× the bracket's subscriber cap on Grassroots (between Mailchimp
+ *    Essentials' 10× and a weekly-send cadence) and 12× on Movement (matches Mailchimp
+ *    Standard / Constant Contact Standard so the flagship spec-sheet line shows no smaller).
+ *    Free keeps 2×. Enforced at send time since 2026-07-18 (send-guards.ts monthly allowance),
+ *    not just alerted on.
+ *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
+ *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
+ *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
+ *    Movement-only. (Revised 2026-07-16: companion volunteer access itself moved to
+ *    Movement-only. On Grassroots it was a dead grant — volunteer links are minted only by
+ *    turf assignments and delivery routes, both Movement-gated — so the old "15 volunteers"
+ *    could never be used. Staff-side volunteer management — teams & volunteer events — stays
+ *    Grassroots.)
+ *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
+ *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
+ *  - All prices are USD.
+ *  - Annual billing (added 2026-07-18): each purchasable tier also has a yearly Stripe price at
+ *    exactly 10× the monthly unit amounts — "2 months free" (`ANNUAL_PRICE_MULTIPLIER`). The
+ *    graduated ladder is linear in quantity, so 10× holds at every bracket and the whole
+ *    quantity-as-bracket-index mechanism carries over unchanged. Display is the monthly
+ *    equivalent rounded to the nearest dollar, with the EXACT annual total always alongside
+ *    plus a rounding disclaimer ("$24 per month, billed annually as $290") — the checkable
+ *    number is the annual total, which is what's actually charged. The website pricing page
+ *    defaults to Annual (marketing convention: 2026-07-18); the in-app billing page keeps
+ *    Monthly as its default (electoral campaigns end in November — don't nudge existing
+ *    customers into prepay). Mid-year bracket GROWTH on an annual subscription is
+ *    invoiced prorated immediately (see backend subscription-sync.ts); downgrades still defer
+ *    to renewal on both intervals. Send/usage caps stay MONTHLY regardless of billing interval.
+ *
+ * Market calibration (competitive research 2026-07-14; final ladder locked 2026-07-15, monthly
+ * billing): Grassroots beats every full-suite competitor at every count — $69 vs $75 (Mailchimp
+ * Essentials) at 5k, $89 vs $110 at 10k, $129 vs $230 at 20k, $219 vs beehiiv Scale's $199 at
+ * 50k is the one near-miss (beehiiv is newsletter-only). Movement beats Mailchimp Standard at
+ * every count — $125 vs $100 at 5k is the exception early on, but $195 vs $230 at 15k,
+ * $365 vs $450 at 50k, $565 vs $800 at 100k. Roughly 1.8× Grassroots at every bracket —
+ * "cheapest full-featured option" rather than "suspiciously cheap".
+ *
+ * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
+ * `quantity` = the bracket index from `bracketIndexForSubscribers`):
+ *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 7, unit_amount: 2000 }, { up_to: 'inf', unit_amount: 7000 }]
+ *    → qty 1 = $29, qty 2–7 add $20/step (→ $149), qty 8–10 add $70/step (→ $359; the
+ *    piecewise step change at the 25,000-subscriber boundary — see GRASSROOTS_BRACKETS below).
+ *  - Movement: [{ up_to: 1, unit_amount: 5500 }, { up_to: 7, unit_amount: 3500 }, { up_to: 'inf', unit_amount: 10000 }]
+ *    → qty 1 = $55, qty 2–7 add $35/step (→ $265), qty 8–11 add $100/step (→ $665; same
+ *    piecewise step change at the 25,000-subscriber boundary — see MOVEMENT_BRACKETS below).
+ *  - Grassroots annual (interval = year): [{ up_to: 1, unit_amount: 29000 }, { up_to: 7, unit_amount: 20000 }, { up_to: 'inf', unit_amount: 70000 }]
+ *  - Movement annual (interval = year): [{ up_to: 1, unit_amount: 55000 }, { up_to: 7, unit_amount: 35000 }, { up_to: 'inf', unit_amount: 100000 }]
+ *    (exactly 10× the monthly unit amounts. Same graduated shape, same quantity semantics,
+ *    exclusive tax on the price. Created 2026-07-18 in BOTH modes — test-mode IDs are set in
+ *    .env.production, live-mode IDs are in its comments for the launch swap. A default billing
+ *    portal configuration with subscription_update enabled (price switches only, proration
+ *    always_invoice) exists in test mode so monthly customers can self-switch to annual; the
+ *    live-mode portal needs the same configuration at launch alongside the sk_live swap.)
+ *
+ * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
+ * price IDs. Display names are intentionally allowed to differ from keys, but here they are
+ * kept aligned (`grassroots`→"Grassroots", `movement`→"Movement", …) except the free key,
+ * which presents as "Free" (renamed from "Starter" in the 2026-07-14 overhaul —
+ * `LEGACY_PLAN_ALIASES` resolves stale `starter` values written before the rename).
+ */
+
+export const GB = 1024 * 1024 * 1024;
+
+/** Every plan key that can appear in `tenants.subscription_plan`. */
+export type PlanKey = 'free' | 'grassroots' | 'movement' | 'enterprise';
+
+/** Paid plans bought via self-serve Stripe checkout (excludes free and contact-sales enterprise). */
+export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'movement'] as const;
+export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
+
+/** Billing intervals a purchasable plan can be bought on. Monthly is the default everywhere;
+ * annual is 10× the monthly bracket price — "2 months free". */
+export const BILLING_INTERVALS = ['month', 'year'] as const;
+export type BillingInterval = (typeof BILLING_INTERVALS)[number];
+
+/** Months a customer doesn't pay for on annual billing — the marketing claim "2 months free". */
+export const ANNUAL_MONTHS_FREE = 2;
+
+/** Annual price = monthly bracket price × this. Derived from ANNUAL_MONTHS_FREE so the
+ * marketing claim and the multiplier can't drift apart. */
+export const ANNUAL_PRICE_MULTIPLIER = 12 - ANNUAL_MONTHS_FREE;
+
+/** One row of a tier's price ladder. `upTo` is the inclusive emailable-subscriber cap; the
+ * bracket's position in `TierPricing.brackets` (1-based) is the Stripe `quantity` billed for it. */
+export interface PriceBracket {
+  /** Emailable-subscriber cap of this bracket (inclusive). */
+  readonly upTo: number;
+  /** USD/month at this bracket (annual billing charges ×`ANNUAL_PRICE_MULTIPLIER` per year). */
+  readonly price: number;
+}
+
+/** A purchasable (or free) tier's full price ladder. `null` on `PlanDef.pricing` means the
+ * tier has no ladder at all — currently only `enterprise` (custom, negotiated pricing). */
+export interface TierPricing {
+  /** Ascending by `upTo`. Index + 1 = the Stripe `quantity` for that bracket; the last
+   * bracket's `upTo` is the tier's hard subscriber max. */
+  readonly brackets: readonly PriceBracket[];
+  /** Monthly send cap = this × the current bracket's `upTo` (12 on paid tiers, 2 on Free). */
+  readonly emailsPerSubscriber: number;
+}
+
+export interface PlanDef {
+  readonly key: PlanKey;
+  /** Customer-facing name (may differ from key). */
+  readonly name: string;
+  /** Display cadence, e.g. 'per month' / 'forever' / 'contact us'. */
+  readonly cadence: string;
+  readonly blurb: string;
+  /** Bracket price ladder. `null` = enterprise custom pricing (no ladder, no Stripe quantity). */
+  readonly pricing: TierPricing | null;
+  /** File-storage quota in bytes. null = unlimited / custom. */
+  readonly storageBytes: number | null;
+  /** Included staff seats. null = unlimited. */
+  readonly seats: number | null;
+  /** Included companion volunteers. 0 = none, null = unlimited. */
+  readonly volunteers: number | null;
+  /** Bought via self-serve Stripe checkout (false for free + enterprise). */
+  readonly purchasable: boolean;
+  /** Highlighted as the recommended tier. */
+  readonly featured: boolean;
+  /** Shown as a priced column on pricing surfaces (false = enterprise, footnote-only). */
+  readonly displayed: boolean;
+  /** Marketing feature bullets shown on app-side billing cards (see FEATURE_MATRIX below for
+   * the website's comparison-table view of the same feature split — keep both in sync). */
+  readonly features: readonly string[];
+}
+
+/**
+ * Grassroots ladder (final 2026-07-15 pricing) — $29 ≤1,000, +$20/bracket through 25,000, then
+ * +$70/bracket to the 100,000 tier max (10 brackets). Bracket widths are non-uniform (1k → 2.5k
+ * → 5k-wide steps → 25k-wide steps), so the ladder is spelled out literally rather than
+ * generated. Price deltas stay Stripe-graduatable: +$20 ×6, then +$70 ×3 (see Stripe ops above).
+ */
+const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
+  { upTo: 1_000, price: 29 },
+  { upTo: 2_500, price: 49 },
+  { upTo: 5_000, price: 69 },
+  { upTo: 10_000, price: 89 },
+  { upTo: 15_000, price: 109 },
+  { upTo: 20_000, price: 129 },
+  { upTo: 25_000, price: 149 },
+  { upTo: 50_000, price: 219 },
+  { upTo: 75_000, price: 289 },
+  { upTo: 100_000, price: 359 },
+];
+
+/**
+ * Movement ladder (final 2026-07-15 pricing) — $55 ≤1,000, +$35/bracket through 25,000, then
+ * +$100/bracket to the 200,000 tier max (11 brackets). Same stops as Grassroots plus a final
+ * 200,000 bracket; roughly 1.8× Grassroots at every shared stop. Price deltas stay
+ * Stripe-graduatable: +$35 ×6, then +$100 ×4 (see Stripe ops above).
+ */
+const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
+  { upTo: 1_000, price: 55 },
+  { upTo: 2_500, price: 90 },
+  { upTo: 5_000, price: 125 },
+  { upTo: 10_000, price: 160 },
+  { upTo: 15_000, price: 195 },
+  { upTo: 20_000, price: 230 },
+  { upTo: 25_000, price: 265 },
+  { upTo: 50_000, price: 365 },
+  { upTo: 75_000, price: 465 },
+  { upTo: 100_000, price: 565 },
+  { upTo: 200_000, price: 665 },
+];
+
+export const PLANS: readonly PlanDef[] = [
+  {
+    key: 'free',
+    name: 'Free',
+    cadence: 'forever',
+    blurb: 'For getting your bearings and running a small list.',
+    pricing: { brackets: [{ upTo: 1_000, price: 0 }], emailsPerSubscriber: 2 },
+    storageBytes: 1 * GB,
+    seats: 2,
+    volunteers: 0,
+    purchasable: false,
+    featured: false,
+    displayed: true,
+    features: [
+      'Unlimited contacts & households',
+      'Demo workspace with sample data',
+      'Up to 1,000 email subscribers',
+      '2,000 emails / month',
+      '2 staff seats · 1 GB storage',
+      'Shared inbox, people CRM & CSV import/export',
+      'Newsletters, templates, scheduling & dynamic content',
+      'AI deliverability check on every newsletter',
+      'Custom reports, role-based access & 300+ integrations',
+      'Community support',
+    ],
+  },
+  {
+    key: 'grassroots',
+    name: 'Grassroots',
+    cadence: 'per month',
+    blurb: 'For a local candidate or small campaign getting to work.',
+    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 8 },
+    storageBytes: 10 * GB,
+    seats: 5,
+    volunteers: 0,
+    purchasable: true,
+    featured: false,
+    displayed: true,
+    features: [
+      'Everything in Free, plus:',
+      'Scales smoothly from $29/month as your list grows',
+      'Save 2 months with annual billing',
+      'Up to 100,000 email subscribers · 8× emails/month',
+      '5 staff seats · 10 GB storage',
+      'Forms & donations',
+      'Automations & lists (segments)',
+      'Volunteer management (teams & events)',
+      'Email support',
+    ],
+  },
+  {
+    key: 'movement',
+    name: 'Movement',
+    cadence: 'per month',
+    blurb: 'For a large campaign or advocacy operation at full tilt.',
+    pricing: { brackets: MOVEMENT_BRACKETS, emailsPerSubscriber: 12 },
+    storageBytes: 200 * GB,
+    seats: null,
+    volunteers: null,
+    purchasable: true,
+    featured: true,
+    displayed: true,
+    features: [
+      'Everything in Grassroots, plus:',
+      'Scales smoothly from $55/month as your list grows',
+      'Save 2 months with annual billing',
+      'Up to 200,000 email subscribers · 12× emails/month',
+      'Unlimited staff seats & volunteers · 200 GB storage',
+      'Canvassing & deliveries companion apps',
+      'Companion volunteer access & field monitoring',
+      'Yard signs & route optimization',
+      'Turf cutting, walk lists & routes, field reports',
+      'Priority support & onboarding',
+    ],
+  },
+  {
+    key: 'enterprise',
+    name: 'Enterprise',
+    cadence: 'contact us',
+    blurb: 'For federations, parties and multi-office operations.',
+    pricing: null,
+    storageBytes: null,
+    seats: null,
+    volunteers: null,
+    purchasable: false,
+    featured: false,
+    displayed: false,
+    features: [
+      'Everything in Movement, plus:',
+      'Unlimited subscribers & sends',
+      'Multiple linked workspaces',
+      'Single sign-on (SSO)',
+      'Custom integrations',
+      'SLA support & guided onboarding',
+    ],
+  },
+];
+
+export const PLANS_BY_KEY: Record<PlanKey, PlanDef> = PLANS.reduce(
+  (acc, plan) => {
+    acc[plan.key] = plan;
+    return acc;
+  },
+  {} as Record<PlanKey, PlanDef>,
+);
+
+/** Stale plan values that must still resolve after the 2026-07-14 tier rename/retirement:
+ * `representative` (retired, features split into grassroots/movement — nearest fit is
+ * movement) and `starter` (renamed to `free`). Resolved case-insensitively by `getPlanDef`. */
+export const LEGACY_PLAN_ALIASES: Readonly<Record<string, PlanKey>> = {
+  representative: 'movement',
+  starter: 'free',
+};
+
+/** Resolve a (possibly mixed-case, possibly legacy) stored plan value to its definition. */
+export function getPlanDef(planName: string | null | undefined): PlanDef | undefined {
+  if (!planName) return undefined;
+  const key = planName.toLowerCase();
+  const resolvedKey = LEGACY_PLAN_ALIASES[key] ?? key;
+  return (PLANS_BY_KEY as Record<string, PlanDef | undefined>)[resolvedKey];
+}
+
+/** Customer-facing display name for a stored plan value (falls back to the raw value). */
+export function planDisplayName(planName: string | null | undefined): string {
+  return getPlanDef(planName)?.name ?? (planName ? planName : 'Free');
+}
+
+/**
+ * 1-based Stripe quantity for an emailable-subscriber count on the given plan, or `null` when
+ * the count exceeds the tier's max bracket (caller should treat this as "outgrown the tier").
+ * A count of 0 still bills quantity 1 (every purchasable plan has a non-zero minimum charge).
+ * Plans with no pricing ladder (enterprise) always return `null` — quantity is meaningless there.
+ */
+export function bracketIndexForSubscribers(key: PlanKey, count: number): number | null {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  if (!pricing) return null;
+  const normalizedCount = Math.max(count, 0);
+  const index = pricing.brackets.findIndex((bracket) => normalizedCount <= bracket.upTo);
+  return index === -1 ? null : index + 1;
+}
+
+/** The highest valid Stripe quantity (= number of brackets) for a plan. `Infinity` for plans
+ * with no pricing ladder (enterprise — no quantity ceiling applies). */
+export function maxQuantity(key: PlanKey): number {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  return pricing ? pricing.brackets.length : Infinity;
+}
+
+/** The price bracket for a given Stripe quantity, clamping `qty` into the valid `[1, maxQuantity]`
+ * range. Throws only if called against a plan with no pricing ladder (enterprise) — callers
+ * should guard with `PLANS_BY_KEY[key].pricing !== null` first; purchasable/free plans always
+ * have at least one bracket. */
+export function bracketForQuantity(key: PlanKey, qty: number): PriceBracket {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  if (!pricing) {
+    throw new Error(`plan "${key}" has no pricing ladder (enterprise is custom-priced)`);
+  }
+  const max = pricing.brackets.length;
+  const clampedIndex = Math.min(Math.max(qty, 1), max) - 1;
+  const bracket = pricing.brackets[clampedIndex];
+  if (!bracket) {
+    // Unreachable: clampedIndex is always within [0, brackets.length - 1] above.
+    throw new Error(`unreachable: no bracket at index ${clampedIndex} for plan "${key}"`);
+  }
+  return bracket;
+}
+
+/** Emailable-subscriber cap for a Stripe quantity on a plan. */
+export function subscriberCapForQuantity(key: PlanKey, qty: number): number {
+  return bracketForQuantity(key, qty).upTo;
+}
+
+/** Monthly email-send cap for a Stripe quantity on a plan (= subscriber cap × the plan's
+ * `emailsPerSubscriber` multiplier). */
+export function emailCapForQuantity(key: PlanKey, qty: number): number {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  const multiplier = pricing?.emailsPerSubscriber ?? 0;
+  return subscriberCapForQuantity(key, qty) * multiplier;
+}
+
+/** USD/month price for a Stripe quantity on a plan. */
+export function priceForQuantity(key: PlanKey, qty: number): number {
+  return bracketForQuantity(key, qty).price;
+}
+
+/** USD/year price for a Stripe quantity on a plan — exactly `ANNUAL_PRICE_MULTIPLIER`× the
+ * monthly bracket price ("2 months free"). */
+export function annualPriceForQuantity(key: PlanKey, qty: number): number {
+  return priceForQuantity(key, qty) * ANNUAL_PRICE_MULTIPLIER;
+}
+
+/** Monthly-equivalent of an annual USD total, rounded to the nearest whole dollar (290 → 24).
+ * The customer-facing framing for annual prices: "$24 per month, billed annually as $290" —
+ * surfaces that show it must keep the exact annual total alongside and carry the rounding
+ * disclaimer, since equivalent × 12 ≠ the billed total. */
+export function monthlyEquivalentUsd(annualUsd: number): number {
+  return Math.round(annualUsd / 12);
+}
+
+/** "$29" for whole dollars; tolerates cent amounts defensively ("$24.17"). */
+function usdLabel(amount: number): string {
+  return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
+}
+
+/** Cadence line for surfaces with a monthly/annual toggle. Non-purchasable plans keep their
+ * static cadence ('forever' / 'contact us'); paid plans read 'per month' or
+ * 'per month, billed annually'. */
+export function cadenceLabel(plan: PlanDef, interval: BillingInterval): string {
+  if (!plan.purchasable) return plan.cadence;
+  return interval === 'year' ? 'per month, billed annually' : plan.cadence;
+}
+
+/** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
+ * 'From $55' (movement), 'Custom' (enterprise). With `interval: 'year'`, paid plans show the
+ * rounded monthly-equivalent of the annual price, e.g. 'From $24'. */
+export function startingPriceLabel(plan: PlanDef, interval: BillingInterval = 'month'): string {
+  const usd = startingPriceUsd(plan, interval);
+  if (usd === null) return 'Custom';
+  return usd === 0 ? '$0' : `From ${usdLabel(usd)}`;
+}
+
+/** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
+ * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
+ * display currency (the marketing site's home teaser). With `interval: 'year'`, returns the
+ * rounded monthly-equivalent of the annual price. */
+export function startingPriceUsd(plan: PlanDef, interval: BillingInterval = 'month'): number | null {
+  if (!plan.pricing) return null;
+  const first = plan.pricing.brackets[0];
+  if (!first) {
+    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
+    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
+  }
+  if (interval === 'year') return monthlyEquivalentUsd(first.price * ANNUAL_PRICE_MULTIPLIER);
+  return first.price;
+}
+
+/** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
+ * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). With
+ * `interval: 'year'`, the label is the rounded monthly-equivalent of the annual price ('$58').
+ * Used by the website pricing slider and the frontend billing upgrade cards. */
+export function priceLabelAt(plan: PlanDef, subscribers: number, interval: BillingInterval = 'month'): string {
+  if (!plan.pricing) return 'Custom';
+  const index = bracketIndexForSubscribers(plan.key, subscribers);
+  if (index === null) return 'Contact us';
+  const monthly = priceForQuantity(plan.key, index);
+  if (interval === 'year') {
+    return usdLabel(monthlyEquivalentUsd(monthly * ANNUAL_PRICE_MULTIPLIER));
+  }
+  return usdLabel(monthly);
+}
+
+/** Capability ordering of the tiers — used by `planAllowsFeature` for min-plan gating. */
+const PLAN_RANK: Record<PlanKey, number> = { free: 0, grassroots: 1, movement: 2, enterprise: 3 };
+
+/**
+ * Server-enforced feature gates — the machine-readable core of FEATURE_MATRIX below (keep the
+ * two in sync when a feature moves between tiers). The backend's plan-gate middleware
+ * (apps/backend modules/billing/plan-gate.ts) blocks mutations in a gated module for tenants
+ * below the feature's minimum plan.
+ */
+export const GATED_FEATURES = {
+  forms: { minPlan: 'grassroots', label: 'Forms' },
+  donations: { minPlan: 'grassroots', label: 'Donations' },
+  automations: { minPlan: 'grassroots', label: 'Automations' },
+  lists: { minPlan: 'grassroots', label: 'Lists (segments)' },
+  volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
+  canvassing: { minPlan: 'movement', label: 'Canvassing' },
+  deliveries: { minPlan: 'movement', label: 'Deliveries' },
+  companions: { minPlan: 'movement', label: 'Companion volunteer access' },
+} as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
+
+export type GatedFeature = keyof typeof GATED_FEATURES;
+
+/** Whether a (possibly legacy/mixed-case) stored plan value includes a gated feature. */
+export function planAllowsFeature(planName: string | null | undefined, feature: GatedFeature): boolean {
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
+}
+
+/**
+ * Minimum plan for real (paid) household geocoding. Kept OUT of `GATED_FEATURES`/`FEATURE_MATRIX`
+ * deliberately: this is a backend cost control, not a marketed tRPC-module feature — the heavy
+ * geocoding consumers (canvassing turf-cutting, delivery routing) are already Movement-gated via
+ * `GATED_FEATURES`, and this just stops lower tiers from incurring Google Geocoding API spend on
+ * plain household map pins / ward enrichment. Mock/test geocoding is free and stays ungated.
+ */
+export const GEOCODING_MIN_PLAN: PlanKey = 'movement';
+
+/** Whether a stored plan value may incur real (paid) geocoding — Movement and up. See `GEOCODING_MIN_PLAN`. */
+export function planAllowsGeocoding(planName: string | null | undefined): boolean {
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return PLAN_RANK[plan.key] >= PLAN_RANK[GEOCODING_MIN_PLAN];
+}
+
+/**
+ * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
+ * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
+ * `features[]` bullet list (which drives the app-side billing cards): `features[]` is a short,
+ * narrative "everything in X, plus Y" list; `FEATURE_MATRIX` is an exhaustive row-by-row grid.
+ * They describe the same feature split from two different plan keys, so keep them in sync by
+ * hand when a feature moves between tiers — there is no single source both surfaces read from.
+ */
+export interface FeatureMatrixRow {
+  readonly label: string;
+  /** true = ✓, false = ✗, string = a text cell (e.g. "Up to 1,000", "2 seats"). */
+  readonly values: Readonly<Record<'free' | 'grassroots' | 'movement', boolean | string>>;
+}
+
+export interface FeatureMatrixGroup {
+  readonly category: string;
+  readonly rows: readonly FeatureMatrixRow[];
+}
+
+export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
+  {
+    category: 'Usage',
+    rows: [
+      {
+        label: 'Emailable subscribers',
+        values: { free: 'Up to 1,000', grassroots: 'Up to 100,000', movement: 'Up to 200,000' },
+      },
+      {
+        label: 'Emails / month',
+        values: { free: '2,000', grassroots: '8× your subscriber cap', movement: '12× your subscriber cap' },
+      },
+      { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
+      { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
+      { label: 'Companion volunteers', values: { free: '0', grassroots: '0', movement: 'Unlimited' } },
+    ],
+  },
+  {
+    category: 'Everything in every plan',
+    rows: [
+      { label: 'Unlimited contacts & households', values: { free: true, grassroots: true, movement: true } },
+      { label: 'People CRM + shared inbox', values: { free: true, grassroots: true, movement: true } },
+      { label: 'CSV import/export', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Newsletters', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Send from your own verified domain', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
+      { label: 'AI deliverability check on every send', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },
+      { label: '300+ integrations', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Demo workspace', values: { free: true, grassroots: true, movement: true } },
+    ],
+  },
+  {
+    category: 'Grow & engage',
+    rows: [
+      { label: 'Forms', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Donations', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
+      {
+        label: 'Volunteer management (teams & events)',
+        values: { free: false, grassroots: true, movement: true },
+      },
+    ],
+  },
+  {
+    category: 'Canvassing',
+    rows: [
+      { label: 'Canvassing companion app', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Turf cutting', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Walk lists & routes', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Field reports', values: { free: false, grassroots: false, movement: true } },
+    ],
+  },
+  {
+    category: 'Deliveries',
+    rows: [
+      { label: 'Deliveries companion app', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Yard sign requests', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Route optimization', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Delivery monitoring', values: { free: false, grassroots: false, movement: true } },
+    ],
+  },
+  {
+    category: 'Movement only',
+    rows: [
+      {
+        label: 'Companion volunteer access & monitoring',
+        values: { free: false, grassroots: false, movement: true },
+      },
+      {
+        label: 'Support',
+        values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
       },
     ],
   },
@@ -14574,8 +15173,6 @@ export {
   planAllowsFeature,
   GEOCODING_MIN_PLAN,
   planAllowsGeocoding,
-  DATA_RESIDENCY_REGIONS,
-  DATA_RESIDENCY_LABEL,
 } from './lib/billing/plans';
 export type {
   PlanKey,
@@ -14587,7 +15184,6 @@ export type {
   TierPricing,
   FeatureMatrixRow,
   FeatureMatrixGroup,
-  DataResidencyRegion,
 } from './lib/billing/plans';
 export {
   CURRENCY_CODES,
@@ -14646,612 +15242,4 @@ export type { HelpRouteTarget } from './lib/help/help-links';
 export { classifyHelpRoute } from './lib/help/help-links';
 
 export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
-````
-
-## File: libs/common/src/lib/billing/plans.ts
-````typescript
-/**
- * Subscription plans — the single source of truth for tiers, prices and limits.
- *
- * Consumed by:
- *  - backend enforcement  (modules/billing/usage-limits.ts, controller.ts, trpc.router.ts)
- *  - the CRM billing page (experiences/settings/billing)
- *  - the marketing website pricing page + home teaser
- *
- * Pricing model (decision log, 2026-07-14 — supersedes the flat-price 5-column model):
- *  - Three FEATURE tiers (Free / Grassroots / Movement). Which tier you're on is a feature
- *    decision. Within a tier, PRICE scales smoothly by emailable-subscriber bracket instead of
- *    stair-stepping between tiers — the old model jumped a customer 3.4× (Starter $29 →
- *    Representative $99) the moment they crossed one subscriber count. `representative` is
- *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
- *    including Free; forms, donations, automations, lists (segments) and volunteer management
- *    (teams & events) are the paid step-up (Grassroots and up); the field-ops surface — both
- *    companion apps (canvassing & deliveries), companion volunteer access & monitoring, yard
- *    signs, turf cutting, walk lists & routes, field reports, route optimization — plus A/B
- *    testing and the optional dedicated sending IP are Movement-only.
- *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
- *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
- *    can actually email. This is the differentiator vs. contact-metered tools.
- *  - Stripe never learns about "subscribers" — each purchasable tier has ONE graduated Stripe
- *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
- *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
- *    data; Stripe just multiplies quantity by its graduated unit amounts.
- *  - Emails/month = 8× the bracket's subscriber cap on Grassroots (between Mailchimp
- *    Essentials' 10× and a weekly-send cadence) and 12× on Movement (matches Mailchimp
- *    Standard / Constant Contact Standard so the flagship spec-sheet line shows no smaller).
- *    Free keeps 2×. Enforced at send time since 2026-07-18 (send-guards.ts monthly allowance),
- *    not just alerted on.
- *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
- *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
- *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
- *    Movement-only. (Revised 2026-07-16: companion volunteer access itself moved to
- *    Movement-only. On Grassroots it was a dead grant — volunteer links are minted only by
- *    turf assignments and delivery routes, both Movement-gated — so the old "15 volunteers"
- *    could never be used. Staff-side volunteer management — teams & volunteer events — stays
- *    Grassroots.)
- *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
- *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
- *  - All prices are USD.
- *  - Annual billing (added 2026-07-18): each purchasable tier also has a yearly Stripe price at
- *    exactly 10× the monthly unit amounts — "2 months free" (`ANNUAL_PRICE_MULTIPLIER`). The
- *    graduated ladder is linear in quantity, so 10× holds at every bracket and the whole
- *    quantity-as-bracket-index mechanism carries over unchanged. Display is the monthly
- *    equivalent rounded to the nearest dollar, with the EXACT annual total always alongside
- *    plus a rounding disclaimer ("$24 per month, billed annually as $290") — the checkable
- *    number is the annual total, which is what's actually charged. The website pricing page
- *    defaults to Annual (marketing convention: 2026-07-18); the in-app billing page keeps
- *    Monthly as its default (electoral campaigns end in November — don't nudge existing
- *    customers into prepay). Mid-year bracket GROWTH on an annual subscription is
- *    invoiced prorated immediately (see backend subscription-sync.ts); downgrades still defer
- *    to renewal on both intervals. Send/usage caps stay MONTHLY regardless of billing interval.
- *
- * Market calibration (competitive research 2026-07-14; final ladder locked 2026-07-15, monthly
- * billing): Grassroots beats every full-suite competitor at every count — $69 vs $75 (Mailchimp
- * Essentials) at 5k, $89 vs $110 at 10k, $129 vs $230 at 20k, $219 vs beehiiv Scale's $199 at
- * 50k is the one near-miss (beehiiv is newsletter-only). Movement beats Mailchimp Standard at
- * every count — $125 vs $100 at 5k is the exception early on, but $195 vs $230 at 15k,
- * $365 vs $450 at 50k, $565 vs $800 at 100k. Roughly 1.8× Grassroots at every bracket —
- * "cheapest full-featured option" rather than "suspiciously cheap".
- *
- * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
- * `quantity` = the bracket index from `bracketIndexForSubscribers`):
- *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 7, unit_amount: 2000 }, { up_to: 'inf', unit_amount: 7000 }]
- *    → qty 1 = $29, qty 2–7 add $20/step (→ $149), qty 8–10 add $70/step (→ $359; the
- *    piecewise step change at the 25,000-subscriber boundary — see GRASSROOTS_BRACKETS below).
- *  - Movement: [{ up_to: 1, unit_amount: 5500 }, { up_to: 7, unit_amount: 3500 }, { up_to: 'inf', unit_amount: 10000 }]
- *    → qty 1 = $55, qty 2–7 add $35/step (→ $265), qty 8–11 add $100/step (→ $665; same
- *    piecewise step change at the 25,000-subscriber boundary — see MOVEMENT_BRACKETS below).
- *  - Grassroots annual (interval = year): [{ up_to: 1, unit_amount: 29000 }, { up_to: 7, unit_amount: 20000 }, { up_to: 'inf', unit_amount: 70000 }]
- *  - Movement annual (interval = year): [{ up_to: 1, unit_amount: 55000 }, { up_to: 7, unit_amount: 35000 }, { up_to: 'inf', unit_amount: 100000 }]
- *    (exactly 10× the monthly unit amounts. Same graduated shape, same quantity semantics,
- *    exclusive tax on the price. Created 2026-07-18 in BOTH modes — test-mode IDs are set in
- *    .env.production, live-mode IDs are in its comments for the launch swap. A default billing
- *    portal configuration with subscription_update enabled (price switches only, proration
- *    always_invoice) exists in test mode so monthly customers can self-switch to annual; the
- *    live-mode portal needs the same configuration at launch alongside the sk_live swap.)
- *
- * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
- * price IDs. Display names are intentionally allowed to differ from keys, but here they are
- * kept aligned (`grassroots`→"Grassroots", `movement`→"Movement", …) except the free key,
- * which presents as "Free" (renamed from "Starter" in the 2026-07-14 overhaul —
- * `LEGACY_PLAN_ALIASES` resolves stale `starter` values written before the rename).
- */
-
-export const GB = 1024 * 1024 * 1024;
-
-/** Every plan key that can appear in `tenants.subscription_plan`. */
-export type PlanKey = 'free' | 'grassroots' | 'movement' | 'enterprise';
-
-/** Paid plans bought via self-serve Stripe checkout (excludes free and contact-sales enterprise). */
-export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'movement'] as const;
-export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
-
-/** Billing intervals a purchasable plan can be bought on. Monthly is the default everywhere;
- * annual is 10× the monthly bracket price — "2 months free". */
-export const BILLING_INTERVALS = ['month', 'year'] as const;
-export type BillingInterval = (typeof BILLING_INTERVALS)[number];
-
-/** Months a customer doesn't pay for on annual billing — the marketing claim "2 months free". */
-export const ANNUAL_MONTHS_FREE = 2;
-
-/** Annual price = monthly bracket price × this. Derived from ANNUAL_MONTHS_FREE so the
- * marketing claim and the multiplier can't drift apart. */
-export const ANNUAL_PRICE_MULTIPLIER = 12 - ANNUAL_MONTHS_FREE;
-
-/** One row of a tier's price ladder. `upTo` is the inclusive emailable-subscriber cap; the
- * bracket's position in `TierPricing.brackets` (1-based) is the Stripe `quantity` billed for it. */
-export interface PriceBracket {
-  /** Emailable-subscriber cap of this bracket (inclusive). */
-  readonly upTo: number;
-  /** USD/month at this bracket (annual billing charges ×`ANNUAL_PRICE_MULTIPLIER` per year). */
-  readonly price: number;
-}
-
-/** A purchasable (or free) tier's full price ladder. `null` on `PlanDef.pricing` means the
- * tier has no ladder at all — currently only `enterprise` (custom, negotiated pricing). */
-export interface TierPricing {
-  /** Ascending by `upTo`. Index + 1 = the Stripe `quantity` for that bracket; the last
-   * bracket's `upTo` is the tier's hard subscriber max. */
-  readonly brackets: readonly PriceBracket[];
-  /** Monthly send cap = this × the current bracket's `upTo` (12 on paid tiers, 2 on Free). */
-  readonly emailsPerSubscriber: number;
-}
-
-export interface PlanDef {
-  readonly key: PlanKey;
-  /** Customer-facing name (may differ from key). */
-  readonly name: string;
-  /** Display cadence, e.g. 'per month' / 'forever' / 'contact us'. */
-  readonly cadence: string;
-  readonly blurb: string;
-  /** Bracket price ladder. `null` = enterprise custom pricing (no ladder, no Stripe quantity). */
-  readonly pricing: TierPricing | null;
-  /** File-storage quota in bytes. null = unlimited / custom. */
-  readonly storageBytes: number | null;
-  /** Included staff seats. null = unlimited. */
-  readonly seats: number | null;
-  /** Included companion volunteers. 0 = none, null = unlimited. */
-  readonly volunteers: number | null;
-  /** Bought via self-serve Stripe checkout (false for free + enterprise). */
-  readonly purchasable: boolean;
-  /** Highlighted as the recommended tier. */
-  readonly featured: boolean;
-  /** Shown as a priced column on pricing surfaces (false = enterprise, footnote-only). */
-  readonly displayed: boolean;
-  /** Marketing feature bullets shown on app-side billing cards (see FEATURE_MATRIX below for
-   * the website's comparison-table view of the same feature split — keep both in sync). */
-  readonly features: readonly string[];
-}
-
-/**
- * Grassroots ladder (final 2026-07-15 pricing) — $29 ≤1,000, +$20/bracket through 25,000, then
- * +$70/bracket to the 100,000 tier max (10 brackets). Bracket widths are non-uniform (1k → 2.5k
- * → 5k-wide steps → 25k-wide steps), so the ladder is spelled out literally rather than
- * generated. Price deltas stay Stripe-graduatable: +$20 ×6, then +$70 ×3 (see Stripe ops above).
- */
-const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 1_000, price: 29 },
-  { upTo: 2_500, price: 49 },
-  { upTo: 5_000, price: 69 },
-  { upTo: 10_000, price: 89 },
-  { upTo: 15_000, price: 109 },
-  { upTo: 20_000, price: 129 },
-  { upTo: 25_000, price: 149 },
-  { upTo: 50_000, price: 219 },
-  { upTo: 75_000, price: 289 },
-  { upTo: 100_000, price: 359 },
-];
-
-/**
- * Movement ladder (final 2026-07-15 pricing) — $55 ≤1,000, +$35/bracket through 25,000, then
- * +$100/bracket to the 200,000 tier max (11 brackets). Same stops as Grassroots plus a final
- * 200,000 bracket; roughly 1.8× Grassroots at every shared stop. Price deltas stay
- * Stripe-graduatable: +$35 ×6, then +$100 ×4 (see Stripe ops above).
- */
-const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 1_000, price: 55 },
-  { upTo: 2_500, price: 90 },
-  { upTo: 5_000, price: 125 },
-  { upTo: 10_000, price: 160 },
-  { upTo: 15_000, price: 195 },
-  { upTo: 20_000, price: 230 },
-  { upTo: 25_000, price: 265 },
-  { upTo: 50_000, price: 365 },
-  { upTo: 75_000, price: 465 },
-  { upTo: 100_000, price: 565 },
-  { upTo: 200_000, price: 665 },
-];
-
-export const PLANS: readonly PlanDef[] = [
-  {
-    key: 'free',
-    name: 'Free',
-    cadence: 'forever',
-    blurb: 'For getting your bearings and running a small list.',
-    pricing: { brackets: [{ upTo: 1_000, price: 0 }], emailsPerSubscriber: 2 },
-    storageBytes: 1 * GB,
-    seats: 2,
-    volunteers: 0,
-    purchasable: false,
-    featured: false,
-    displayed: true,
-    features: [
-      'Unlimited contacts & households',
-      'Demo workspace with sample data',
-      'Up to 1,000 email subscribers',
-      '2,000 emails / month',
-      '2 staff seats · 1 GB storage',
-      'Shared inbox, people CRM & CSV import/export',
-      'Newsletters, templates, scheduling & dynamic content',
-      'AI deliverability check on every newsletter',
-      'Custom reports, role-based access & 300+ integrations',
-      'Community support',
-    ],
-  },
-  {
-    key: 'grassroots',
-    name: 'Grassroots',
-    cadence: 'per month',
-    blurb: 'For a local candidate or small campaign getting to work.',
-    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 8 },
-    storageBytes: 10 * GB,
-    seats: 5,
-    volunteers: 0,
-    purchasable: true,
-    featured: false,
-    displayed: true,
-    features: [
-      'Everything in Free, plus:',
-      'Scales smoothly from $29/month as your list grows',
-      'Save 2 months with annual billing',
-      'Up to 100,000 email subscribers · 8× emails/month',
-      '5 staff seats · 10 GB storage',
-      'Forms & donations',
-      'Automations & lists (segments)',
-      'Volunteer management (teams & events)',
-      'Email support',
-    ],
-  },
-  {
-    key: 'movement',
-    name: 'Movement',
-    cadence: 'per month',
-    blurb: 'For a large campaign or advocacy operation at full tilt.',
-    pricing: { brackets: MOVEMENT_BRACKETS, emailsPerSubscriber: 12 },
-    storageBytes: 200 * GB,
-    seats: null,
-    volunteers: null,
-    purchasable: true,
-    featured: true,
-    displayed: true,
-    features: [
-      'Everything in Grassroots, plus:',
-      'Scales smoothly from $55/month as your list grows',
-      'Save 2 months with annual billing',
-      'Up to 200,000 email subscribers · 12× emails/month',
-      'Unlimited staff seats & volunteers · 200 GB storage',
-      'Canvassing & deliveries companion apps',
-      'Companion volunteer access & field monitoring',
-      'Yard signs & route optimization',
-      'Turf cutting, walk lists & routes, field reports',
-      'A/B testing & optional dedicated sending IP',
-      'Choose your data residency region (US, EU, Canada or UK)',
-      'Priority support & onboarding',
-    ],
-  },
-  {
-    key: 'enterprise',
-    name: 'Enterprise',
-    cadence: 'contact us',
-    blurb: 'For federations, parties and multi-office operations.',
-    pricing: null,
-    storageBytes: null,
-    seats: null,
-    volunteers: null,
-    purchasable: false,
-    featured: false,
-    displayed: false,
-    features: [
-      'Everything in Movement, plus:',
-      'Unlimited subscribers & sends',
-      'Multiple linked workspaces',
-      'Single sign-on (SSO)',
-      'Data residency by region',
-      'Dedicated IP & custom integrations',
-      'SLA support & guided onboarding',
-    ],
-  },
-];
-
-export const PLANS_BY_KEY: Record<PlanKey, PlanDef> = PLANS.reduce(
-  (acc, plan) => {
-    acc[plan.key] = plan;
-    return acc;
-  },
-  {} as Record<PlanKey, PlanDef>,
-);
-
-/** Stale plan values that must still resolve after the 2026-07-14 tier rename/retirement:
- * `representative` (retired, features split into grassroots/movement — nearest fit is
- * movement) and `starter` (renamed to `free`). Resolved case-insensitively by `getPlanDef`. */
-export const LEGACY_PLAN_ALIASES: Readonly<Record<string, PlanKey>> = {
-  representative: 'movement',
-  starter: 'free',
-};
-
-/** Resolve a (possibly mixed-case, possibly legacy) stored plan value to its definition. */
-export function getPlanDef(planName: string | null | undefined): PlanDef | undefined {
-  if (!planName) return undefined;
-  const key = planName.toLowerCase();
-  const resolvedKey = LEGACY_PLAN_ALIASES[key] ?? key;
-  return (PLANS_BY_KEY as Record<string, PlanDef | undefined>)[resolvedKey];
-}
-
-/** Customer-facing display name for a stored plan value (falls back to the raw value). */
-export function planDisplayName(planName: string | null | undefined): string {
-  return getPlanDef(planName)?.name ?? (planName ? planName : 'Free');
-}
-
-/**
- * 1-based Stripe quantity for an emailable-subscriber count on the given plan, or `null` when
- * the count exceeds the tier's max bracket (caller should treat this as "outgrown the tier").
- * A count of 0 still bills quantity 1 (every purchasable plan has a non-zero minimum charge).
- * Plans with no pricing ladder (enterprise) always return `null` — quantity is meaningless there.
- */
-export function bracketIndexForSubscribers(key: PlanKey, count: number): number | null {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  if (!pricing) return null;
-  const normalizedCount = Math.max(count, 0);
-  const index = pricing.brackets.findIndex((bracket) => normalizedCount <= bracket.upTo);
-  return index === -1 ? null : index + 1;
-}
-
-/** The highest valid Stripe quantity (= number of brackets) for a plan. `Infinity` for plans
- * with no pricing ladder (enterprise — no quantity ceiling applies). */
-export function maxQuantity(key: PlanKey): number {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  return pricing ? pricing.brackets.length : Infinity;
-}
-
-/** The price bracket for a given Stripe quantity, clamping `qty` into the valid `[1, maxQuantity]`
- * range. Throws only if called against a plan with no pricing ladder (enterprise) — callers
- * should guard with `PLANS_BY_KEY[key].pricing !== null` first; purchasable/free plans always
- * have at least one bracket. */
-export function bracketForQuantity(key: PlanKey, qty: number): PriceBracket {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  if (!pricing) {
-    throw new Error(`plan "${key}" has no pricing ladder (enterprise is custom-priced)`);
-  }
-  const max = pricing.brackets.length;
-  const clampedIndex = Math.min(Math.max(qty, 1), max) - 1;
-  const bracket = pricing.brackets[clampedIndex];
-  if (!bracket) {
-    // Unreachable: clampedIndex is always within [0, brackets.length - 1] above.
-    throw new Error(`unreachable: no bracket at index ${clampedIndex} for plan "${key}"`);
-  }
-  return bracket;
-}
-
-/** Emailable-subscriber cap for a Stripe quantity on a plan. */
-export function subscriberCapForQuantity(key: PlanKey, qty: number): number {
-  return bracketForQuantity(key, qty).upTo;
-}
-
-/** Monthly email-send cap for a Stripe quantity on a plan (= subscriber cap × the plan's
- * `emailsPerSubscriber` multiplier). */
-export function emailCapForQuantity(key: PlanKey, qty: number): number {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  const multiplier = pricing?.emailsPerSubscriber ?? 0;
-  return subscriberCapForQuantity(key, qty) * multiplier;
-}
-
-/** USD/month price for a Stripe quantity on a plan. */
-export function priceForQuantity(key: PlanKey, qty: number): number {
-  return bracketForQuantity(key, qty).price;
-}
-
-/** USD/year price for a Stripe quantity on a plan — exactly `ANNUAL_PRICE_MULTIPLIER`× the
- * monthly bracket price ("2 months free"). */
-export function annualPriceForQuantity(key: PlanKey, qty: number): number {
-  return priceForQuantity(key, qty) * ANNUAL_PRICE_MULTIPLIER;
-}
-
-/** Monthly-equivalent of an annual USD total, rounded to the nearest whole dollar (290 → 24).
- * The customer-facing framing for annual prices: "$24 per month, billed annually as $290" —
- * surfaces that show it must keep the exact annual total alongside and carry the rounding
- * disclaimer, since equivalent × 12 ≠ the billed total. */
-export function monthlyEquivalentUsd(annualUsd: number): number {
-  return Math.round(annualUsd / 12);
-}
-
-/** "$29" for whole dollars; tolerates cent amounts defensively ("$24.17"). */
-function usdLabel(amount: number): string {
-  return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
-}
-
-/** Cadence line for surfaces with a monthly/annual toggle. Non-purchasable plans keep their
- * static cadence ('forever' / 'contact us'); paid plans read 'per month' or
- * 'per month, billed annually'. */
-export function cadenceLabel(plan: PlanDef, interval: BillingInterval): string {
-  if (!plan.purchasable) return plan.cadence;
-  return interval === 'year' ? 'per month, billed annually' : plan.cadence;
-}
-
-/** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
- * 'From $55' (movement), 'Custom' (enterprise). With `interval: 'year'`, paid plans show the
- * rounded monthly-equivalent of the annual price, e.g. 'From $24'. */
-export function startingPriceLabel(plan: PlanDef, interval: BillingInterval = 'month'): string {
-  const usd = startingPriceUsd(plan, interval);
-  if (usd === null) return 'Custom';
-  return usd === 0 ? '$0' : `From ${usdLabel(usd)}`;
-}
-
-/** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
- * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
- * display currency (the marketing site's home teaser). With `interval: 'year'`, returns the
- * rounded monthly-equivalent of the annual price. */
-export function startingPriceUsd(plan: PlanDef, interval: BillingInterval = 'month'): number | null {
-  if (!plan.pricing) return null;
-  const first = plan.pricing.brackets[0];
-  if (!first) {
-    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
-    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
-  }
-  if (interval === 'year') return monthlyEquivalentUsd(first.price * ANNUAL_PRICE_MULTIPLIER);
-  return first.price;
-}
-
-/** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
- * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). With
- * `interval: 'year'`, the label is the rounded monthly-equivalent of the annual price ('$58').
- * Used by the website pricing slider and the frontend billing upgrade cards. */
-export function priceLabelAt(plan: PlanDef, subscribers: number, interval: BillingInterval = 'month'): string {
-  if (!plan.pricing) return 'Custom';
-  const index = bracketIndexForSubscribers(plan.key, subscribers);
-  if (index === null) return 'Contact us';
-  const monthly = priceForQuantity(plan.key, index);
-  if (interval === 'year') {
-    return usdLabel(monthlyEquivalentUsd(monthly * ANNUAL_PRICE_MULTIPLIER));
-  }
-  return usdLabel(monthly);
-}
-
-/** Capability ordering of the tiers — used by `planAllowsFeature` for min-plan gating. */
-const PLAN_RANK: Record<PlanKey, number> = { free: 0, grassroots: 1, movement: 2, enterprise: 3 };
-
-/**
- * Server-enforced feature gates — the machine-readable core of FEATURE_MATRIX below (keep the
- * two in sync when a feature moves between tiers). The backend's plan-gate middleware
- * (apps/backend modules/billing/plan-gate.ts) blocks mutations in a gated module for tenants
- * below the feature's minimum plan.
- */
-export const GATED_FEATURES = {
-  forms: { minPlan: 'grassroots', label: 'Forms' },
-  donations: { minPlan: 'grassroots', label: 'Donations' },
-  automations: { minPlan: 'grassroots', label: 'Automations' },
-  lists: { minPlan: 'grassroots', label: 'Lists (segments)' },
-  volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
-  canvassing: { minPlan: 'movement', label: 'Canvassing' },
-  deliveries: { minPlan: 'movement', label: 'Deliveries' },
-  companions: { minPlan: 'movement', label: 'Companion volunteer access' },
-} as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
-
-export type GatedFeature = keyof typeof GATED_FEATURES;
-
-/** Whether a (possibly legacy/mixed-case) stored plan value includes a gated feature. */
-export function planAllowsFeature(planName: string | null | undefined, feature: GatedFeature): boolean {
-  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
-  return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
-}
-
-/**
- * Minimum plan for real (paid) household geocoding. Kept OUT of `GATED_FEATURES`/`FEATURE_MATRIX`
- * deliberately: this is a backend cost control, not a marketed tRPC-module feature — the heavy
- * geocoding consumers (canvassing turf-cutting, delivery routing) are already Movement-gated via
- * `GATED_FEATURES`, and this just stops lower tiers from incurring Google Geocoding API spend on
- * plain household map pins / ward enrichment. Mock/test geocoding is free and stays ungated.
- */
-export const GEOCODING_MIN_PLAN: PlanKey = 'movement';
-
-/** Whether a stored plan value may incur real (paid) geocoding — Movement and up. See `GEOCODING_MIN_PLAN`. */
-export function planAllowsGeocoding(planName: string | null | undefined): boolean {
-  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
-  return PLAN_RANK[plan.key] >= PLAN_RANK[GEOCODING_MIN_PLAN];
-}
-
-/** Regions a Movement customer can choose to store their data in, set when they create their
- * workspace. Single-sourced so the plan bullet, the comparison-table cell and any FAQ/help copy
- * stay in agreement. (Display-only on the marketing site; the actual choice happens at signup.) */
-export const DATA_RESIDENCY_REGIONS = ['US', 'EU', 'Canada', 'UK'] as const;
-export type DataResidencyRegion = (typeof DATA_RESIDENCY_REGIONS)[number];
-
-/** The residency regions as a single comparison-cell / bullet label, e.g. "US · EU · Canada · UK". */
-export const DATA_RESIDENCY_LABEL = DATA_RESIDENCY_REGIONS.join(' · ');
-
-/**
- * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
- * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
- * `features[]` bullet list (which drives the app-side billing cards): `features[]` is a short,
- * narrative "everything in X, plus Y" list; `FEATURE_MATRIX` is an exhaustive row-by-row grid.
- * They describe the same feature split from two different plan keys, so keep them in sync by
- * hand when a feature moves between tiers — there is no single source both surfaces read from.
- */
-export interface FeatureMatrixRow {
-  readonly label: string;
-  /** true = ✓, false = ✗, string = a text cell (e.g. "Up to 1,000", "2 seats"). */
-  readonly values: Readonly<Record<'free' | 'grassroots' | 'movement', boolean | string>>;
-}
-
-export interface FeatureMatrixGroup {
-  readonly category: string;
-  readonly rows: readonly FeatureMatrixRow[];
-}
-
-export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
-  {
-    category: 'Usage',
-    rows: [
-      {
-        label: 'Emailable subscribers',
-        values: { free: 'Up to 1,000', grassroots: 'Up to 100,000', movement: 'Up to 200,000' },
-      },
-      {
-        label: 'Emails / month',
-        values: { free: '2,000', grassroots: '8× your subscriber cap', movement: '12× your subscriber cap' },
-      },
-      { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
-      { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
-      { label: 'Companion volunteers', values: { free: '0', grassroots: '0', movement: 'Unlimited' } },
-    ],
-  },
-  {
-    category: 'Everything in every plan',
-    rows: [
-      { label: 'Unlimited contacts & households', values: { free: true, grassroots: true, movement: true } },
-      { label: 'People CRM + shared inbox', values: { free: true, grassroots: true, movement: true } },
-      { label: 'CSV import/export', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Newsletters', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Send from your own verified domain', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
-      { label: 'AI deliverability check on every send', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },
-      { label: '300+ integrations', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Demo workspace', values: { free: true, grassroots: true, movement: true } },
-    ],
-  },
-  {
-    category: 'Grow & engage',
-    rows: [
-      { label: 'Forms', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Donations', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
-      {
-        label: 'Volunteer management (teams & events)',
-        values: { free: false, grassroots: true, movement: true },
-      },
-    ],
-  },
-  {
-    category: 'Canvassing',
-    rows: [
-      { label: 'Canvassing companion app', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Turf cutting', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Walk lists & routes', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Field reports', values: { free: false, grassroots: false, movement: true } },
-    ],
-  },
-  {
-    category: 'Deliveries',
-    rows: [
-      { label: 'Deliveries companion app', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Yard sign requests', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Route optimization', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Delivery monitoring', values: { free: false, grassroots: false, movement: true } },
-    ],
-  },
-  {
-    category: 'Movement only',
-    rows: [
-      {
-        label: 'Companion volunteer access & monitoring',
-        values: { free: false, grassroots: false, movement: true },
-      },
-      { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
-      {
-        label: 'Data residency',
-        values: { free: false, grassroots: false, movement: DATA_RESIDENCY_LABEL },
-      },
-      {
-        label: 'Support',
-        values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
-      },
-    ],
-  },
-];
 ````

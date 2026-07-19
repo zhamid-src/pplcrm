@@ -352,7 +352,7 @@
         </li>
         }
       </ul>
-      } @else {
+      } @else if (!isInitialLoading()) {
       <div class="flex flex-1 flex-col items-center justify-center">
         <pc-empty-state icon="file-calendar" [bordered]="false" title="Nothing scheduled yet">
           <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"

@@ -54,6 +54,7 @@ export const AddTaskObj = z.object({
   position: z.number().int().optional(),
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
   team_id: idSchema.or(z.literal('')).nullable().optional(),
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
 });
 
 export const TasksObj = z.object({
@@ -67,6 +68,7 @@ export const TasksObj = z.object({
   position: z.number().int().optional(),
   assigned_to: z.string().nullable().optional(),
   team_id: z.string().nullable().optional(),
+  person_id: z.string().nullable().optional(),
 });
 
 export const UpdateTaskObj = z.object({
@@ -79,6 +81,7 @@ export const UpdateTaskObj = z.object({
   position: z.number().int().optional(),
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
   team_id: idSchema.or(z.literal('')).nullable().optional(),
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
 });
 
 /**

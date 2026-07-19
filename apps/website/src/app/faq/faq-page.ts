@@ -80,7 +80,7 @@ export class FaqPage {
         },
         {
           q: 'Where is my data stored?',
-          a: 'In Canada, unless you decide otherwise. On the Movement plan you choose the region your data lives in (Canada, US, EU or UK) when you create your workspace, and it stays there for processing and backups.',
+          a: 'In Canada. Your workspace data stays there for processing and backups.',
         },
         {
           q: 'What happens when I delete something?',
@@ -151,7 +151,7 @@ export class FaqPage {
         },
         {
           q: 'Do you have a plan for larger organizations?',
-          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
+          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO and multiple linked workspaces. Write to hello@pplcrm.com and we’ll tailor it.',
         },
         {
           q: 'Can I talk to a human before committing?',

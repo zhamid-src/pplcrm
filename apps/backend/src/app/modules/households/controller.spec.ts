@@ -219,9 +219,6 @@ describe('HouseholdsController', () => {
 
     const tags = await controller.getTags(created.id, auth, 'tag');
     expect(tags.map((t) => t.name)).toContain('urgent');
-
-    const distinct = await controller.getDistinctTags(auth, 'tag');
-    expect(distinct.map((t) => t.name)).toContain('urgent');
   });
 
   it('should detach a tag from a household', async () => {

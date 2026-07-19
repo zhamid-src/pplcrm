@@ -1,8 +1,25 @@
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../logger';
+import { NotificationsRepo } from '../../modules/notifications/repositories/notifications.repo';
 import { notificationEnabled } from '../profile-preferences';
 import { TransactionalEmailService } from './transactional-mail.service';
+
+/** In-app notification links are app-relative paths; comment links arrive absolute. */
+function toRelativeLink(link: string): string {
+  try {
+    const url = new URL(link);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return link;
+  }
+}
+
+/** The notification list clamps long messages; keep the quoted comment short. */
+function truncateComment(text: string, limit = 140): string {
+  const trimmed = text.trim();
+  return trimmed.length <= limit ? trimmed : `${trimmed.slice(0, limit)}…`;
+}
 
 export async function processMentions(
   db: Kysely<Models>,
@@ -32,6 +49,7 @@ export async function processMentions(
       .execute();
 
     const mailService = new TransactionalEmailService();
+    const notificationsRepo = new NotificationsRepo();
 
     // Map over matching users and send them notifications
     for (const user of users) {
@@ -43,6 +61,17 @@ export async function processMentions(
 
       // Match either @first_name or the email username prefix (e.g. @john)
       const isMentioned = matches.includes(firstNameLower) || matches.includes(emailPrefix);
+
+      if (isMentioned && notificationEnabled(user.profile_preferences, 'mention_in_comment_in_app')) {
+        await notificationsRepo.pushNotification({
+          tenant_id: tenantId,
+          user_id: userIdStr,
+          title: 'Mentioned in a Comment',
+          message: `You were mentioned in a comment: "${truncateComment(commentText)}"`,
+          type: 'mention',
+          link: toRelativeLink(commentLink),
+        });
+      }
 
       if (isMentioned && user.email) {
         if (notificationEnabled(user.profile_preferences, 'mention_in_comment')) {

@@ -133,15 +133,6 @@ export class EmailClient {
     this.openCompose();
   }
 
-  // handle send from composer
-  public async onComposeSend(_payload: any) {
-    // TODO: integrate with your EmailActionsStore/EmailsService
-    // Example:
-    // await this.emailActions.sendEmail(payload);
-    this.isComposing.set(false);
-    // Optionally refresh current folder, show toast, etc.
-  }
-
   public async onEmail(email: EmailType | null): Promise<void> {
     const folderId = this.store.currentSelectedFolderId();
     if (this.isComposing()) {

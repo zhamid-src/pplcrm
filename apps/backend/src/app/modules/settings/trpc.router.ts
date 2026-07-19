@@ -7,7 +7,6 @@ import { SettingsController } from './controller';
 const settings = new SettingsController();
 
 export const SettingsRouter = router({
-  getCurrentCampaignId: authProcedure.query(({ ctx }) => settings.getCurrentCampaignId(ctx.auth)),
   getSnapshot: authProcedure.query(({ ctx }) => settings.getSnapshot(ctx.auth)),
   upsert: adminOrOwnerProcedure
     .input(UpsertSettingsInputObj)

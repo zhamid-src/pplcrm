@@ -22,16 +22,6 @@ describe('SettingsRouter', () => {
     mockAuthDb('owner');
   });
 
-  it('should call getCurrentCampaignId on the controller', async () => {
-    const spy = vi.spyOn(SettingsController.prototype, 'getCurrentCampaignId').mockResolvedValue('9' as any);
-
-    const caller = SettingsRouter.createCaller({ auth } as any);
-    const result = await caller.getCurrentCampaignId();
-
-    expect(spy).toHaveBeenCalledWith(auth);
-    expect(result).toBe('9');
-  });
-
   it('should call getSnapshot on the controller', async () => {
     const mockSnapshot = { 'communications.default_from_email': 'a@b.com' };
     const spy = vi.spyOn(SettingsController.prototype, 'getSnapshot').mockResolvedValue(mockSnapshot as any);

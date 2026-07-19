@@ -2,6 +2,7 @@ import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { ListsGridComponent } from './lists-grid';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
+import { ListsService } from '@experiences/lists/services/lists-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { signal } from '@angular/core';
@@ -36,6 +37,13 @@ describe('ListsGridComponent', () => {
       getAll: vi.fn().mockResolvedValue({ rows: [], totalCount: 0 }),
       refreshCount: signal(0),
     };
+    // The component also injects the concrete ListsService for its counts sentence
+    // (ngOnInit → loadCounts → getAll). Without this mock the real service fires a live
+    // tRPC query whose rejection can escape the test as a flaky unhandled error.
+    const mockListsSvc = {
+      getAll: vi.fn().mockResolvedValue({ rows: [], totalCount: 0 }),
+      refreshCount: signal(0),
+    };
 
     mockTagOptionsSvc = {
       getTagNames: vi.fn().mockResolvedValue(['tag1', 'tag2']),
@@ -49,6 +57,7 @@ describe('ListsGridComponent', () => {
         { provide: ConfirmDialogService, useValue: { confirm: vi.fn() } },
         { provide: DATA_GRID_CONFIG, useValue: { messages: { loadFailed: 'Failed to load' } } },
         { provide: ListsRefreshService, useValue: mockRefreshSvc },
+        { provide: ListsService, useValue: mockListsSvc },
         { provide: AbstractAPIService, useValue: mockApiSvc },
         { provide: TagOptionsService, useValue: mockTagOptionsSvc },
       ],

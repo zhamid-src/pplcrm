@@ -77,10 +77,19 @@ resolve" mistake.
 
 ## Loading gate: suppress spinner flicker on sub-300ms responses
 
-`createLoadingGate()` (`libs/uxcommon/src/loading-gate.ts`) returns `{ begin, visible }`.
+`createLoadingGate()` (`libs/uxcommon/src/loading-gate.ts`) returns `{ begin, visible, loaded }`.
 `begin()` returns a disposer; the spinner only appears if the work outlasts `delay` (default
 300ms) and, once shown, stays at least `minDuration` (default 300ms). This is why you must use
 its begin/end contract instead of a naked boolean signal.
+
+**Empty states must be gated on the gate's `loaded` signal** — never on `visible` (it stays
+false for the first 300ms by design, so `!visible() && rows().length === 0` flashes the empty
+state before the first fetch lands) and never on a bare `rows().length === 0`. `loaded` flips
+true when the first operation completes, ungated by the delay. The idiom is
+`@if (loaded() && rows().length === 0) { <pc-empty-state …> }` — during first load the list body
+stays blank and the gated spinner/progress bar covers the slow case. The datagrid's version of
+this is its `isEmptyState` computed (`datagrid.ts`), which folds in `hasLoaded()`,
+`!isLoading()`, zero rows, and no active filters.
 
 Wire-up and call site from `user-view.ts`:
 

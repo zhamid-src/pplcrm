@@ -339,10 +339,6 @@ export class HouseholdsController extends BaseController<'households', Household
     return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
   }
 
-  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getDistinctTags(auth.tenant_id, type);
-  }
-
   public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
     return this.getRepo().getTags(id, auth.tenant_id, type);
   }

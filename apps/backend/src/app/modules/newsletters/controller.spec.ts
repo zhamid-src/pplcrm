@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NewslettersController } from './controller';
+import { BaseController } from '../../lib/base.controller';
 import { BaseRepository } from '../../lib/base.repo';
 import { executeJob } from '../../lib/jobs/job-handlers';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
@@ -997,5 +998,73 @@ describe('NewslettersController list targeting (map_newsletters_lists)', () => {
     const query2 = await controller.buildRecipientQuery(tenantId, newsletter);
     const recipients2 = await query2.select('persons.email').execute();
     expect(recipients2.map((r: any) => r.email)).not.toContain('bob@example.com');
+  });
+});
+
+/**
+ * Server-side scheduling validation (no dedicated endpoint — scheduling flows through generic
+ * CRUD add/update, so the controller must reject a `scheduled` row with a null/past send_date;
+ * the cron only fires `send_date <= now`, which NULL never matches, so such a row would sit
+ * silently forever). Pure unit tests: the base CRUD layer and current-row lookup are spied out.
+ */
+describe('NewslettersController scheduling validation', () => {
+  const controller = new NewslettersController();
+  const FUTURE = new Date(Date.now() + 60 * 60 * 1000);
+  const PAST = new Date(Date.now() - 60 * 60 * 1000);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('add: rejects scheduled without a send date', async () => {
+    await expect(
+      controller.add({ tenant_id: '1', name: 'n', status: 'scheduled', createdby_id: '1' } as any),
+    ).rejects.toThrow(/send date/i);
+    await expect(
+      controller.add({ tenant_id: '1', name: 'n', status: 'scheduled', send_date: null, createdby_id: '1' } as any),
+    ).rejects.toThrow(/send date/i);
+  });
+
+  it('add: rejects scheduled with a past send date', async () => {
+    await expect(
+      controller.add({ tenant_id: '1', name: 'n', status: 'scheduled', send_date: PAST, createdby_id: '1' } as any),
+    ).rejects.toThrow(/future/i);
+  });
+
+  it('update: rejects clearing the send date of a scheduled newsletter', async () => {
+    vi.spyOn(controller, 'getOneById').mockResolvedValue({ status: 'scheduled', send_date: FUTURE } as any);
+    await expect(controller.update({ tenant_id: '1', id: '7', row: { send_date: null } as any })).rejects.toThrow(
+      /send date/i,
+    );
+  });
+
+  it('update: rejects re-scheduling to the past', async () => {
+    await expect(
+      controller.update({ tenant_id: '1', id: '7', row: { status: 'scheduled', send_date: PAST } as any }),
+    ).rejects.toThrow(/future/i);
+  });
+
+  it('update: rejects switching to scheduled when no send date exists', async () => {
+    vi.spyOn(controller, 'getOneById').mockResolvedValue({ status: 'draft', send_date: null } as any);
+    await expect(controller.update({ tenant_id: '1', id: '7', row: { status: 'scheduled' } as any })).rejects.toThrow(
+      /send date/i,
+    );
+  });
+
+  it('update: accepts scheduling with a future send date', async () => {
+    const baseUpdate = vi.spyOn(BaseController.prototype, 'update').mockResolvedValue({ id: '7' } as any);
+    await controller.update({ tenant_id: '1', id: '7', row: { status: 'scheduled', send_date: FUTURE } as any });
+    expect(baseUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('update: leaves non-scheduling edits of a scheduled newsletter alone even when its time has come', async () => {
+    // The cron is about to fire this row — editing an unrelated field must not throw.
+    const baseUpdate = vi.spyOn(BaseController.prototype, 'update').mockResolvedValue({ id: '7' } as any);
+    const lookup = vi
+      .spyOn(controller, 'getOneById')
+      .mockResolvedValue({ status: 'scheduled', send_date: PAST } as any);
+    await controller.update({ tenant_id: '1', id: '7', row: { name: 'renamed' } as any });
+    expect(baseUpdate).toHaveBeenCalledTimes(1);
+    expect(lookup).not.toHaveBeenCalled();
   });
 });

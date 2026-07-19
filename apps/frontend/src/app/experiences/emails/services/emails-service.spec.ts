@@ -98,6 +98,19 @@ describe('EmailsService', () => {
       expect(result).toEqual(mockEmails);
     });
 
+    it('should forward limit and offset for paging', async () => {
+      mockApi.emails.getEmails.query.mockResolvedValue([]);
+
+      await service.getEmails('folder1', 25, 50);
+
+      expect(mockApi.emails.getEmails.query).toHaveBeenCalledWith({
+        campaignId: 'camp-1',
+        folderId: 'folder1',
+        limit: 25,
+        offset: 50,
+      });
+    });
+
     it('should set email as favourite', async () => {
       mockApi.emails.setFavourite.mutate.mockResolvedValue(undefined);
 

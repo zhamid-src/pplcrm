@@ -49,6 +49,8 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       position: payload.position ?? 0,
       assigned_to: payload.assigned_to ?? null,
       team_id: payload.team_id ?? null,
+      // '' is the unselected-<select> sentinel the schema admits — store a real NULL.
+      person_id: payload.person_id || null,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
@@ -56,39 +58,38 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
     const task = await this.add(row);
     if (task && payload.assigned_to) {
       try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: payload.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${payload.name}"`,
-          type: 'task',
-          link: `/tasks/${task.id}`,
-        });
-
         const assignedTo = payload.assigned_to;
-        if (assignedTo) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', assignedTo)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `New task assigned: ${payload.name}`,
-                text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${payload.name}".\n\nDetails:\n${payload.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${task.id}`,
-                html: `<h2>New task assigned</h2>
+        const assignee = await this.getRepo()
+          .db.selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+          .where('authusers.id', '=', assignedTo)
+          .executeTakeFirst();
+        if (assignee) {
+          if (notificationEnabled(assignee.profile_preferences, 'task_assigned_in_app')) {
+            const notificationsRepo = new NotificationsRepo();
+            await notificationsRepo.pushNotification({
+              tenant_id: auth.tenant_id,
+              user_id: assignedTo,
+              title: 'Task Assigned',
+              message: `You have been assigned the task: "${payload.name}"`,
+              type: 'task',
+              link: `/tasks/${task.id}`,
+            });
+          }
+          if (assignee.email && notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
+            await this.mailService.sendMail({
+              to: assignee.email,
+              subject: `New task assigned: ${payload.name}`,
+              text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${payload.name}".\n\nDetails:\n${payload.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${task.id}`,
+              html: `<h2>New task assigned</h2>
 <p>Hi ${assignee.first_name},</p>
 <p>${auth.name} assigned you the task <strong>"${payload.name}"</strong>.</p>
 <div class="panel"><p><strong>Details:</strong><br>${payload.details || 'None'}</p></div>
 <div class="btn-container">
   <a href="${env.appUrl}/tasks/${task.id}" class="btn">View task</a>
 </div>`,
-              });
-            }
+            });
           }
         }
       } catch (nErr) {
@@ -179,39 +180,38 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
 
     if (updated && row.assigned_to && row.assigned_to !== existingTask?.assigned_to) {
       try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: row.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${updated.name}"`,
-          type: 'task',
-          link: `/tasks/${id}`,
-        });
-
         const assignedTo = row.assigned_to;
-        if (assignedTo) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', assignedTo)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `New task assigned: ${updated.name}`,
-                text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${updated.name}".\n\nDetails:\n${updated.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${id}`,
-                html: `<h2>New task assigned</h2>
+        const assignee = await this.getRepo()
+          .db.selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+          .where('authusers.id', '=', assignedTo)
+          .executeTakeFirst();
+        if (assignee) {
+          if (notificationEnabled(assignee.profile_preferences, 'task_assigned_in_app')) {
+            const notificationsRepo = new NotificationsRepo();
+            await notificationsRepo.pushNotification({
+              tenant_id: auth.tenant_id,
+              user_id: assignedTo,
+              title: 'Task Assigned',
+              message: `You have been assigned the task: "${updated.name}"`,
+              type: 'task',
+              link: `/tasks/${id}`,
+            });
+          }
+          if (assignee.email && notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
+            await this.mailService.sendMail({
+              to: assignee.email,
+              subject: `New task assigned: ${updated.name}`,
+              text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${updated.name}".\n\nDetails:\n${updated.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${id}`,
+              html: `<h2>New task assigned</h2>
 <p>Hi ${assignee.first_name},</p>
 <p>${auth.name} assigned you the task <strong>"${updated.name}"</strong>.</p>
 <div class="panel"><p><strong>Details:</strong><br>${updated.details || 'None'}</p></div>
 <div class="btn-container">
   <a href="${env.appUrl}/tasks/${id}" class="btn">View task</a>
 </div>`,
-              });
-            }
+            });
           }
         }
       } catch (nErr) {

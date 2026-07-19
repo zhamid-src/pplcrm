@@ -31,7 +31,7 @@
       <h3 class="pc-eyebrow">Largest files</h3>
     </div>
 
-    @if (largestFiles().length === 0) {
+    @if (loaded() && largestFiles().length === 0) {
     <pc-empty-state
       icon="archive-box"
       [bordered]="false"

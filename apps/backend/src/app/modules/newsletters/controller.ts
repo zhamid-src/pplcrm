@@ -78,9 +78,15 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
    * the transition, but nothing reads it for behavior anymore).
    */
   public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
+    const pending = row as Record<string, unknown>;
+    // Scheduling is server-validated here because it has no dedicated endpoint (the router only
+    // has send/cancelSchedule): a `scheduled` row with a null send_date would sit invisible
+    // forever — the cron fires `send_date <= now`, which NULL never matches.
+    if (pending['status'] === 'scheduled') {
+      this.assertSchedulable(pending['send_date'], true);
+    }
     // Every newsletter belongs to a campaign (§15). Callers that predate the
     // context switcher fall back to the tenant's office context.
-    const pending = row as Record<string, unknown>;
     if (!pending['campaign_id']) {
       const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id: String(pending['tenant_id']) });
       const office = campaigns.find((c) => c.kind === 'office');
@@ -107,27 +113,68 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
    * TOCTOU), so they are frozen once the newsletter leaves the draft/paused states. */
   private static readonly SCORED_CONTENT_FIELDS = ['subject', 'html_content', 'plain_text_content'] as const;
 
+  /** A `scheduled` newsletter must carry a real send_date (the frontend enforces this, but
+   * scheduling flows through generic CRUD add/update, so the backend must too). `requireFuture`
+   * additionally rejects past dates when the caller is actively (re)scheduling. */
+  private assertSchedulable(sendDate: unknown, requireFuture: boolean): void {
+    if (sendDate == null) {
+      throw new BadRequestError(
+        'Scheduling a newsletter requires a send date. Pick a date and time, or save it as a draft.',
+      );
+    }
+    const when = sendDate instanceof Date ? sendDate : new Date(String(sendDate));
+    if (Number.isNaN(when.getTime())) {
+      throw new BadRequestError('The scheduled send date is not a valid date.');
+    }
+    if (requireFuture && when.getTime() <= Date.now()) {
+      throw new BadRequestError('The scheduled send time must be in the future.');
+    }
+  }
+
   public override async update(input: {
     tenant_id: string;
     id: string;
     row: OperationDataType<'newsletters', 'update'>;
   }) {
-    const editsScoredContent = NewslettersController.SCORED_CONTENT_FIELDS.some(
-      (field) => (input.row as Record<string, unknown>)[field] !== undefined,
-    );
-    if (editsScoredContent) {
-      const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as
+    const rowObj = input.row as Record<string, unknown>;
+    // The current row is needed by both the frozen-content and the scheduling checks — fetch it
+    // lazily, at most once.
+    let current: Record<string, unknown> | undefined;
+    const loadCurrent = async (): Promise<Record<string, unknown> | undefined> => {
+      current ??= (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as
         | Record<string, unknown>
         | undefined;
-      const status = current?.['status'];
+      return current;
+    };
+
+    const editsScoredContent = NewslettersController.SCORED_CONTENT_FIELDS.some((field) => rowObj[field] !== undefined);
+    if (editsScoredContent) {
+      const status = (await loadCurrent())?.['status'];
       if (status === 'queuing' || status === 'sending' || status === 'sent') {
         throw new BadRequestError(
           'This newsletter is already sending or has been sent — its content can no longer be edited.',
         );
       }
     }
+
+    // Scheduling guard (see `add`): a newsletter that is (or stays) `scheduled` must keep a
+    // non-null send_date. The future-time requirement applies only when this update itself
+    // (re)schedules — sets the status or a new date; an update that merely edits other fields
+    // of an already-scheduled newsletter must not fail just because its send time has arrived
+    // (the cron is about to fire it, and a past-but-set date fires fine).
+    const providesSendDate = rowObj['send_date'] !== undefined;
+    const effectiveStatus =
+      rowObj['status'] !== undefined
+        ? rowObj['status']
+        : providesSendDate
+          ? (await loadCurrent())?.['status']
+          : undefined;
+    if (effectiveStatus === 'scheduled') {
+      const effectiveSendDate = providesSendDate ? rowObj['send_date'] : (await loadCurrent())?.['send_date'];
+      this.assertSchedulable(effectiveSendDate, rowObj['status'] === 'scheduled' || providesSendDate);
+    }
+
     const result = await super.update(input);
-    const rowObj = input.row as Record<string, unknown>;
     const resultObj = result as Record<string, unknown> | undefined;
     if (rowObj['target_lists'] !== undefined) {
       await this.syncTargetLists(

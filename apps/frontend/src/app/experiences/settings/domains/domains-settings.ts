@@ -1,4 +1,5 @@
 import { Component, signal, computed, inject, OnInit, linkedSignal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -52,6 +53,9 @@ export class DomainSettingsComponent implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
 
+  private readonly _loading = createLoadingGate();
+  protected readonly loaded = this._loading.loaded;
+
   protected readonly newDomain = signal('');
   protected readonly addingDomain = signal(false);
   protected readonly verifyingDomain = signal<string | null>(null);
@@ -73,8 +77,9 @@ export class DomainSettingsComponent implements OnInit {
   });
 
   ngOnInit() {
-    // Ensure settings are loaded
-    void this.settingsSvc.load();
+    // Ensure settings are loaded; the gate keeps the empty state hidden until they are
+    const end = this._loading.begin();
+    void this.settingsSvc.load().finally(end);
   }
 
   /**

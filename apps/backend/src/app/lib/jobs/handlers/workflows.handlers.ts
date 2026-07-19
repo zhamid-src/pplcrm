@@ -1,14 +1,16 @@
 import type { Kysely, Selectable, Transaction } from 'kysely';
-import { WORKFLOW_EXIT_CONDITIONS, WORKFLOW_SEND_CONDITIONS } from '@common';
+import { sql } from 'kysely';
+import { WORKFLOW_EXIT_CONDITIONS, WORKFLOW_SEND_CONDITIONS, calculateWorkingTimeMs, planAllowsFeature } from '@common';
 import type { WorkflowExitCondition, WorkflowSendCondition } from '@common';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../../env';
 import { logger } from '../../../logger';
 import {
+  AUTOMATION_PHONE_UNVERIFIED_MESSAGE,
   assertTenantSendingNotBlocked,
   hasVerifiedSendingDomain,
   loadSendingTenant,
-  logAutomationSend,
+  needsPhoneVerification,
   remainingSendAllowance,
 } from '../../../modules/newsletters/send-guards';
 import { encodeUnsubscribeToken } from '../../../modules/newsletters/unsubscribe-token';
@@ -44,8 +46,40 @@ export async function handleProcessDripWorkflows(db: Kysely<Models>): Promise<vo
     .limit(ENROLLMENT_BATCH_SIZE)
     .execute();
 
+  // Plan gate, checked at processing time (once per tenant per tick): a tenant downgraded
+  // below the 'automations' feature's minimum plan must not keep running the automations it
+  // built while entitled. Ungated enrollments behave exactly like a paused workflow — nothing
+  // sends, nothing advances, nothing is deleted — and resume cleanly on re-upgrade.
+  const automationsAllowedByTenant = new Map<string, boolean>();
+
   for (const enrollment of pendingEnrollments) {
     try {
+      const tenantId = String(enrollment.tenant_id);
+      let automationsAllowed = automationsAllowedByTenant.get(tenantId);
+      if (automationsAllowed === undefined) {
+        const tenantRow = await db
+          .selectFrom('tenants')
+          .select('subscription_plan')
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+        automationsAllowed = planAllowsFeature(tenantRow?.subscription_plan, 'automations');
+        automationsAllowedByTenant.set(tenantId, automationsAllowed);
+        if (!automationsAllowed) {
+          logger.info(
+            { tenantId, plan: tenantRow?.subscription_plan ?? null },
+            '[plan-gate] Tenant plan does not include automations — drip enrollments deferred, not run',
+          );
+        }
+      }
+      if (!automationsAllowed) {
+        await db
+          .updateTable('workflow_enrollments')
+          .set({ next_run_at: new Date(Date.now() + ONE_HOUR_MS), updated_at: new Date() })
+          .where('id', '=', enrollment.id)
+          .execute();
+        continue;
+      }
+
       await db.transaction().execute(async (trx) => {
         const lockedEnrollment = await trx
           .selectFrom('workflow_enrollments')
@@ -358,6 +392,124 @@ export async function handleDetectLapsedSupporters(db: Kysely<Models>): Promise<
   await scheduleNextRun(db, 'detect_lapsed_supporters', 24 * 60 * 60 * 1000);
 }
 
+/** Self-rescheduling hourly scan behind the `task_sla_breach` trigger ("Task breaches SLA"). */
+export async function handleDetectTaskSlaBreaches(db: Kysely<Models>): Promise<void> {
+  await detectTaskSlaBreaches(db);
+
+  await scheduleNextRun(db, 'detect_task_sla_breaches', ONE_HOUR_MS);
+}
+
+/**
+ * Hourly scan behind the `task_sla_breach` trigger (spec §4 → §16). For every open task not
+ * yet marked breached, compute its working-hours age against the tenant's SLA target
+ * (`sla.tasks_hours` + working days/hours — the same math as the sidebar badge's
+ * countSlaBreaches). The first time a task crosses the target it is stamped
+ * `sla_breached_at` (the once-only marker — later ticks skip stamped tasks), then the
+ * task's linked person is enrolled through the normal trigger path (conditions respected).
+ * Tasks with no linked person are stamped but skip enrollment: automations enroll persons.
+ */
+export async function detectTaskSlaBreaches(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  const candidates = await db
+    .selectFrom('tasks')
+    .select(['id', 'tenant_id', 'created_at', 'person_id'])
+    .where('status', 'not in', ['done', 'archived'])
+    .where('sla_breached_at', 'is', null)
+    .execute();
+  if (candidates.length === 0) return;
+
+  const byTenant = new Map<string, typeof candidates>();
+  for (const task of candidates) {
+    const tenantId = String(task.tenant_id);
+    const list = byTenant.get(tenantId) ?? [];
+    list.push(task);
+    byTenant.set(tenantId, list);
+  }
+
+  const { WorkflowsController } = await import('../../../modules/workflows/controller');
+  const controller = new WorkflowsController();
+
+  for (const [tenantId, tasks] of byTenant.entries()) {
+    try {
+      const config = await loadTaskSlaConfig(db, tenantId);
+      const slaMs = config.taskSlaHours * ONE_HOUR_MS;
+
+      for (const task of tasks) {
+        const workingMs = calculateWorkingTimeMs(
+          new Date(task.created_at),
+          now,
+          config.workingDays,
+          config.workingHoursStart,
+          config.workingHoursEnd,
+        );
+        if (workingMs <= slaMs) continue;
+
+        // Stamp before enrolling: even if enrollment fails, the trigger fires at most once
+        // per task. The `is null` guard makes concurrent ticks race-safe — only the tick
+        // that flips the marker proceeds to enroll.
+        const stamped = await db
+          .updateTable('tasks')
+          .set({ sla_breached_at: now })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', String(task.id))
+          .where('sla_breached_at', 'is', null)
+          .returning('id')
+          .executeTakeFirst();
+        if (!stamped) continue;
+
+        if (!task.person_id) {
+          logger.info(
+            { tenantId, taskId: String(task.id) },
+            '[task-sla] Task breached SLA but has no linked person — skipping automation enrollment',
+          );
+          continue;
+        }
+
+        try {
+          await controller.triggerWorkflow(tenantId, String(task.person_id), 'task_sla_breach', null);
+        } catch (err) {
+          logger.error({ err, tenantId, taskId: String(task.id) }, '[task-sla] Failed to fire task_sla_breach trigger');
+        }
+      }
+    } catch (err) {
+      logger.error({ err, tenantId }, '[task-sla] Failed to scan tenant for task SLA breaches');
+    }
+  }
+}
+
+/** The tenant's working-hours SLA settings, with the same fallbacks used tenant-wide. */
+async function loadTaskSlaConfig(
+  db: Kysely<Models>,
+  tenantId: string,
+): Promise<{
+  taskSlaHours: number;
+  workingDays: number[];
+  workingHoursStart: string;
+  workingHoursEnd: string;
+}> {
+  const rows = await db
+    .selectFrom('settings')
+    .select(['key', 'value'])
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', ['sla.tasks_hours', 'sla.working_days', 'sla.working_hours_start', 'sla.working_hours_end'])
+    .execute();
+  const settingsMap = rows.reduce<Record<string, unknown>>((acc, row) => {
+    acc[row.key] = row.value;
+    return acc;
+  }, {});
+
+  const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+  return {
+    taskSlaHours: Number(settingsMap['sla.tasks_hours'] ?? 24),
+    workingDays: workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n)),
+    workingHoursStart: String(settingsMap['sla.working_hours_start'] ?? '09:00'),
+    workingHoursEnd: String(settingsMap['sla.working_hours_end'] ?? '17:00'),
+  };
+}
+
 async function completeEnrollment(trx: Transaction<Models>, enrollmentId: string): Promise<void> {
   await trx
     .updateTable('workflow_enrollments')
@@ -400,7 +552,7 @@ interface StepPerson {
   last_name: string | null;
 }
 
-interface ActionContext {
+export interface ActionContext {
   tenantId: string;
   workflowId: string;
   enrollmentId: string;
@@ -432,9 +584,24 @@ function str(value: unknown): string | null {
   return value == null ? null : String(value);
 }
 
+/** Enqueued-but-unsent automation deliveries for the tenant. Quota is metered on actual
+ * delivery, so these are invisible to `remainingSendAllowance` — the enqueue-time check
+ * subtracts them to stay honest about what is already committed to go out. */
+async function pendingAutomationSendCount(trx: Transaction<Models>, tenantId: string): Promise<number> {
+  const row = await trx
+    .selectFrom('background_jobs')
+    .select((eb) => eb.fn.countAll<number>().as('total'))
+    .where('tenant_id', '=', tenantId)
+    .where('status', 'in', ['pending', 'processing'])
+    .where(sql`payload->>'type'`, '=', 'send-automation-email')
+    .executeTakeFirst();
+  return Number(row?.total ?? 0);
+}
+
 // Executes a single action step. Throws with a human-readable message on failure so the caller
 // records a failed run whose `error` narrates what went wrong (surfaced on the list + editor).
-async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): Promise<ActionOutcome> {
+// Exported for unit tests (the drip handler is the only production caller).
+export async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): Promise<ActionOutcome> {
   const { step, person } = ctx;
   const config = readConfig(step.config);
 
@@ -484,16 +651,26 @@ async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): 
       } catch (err) {
         throw new RetryLaterError(err instanceof Error ? err.message : String(err));
       }
-      if ((await remainingSendAllowance(trx, tenant, new Date())) < 1) {
-        throw new RetryLaterError('Sending allowance exhausted for now');
-      }
 
-      // Same identity gate as newsletters: automation emails send from the tenant's own
-      // verified-domain address via SendGrid, never a platform address.
+      // Same identity gates as newsletters, in the newsletter path's order: a verified sending
+      // domain (automation emails send from the tenant's own domain via SendGrid, never a
+      // platform address), and on Free a verified mobile number. Both need the user to act, so
+      // the run fails with the fix named rather than deferring forever.
       if (!(await hasVerifiedSendingDomain(trx, ctx.tenantId))) {
         throw new Error(
           'Verify a sending domain and choose a From address (Settings) so automation emails can send. This email was not sent.',
         );
+      }
+      if (needsPhoneVerification(tenant)) {
+        throw new Error(AUTOMATION_PHONE_UNVERIFIED_MESSAGE);
+      }
+
+      // Caps: quota is metered on actual delivery (the send-automation-email handler writes
+      // newsletter_send_log), so enqueued-but-unsent jobs are invisible to the meter — count
+      // them against the allowance here so a burst of due enrollments can't enqueue past it.
+      const pendingSends = await pendingAutomationSendCount(trx, ctx.tenantId);
+      if ((await remainingSendAllowance(trx, tenant, new Date())) - pendingSends < 1) {
+        throw new RetryLaterError('Sending allowance exhausted for now');
       }
 
       const unsubscribeUrl = `${env.apiUrl}/api/unsubscribe/${encodeUnsubscribeToken({
@@ -535,12 +712,16 @@ async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): 
             text: text ?? '',
             html: html ?? '',
             unsubscribeUrl,
+            // Quota is metered by the delivery handler after SendGrid accepts the send — a job
+            // that exhausts its retries must not consume allowance. The flag marks payloads
+            // enqueued under that scheme; legacy jobs without it were already metered here at
+            // enqueue time and must not be counted twice.
+            meterOnSend: true,
           }),
           run_at: new Date(),
           max_attempts: 5,
         })
         .execute();
-      await logAutomationSend(trx, ctx.tenantId);
       return { runRecorded: true };
     }
 
@@ -584,6 +765,9 @@ async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): 
           status: 'todo',
           priority: 'medium',
           position: 0,
+          // Link the task to the enrolled contact so a later SLA breach can enroll them
+          // in a task_sla_breach automation (spec §4 → §16).
+          person_id: person ? String(person.id) : null,
           createdby_id: ctx.actorId,
           updatedby_id: ctx.actorId,
         })

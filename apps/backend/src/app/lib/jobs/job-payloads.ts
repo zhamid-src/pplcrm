@@ -155,8 +155,13 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
     html: z.string(),
     text: z.string(),
     unsubscribeUrl: z.string(),
+    // Present on jobs enqueued since quota moved to delivery-time metering: the handler logs
+    // the send into newsletter_send_log only when this is set (and the send succeeded). Absent
+    // on legacy jobs, which were already metered at enqueue time.
+    meterOnSend: z.boolean().optional(),
   }),
   z.object({ type: z.literal('detect_lapsed_supporters') }),
+  z.object({ type: z.literal('detect_task_sla_breaches') }),
   z.object({ type: z.literal('perform_scheduled_deletions') }),
 
   // ── Billing & integrations ───────────────────────────────────────────────

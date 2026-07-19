@@ -13,7 +13,7 @@ export const SECURITY_DOC: LegalDoc = {
   title: 'Security',
   intro:
     'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
-  updated: 'July 18, 2026',
+  updated: 'July 19, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -114,9 +114,9 @@ export const SECURITY_DOC: LegalDoc = {
     {
       kind: 'list',
       items: [
-        'The platform runs on Microsoft Azure, with workspaces hosted in Canada by default; Movement workspaces choose their region (Canada, US, EU or UK) at creation and stay there for processing and backups.',
+        'The platform runs on Microsoft Azure, with workspaces hosted in Canada; workspace data stays there for processing and backups.',
         'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
-        'Databases are backed up automatically every day, with backups retained for 7 days in the workspace’s region. Deleted data therefore leaves backups within 7 days of leaving the live database.',
+        'Databases are backed up automatically every day, with backups retained for 7 days in Canada. Deleted data therefore leaves backups within 7 days of leaving the live database.',
       ],
     },
     {

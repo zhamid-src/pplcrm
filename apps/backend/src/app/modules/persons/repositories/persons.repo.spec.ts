@@ -76,6 +76,11 @@ async function cleanTenant(db: any, tenantId: string) {
     .where('id', '=', tenantId)
     .execute();
   await db.deleteFrom('potential_duplicates').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('donations').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('events').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('workflows').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('web_forms').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('person_connections').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_households_tags').where('tenant_id', '=', tenantId).execute();
@@ -409,6 +414,439 @@ describe('PersonsRepo Integration', () => {
 
     const checkSource = await repo.getOneBy('id', { tenant_id: tenantId, value: source.id });
     expect(checkSource).toBeUndefined();
+  });
+
+  it('should re-point donations, form submissions, shifts, workflow enrollments and connections on merge', async () => {
+    const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
+    const addPerson = (first: string) =>
+      repo.add({
+        row: {
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          household_id: householdId,
+          first_name: first,
+          last_name: 'Repoint',
+          createdby_id: userId,
+          updatedby_id: userId,
+        },
+      });
+    const target = await addPerson('Target');
+    const source = await addPerson('Source');
+    const other = await addPerson('Other');
+
+    // Donation (FK is ON DELETE SET NULL — would silently detach without re-pointing)
+    const donationId = rand();
+    await db
+      .insertInto('donations')
+      .values({ id: donationId, tenant_id: tenantId, campaign_id: campaignId, person_id: source.id, amount: 5000 })
+      .execute();
+
+    // Form submission (FK is ON DELETE CASCADE — would be destroyed without re-pointing)
+    const form = await db
+      .insertInto('web_forms')
+      .values({
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: 'Merge Form',
+        slug: `merge-form-${rand()}`,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returning('id')
+      .executeTakeFirst();
+    await db
+      .insertInto('form_submissions')
+      .values({ tenant_id: tenantId, form_id: form.id, person_id: source.id })
+      .execute();
+
+    // Volunteer shift (CASCADE)
+    const volEventId = rand();
+    await db
+      .insertInto('volunteer_events')
+      .values({
+        id: volEventId,
+        tenant_id: tenantId,
+        name: 'Merge Vol Event',
+        slug: `merge-vol-${rand()}`,
+        start_time: new Date('2026-08-01T10:00:00Z'),
+        end_time: new Date('2026-08-01T12:00:00Z'),
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    const shiftId = rand();
+    await db
+      .insertInto('volunteer_shifts')
+      .values({
+        id: shiftId,
+        tenant_id: tenantId,
+        event_id: volEventId,
+        person_id: source.id,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // Workflow enrollment (CASCADE)
+    const workflowId = rand();
+    await db
+      .insertInto('workflows')
+      .values({
+        id: workflowId,
+        tenant_id: tenantId,
+        name: 'Merge Workflow',
+        trigger_type: 'tag_added',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    const enrollmentId = rand();
+    await db
+      .insertInto('workflow_enrollments')
+      .values({ id: enrollmentId, tenant_id: tenantId, workflow_id: workflowId, person_id: source.id })
+      .execute();
+
+    // Person connection source -> other (CASCADE on either endpoint)
+    const edgeId = rand();
+    await db
+      .insertInto('person_connections')
+      .values({
+        id: edgeId,
+        tenant_id: tenantId,
+        from_person_id: source.id,
+        to_person_id: other.id,
+        relation_type: 'colleague',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    await repo.mergePersons({ tenant_id: tenantId, target_id: target.id, source_id: source.id, user_id: userId });
+
+    const donation = await db
+      .selectFrom('donations')
+      .select(['person_id'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', donationId)
+      .executeTakeFirst();
+    expect(String(donation.person_id)).toBe(String(target.id));
+
+    const submission = await db
+      .selectFrom('form_submissions')
+      .select(['person_id'])
+      .where('tenant_id', '=', tenantId)
+      .where('form_id', '=', form.id)
+      .executeTakeFirst();
+    expect(String(submission.person_id)).toBe(String(target.id));
+
+    const shift = await db
+      .selectFrom('volunteer_shifts')
+      .select(['person_id'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', shiftId)
+      .executeTakeFirst();
+    expect(String(shift.person_id)).toBe(String(target.id));
+
+    const enrollment = await db
+      .selectFrom('workflow_enrollments')
+      .select(['person_id'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', enrollmentId)
+      .executeTakeFirst();
+    expect(String(enrollment.person_id)).toBe(String(target.id));
+
+    const edge = await db
+      .selectFrom('person_connections')
+      .select(['from_person_id', 'to_person_id'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', edgeId)
+      .executeTakeFirst();
+    expect(String(edge.from_person_id)).toBe(String(target.id));
+    expect(String(edge.to_person_id)).toBe(String(other.id));
+  });
+
+  it('should keep the target row and drop the source duplicate on uniqueness collisions', async () => {
+    const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
+    const addPerson = (first: string) =>
+      repo.add({
+        row: {
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          household_id: householdId,
+          first_name: first,
+          last_name: 'Collide',
+          createdby_id: userId,
+          updatedby_id: userId,
+        },
+      });
+    const target = await addPerson('Target');
+    const source = await addPerson('Source');
+
+    // Both registered for the same event (unique tenant+event+person); source also has a second event
+    const eventId = rand();
+    const event2Id = rand();
+    for (const [id, name] of [
+      [eventId, 'Shared Event'],
+      [event2Id, 'Source-only Event'],
+    ]) {
+      await db
+        .insertInto('events')
+        .values({
+          id,
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          name,
+          slug: `merge-ev-${id}`,
+          start_time: new Date('2026-08-01T10:00:00Z'),
+          end_time: new Date('2026-08-01T12:00:00Z'),
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+    const targetRegId = rand();
+    await db
+      .insertInto('event_registrations')
+      .values({
+        id: targetRegId,
+        tenant_id: tenantId,
+        event_id: eventId,
+        person_id: target.id,
+        status: 'registered',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    await db
+      .insertInto('event_registrations')
+      .values({
+        id: rand(),
+        tenant_id: tenantId,
+        event_id: eventId,
+        person_id: source.id,
+        status: 'attended',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    await db
+      .insertInto('event_registrations')
+      .values({
+        id: rand(),
+        tenant_id: tenantId,
+        event_id: event2Id,
+        person_id: source.id,
+        status: 'registered',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // Both have a campaign fact for the same campaign (unique tenant+campaign+person)
+    const targetFactId = rand();
+    await db
+      .insertInto('campaign_person_facts')
+      .values({
+        id: targetFactId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        person_id: target.id,
+        support_level: 'strong',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    await db
+      .insertInto('campaign_person_facts')
+      .values({
+        id: rand(),
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        person_id: source.id,
+        support_level: 'against',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    await repo.mergePersons({ tenant_id: tenantId, target_id: target.id, source_id: source.id, user_id: userId });
+
+    // Shared event: exactly one registration survives — the target's
+    const sharedRegs = await db
+      .selectFrom('event_registrations')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', eventId)
+      .execute();
+    expect(sharedRegs).toHaveLength(1);
+    expect(String(sharedRegs[0].id)).toBe(String(targetRegId));
+    expect(String(sharedRegs[0].person_id)).toBe(String(target.id));
+    expect(sharedRegs[0].status).toBe('registered');
+
+    // Source-only event: re-pointed to target
+    const movedRegs = await db
+      .selectFrom('event_registrations')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', event2Id)
+      .execute();
+    expect(movedRegs).toHaveLength(1);
+    expect(String(movedRegs[0].person_id)).toBe(String(target.id));
+
+    // Campaign fact: one row, the target's values retained
+    const facts = await db
+      .selectFrom('campaign_person_facts')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
+      .execute();
+    expect(facts).toHaveLength(1);
+    expect(String(facts[0].id)).toBe(String(targetFactId));
+    expect(String(facts[0].person_id)).toBe(String(target.id));
+    expect(facts[0].support_level).toBe('strong');
+  });
+
+  it('should merge campaign subscriptions with most-restrictive consent', async () => {
+    const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
+    const addPerson = (first: string, email: string) =>
+      repo.add({
+        row: {
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          household_id: householdId,
+          first_name: first,
+          last_name: 'Consent',
+          email,
+          createdby_id: userId,
+          updatedby_id: userId,
+        },
+      });
+    const target = await addPerson('Target', `t-${rand()}@example.com`);
+    const source = await addPerson('Source', `s-${rand()}@example.com`);
+
+    // Second campaign where only the source is subscribed
+    const campaign2Id = rand();
+    await db
+      .insertInto('campaigns')
+      .values({
+        id: campaign2Id,
+        tenant_id: tenantId,
+        admin_id: userId,
+        name: 'Second Campaign',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    const targetSubId = rand();
+    await db
+      .insertInto('campaign_subscriptions')
+      .values({
+        id: targetSubId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        person_id: target.id,
+        email: target.email,
+        status: 'subscribed',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    await db
+      .insertInto('campaign_subscriptions')
+      .values({
+        id: rand(),
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        person_id: source.id,
+        email: source.email,
+        status: 'unsubscribed',
+        unsubscribed_at: new Date('2026-01-01T00:00:00Z'),
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    await db
+      .insertInto('campaign_subscriptions')
+      .values({
+        id: rand(),
+        tenant_id: tenantId,
+        campaign_id: campaign2Id,
+        person_id: source.id,
+        email: source.email,
+        status: 'subscribed',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    await repo.mergePersons({ tenant_id: tenantId, target_id: target.id, source_id: source.id, user_id: userId });
+
+    // Campaign 1: target's row survives but consent is most-restrictive → unsubscribed
+    const subs1 = await db
+      .selectFrom('campaign_subscriptions')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
+      .execute();
+    expect(subs1).toHaveLength(1);
+    expect(String(subs1[0].id)).toBe(String(targetSubId));
+    expect(String(subs1[0].person_id)).toBe(String(target.id));
+    expect(subs1[0].status).toBe('unsubscribed');
+    expect(subs1[0].unsubscribed_at).not.toBeNull();
+
+    // Campaign 2: source-only subscription re-pointed, consent unchanged
+    const subs2 = await db
+      .selectFrom('campaign_subscriptions')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaign2Id)
+      .execute();
+    expect(subs2).toHaveLength(1);
+    expect(String(subs2[0].person_id)).toBe(String(target.id));
+    expect(subs2[0].status).toBe('subscribed');
+
+    await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).where('id', '=', campaign2Id).execute();
+  });
+
+  it('should carry do_not_contact over to the target with channel union', async () => {
+    const addPerson = (first: string, dnc: boolean, channels: string[] | null) =>
+      repo.add({
+        row: {
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          household_id: householdId,
+          first_name: first,
+          last_name: 'Dnc',
+          do_not_contact: dnc,
+          do_not_contact_channels: channels,
+          createdby_id: userId,
+          updatedby_id: userId,
+        },
+      });
+
+    // Merge 1: contactable target + DNC(email) source → target becomes DNC(email)
+    const target = await addPerson('Target', false, null);
+    const source1 = await addPerson('SourceEmail', true, ['email']);
+    await repo.mergePersons({ tenant_id: tenantId, target_id: target.id, source_id: source1.id, user_id: userId });
+
+    let updated = await repo.getOneBy('id', { tenant_id: tenantId, value: target.id });
+    expect(updated?.do_not_contact).toBe(true);
+    expect(updated?.do_not_contact_channels).toEqual(['email']);
+
+    // Merge 2: DNC(sms) source → union of channels
+    const source2 = await addPerson('SourceSms', true, ['sms']);
+    await repo.mergePersons({ tenant_id: tenantId, target_id: target.id, source_id: source2.id, user_id: userId });
+    updated = await repo.getOneBy('id', { tenant_id: tenantId, value: target.id });
+    expect(updated?.do_not_contact).toBe(true);
+    expect([...(updated?.do_not_contact_channels ?? [])].sort()).toEqual(['email', 'sms']);
+
+    // Merge 3: DNC(all channels = null) source → null wins (all channels blocked)
+    const source3 = await addPerson('SourceAll', true, null);
+    await repo.mergePersons({ tenant_id: tenantId, target_id: target.id, source_id: source3.id, user_id: userId });
+    updated = await repo.getOneBy('id', { tenant_id: tenantId, value: target.id });
+    expect(updated?.do_not_contact).toBe(true);
+    expect(updated?.do_not_contact_channels).toBeNull();
   });
 
   it('should incrementally detect duplicates on person insertion', async () => {

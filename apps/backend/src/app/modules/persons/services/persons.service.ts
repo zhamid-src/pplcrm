@@ -19,6 +19,7 @@ import type { OperationDataType } from '../../../../../../../libs/common/src/lib
 import { ImportsRepo } from '../../imports/repositories/imports.repo';
 import { ListsRepo } from '../../lists/repositories/lists.repo';
 import { MapListsPersonsRepo } from '../../lists/repositories/map-lists-persons.repo';
+import { NotificationsRepo } from '../../notifications/repositories/notifications.repo';
 import { UserActivityRepo } from '../../../lib/user-activity.repo';
 import { StorageService } from '../../../lib/storage.service';
 import { WorkflowsController } from '../../workflows/controller';
@@ -113,18 +114,30 @@ export class PersonsService {
 
       if (payload.assigned_to) {
         try {
+          const assigneeId = String(payload.assigned_to);
           const assignee = await this.personsRepo.db
             .selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
             .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', String(payload.assigned_to))
+            .where('authusers.id', '=', assigneeId)
             .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-              const createdPerson = result as Record<string, unknown>;
-              const personName =
-                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
-              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
+          if (assignee) {
+            const createdPerson = result as Record<string, unknown>;
+            const personName =
+              `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
+            const link = `${env.appUrl}/persons/${createdPerson['id']}`;
+            if (notificationEnabled(assignee.profile_preferences, 'person_assigned_in_app')) {
+              const notificationsRepo = new NotificationsRepo();
+              await notificationsRepo.pushNotification({
+                tenant_id: auth.tenant_id,
+                user_id: assigneeId,
+                title: 'Contact Assigned',
+                message: `You have been assigned ownership of the contact: "${personName}"`,
+                type: 'person',
+                link: `/persons/${createdPerson['id']}`,
+              });
+            }
+            if (assignee.email && notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
               const mailService = new TransactionalEmailService();
               await mailService.sendMail({
                 to: assignee.email,
@@ -141,7 +154,7 @@ export class PersonsService {
             }
           }
         } catch (mailErr) {
-          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
+          logger.error({ err: mailErr }, 'Failed to process contact assignment alert/notification in addPerson');
         }
       }
     }
@@ -211,20 +224,31 @@ export class PersonsService {
         const newAssigneeId = data.assigned_to;
         if (newAssigneeId) {
           try {
+            // String conversion ensures precision is maintained down to the database driver level
+            const assigneeId = String(newAssigneeId);
             const assignee = await this.personsRepo.db
               .selectFrom('authusers')
               .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
               .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-              // String conversion ensures precision is maintained down to the database driver level
-              .where('authusers.id', '=', String(newAssigneeId))
+              .where('authusers.id', '=', assigneeId)
               .executeTakeFirst();
 
-            if (assignee && assignee.email) {
-              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-                const personName =
-                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
-                  'unnamed contact';
-                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
+            if (assignee) {
+              const personName =
+                `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() || 'unnamed contact';
+              const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
+              if (notificationEnabled(assignee.profile_preferences, 'person_assigned_in_app')) {
+                const notificationsRepo = new NotificationsRepo();
+                await notificationsRepo.pushNotification({
+                  tenant_id: auth.tenant_id,
+                  user_id: assigneeId,
+                  title: 'Contact Assigned',
+                  message: `You have been assigned ownership of the contact: "${personName}"`,
+                  type: 'person',
+                  link: `/persons/${updatedPerson['id']}`,
+                });
+              }
+              if (assignee.email && notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
                 const mailService = new TransactionalEmailService();
                 await mailService.sendMail({
                   to: assignee.email,
@@ -241,7 +265,7 @@ export class PersonsService {
               }
             }
           } catch (mailErr) {
-            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
+            logger.error({ err: mailErr }, 'Failed to process contact assignment alert/notification in updatePerson');
           }
         }
       }

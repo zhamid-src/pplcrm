@@ -185,8 +185,8 @@ export class ComposeEmailComponent {
     if (input) input.value = '';
   }
 
-  public onSend(): void {
-    if (!this.validTo()) return;
+  public async onSend(): Promise<void> {
+    if (!this.validTo() || this.sending()) return;
     const v = this.payload();
     const input: ComposePayload = {
       to: this.parseEmails(v.to),
@@ -196,8 +196,25 @@ export class ComposeEmailComponent {
       html: v.html,
       attachments: this.attachments(),
     };
-    void this.actions.sendEmail(input);
-    this.finished.emit(); // close composer immediately
+    this.sending.set(true);
+    try {
+      await this.actions.sendEmail(input);
+      // Sent from a draft: the message now lives in Sent, so retire the draft.
+      const draftId = this.draftIdSignal();
+      if (draftId) {
+        try {
+          await this.actions.deleteDraft(draftId);
+        } catch (e) {
+          console.error('Email sent but its draft could not be removed', e);
+        }
+      }
+      this.finished.emit(); // close only once the send has actually succeeded
+    } catch {
+      // EmailActionsStore.sendEmail already showed the error toast; keep the
+      // composer open so the user's message and attachments are not lost.
+    } finally {
+      this.sending.set(false);
+    }
   }
 
   public removeAttachment(index: number): void {

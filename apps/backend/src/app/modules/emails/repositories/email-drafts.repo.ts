@@ -22,7 +22,10 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
       .where('tenant_id', '=', tenant_id)
       .where('campaign_id', '=', campaign_id)
       .where('user_id', '=', user_id)
-      .orderBy('updated_at', 'desc');
+      .orderBy('updated_at', 'desc')
+      // Paging tiebreaker: `updated_at` alone is not unique, so limit/offset pages
+      // could repeat or skip drafts when timestamps collide.
+      .orderBy('id', 'desc');
 
     if (typeof limit === 'number') q = q.limit(limit);
     if (typeof offset === 'number') q = q.offset(offset);

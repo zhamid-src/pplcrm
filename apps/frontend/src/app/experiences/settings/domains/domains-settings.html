@@ -31,7 +31,7 @@
   <div class="space-y-4">
     <h3 class="text-lg font-semibold border-b border-base-200 pb-2">Your domains</h3>
 
-    @if (domainsList().length === 0) {
+    @if (loaded() && domainsList().length === 0) {
     <pc-empty-state
       icon="globe-americas"
       title="No sending domains yet"
