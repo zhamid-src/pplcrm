@@ -26,7 +26,17 @@
   <!-- Tabs with counts (the standard pill tab bar) -->
   <pc-tab-bar [tabs]="tabs()" [activeTab]="tab()" (activeTabChange)="setTab($event)" />
 
-  @if (loaded() && !filtered().length) {
+  @if (!loaded()) {
+  <!-- First-load skeleton previewing a task group (design §4: skeleton for first paint) -->
+  <div class="flex flex-col gap-5">
+    <div class="flex flex-col gap-1">
+      <div class="skeleton mx-1 h-4 w-28"></div>
+      @for (i of skeletonRows; track i) {
+      <div class="skeleton h-11 w-full"></div>
+      }
+    </div>
+  </div>
+  } @else if (!filtered().length) {
   <div class="flex flex-col items-center gap-3 py-16 text-center">
     <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
     @switch (tab()) { @case ('all') {

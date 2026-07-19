@@ -77,7 +77,7 @@ resolve" mistake.
 
 ## Loading gate: suppress spinner flicker on sub-300ms responses
 
-`createLoadingGate()` (`libs/uxcommon/src/loading-gate.ts`) returns `{ begin, visible, loaded }`.
+`createLoadingGate()` (`libs/uxcommon/src/loading-gate.ts`) returns `{ begin, visible, loaded, active }`.
 `begin()` returns a disposer; the spinner only appears if the work outlasts `delay` (default
 300ms) and, once shown, stays at least `minDuration` (default 300ms). This is why you must use
 its begin/end contract instead of a naked boolean signal.
@@ -90,6 +90,14 @@ true when the first operation completes, ungated by the delay. The idiom is
 stays blank and the gated spinner/progress bar covers the slow case. The datagrid's version of
 this is its `isEmptyState` computed (`datagrid.ts`), which folds in `hasLoaded()`,
 `!isLoading()`, zero rows, and no active filters.
+
+**First-load skeletons are gated the same way** — `@if (!loaded()) { skeleton rows }`, never on
+`visible` (the 300ms delay would flash the empty state first; this bug shipped once on the
+Automations list). Skeletons render from the first frame; the delayed `visible` is only for
+spinners/progress bars. For surfaces that refetch after first load (folder switches, filters),
+the gate's `active` signal is the ungated "a fetch is in flight right now" flag: use
+`@if (active()) { skeleton } @else { empty state }` inside the empty branch so an empty
+mid-refetch list never claims "no data" (live example: the email list's `@empty` block).
 
 Wire-up and call site from `user-view.ts`:
 

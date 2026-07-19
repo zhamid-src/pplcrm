@@ -34,8 +34,18 @@
     </div>
     }
     <pc-alerts></pc-alerts>
-    <div class="flex-1 border-l-2 border-l-base-300 overflow-y-auto min-h-0" [class.hidden]="isMobileOpen()">
-      <router-outlet></router-outlet>
+    <div class="flex-1 border-l-2 border-l-base-300 min-h-0 relative" [class.hidden]="isMobileOpen()">
+      <!-- Slim route-transition bar: only appears when a navigation outlasts the loading gate -->
+      @if (navPending()) {
+      <progress class="progress progress-primary absolute inset-x-0 top-0 z-10 h-0.5 rounded-none"></progress>
+      }
+      <div
+        class="h-full overflow-y-auto transition-opacity duration-300"
+        [class.opacity-50]="navPending()"
+        [class.pointer-events-none]="navPending()"
+      >
+        <router-outlet></router-outlet>
+      </div>
     </div>
   </div>
 </div>

@@ -18,7 +18,11 @@
     <div class="bg-base-200 flex min-h-72 flex-col rounded-lg p-3">
       <div class="mb-2 flex items-center justify-between">
         <h3 class="font-semibold">{{ columnLabel(col) }}</h3>
+        @if (loaded()) {
         <span class="badge badge-sm tabular-nums">{{ cardsFor(col).length }}</span>
+        } @else {
+        <div class="skeleton h-4 w-6"></div>
+        }
       </div>
 
       <div
@@ -29,8 +33,11 @@
         [cdkDropListConnectedTo]="dropListIds"
         (cdkDropListDropped)="onCardDrop($event, col)"
       >
-        @for (t of cardsFor(col); track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
-        assigneeName(t.assigned_to);
+        <!-- First-load skeleton cards; the real cards list is empty until then -->
+        @if (!loaded()) { @for (i of skeletonCards; track i) {
+        <div class="skeleton h-20 w-full"></div>
+        } } @for (t of cardsFor(col); track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let
+        assignee = assigneeName(t.assigned_to);
         <div
           class="card bg-base-100 border-line cursor-pointer border shadow-sm"
           [class.animate-saved-flash]="isFlashed(t.id)"
@@ -116,9 +123,9 @@
             </div>
           </div>
         </div>
-        } @empty {
+        } @empty { @if (loaded()) {
         <div class="text-base-content/40 flex flex-1 items-center justify-center text-xs">No tasks here</div>
-        }
+        } }
       </div>
     </div>
     }

@@ -104,8 +104,16 @@
     </div>
     } @else {
     <div class="p-4">
-      @if (submissionsLoading()) {
-      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
+      @if (!submissionsLoaded() || submissionsLoading()) {
+      <!-- Skeleton until the first load completes: pc-table's built-in loading rows preview
+           the real table. Guarded on submissionsLoaded so the empty state never flashes first. -->
+      <pc-table [columns]="3" [loading]="true">
+        <ng-container pcTableHead>
+          <th>Person</th>
+          <th>Submitted</th>
+          <th>Answers</th>
+        </ng-container>
+      </pc-table>
       } @else if (submissions().length > 0) {
       <pc-table [columns]="3">
         <ng-container pcTableHead>

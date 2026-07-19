@@ -45,6 +45,9 @@ export class WorkflowsGridComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
 
+  /** Placeholder rows for the first-load skeleton (mirrors pc-table's default of 5). */
+  protected readonly skeletonRows = Array.from({ length: 5 }, (_, i) => i);
+
   protected readonly loaded = signal(false);
   protected readonly rows = signal<ListRow[]>([]);
   protected readonly summary = signal<{ total: number; active: number; runs30d: number }>({

@@ -146,6 +146,10 @@ export class FormsPageComponent implements OnInit {
   protected readonly submissionsTotal = signal(0);
   protected readonly submissionsLoading = signal(false);
 
+  /** True once the current form's responses have loaded at least once. Guards the
+   *  responses tab's skeleton so the empty state never flashes before a fetch starts. */
+  protected readonly submissionsLoaded = signal(false);
+
   // New-form flow state (mode 'create': step 1 picks a template card, step 2 names it).
   protected readonly newFormName = signal('');
   protected readonly newFormType = signal<FormType>('signup');
@@ -247,6 +251,7 @@ export class FormsPageComponent implements OnInit {
     this.tab.set('form');
     this.submissions.set([]);
     this.submissionsTotal.set(0);
+    this.submissionsLoaded.set(false);
   }
 
   protected setTab(tab: 'form' | 'responses'): void {
@@ -641,6 +646,7 @@ export class FormsPageComponent implements OnInit {
     } catch {
       this.alerts.showError('Could not load responses. Please try again.');
     } finally {
+      this.submissionsLoaded.set(true);
       this.submissionsLoading.set(false);
     }
   }

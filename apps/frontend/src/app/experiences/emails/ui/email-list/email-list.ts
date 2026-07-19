@@ -51,7 +51,11 @@ export class EmailList {
   public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
 
   protected readonly isLoadingMore = this.store.isLoadingMore;
+  protected readonly isFetching = this.store.emailsFetching;
   protected readonly ALL_FOLDERS = ALL_FOLDERS;
+
+  /** Placeholder rows for the fetching skeleton (mirrors pc-table's default of 5). */
+  protected readonly skeletonRows = Array.from({ length: 5 }, (_, i) => i);
 
   protected onScroll(event: Event): void {
     this.closeContextMenu();

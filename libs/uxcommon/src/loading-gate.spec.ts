@@ -36,6 +36,32 @@ describe('createLoadingGate', () => {
     expect(gate.loaded()).toBe(true); // but the load is known to have completed
   });
 
+  // `active` is the ungated fetch-in-flight flag: it must flip immediately on
+  // begin (no show delay) and immediately on completion (no minDuration hold),
+  // so skeleton-vs-empty decisions never flash the wrong state.
+  it('reports active immediately while work is in flight, without gating delays', () => {
+    const gate = createLoadingGate({ delay: 300, minDuration: 300 });
+    expect(gate.active()).toBe(false);
+
+    const end = gate.begin();
+    expect(gate.active()).toBe(true); // no 300ms wait, unlike visible
+
+    end();
+    expect(gate.active()).toBe(false); // no minDuration hold either
+  });
+
+  it('stays active until every overlapping operation has finished', () => {
+    const gate = createLoadingGate();
+    const endA = gate.begin();
+    const endB = gate.begin();
+
+    endA();
+    expect(gate.active()).toBe(true); // B still running
+
+    endB();
+    expect(gate.active()).toBe(false);
+  });
+
   it('shows the spinner for a slow operation and reports loaded once it finishes', () => {
     const gate = createLoadingGate({ delay: 300, minDuration: 300 });
     const end = gate.begin();

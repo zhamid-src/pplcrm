@@ -7,8 +7,33 @@
     </button>
   </pc-grid-header>
 
-  @if (isLoading() && !loaded()) {
-  <div class="flex justify-center py-16"><span class="loading loading-spinner text-primary"></span></div>
+  @if (!loaded()) {
+  <!-- First-load skeleton previewing the list shell (design §4: skeleton for first paint).
+       Guarded on loaded(), not the gated isLoading(): the gate delays 300ms, which would
+       flash the empty state before the skeleton. -->
+  <div class="overflow-hidden pc-panel">
+    <div
+      class="hidden grid-cols-[auto_1fr_6rem_9rem] items-center gap-4 border-b border-base-200 px-4 py-2 pc-eyebrow md:grid"
+    >
+      <span class="w-24">Status</span>
+      <span>Automation</span>
+      <span class="text-right">Runs 30d</span>
+      <span>Last run</span>
+    </div>
+    @for (i of skeletonRows; track i) {
+    <div
+      class="grid grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 last:border-b-0 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
+    >
+      <div class="skeleton h-5 w-24"></div>
+      <div class="min-w-0 space-y-1.5">
+        <div class="skeleton h-4 w-48"></div>
+        <div class="skeleton h-3 w-72 max-w-full"></div>
+      </div>
+      <div class="skeleton h-4 w-12 justify-self-end"></div>
+      <div class="skeleton h-4 w-20"></div>
+    </div>
+    }
+  </div>
   } @else if (rows().length === 0) {
   <!-- Empty state ------------------------------------------------------------->
   <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-16 text-center">

@@ -492,6 +492,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // `loaded` signal — set when a fetch completes (so totalCountAll is already in
   // place), even for a sub-300ms fetch that never trips the delayed spinner.
   public readonly hasLoaded = this._loading.loaded;
+
+  /** Placeholder rows for the first-load skeleton (mirrors pc-table's default of 5). */
+  protected readonly skeletonRowList = Array.from({ length: 5 }, (_, i) => i);
   public readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,

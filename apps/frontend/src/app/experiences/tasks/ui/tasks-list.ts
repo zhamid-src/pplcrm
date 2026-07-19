@@ -54,6 +54,9 @@ export class TasksList implements OnInit {
 
   protected readonly loading = this._loading.visible;
   protected readonly loaded = this._loading.loaded;
+
+  /** Placeholder rows for the first-load skeleton (mirrors pc-table's default of 5). */
+  protected readonly skeletonRows = Array.from({ length: 5 }, (_, i) => i);
   protected readonly tab = signal<ListTab>('all');
   protected readonly tasks = signal<ListTask[]>([]);
   protected readonly usersById = signal<Map<string, string>>(new Map());
