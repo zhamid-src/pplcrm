@@ -12,10 +12,6 @@ import { logger } from '../../logger';
 
 const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
-const ipSignupTimestamps = new Map<string, number[]>();
-const SIGNUP_RATE_LIMIT_MAX = 5;
-const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
 export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
   constructor() {
     super(new VolunteerEventsRepo());
@@ -597,31 +593,8 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     };
   }
 
-  public async signupVolunteerPublic(
-    tenantId: string,
-    slug: string,
-    payload: Record<string, string>,
-    clientIp: string,
-  ) {
-    // 1. Rate limiting check
-    const now = Date.now();
-    let timestamps = ipSignupTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < SIGNUP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= SIGNUP_RATE_LIMIT_MAX) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. Please try again in a minute.',
-      });
-    }
-    timestamps.push(now);
-    // Prune the key if empty to prevent unbounded Map growth across long-lived processes
-    if (timestamps.length > 0) {
-      ipSignupTimestamps.set(clientIp, timestamps);
-    } else {
-      ipSignupTimestamps.delete(clientIp);
-    }
-
-    // 2. Fetch the event — tenant-scoped by slug
+  public async signupVolunteerPublic(tenantId: string, slug: string, payload: Record<string, string>) {
+    // 1. Fetch the event — tenant-scoped by slug
     const event = await this.getEventPublic(tenantId, slug);
     if (!event) {
       throw new TRPCError({
@@ -630,13 +603,13 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       });
     }
 
-    // 3. Honeypot check
+    // 2. Honeypot check
     if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for volunteer event ${slug}`);
+      logger.warn(`Spam bot detected for volunteer event ${slug}`);
       return { success: true }; // Silent mock success
     }
 
-    // 4. Validate email
+    // 3. Validate email
     const email = payload['email']?.trim();
     if (!email) {
       throw new TRPCError({
@@ -645,7 +618,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       });
     }
 
-    // 5. Check capacity limit
+    // 4. Check capacity limit
     const currentCount = Number(event.volunteers_count || 0);
     if (event.capacity !== null && currentCount >= event.capacity) {
       throw new TRPCError({
@@ -659,7 +632,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     const mobile = payload['mobile'] || payload['phone'] || null;
     const notes = payload['notes'] || payload['message'] || null;
 
-    // 6. Transaction to find/create person, tags, and shift
+    // 5. Transaction to find/create person, tags, and shift
     await this.getRepo()
       .transaction()
       .execute(async (trx: Transaction<Models>) => {

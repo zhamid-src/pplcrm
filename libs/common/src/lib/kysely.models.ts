@@ -54,6 +54,7 @@ export interface Models {
   sessions: Sessions;
   tags: Tags;
   tenants: Tenants;
+  workspace_api_keys: WorkspaceApiKeys;
   settings: Settings;
   donations: Donations;
   donation_periods: DonationPeriods;
@@ -731,6 +732,15 @@ interface Tenants extends Omit<RecordType, 'createdby_id'>, AddressType {
   phone_verification_code_hash: string | null;
   phone_verification_expires_at: Timestamp | null;
   phone_verification_attempts: Generated<number>;
+}
+
+interface WorkspaceApiKeys {
+  id: Generated<string>;
+  tenant_id: string;
+  key_hash: string;
+  key_preview: string;
+  created_at: Generated<Timestamp>;
+  last_used_at: Timestamp | null;
 }
 
 interface Emails extends RecordType {

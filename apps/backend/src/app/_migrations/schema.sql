@@ -2645,6 +2645,38 @@ ALTER SEQUENCE public.tenants_id_seq OWNED BY public.tenants.id;
 
 
 --
+-- Name: workspace_api_keys; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.workspace_api_keys (
+    id bigserial NOT NULL,
+    tenant_id bigint NOT NULL,
+    key_hash text NOT NULL,
+    key_preview text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_used_at timestamp with time zone
+);
+
+
+ALTER TABLE public.workspace_api_keys OWNER TO pplcrm_owner;
+
+--
+-- Name: workspace_api_keys_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.workspace_api_keys_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.workspace_api_keys_id_seq OWNED BY public.workspace_api_keys.id;
+
+ALTER TABLE ONLY public.workspace_api_keys ALTER COLUMN id SET DEFAULT nextval('public.workspace_api_keys_id_seq'::regclass);
+
+
+--
 -- Name: turf_assignments; Type: TABLE; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5733,6 +5765,13 @@ CREATE INDEX web_forms_tenant_index ON public.web_forms USING btree (tenant_id);
 
 
 --
+-- Name: workspace_api_keys_key_hash_index; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX workspace_api_keys_key_hash_index ON public.workspace_api_keys USING btree (key_hash);
+
+
+--
 -- Name: authusers trg_authusers_updated_at; Type: TRIGGER; Schema: public; Owner: pplcrm_owner
 --
 
@@ -7953,6 +7992,30 @@ ALTER TABLE ONLY public.tenants
 
 ALTER TABLE ONLY public.zapier_subscriptions
     ADD CONSTRAINT zapier_subscriptions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_api_keys workspace_api_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.workspace_api_keys
+    ADD CONSTRAINT workspace_api_keys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_api_keys uq_workspace_api_keys_tenant_id; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.workspace_api_keys
+    ADD CONSTRAINT uq_workspace_api_keys_tenant_id UNIQUE (tenant_id);
+
+
+--
+-- Name: workspace_api_keys workspace_api_keys_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.workspace_api_keys
+    ADD CONSTRAINT workspace_api_keys_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 
 --

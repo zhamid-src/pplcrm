@@ -16,18 +16,13 @@ import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
 import { createSigner, createVerifier } from 'fast-jwt';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
-import type { PublicTenant } from '../../lib/public-tenant';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { HouseholdRepo } from '../households/repositories/households.repo';
 
 import { WorkflowsController } from '../workflows/controller';
 import { DonationsController } from '../donations/controller';
 import { logger } from '../../logger';
-
-// Sliding window memory for rate-limiting
-const ipSubmissionTimestamps = new Map<string, number[]>();
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+import { TenantsRepo } from '../auth/repositories/tenants.repo';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -35,6 +30,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
   private readonly campaignsRepo = new CampaignsRepo();
+  private readonly tenantsRepo = new TenantsRepo();
 
   constructor() {
     super(new WebFormsRepo());
@@ -128,33 +124,22 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     return updated;
   }
 
-  public async submitFormPublic(
-    tenant: PublicTenant,
-    slug: string,
-    payload: Record<string, string>,
-    clientIp: string,
-  ): Promise<{ redirect_url?: string | null }> {
-    // 1. Rate limiting check
-    const now = Date.now();
-    let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RATE_LIMIT_MAX) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. Please try again in a minute.',
-      });
-    }
-    timestamps.push(now);
-    // Prune empty keys to prevent unbounded Map growth
-    if (timestamps.length > 0) {
-      ipSubmissionTimestamps.set(clientIp, timestamps);
-    } else {
-      ipSubmissionTimestamps.delete(clientIp);
-    }
+  /**
+   * Get form by slug and tenant. Used by public submission endpoint.
+   */
+  public async getFormBySlugAndTenant(tenantId: string, slug: string) {
+    return this.getRepo().getBySlugPublic(tenantId, slug);
+  }
 
-    // 2. Fetch the form — tenant-scoped by slug; the tenant was resolved from the subdomain
-    const tenantId = tenant.id;
-    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
+  /**
+   * Submit a form response. Used by public endpoints (forms, events, volunteer events).
+   * tenantId is derived from the API key; rate limiting is handled by the caller.
+   */
+  public async submitFormPublic(
+    form: any, // TODO: type this properly
+    tenantId: string,
+    payload: Record<string, string>,
+  ): Promise<{ redirect_url?: string | null }> {
     if (!form || form.status !== 'published') {
       throw new TRPCError({
         code: 'NOT_FOUND',
@@ -163,9 +148,9 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     }
     const formId = String(form.id);
 
-    // 3. Honeypot check
+    // 2. Honeypot check
     if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
+      logger.warn(`Spam bot detected for form ${formId}`);
       return { redirect_url: form.redirect_url || null };
     }
 
@@ -695,8 +680,9 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     // 7. If donation/recurring form, initialize checkout session after transactional writes commit
     if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
       const donationsController = new DonationsController();
+      const tenant = await this.tenantsRepo.getOneById({ tenant_id: tenantId, id: tenantId });
       const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/d/${form.slug}?t=${encodeURIComponent(tenant.slug)}&checkout_cancel=true`;
+      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/d/${form.slug}?t=${encodeURIComponent((tenant as any)?.slug || '')}&checkout_cancel=true`;
 
       if (form.form_type === 'donation') {
         const checkoutInit = await donationsController.createCheckoutSession(

@@ -35,4 +35,7 @@ export const SettingsRouter = router({
   deleteVerifiedDomain: adminOrOwnerProcedure
     .input(z.object({ domain: z.string().min(1) }))
     .mutation(({ ctx, input }) => settings.deleteVerifiedDomain(ctx.auth, input.domain)),
+  generateApiKey: adminOrOwnerProcedure.mutation(({ ctx }) => settings.generateApiKey(ctx.auth)),
+  getApiKeyPreview: authProcedure.query(({ ctx }) => settings.getApiKeyPreview(ctx.auth)),
+  regenerateApiKey: adminOrOwnerProcedure.mutation(({ ctx }) => settings.regenerateApiKey(ctx.auth)),
 });

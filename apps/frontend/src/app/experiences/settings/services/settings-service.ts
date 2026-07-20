@@ -106,6 +106,18 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
     }
   }
 
+  public async generateApiKey() {
+    return this.api.settings.generateApiKey.mutate();
+  }
+
+  public async getApiKeyPreview() {
+    return this.api.settings.getApiKeyPreview.query();
+  }
+
+  public async regenerateApiKey() {
+    return this.api.settings.regenerateApiKey.mutate();
+  }
+
   public snapshot(): TenantSettingsSnapshot {
     return this.snapshotSignal();
   }

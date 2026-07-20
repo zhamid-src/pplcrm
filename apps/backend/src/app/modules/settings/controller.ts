@@ -831,4 +831,46 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
 
     return updatedList;
   }
+
+  public async generateApiKey(auth: IAuthKeyPayload) {
+    const { generateApiKey, hashApiKey, getKeyPreview } = await import('../../lib/api-key');
+    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
+    const repo = new workspaceApiKeysRepo();
+
+    // Generate new key
+    const rawKey = generateApiKey();
+    const keyHash = hashApiKey(rawKey);
+    const keyPreview = getKeyPreview(rawKey);
+
+    // Store in database (will overwrite existing key if present)
+    await repo.create(auth.tenant_id, keyHash, keyPreview);
+
+    // Return the full key only once — it's never retrievable again, only the preview
+    return {
+      key: rawKey,
+      preview: keyPreview,
+    };
+  }
+
+  public async getApiKeyPreview(auth: IAuthKeyPayload) {
+    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
+    const repo = new workspaceApiKeysRepo();
+
+    const row = await repo.getByTenantId(auth.tenant_id);
+    if (!row) {
+      return null;
+    }
+
+    return {
+      preview: row.key_preview,
+      createdAt: row.created_at,
+      lastUsedAt: row.last_used_at,
+    };
+  }
+
+  public async regenerateApiKey(auth: IAuthKeyPayload) {
+    // Regenerate is just generate with replace semantics — the repo's
+    // ON CONFLICT handling automatically replaces the old key
+    return this.generateApiKey(auth);
+  }
 }

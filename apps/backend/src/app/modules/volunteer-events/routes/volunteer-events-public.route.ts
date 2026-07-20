@@ -2,9 +2,29 @@ import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import { TRPCError } from '@trpc/server';
 
 import { VolunteerEventsController } from '../controller';
+import { validateApiKeyFromRequest } from '../../../lib/validate-api-key';
 import { resolveTenantFromRequest } from '../../../lib/public-tenant';
 
 const ctrl = new VolunteerEventsController();
+
+// Per-key sliding-window rate limiting
+const keySubmissionTimestamps = new Map<string, number[]>();
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+function isRateLimited(tenantId: string): boolean {
+  const now = Date.now();
+  let timestamps = keySubmissionTimestamps.get(tenantId) || [];
+  timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  if (timestamps.length >= RATE_LIMIT_MAX) return true;
+  timestamps.push(now);
+  if (timestamps.length > 0) {
+    keySubmissionTimestamps.set(tenantId, timestamps);
+  } else {
+    keySubmissionTimestamps.delete(tenantId);
+  }
+  return false;
+}
 
 function getStatusFromError(err: unknown): number {
   if (err instanceof TRPCError) {
@@ -69,16 +89,20 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
     '/signup/:slug',
     async (req: FastifyRequest<{ Params: { slug: string }; Body: Record<string, string> }>, reply) => {
       const { slug } = req.params;
-      // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
-      // read the raw header, which a client can spoof to defeat rate limiting.
-      const clientIp = req.ip;
 
       try {
-        const tenant = await resolveTenantFromRequest(req);
-        if (!tenant) {
-          return reply.status(404).send({ error: 'Event not found.' });
+        // Validate API key and get tenant
+        const tenantId = await validateApiKeyFromRequest(req);
+
+        // Check rate limit per tenant
+        if (isRateLimited(tenantId)) {
+          throw new TRPCError({
+            code: 'TOO_MANY_REQUESTS',
+            message: 'Rate limit exceeded. Please try again in a minute.',
+          });
         }
-        await ctrl.signupVolunteerPublic(tenant.id, String(slug), req.body || {}, clientIp);
+
+        await ctrl.signupVolunteerPublic(tenantId, String(slug), req.body || {});
         return reply.status(200).send({ success: true });
       } catch (err) {
         fastify.log.error(err);

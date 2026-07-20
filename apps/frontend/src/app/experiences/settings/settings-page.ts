@@ -12,6 +12,7 @@ import { AuthService } from '../../auth/auth-service';
 import { UserService } from '../../services/user.service';
 import { HouseholdsService } from '../households/services/households-service';
 import { AccountSettingsComponent } from './account/account-settings';
+import { ApiKeysSettingsComponent } from './api-keys/api-keys-settings';
 import { BillingSettingsComponent } from './billing/billing-settings';
 import { DomainSettingsComponent } from './domains/domains-settings';
 import { DonationsSettingsComponent } from './donations/donations-settings';
@@ -106,6 +107,13 @@ const CUSTOM_SECTIONS: CustomSectionConfig[] = [
     title: 'Account',
     description: 'Manage your organization account: pause billing or permanently delete all data.',
   },
+  {
+    id: 'api-keys',
+    mode: 'workspace',
+    icon: 'lock-closed',
+    title: 'API Keys',
+    description: 'Generate and manage API keys for programmatic access to form submissions and event RSVPs.',
+  },
 ];
 
 @Component({
@@ -119,6 +127,7 @@ const CUSTOM_SECTIONS: CustomSectionConfig[] = [
     DomainSettingsComponent,
     DonationsSettingsComponent,
     AccountSettingsComponent,
+    ApiKeysSettingsComponent,
     PasskeySettingsComponent,
     StorageSettingsComponent,
     DatePipe,
