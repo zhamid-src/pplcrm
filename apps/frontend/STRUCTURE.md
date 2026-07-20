@@ -29249,444 +29249,6 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/api-keys/api-keys-settings.ts
-```typescript
-import { Component, signal, computed, inject, OnInit } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-import { DatePipe, NgIf } from '@angular/common';
-import { AuthService } from '../../../auth/auth-service';
-
-interface ApiKeyInfo {
-  preview: string;
-  createdAt: string;
-  lastUsedAt: string | null;
-}
-
-@Component({
-  selector: 'pc-api-keys-settings',
-  imports: [EmptyState, Icon, DatePipe, NgIf],
-  template: `
-    <div class="api-keys-container">
-      @if (!loaded()) {
-        <div class="skeleton"></div>
-      } @else {
-        <div class="settings-section">
-          <div class="section-header">
-            <h3>Workspace API Key</h3>
-            <p class="description">
-              Use your API key to programmatically submit form responses and event RSVPs.
-            </p>
-          </div>
-
-          @if (keyInfo()) {
-            <div class="key-info-card">
-              <div class="key-display">
-                <div class="key-label">Current Key</div>
-                <div class="key-value">
-                  <code>{{ keyInfo()!.preview }}***</code>
-                </div>
-              </div>
-
-              <div class="key-metadata">
-                <div class="metadata-item">
-                  <span class="label">Created</span>
-                  <span class="value">
-                    {{ keyInfo()!.createdAt | date: 'MMM d, y' }}
-                  </span>
-                </div>
-                @if (keyInfo()!.lastUsedAt) {
-                  <div class="metadata-item">
-                    <span class="label">Last used</span>
-                    <span class="value">
-                      {{ keyInfo()!.lastUsedAt | date: 'MMM d, y · h:mm a' }}
-                    </span>
-                  </div>
-                }
-              </div>
-
-              <div class="actions">
-                <button
-                  (click)="onRegenerateKey()"
-                  [disabled]="regenerating()"
-                  class="btn btn-secondary"
-                >
-                  <pc-icon name="arrow-path" [size]="4"></pc-icon>
-                  {{ regenerating() ? 'Regenerating...' : 'Regenerate Key' }}
-                </button>
-              </div>
-            </div>
-
-            @if (showNewKey()) {
-              <div class="new-key-banner">
-                <div class="banner-content">
-                  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-                  <div class="banner-text">
-                    <p class="banner-title">Save your new API key</p>
-                    <p class="banner-message">
-                      This is the only time your key will be displayed. Store it securely — you won't be able
-                      to retrieve it again.
-                    </p>
-                  </div>
-                </div>
-                <div class="key-box">
-                  <div class="key-display-new">
-                    <code>{{ newKey() }}</code>
-                  </div>
-                  <button (click)="onCopyKey()" class="btn-copy">
-                    <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-                    Copy
-                  </button>
-                </div>
-              </div>
-            }
-          } @else {
-            <div class="empty-key-card">
-              <p>No API key generated yet.</p>
-              <button (click)="onGenerateKey()" [disabled]="generating()" class="btn btn-primary">
-                <pc-icon name="plus" [size]="4"></pc-icon>
-                {{ generating() ? 'Generating...' : 'Generate API Key' }}
-              </button>
-            </div>
-          }
-        </div>
-      }
-    </div>
-  `,
-  styles: `
-    .api-keys-container {
-      max-width: 600px;
-    }
-
-    .settings-section {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    .section-header {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .section-header h3 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-      color: hsl(var(--base-content));
-    }
-
-    .description {
-      margin: 0;
-      font-size: 14px;
-      color: hsl(var(--base-content) / 0.7);
-    }
-
-    .key-info-card {
-      border: 1px solid hsl(var(--base-300));
-      border-radius: 8px;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      background: hsl(var(--base-100));
-    }
-
-    .key-display {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .key-label {
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: hsl(var(--base-content) / 0.6);
-    }
-
-    .key-value code {
-      font-family: 'Courier New', monospace;
-      font-size: 14px;
-      padding: 8px 12px;
-      background: hsl(var(--base-200));
-      border-radius: 4px;
-      word-break: break-all;
-      color: hsl(var(--base-content));
-    }
-
-    .key-metadata {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      padding: 12px 0;
-      border-top: 1px solid hsl(var(--base-300));
-      border-bottom: 1px solid hsl(var(--base-300));
-    }
-
-    .metadata-item {
-      display: flex;
-      justify-content: space-between;
-      font-size: 14px;
-    }
-
-    .metadata-item .label {
-      color: hsl(var(--base-content) / 0.6);
-    }
-
-    .metadata-item .value {
-      font-weight: 500;
-      color: hsl(var(--base-content));
-    }
-
-    .actions {
-      display: flex;
-      gap: 12px;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 16px;
-      font-size: 14px;
-      font-weight: 500;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn-primary {
-      background: hsl(var(--primary));
-      color: hsl(var(--primary-content));
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      background: hsl(var(--primary) / 0.9);
-    }
-
-    .btn-secondary {
-      background: hsl(var(--base-200));
-      color: hsl(var(--base-content));
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-      background: hsl(var(--base-300));
-    }
-
-    .empty-key-card {
-      border: 2px dashed hsl(var(--base-300));
-      border-radius: 8px;
-      padding: 40px 20px;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      align-items: center;
-    }
-
-    .empty-key-card p {
-      margin: 0;
-      color: hsl(var(--base-content) / 0.7);
-      font-size: 14px;
-    }
-
-    .new-key-banner {
-      border: 1px solid hsl(var(--warning) / 0.3);
-      background: hsl(var(--warning) / 0.05);
-      border-radius: 8px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .banner-content {
-      display: flex;
-      gap: 12px;
-    }
-
-    .banner-content pc-icon {
-      color: hsl(var(--warning));
-      flex-shrink: 0;
-    }
-
-    .banner-text {
-      flex: 1;
-    }
-
-    .banner-title {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 600;
-      color: hsl(var(--base-content));
-    }
-
-    .banner-message {
-      margin: 4px 0 0 0;
-      font-size: 13px;
-      color: hsl(var(--base-content) / 0.7);
-      line-height: 1.4;
-    }
-
-    .key-box {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .key-display-new {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .key-display-new code {
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-      padding: 12px;
-      background: hsl(var(--base-100));
-      border: 1px solid hsl(var(--base-300));
-      border-radius: 4px;
-      display: block;
-      word-break: break-all;
-      color: hsl(var(--base-content));
-    }
-
-    .btn-copy {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 10px 12px;
-      background: hsl(var(--base-200));
-      color: hsl(var(--base-content));
-      border: none;
-      border-radius: 4px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      flex-shrink: 0;
-    }
-
-    .btn-copy:hover {
-      background: hsl(var(--base-300));
-    }
-
-    .skeleton {
-      height: 200px;
-      background: hsl(var(--base-200));
-      border-radius: 8px;
-      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
-
-    @keyframes pulse {
-      0%,
-      100% {
-        opacity: 1;
-      }
-      50% {
-        opacity: 0.5;
-      }
-    }
-  `,
-})
-export class ApiKeysSettingsComponent implements OnInit {
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly authSvc = inject(AuthService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loaded = this._loading.loaded;
-
-  protected readonly generating = signal(false);
-  protected readonly regenerating = signal(false);
-  protected readonly showNewKey = signal(false);
-  protected readonly newKey = signal('');
-
-  protected readonly keyInfo = computed<ApiKeyInfo | null>(() => {
-    const user = this.authSvc.getUser();
-    return (user as any)?.workspace_api_key_preview || null;
-  });
-
-  ngOnInit() {
-    const end = this._loading.begin();
-    // Settings are typically pre-loaded by the settings page, so just mark loaded
-    end();
-  }
-
-  protected onGenerateKey() {
-    this.generating.set(true);
-    this.settingsSvc
-      .generateApiKey()
-      .then((result: any) => {
-        this.newKey.set(result.key);
-        this.showNewKey.set(true);
-        this.alerts.showSuccess('API key generated successfully');
-        // Refresh user data to show the new preview
-        void this.authSvc.getCurrentUser();
-      })
-      .catch((err: any) => {
-        this.alerts.showError('Failed to generate API key: ' + (err.message || String(err)));
-      })
-      .finally(() => {
-        this.generating.set(false);
-      });
-  }
-
-  protected onRegenerateKey() {
-    this.dialogs
-      .confirm({
-        title: 'Regenerate API Key',
-        message: 'Your current API key will stop working immediately. Make sure all integrations are updated with the new key.',
-        variant: 'danger',
-        confirmText: 'Regenerate',
-      })
-      .then((confirmed: any) => {
-        if (!confirmed) return;
-
-        this.regenerating.set(true);
-        this.settingsSvc
-          .regenerateApiKey()
-          .then((result: any) => {
-            this.newKey.set(result.key);
-            this.showNewKey.set(true);
-            this.alerts.showSuccess('API key regenerated successfully');
-            // Refresh user data to show the new preview
-            void this.authSvc.getCurrentUser();
-          })
-          .catch((err: any) => {
-            this.alerts.showError('Failed to regenerate API key: ' + (err.message || String(err)));
-          })
-          .finally(() => {
-            this.regenerating.set(false);
-          });
-      });
-  }
-
-  protected onCopyKey() {
-    const key = this.newKey();
-    if (!key) return;
-
-    navigator.clipboard.writeText(key).then(() => {
-      this.alerts.showSuccess('API key copied to clipboard');
-    });
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.html
 ```html
 <div class="space-y-6">
@@ -55221,6 +54783,439 @@ function eventValue(event: Event): string {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/settings/api-keys/api-keys-settings.ts
+```typescript
+import { Component, signal, computed, inject, OnInit } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SettingsService } from '../services/settings-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+import { DatePipe, NgIf } from '@angular/common';
+import { AuthService } from '../../../auth/auth-service';
+
+interface ApiKeyInfo {
+  preview: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+@Component({
+  selector: 'pc-api-keys-settings',
+  imports: [EmptyState, Icon, DatePipe, NgIf],
+  template: `
+    <div class="api-keys-container">
+      @if (!loaded()) {
+        <div class="skeleton"></div>
+      } @else {
+        <div class="settings-section">
+          <div class="section-header">
+            <h3>Workspace API Key</h3>
+            <p class="description">Use your API key to programmatically submit form responses and event RSVPs.</p>
+          </div>
+
+          @if (keyInfo()) {
+            <div class="key-info-card">
+              <div class="key-display">
+                <div class="key-label">Current Key</div>
+                <div class="key-value">
+                  <code>{{ keyInfo()!.preview }}***</code>
+                </div>
+              </div>
+
+              <div class="key-metadata">
+                <div class="metadata-item">
+                  <span class="label">Created</span>
+                  <span class="value">
+                    {{ keyInfo()!.createdAt | date: 'MMM d, y' }}
+                  </span>
+                </div>
+                @if (keyInfo()!.lastUsedAt) {
+                  <div class="metadata-item">
+                    <span class="label">Last used</span>
+                    <span class="value">
+                      {{ keyInfo()!.lastUsedAt | date: 'MMM d, y · h:mm a' }}
+                    </span>
+                  </div>
+                }
+              </div>
+
+              <div class="actions">
+                <button (click)="onRegenerateKey()" [disabled]="regenerating()" class="btn btn-secondary">
+                  <pc-icon name="arrow-path" [size]="4"></pc-icon>
+                  {{ regenerating() ? 'Regenerating...' : 'Regenerate Key' }}
+                </button>
+              </div>
+            </div>
+
+            @if (showNewKey()) {
+              <div class="new-key-banner">
+                <div class="banner-content">
+                  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+                  <div class="banner-text">
+                    <p class="banner-title">Save your new API key</p>
+                    <p class="banner-message">
+                      This is the only time your key will be displayed. Store it securely — you won't be able to
+                      retrieve it again.
+                    </p>
+                  </div>
+                </div>
+                <div class="key-box">
+                  <div class="key-display-new">
+                    <code>{{ newKey() }}</code>
+                  </div>
+                  <button (click)="onCopyKey()" class="btn-copy">
+                    <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+                    Copy
+                  </button>
+                </div>
+              </div>
+            }
+          } @else {
+            <div class="empty-key-card">
+              <p>No API key generated yet.</p>
+              <button (click)="onGenerateKey()" [disabled]="generating()" class="btn btn-primary">
+                <pc-icon name="plus" [size]="4"></pc-icon>
+                {{ generating() ? 'Generating...' : 'Generate API Key' }}
+              </button>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  `,
+  styles: `
+    .api-keys-container {
+      max-width: 600px;
+    }
+
+    .settings-section {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .section-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .section-header h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: hsl(var(--base-content));
+    }
+
+    .description {
+      margin: 0;
+      font-size: 14px;
+      color: hsl(var(--base-content) / 0.7);
+    }
+
+    .key-info-card {
+      border: 1px solid hsl(var(--base-300));
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: hsl(var(--base-100));
+    }
+
+    .key-display {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .key-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: hsl(var(--base-content) / 0.6);
+    }
+
+    .key-value code {
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      padding: 8px 12px;
+      background: hsl(var(--base-200));
+      border-radius: 4px;
+      word-break: break-all;
+      color: hsl(var(--base-content));
+    }
+
+    .key-metadata {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px 0;
+      border-top: 1px solid hsl(var(--base-300));
+      border-bottom: 1px solid hsl(var(--base-300));
+    }
+
+    .metadata-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+    }
+
+    .metadata-item .label {
+      color: hsl(var(--base-content) / 0.6);
+    }
+
+    .metadata-item .value {
+      font-weight: 500;
+      color: hsl(var(--base-content));
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: hsl(var(--primary));
+      color: hsl(var(--primary-content));
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: hsl(var(--primary) / 0.9);
+    }
+
+    .btn-secondary {
+      background: hsl(var(--base-200));
+      color: hsl(var(--base-content));
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: hsl(var(--base-300));
+    }
+
+    .empty-key-card {
+      border: 2px dashed hsl(var(--base-300));
+      border-radius: 8px;
+      padding: 40px 20px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .empty-key-card p {
+      margin: 0;
+      color: hsl(var(--base-content) / 0.7);
+      font-size: 14px;
+    }
+
+    .new-key-banner {
+      border: 1px solid hsl(var(--warning) / 0.3);
+      background: hsl(var(--warning) / 0.05);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .banner-content {
+      display: flex;
+      gap: 12px;
+    }
+
+    .banner-content pc-icon {
+      color: hsl(var(--warning));
+      flex-shrink: 0;
+    }
+
+    .banner-text {
+      flex: 1;
+    }
+
+    .banner-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: hsl(var(--base-content));
+    }
+
+    .banner-message {
+      margin: 4px 0 0 0;
+      font-size: 13px;
+      color: hsl(var(--base-content) / 0.7);
+      line-height: 1.4;
+    }
+
+    .key-box {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .key-display-new {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .key-display-new code {
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      padding: 12px;
+      background: hsl(var(--base-100));
+      border: 1px solid hsl(var(--base-300));
+      border-radius: 4px;
+      display: block;
+      word-break: break-all;
+      color: hsl(var(--base-content));
+    }
+
+    .btn-copy {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 12px;
+      background: hsl(var(--base-200));
+      color: hsl(var(--base-content));
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .btn-copy:hover {
+      background: hsl(var(--base-300));
+    }
+
+    .skeleton {
+      height: 200px;
+      background: hsl(var(--base-200));
+      border-radius: 8px;
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes pulse {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.5;
+      }
+    }
+  `,
+})
+export class ApiKeysSettingsComponent implements OnInit {
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly authSvc = inject(AuthService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loaded = this._loading.loaded;
+
+  protected readonly generating = signal(false);
+  protected readonly regenerating = signal(false);
+  protected readonly showNewKey = signal(false);
+  protected readonly newKey = signal('');
+
+  protected readonly keyInfo = computed<ApiKeyInfo | null>(() => {
+    const user = this.authSvc.getUser();
+    return (user as any)?.workspace_api_key_preview || null;
+  });
+
+  ngOnInit() {
+    const end = this._loading.begin();
+    // Settings are typically pre-loaded by the settings page, so just mark loaded
+    end();
+  }
+
+  protected onGenerateKey() {
+    this.generating.set(true);
+    this.settingsSvc
+      .generateApiKey()
+      .then((result: any) => {
+        this.newKey.set(result.key);
+        this.showNewKey.set(true);
+        this.alerts.showSuccess('API key generated successfully');
+        // Refresh user data to show the new preview
+        void this.authSvc.getCurrentUser();
+      })
+      .catch((err: any) => {
+        this.alerts.showError('Failed to generate API key: ' + (err.message || String(err)));
+      })
+      .finally(() => {
+        this.generating.set(false);
+      });
+  }
+
+  protected onRegenerateKey() {
+    void this.dialogs
+      .confirm({
+        title: 'Regenerate API Key',
+        message:
+          'Your current API key will stop working immediately. Make sure all integrations are updated with the new key.',
+        variant: 'danger',
+        confirmText: 'Regenerate',
+      })
+      .then((confirmed: any) => {
+        if (!confirmed) return;
+
+        this.regenerating.set(true);
+        this.settingsSvc
+          .regenerateApiKey()
+          .then((result: any) => {
+            this.newKey.set(result.key);
+            this.showNewKey.set(true);
+            this.alerts.showSuccess('API key regenerated successfully');
+            // Refresh user data to show the new preview
+            void this.authSvc.getCurrentUser();
+          })
+          .catch((err: any) => {
+            this.alerts.showError('Failed to regenerate API key: ' + (err.message || String(err)));
+          })
+          .finally(() => {
+            this.regenerating.set(false);
+          });
+      });
+  }
+
+  protected onCopyKey() {
+    const key = this.newKey();
+    if (!key) return;
+
+    void navigator.clipboard.writeText(key).then(() => {
+      this.alerts.showSuccess('API key copied to clipboard');
+    });
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.css
 ```css
 /* Hide the native number-input spinner arrows on this page's amount/percentage fields.
@@ -55234,138 +55229,6 @@ function eventValue(event: Event): string {
 .no-spinner {
   -moz-appearance: textfield;
   appearance: textfield;
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
-```typescript
-import { signal, Service } from '@angular/core';
-
-import { SettingsEntryType } from '../../../../../../../libs/common/src';
-
-import { TRPCService } from '../../../services/api/trpc-service';
-
-export type TenantSettingsSnapshot = Record<string, unknown>;
-
-@Service()
-export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
-  public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
-  private readonly isPendingSignal = signal<boolean>(false);
-
-  public async load(force = false) {
-    if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
-
-    this.isPendingSignal.set(true);
-    try {
-      const data = (await this.api.settings.getSnapshot.query()) ?? {};
-      this.snapshotSignal.set(data);
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public getValue<T = unknown>(key: string, fallback: T): T;
-  public getValue<T = unknown>(key: string): T | undefined;
-  public getValue<T = unknown>(key: string, fallback?: T) {
-    const value = this.snapshotSignal()[key];
-    return (value === undefined ? fallback : (value as T)) ?? fallback;
-  }
-
-  public async upsert(entries: SettingsEntryType[]) {
-    if (!entries.length) return this.snapshotSignal();
-
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.upsert.mutate({ entries });
-      this.snapshotSignal.set(data ?? {});
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async requestEmailVerification(email: string) {
-    return this.api.settings.requestEmailVerification.mutate({ email });
-  }
-
-  public async getPhoneVerificationStatus() {
-    return this.api.settings.getPhoneVerificationStatus.query();
-  }
-
-  public async requestPhoneVerification(phone: string) {
-    return this.api.settings.requestPhoneVerification.mutate({ phone });
-  }
-
-  public async confirmPhoneVerification(code: string) {
-    return this.api.settings.confirmPhoneVerification.mutate({ code });
-  }
-
-  public async verifySenderEmail(token: string) {
-    return this.api.settings.verifySenderEmail.mutate({ token });
-  }
-
-  public async addVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.addVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async verifyVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.verifyVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async deleteVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.deleteVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async generateApiKey() {
-    return this.api.settings.generateApiKey.mutate();
-  }
-
-  public async getApiKeyPreview() {
-    return this.api.settings.getApiKeyPreview.query();
-  }
-
-  public async regenerateApiKey() {
-    return this.api.settings.regenerateApiKey.mutate();
-  }
-
-  public snapshot(): TenantSettingsSnapshot {
-    return this.snapshotSignal();
-  }
-
-  public pending(): boolean {
-    return this.isPendingSignal();
-  }
 }
 ```
 
@@ -67202,776 +67065,135 @@ export class DomainSettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/settings-page.ts
+## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
 ```typescript
-import { DatePipe } from '@angular/common';
-import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
-import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+import { signal, Service } from '@angular/core';
 
-import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { HouseholdsService } from '../households/services/households-service';
-import { AccountSettingsComponent } from './account/account-settings';
-import { ApiKeysSettingsComponent } from './api-keys/api-keys-settings';
-import { BillingSettingsComponent } from './billing/billing-settings';
-import { DomainSettingsComponent } from './domains/domains-settings';
-import { DonationsSettingsComponent } from './donations/donations-settings';
-import { GoogleSyncSettings } from './google-sync/google-sync-settings';
-import { MsSyncSettings } from './ms-sync/ms-sync-settings';
-import { PasskeySettingsComponent } from './security/passkey-settings';
-import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
-import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
-import { StorageSettingsComponent } from './storage/storage-settings';
+import { SettingsEntryType } from '../../../../../../../libs/common/src';
 
-interface SectionFieldState {
-  config: SettingsFieldConfig;
-  controlName: string;
-}
+import { TRPCService } from '../../../services/api/trpc-service';
 
-/** Mirror of settings.getPhoneVerificationStatus — phones arrive masked from the backend. */
-interface PhoneVerificationStatus {
-  verified: boolean;
-  verifiedAt: Date | string | null;
-  phone: string | null;
-  pendingPhone: string | null;
-  required: boolean;
-}
+export type TenantSettingsSnapshot = Record<string, unknown>;
 
-interface SectionState {
-  config: SettingsSectionConfig;
-  fields: SectionFieldState[];
-  form: any;
-  payload: WritableSignal<Record<string, any>>;
-}
+@Service()
+export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
+  public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
+  private readonly isPendingSignal = signal<boolean>(false);
 
-/** Self-saving sections rendered outside the config-driven form flow. One entry
- *  drives both the sidebar nav button and the content shell, so the two can
- *  never drift apart again. */
-interface CustomSectionConfig {
-  description: string;
-  icon: PcIconNameType;
-  id: string;
-  mode: 'settings' | 'workspace';
-  title: string;
-}
+  public async load(force = false) {
+    if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
 
-const CUSTOM_SECTIONS: CustomSectionConfig[] = [
-  {
-    id: 'passkeys',
-    mode: 'settings',
-    icon: 'lock-closed',
-    title: 'Passkeys',
-    description: 'Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.',
-  },
-  {
-    id: 'email-sync',
-    mode: 'workspace',
-    icon: 'envelope',
-    title: 'Email sync',
-    description:
-      'Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.',
-  },
-  {
-    id: 'domains',
-    mode: 'workspace',
-    icon: 'globe-americas',
-    title: 'Domain verification',
-    description: 'Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.',
-  },
-  {
-    id: 'donations',
-    mode: 'workspace',
-    icon: 'currency-dollar',
-    title: 'Donations',
-    description:
-      'Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe account.',
-  },
-  {
-    id: 'storage',
-    mode: 'workspace',
-    icon: 'archive-box',
-    title: 'Storage',
-    description: 'Plan quota, usage, and the files taking up the most space.',
-  },
-  {
-    id: 'billing',
-    mode: 'workspace',
-    icon: 'credit-card',
-    title: 'Billing',
-    description: 'Manage your subscription plans, view invoice details, and update payment methods.',
-  },
-  {
-    id: 'account',
-    mode: 'workspace',
-    icon: 'user-circle',
-    title: 'Account',
-    description: 'Manage your organization account: pause billing or permanently delete all data.',
-  },
-  {
-    id: 'api-keys',
-    mode: 'workspace',
-    icon: 'lock-closed',
-    title: 'API Keys',
-    description: 'Generate and manage API keys for programmatic access to form submissions and event RSVPs.',
-  },
-];
-
-@Component({
-  selector: 'pc-settings-page',
-  imports: [
-    FormField,
-    Icon,
-    MsSyncSettings,
-    GoogleSyncSettings,
-    BillingSettingsComponent,
-    DomainSettingsComponent,
-    DonationsSettingsComponent,
-    AccountSettingsComponent,
-    ApiKeysSettingsComponent,
-    PasskeySettingsComponent,
-    StorageSettingsComponent,
-    DatePipe,
-    EmptyState,
-  ],
-  templateUrl: './settings-page.html',
-})
-export class SettingsPage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-
-  protected readonly currentMode: 'settings' | 'workspace';
-  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
-  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
-  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
-  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
-    const lastTime = this.lastFingerprintRecomputeTime();
-    if (!lastTime) return null;
-    const nextAvailable = new Date(lastTime.getTime());
-    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
-    return nextAvailable;
-  });
-  protected readonly hasLoaded = signal(false);
-  protected readonly householdsSvc = inject(HouseholdsService);
-  protected readonly isFingerprintRecomputeCooldown = computed(() => {
-    const nextAvailable = this.fingerprintRecomputeNextAvailable();
-    if (!nextAvailable) return false;
-    return Date.now() < nextAvailable.getTime();
-  });
-  protected readonly lastRequestedEmail = signal<string | null>(null);
-  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
-  protected readonly recomputingFingerprints = signal(false);
-  protected readonly savingSectionId = signal<string | null>(null);
-  protected readonly sectionStates: SectionState[];
-  protected readonly sections = SETTINGS_SECTIONS;
-  protected readonly selectedSectionId = signal<string>('');
-  // The config-driven section currently shown, so the header Save/Cancel act on it.
-  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
-  protected readonly headerSection = computed<SectionState | null>(() => {
-    const id = this.selectedSectionId();
-    return this.visibleSections.find((s) => s.config.id === id) ?? null;
-  });
-  protected readonly senderEmailInput = signal('');
-  // Sending-phone verification (anti-abuse gate for Free-plan newsletter sends).
-  protected readonly phoneStatus = signal<PhoneVerificationStatus | null>(null);
-  protected readonly phoneInput = signal('');
-  protected readonly phoneCodeInput = signal('');
-  protected readonly phoneBusy = signal(false);
-  protected readonly phoneCodeSentTo = signal<string | null>(null);
-  protected readonly settingsSvc = inject(SettingsService);
-  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
-  protected readonly verifiedEmailsList = computed<string[]>(() => {
-    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-  });
-  protected readonly verifyingEmail = signal<string | null>(null);
-
-  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
-  protected trackSection = (_: number, section: SectionState) => section.config.id;
-
-  /** The custom (self-saving) sections visible in the current mode. */
-  protected get visibleCustomSections(): CustomSectionConfig[] {
-    return CUSTOM_SECTIONS.filter((s) => s.mode === this.currentMode);
-  }
-
-  /** Nav-button classes shared by config-driven and custom section buttons. */
-  protected navClass(id: string): string {
-    return this.isSelected(id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60';
-  }
-
-  public readonly section = input<string>();
-
-  constructor() {
-    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
-    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
-
-    // Navbar crumb ("Settings"/"Workspace") comes from the route's `data.breadcrumb`
-    // via BreadcrumbDefaultsService — no manual publish needed here anymore.
-
-    effect(() => {
-      const s = this.section();
-      if (s) {
-        this.selectedSectionId.set(s);
-      } else {
-        if (this.currentMode === 'settings') {
-          this.selectedSectionId.set('notifications');
-        } else if (this.currentMode === 'workspace') {
-          this.selectedSectionId.set('organization');
-        }
-      }
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      this.applySnapshot(snapshot, false);
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
-
-      const commsSection = this.sections.find((s) => s.id === 'communications');
-      if (commsSection) {
-        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
-        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
-
-        const options = [
-          { label: 'Select a verified email', value: '' },
-          ...verifiedEmails.map((email) => ({ label: email, value: email })),
-        ];
-
-        if (fromEmailField) {
-          fromEmailField.options = options;
-        }
-        if (replyToField) {
-          replyToField.options = options;
-        }
-      }
-    });
-  }
-
-  protected get visibleSections(): SectionState[] {
-    if (this.currentMode === 'settings') {
-      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
-    }
-    if (this.currentMode === 'workspace') {
-      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
-    }
-    return [];
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.settingsSvc.load();
-    this.hasLoaded.set(true);
-    this.applySnapshot(this.settingsSvc.snapshot(), true);
-    await this.loadUserPrefs();
-    await this.loadLastFingerprintRecomputeTime();
-    if (this.currentMode === 'workspace') {
-      await this.loadPhoneStatus();
-    }
-  }
-
-  private async loadPhoneStatus(): Promise<void> {
+    this.isPendingSignal.set(true);
     try {
-      this.phoneStatus.set(await this.settingsSvc.getPhoneVerificationStatus());
-    } catch {
-      // Non-blocking: the communications section still renders without the phone card state.
-    }
-  }
-
-  protected async requestPhoneCode(): Promise<void> {
-    const phone = this.phoneInput().trim();
-    if (!phone) return;
-    this.phoneBusy.set(true);
-    try {
-      const result = await this.settingsSvc.requestPhoneVerification(phone);
-      this.phoneCodeSentTo.set(result.phone);
-      this.phoneCodeInput.set('');
-      this.alerts.showSuccess(`We texted a verification code to ${result.phone}.`);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not send the code.');
+      const data = (await this.api.settings.getSnapshot.query()) ?? {};
+      this.snapshotSignal.set(data);
+      return data;
     } finally {
-      this.phoneBusy.set(false);
+      this.isPendingSignal.set(false);
     }
   }
 
-  protected async confirmPhoneCode(): Promise<void> {
-    const code = this.phoneCodeInput().trim();
-    if (!code) return;
-    this.phoneBusy.set(true);
+  public getValue<T = unknown>(key: string, fallback: T): T;
+  public getValue<T = unknown>(key: string): T | undefined;
+  public getValue<T = unknown>(key: string, fallback?: T) {
+    const value = this.snapshotSignal()[key];
+    return (value === undefined ? fallback : (value as T)) ?? fallback;
+  }
+
+  public async upsert(entries: SettingsEntryType[]) {
+    if (!entries.length) return this.snapshotSignal();
+
+    this.isPendingSignal.set(true);
     try {
-      const result = await this.settingsSvc.confirmPhoneVerification(code);
-      this.alerts.showSuccess(`Phone ${result.phone} is verified — you're clear to send newsletters.`);
-      this.phoneCodeSentTo.set(null);
-      this.phoneInput.set('');
-      this.phoneCodeInput.set('');
-      await this.loadPhoneStatus();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not verify the code.');
+      const data = await this.api.settings.upsert.mutate({ entries });
+      this.snapshotSignal.set(data ?? {});
+      return data;
     } finally {
-      this.phoneBusy.set(false);
+      this.isPendingSignal.set(false);
     }
   }
 
-  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
-  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
-    { value: 1, label: 'Mon' },
-    { value: 2, label: 'Tue' },
-    { value: 3, label: 'Wed' },
-    { value: 4, label: 'Thu' },
-    { value: 5, label: 'Fri' },
-    { value: 6, label: 'Sat' },
-    { value: 0, label: 'Sun' },
-  ];
-
-  private parseDays(raw: unknown): Set<number> {
-    return new Set(
-      String(raw ?? '')
-        .split(',')
-        .map((s) => Number(s.trim()))
-        .filter((n) => !Number.isNaN(n)),
-    );
+  public async requestEmailVerification(email: string) {
+    return this.api.settings.requestEmailVerification.mutate({ email });
   }
 
-  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
-    return this.parseDays(section.payload()[controlName]).has(day);
+  public async getPhoneVerificationStatus() {
+    return this.api.settings.getPhoneVerificationStatus.query();
   }
 
-  protected toggleDay(section: SectionState, controlName: string, day: number): void {
-    const days = this.parseDays(section.payload()[controlName]);
-    if (days.has(day)) days.delete(day);
-    else days.add(day);
-    const ordered = this.dayChips
-      .map((c) => c.value)
-      .filter((d) => days.has(d))
-      .join(',');
-    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
-    section.form[controlName]().markAsDirty();
+  public async requestPhoneVerification(phone: string) {
+    return this.api.settings.requestPhoneVerification.mutate({ phone });
   }
 
-  protected getNotificationGroups(section: SectionState) {
-    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
-    const fields = section.fields;
-
-    for (const field of fields) {
-      if (field.config.key.endsWith('_in_app')) continue;
-
-      const inAppControlName = `${field.controlName}_in_app`;
-      const inAppField = fields.find((f) => f.controlName === inAppControlName);
-
-      groups.push({
-        label: field.config.label,
-        helper: field.config.helper || '',
-        emailField: field,
-        inAppField: inAppField,
-      });
-    }
-    return groups;
+  public async confirmPhoneVerification(code: string) {
+    return this.api.settings.confirmPhoneVerification.mutate({ code });
   }
 
-  protected isEmailVerified(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-    return verified.includes(email.toLowerCase().trim());
+  public async verifySenderEmail(token: string) {
+    return this.api.settings.verifySenderEmail.mutate({ token });
   }
 
-  protected isSaving(section: SectionState) {
-    return this.savingSectionId() === section.config.id;
-  }
-
-  protected isSectionDirty(section: SectionState) {
-    return section.form().dirty();
-  }
-
-  protected isSectionInvalid(section: SectionState) {
-    return section.form().invalid();
-  }
-
-  protected isSelected(sectionId: string) {
-    return this.selectedSectionId() === sectionId;
-  }
-
-  protected isVerifyCooldown(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
-    if (!lastTime) return false;
-    return Date.now() - lastTime < 60000;
-  }
-
-  protected async loadLastFingerprintRecomputeTime() {
+  public async addVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
     try {
-      const res = await this.householdsSvc.getLastFingerprintRecomputation();
-      if (res && res.lastRunAt) {
-        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
-      } else {
-        this.lastFingerprintRecomputeTime.set(null);
-      }
-    } catch (err) {
-      console.error('Failed to load last fingerprint recompute time', err);
-    }
-  }
-
-  protected async loadUserPrefs() {
-    try {
-      const currentUser = await this.auth.getCurrentUser();
-      if (currentUser) {
-        const user = await this.userService.getProfileById(currentUser.id);
-        this.currentUserDetail.set(user);
-        const prefs = user.notification_preferences || {
-          mention_in_comment: true,
-          mention_in_comment_in_app: true,
-          task_assigned: true,
-          task_assigned_in_app: true,
-          task_due: true,
-          task_due_in_app: true,
-          person_assigned: true,
-          person_assigned_in_app: true,
-          export_ready: true,
-          export_ready_in_app: true,
-          import_summary: true,
-          import_summary_in_app: true,
-        };
-        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
-        if (notifState) {
-          notifState.payload.update((p) => ({
-            ...p,
-            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
-            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
-            notifications_task_assigned: prefs.task_assigned ?? true,
-            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
-            notifications_task_due: prefs.task_due ?? true,
-            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
-            notifications_person_assigned: prefs.person_assigned ?? true,
-            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
-            notifications_export_ready: prefs.export_ready ?? true,
-            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
-            notifications_import_summary: prefs.import_summary ?? true,
-            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
-          }));
-          notifState.form().reset();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load user preferences in settings page', err);
-    }
-  }
-
-  protected async recomputeAddressFingerprints() {
-    if (this.isFingerprintRecomputeCooldown()) {
-      this.alerts.showError('Fingerprints can only be recomputed once a month.');
-      return;
-    }
-
-    this.recomputingFingerprints.set(true);
-    try {
-      await this.householdsSvc.recomputeAddressFingerprints();
-      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
-      await this.loadLastFingerprintRecomputeTime();
-    } catch (err) {
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
-      );
-    } finally {
-      this.recomputingFingerprints.set(false);
-    }
-  }
-
-  protected resetSection(section: SectionState) {
-    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
-    if (section.config.id === 'notifications') {
-      void this.loadUserPrefs();
-    }
-  }
-
-  protected async saveSection(section: SectionState) {
-    if (!section.form().dirty()) return;
-
-    const entries: SettingsEntryType[] = [];
-    for (const field of section.fields) {
-      const fieldSignal = (section.form as any)[field.controlName]();
-      if (!fieldSignal.dirty()) continue;
-
-      // Skip user notification preferences from tenant settings upsert
-      if (section.config.id === 'notifications') {
-        continue;
-      }
-
-      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
-      entries.push({ key: field.config.key, value });
-    }
-
-    this.savingSectionId.set(section.config.id);
-    try {
-      if (entries.length > 0) {
-        const snapshot = await this.settingsSvc.upsert(entries);
-        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
-      }
-
-      if (section.config.id === 'notifications') {
-        const user = this.currentUserDetail();
-        if (user) {
-          const raw = section.payload();
-          const parseBool = (val: any) => val === true || val === 'true';
-          const payload: UpdateAuthUserType = {
-            notification_preferences: {
-              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
-              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
-              task_assigned: parseBool(raw['notifications_task_assigned']),
-              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
-              task_due: parseBool(raw['notifications_task_due']),
-              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
-              person_assigned: parseBool(raw['notifications_person_assigned']),
-              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
-              export_ready: parseBool(raw['notifications_export_ready']),
-              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
-              import_summary: parseBool(raw['notifications_import_summary']),
-              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
-            },
-          };
-          await this.userService.updateUserProfile(user.id, payload);
-          await this.loadUserPrefs();
-        }
-      }
-      this.alerts.showSuccess('Settings updated successfully');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to save settings';
-      this.alerts.showError(message);
-    } finally {
-      this.savingSectionId.set(null);
-    }
-  }
-
-  protected selectSection(sectionId: string) {
-    void this.router.navigate(['/', this.currentMode, sectionId]);
-  }
-
-  protected async verifySenderEmail(email: string | null | undefined) {
-    if (!email) return;
-    const normalized = email.toLowerCase().trim();
-
-    if (this.isVerifyCooldown(normalized)) {
-      this.alerts.showError('Please wait at least one minute before requesting verification again.');
-      return;
-    }
-
-    this.verifyingEmail.set(normalized);
-
-    try {
-      await this.settingsSvc.requestEmailVerification(normalized);
-      this.lastVerificationTimes.update((prev) => ({
-        ...prev,
-        [normalized]: Date.now(),
+      const data = await this.api.settings.addVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
       }));
-      this.startEmailCooldown(normalized);
-      this.lastRequestedEmail.set(normalized);
-      // Clear only after success — on failure the user keeps their input to retry.
-      this.senderEmailInput.set('');
-      this.alerts.showSuccess(
-        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
-      );
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
+      return data;
     } finally {
-      this.verifyingEmail.set(null);
+      this.isPendingSignal.set(false);
     }
   }
 
-  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
-    const sections = target ? [target] : this.sectionStates;
-
-    for (const state of sections) {
-      const nextPayload = { ...state.payload() };
-      let changed = false;
-
-      for (const field of state.fields) {
-        const fieldSignal = (state.form as any)[field.controlName]();
-        if (!resetDirty && fieldSignal.dirty()) continue;
-
-        // Skip user notification preferences from tenant settings snapshot update
-        if (state.config.id === 'notifications') {
-          continue;
-        }
-
-        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
-        if (nextPayload[field.controlName] !== incoming) {
-          nextPayload[field.controlName] = incoming;
-          changed = true;
-        }
-      }
-
-      if (changed) {
-        state.payload.set(nextPayload);
-      }
-
-      if (resetDirty) {
-        state.form().reset();
-      }
+  public async verifyVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.verifyVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
     }
   }
 
-  private buildSectionState(section: SettingsSectionConfig): SectionState {
-    const initialPayload: Record<string, any> = {};
-    const fieldStates: SectionFieldState[] = [];
-
-    for (const field of section.fields) {
-      const controlName = this.controlNameFor(field.key);
-      initialPayload[controlName] = this.normalizeIncomingValue(
-        field,
-        this.settingsSvc.getValue(field.key, field.defaultValue),
-      );
-      fieldStates.push({ config: field, controlName });
-    }
-
-    const payload = signal(initialPayload);
-    const formSignal = form(payload, (p) => {
-      for (const field of section.fields) {
-        const controlName = this.controlNameFor(field.key);
-        if (field.type === 'email') {
-          email(p[controlName]);
-        }
-        if (field.type === 'url') {
-          pattern(p[controlName], /^https?:\/\//i);
-        }
-        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
-          validate(p[controlName], (ctx) => {
-            const val = ((ctx.value() as string) || '').toLowerCase().trim();
-            if (!val) return null;
-            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-            if (!verified.includes(val)) {
-              return { kind: 'not-verified', message: 'Email address must be verified.' };
-            }
-            return null;
-          });
-        }
-      }
-    });
-
-    return { config: section, payload, form: formSignal, fields: fieldStates };
-  }
-
-  private controlNameFor(key: string) {
-    return key.replace(/[^a-zA-Z0-9]+/g, '_');
-  }
-
-  private defaultForField(field: SettingsFieldConfig) {
-    switch (field.type) {
-      case 'toggle':
-        return false;
-      case 'number':
-        return null;
-      case 'select':
-        return field.options?.[0]?.value ?? '';
-      default:
-        return '';
+  public async deleteVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.deleteVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
     }
   }
 
-  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
-    const fallback = field.defaultValue ?? this.defaultForField(field);
-
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(raw ?? fallback ?? false);
-      case 'number': {
-        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
-        const numeric = typeof raw === 'number' ? raw : Number(raw);
-        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
-      }
-      case 'select': {
-        const options = field.options ?? [];
-        const candidate = raw === undefined || raw === null ? fallback : String(raw);
-        const match = options.find((option) => option.value === candidate);
-        if (match) return match.value;
-        return (fallback ?? options[0]?.value ?? '') as string;
-      }
-      case 'date':
-        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
-      case 'day-toggles':
-        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-      case 'text':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'textarea':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      default:
-        return raw ?? fallback ?? '';
-    }
+  public async generateApiKey() {
+    return this.api.settings.generateApiKey.mutate();
   }
 
-  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(value);
-      case 'number': {
-        if (value === '' || value === null || value === undefined) return null;
-        const numeric = typeof value === 'number' ? value : Number(value);
-        return Number.isFinite(numeric) ? numeric : null;
-      }
-      case 'select': {
-        const candidate = value === null || value === undefined ? '' : String(value);
-        const options = field.options ?? [];
-        const match = options.find((option) => option.value === candidate);
-        return match ? match.value : this.defaultForField(field);
-      }
-      case 'date':
-        return typeof value === 'string' ? value : value ? String(value) : '';
-      case 'day-toggles':
-        return value === null || value === undefined ? '' : String(value);
-      case 'textarea':
-      case 'text':
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-        return value === null || value === undefined ? '' : String(value);
-      default:
-        return value ?? '';
-    }
+  public async getApiKeyPreview() {
+    return this.api.settings.getApiKeyPreview.query();
   }
 
-  private startEmailCooldown(email: string) {
-    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
-    const interval = setInterval(() => {
-      const current = this.emailCooldownSeconds()[email] || 0;
-      if (current <= 1) {
-        clearInterval(interval);
-        this.emailCooldownSeconds.update((prev) => {
-          const next = { ...prev };
-          delete next[email];
-          return next;
-        });
-      } else {
-        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
-      }
-    }, 1000);
+  public async regenerateApiKey() {
+    return this.api.settings.regenerateApiKey.mutate();
   }
-}
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  public snapshot(): TenantSettingsSnapshot {
+    return this.snapshotSignal();
+  }
+
+  public pending(): boolean {
+    return this.isPendingSignal();
+  }
 }
 ```
 
@@ -72351,540 +71573,777 @@ function toNum(n: unknown): number | undefined {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/settings-page.html
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
-  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
-    <div class="space-y-1">
-      <p class="pc-eyebrow">
-        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
-      </p>
-      <h1 class="text-xl font-bold tracking-tight">
-        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
-      </h1>
-      <p class="text-xs text-base-content/60">
-        @switch (currentMode) { @case ('settings') { Personal to you. Nothing here affects teammates. } @case
-        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
-      </p>
-    </div>
+## File: apps/frontend/src/app/experiences/settings/settings-page.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
-    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
-    @if (hasLoaded() && headerSection(); as section) {
-    <div class="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        class="btn btn-outline btn-accent btn-sm"
-        (click)="resetSection(section)"
-        [disabled]="!isSectionDirty(section) || isSaving(section)"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        (click)="saveSection(section)"
-        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-      >
-        @if (isSaving(section)) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } Save settings
-      </button>
-    </div>
-    }
-  </header>
+import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { HouseholdsService } from '../households/services/households-service';
+import { AccountSettingsComponent } from './account/account-settings';
+import { ApiKeysSettingsComponent } from './api-keys/api-keys-settings';
+import { BillingSettingsComponent } from './billing/billing-settings';
+import { DomainSettingsComponent } from './domains/domains-settings';
+import { DonationsSettingsComponent } from './donations/donations-settings';
+import { GoogleSyncSettings } from './google-sync/google-sync-settings';
+import { MsSyncSettings } from './ms-sync/ms-sync-settings';
+import { PasskeySettingsComponent } from './security/passkey-settings';
+import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
+import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
+import { StorageSettingsComponent } from './storage/storage-settings';
 
-  @if (hasLoaded()) {
-  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
-    <!-- Sidebar Navigation -->
-    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
-      <nav
-        class="flex flex-row gap-0.5 overflow-x-auto pc-panel p-1.5 md:flex-col md:overflow-visible"
-        aria-label="Settings sections"
-      >
-        @for (section of visibleSections; track trackSection($index, section)) {
-        <button
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [class]="navClass(section.config.id)"
-          (click)="selectSection(section.config.id)"
-        >
-          <pc-icon
-            [name]="section.config.icon"
-            [class.text-primary]="isSelected(section.config.id)"
-            [class.opacity-70]="!isSelected(section.config.id)"
-            [size]="5"
-          />
-          {{ section.config.title }}
-          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
-          @if (isSectionDirty(section)) {
-          <span
-            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
-            title="Unsaved changes in this section"
-            aria-label="Unsaved changes in this section"
-          ></span>
-          }
-        </button>
-        }
-        <!-- Custom self-saving sections (config array in settings-page.ts) -->
-        @for (custom of visibleCustomSections; track custom.id) {
-        <button
-          [id]="'settings-nav-' + custom.id"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [class]="navClass(custom.id)"
-          (click)="selectSection(custom.id)"
-        >
-          <pc-icon
-            [name]="custom.icon"
-            [class.text-primary]="isSelected(custom.id)"
-            [class.opacity-70]="!isSelected(custom.id)"
-            [size]="5"
-          />
-          {{ custom.title }}
-        </button>
-        }
-      </nav>
-    </aside>
+interface SectionFieldState {
+  config: SettingsFieldConfig;
+  controlName: string;
+}
 
-    <!-- Main Content Area -->
-    <main class="flex-1 w-full max-w-4xl">
-      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
-      <section class="space-y-5 pc-panel p-5">
-        @if (section.config.id !== 'notifications') {
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
-        </header>
-        }
+/** Mirror of settings.getPhoneVerificationStatus — phones arrive masked from the backend. */
+interface PhoneVerificationStatus {
+  verified: boolean;
+  verifiedAt: Date | string | null;
+  phone: string | null;
+  pendingPhone: string | null;
+  required: boolean;
+}
 
-        <!-- (form content) -->
-        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
-          @if (section.config.id === 'sla') {
-          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
-          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
-            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-            <p class="text-xs leading-relaxed text-base-content/80">
-              Saving new service levels re-evaluates every currently open email and task against the updated targets.
-              Some may immediately count as breached (or clear) on the dashboard.
-            </p>
-          </div>
-          } @if (section.config.id === 'communications') {
-          <!-- Compliance copy (§3): outbound email is regulated (CAN-SPAM / CASL); the platform can't guarantee it -->
-          <div class="flex items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3.5 py-2.5">
-            <pc-icon name="information-circle" [size]="5" class="mt-0.5 shrink-0 text-info"></pc-icon>
-            <p class="text-xs leading-relaxed text-base-content/80">
-              You are responsible for ensuring your emails comply with the anti-spam and privacy laws that apply to you
-              and your recipients (such as CAN-SPAM and CASL) — including consent, accurate sender details, a valid
-              physical address, and a working unsubscribe link. pplCRM appends the disclaimer and unsubscribe link you
-              configure below, but is a platform only and cannot guarantee that any message satisfies your legal
-              obligations. When in doubt, consult a qualified legal or compliance advisor.
-            </p>
-          </div>
-          }
+interface SectionState {
+  config: SettingsSectionConfig;
+  fields: SectionFieldState[];
+  form: any;
+  payload: WritableSignal<Record<string, any>>;
+}
 
-          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
-            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
-            'notifications') {
-            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
-              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
-                {{ field.config.label }}
-              </label>
+/** Self-saving sections rendered outside the config-driven form flow. One entry
+ *  drives both the sidebar nav button and the content shell, so the two can
+ *  never drift apart again. */
+interface CustomSectionConfig {
+  description: string;
+  icon: PcIconNameType;
+  id: string;
+  mode: 'settings' | 'workspace';
+  title: string;
+}
 
-              @switch (field.config.type) { @case ('textarea') {
-              <textarea
-                [id]="field.controlName"
-                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-                rows="4"
-              ></textarea>
-              } @case ('toggle') {
-              <label class="flex items-center gap-3 cursor-pointer py-1">
-                <input
-                  [id]="field.controlName"
-                  type="checkbox"
-                  class="toggle toggle-primary toggle-md"
-                  [formField]="section.form[field.controlName]"
-                />
-                <span class="text-xs font-normal text-base-content/70">
-                  {{ field.config.placeholder ?? 'Enabled' }}
-                </span>
-              </label>
-              } @case ('select') {
-              <select
-                [id]="field.controlName"
-                class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              >
-                @for (option of field.config.options ?? []; track option.value ?? $index) {
-                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
-                }
-              </select>
-              } @case ('number') {
-              <input
-                [id]="field.controlName"
-                type="number"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('date') {
-              <input
-                [id]="field.controlName"
-                type="date"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('day-toggles') {
-              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
-                @for (day of dayChips; track day.value) {
-                <button
-                  type="button"
-                  class="btn btn-sm min-w-12 font-medium"
-                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
-                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
-                  (click)="toggleDay(section, field.controlName, day.value)"
-                >
-                  {{ day.label }}
-                </button>
-                }
-              </div>
-              } @default {
-              <input
-                [id]="field.controlName"
-                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } } @if (field.config.helper) {
-              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
-              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
-              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
-                <pc-icon name="exclamation-circle"></pc-icon>
-                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
-              </p>
-              }
-            </div>
-            } }
-          </div>
+const CUSTOM_SECTIONS: CustomSectionConfig[] = [
+  {
+    id: 'passkeys',
+    mode: 'settings',
+    icon: 'lock-closed',
+    title: 'Passkeys',
+    description: 'Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.',
+  },
+  {
+    id: 'email-sync',
+    mode: 'workspace',
+    icon: 'envelope',
+    title: 'Email sync',
+    description:
+      'Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.',
+  },
+  {
+    id: 'domains',
+    mode: 'workspace',
+    icon: 'globe-americas',
+    title: 'Domain verification',
+    description: 'Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.',
+  },
+  {
+    id: 'donations',
+    mode: 'workspace',
+    icon: 'currency-dollar',
+    title: 'Donations',
+    description:
+      'Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe account.',
+  },
+  {
+    id: 'storage',
+    mode: 'workspace',
+    icon: 'archive-box',
+    title: 'Storage',
+    description: 'Plan quota, usage, and the files taking up the most space.',
+  },
+  {
+    id: 'billing',
+    mode: 'workspace',
+    icon: 'credit-card',
+    title: 'Billing',
+    description: 'Manage your subscription plans, view invoice details, and update payment methods.',
+  },
+  {
+    id: 'account',
+    mode: 'workspace',
+    icon: 'user-circle',
+    title: 'Account',
+    description: 'Manage your organization account: pause billing or permanently delete all data.',
+  },
+  {
+    id: 'api-keys',
+    mode: 'workspace',
+    icon: 'lock-closed',
+    title: 'API Keys',
+    description: 'Generate and manage API keys for programmatic access to form submissions and event RSVPs.',
+  },
+];
 
-          <!-- Custom extensions for specific sections -->
-          @if (section.config.id === 'communications') {
-          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
-            <div class="space-y-1">
-              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
-              <p class="text-xs text-base-content/50">
-                Add and verify email addresses to select them as campaign defaults.
-              </p>
-            </div>
+@Component({
+  selector: 'pc-settings-page',
+  imports: [
+    FormField,
+    Icon,
+    MsSyncSettings,
+    GoogleSyncSettings,
+    BillingSettingsComponent,
+    DomainSettingsComponent,
+    DonationsSettingsComponent,
+    AccountSettingsComponent,
+    ApiKeysSettingsComponent,
+    PasskeySettingsComponent,
+    StorageSettingsComponent,
+    DatePipe,
+    EmptyState,
+  ],
+  templateUrl: './settings-page.html',
+})
+export class SettingsPage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
 
-            <!-- Add new sender email form -->
-            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-              <div class="flex-1">
-                <input
-                  type="email"
-                  placeholder="sender@example.com"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                  [value]="senderEmailInput()"
-                  (input)="senderEmailInput.set($any($event.target).value)"
-                />
-              </div>
-              <button
-                type="button"
-                class="btn btn-primary"
-                (click)="verifySenderEmail(senderEmailInput())"
-                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
-              >
-                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
-                <span class="loading loading-spinner loading-xs"></span>
-                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
-                <span class="countdown font-mono text-xs"
-                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
-                >s } @else { Request verification }
-              </button>
-            </div>
+  protected readonly currentMode: 'settings' | 'workspace';
+  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
+  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
+  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
+  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
+    const lastTime = this.lastFingerprintRecomputeTime();
+    if (!lastTime) return null;
+    const nextAvailable = new Date(lastTime.getTime());
+    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
+    return nextAvailable;
+  });
+  protected readonly hasLoaded = signal(false);
+  protected readonly householdsSvc = inject(HouseholdsService);
+  protected readonly isFingerprintRecomputeCooldown = computed(() => {
+    const nextAvailable = this.fingerprintRecomputeNextAvailable();
+    if (!nextAvailable) return false;
+    return Date.now() < nextAvailable.getTime();
+  });
+  protected readonly lastRequestedEmail = signal<string | null>(null);
+  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
+  protected readonly recomputingFingerprints = signal(false);
+  protected readonly savingSectionId = signal<string | null>(null);
+  protected readonly sectionStates: SectionState[];
+  protected readonly sections = SETTINGS_SECTIONS;
+  protected readonly selectedSectionId = signal<string>('');
+  // The config-driven section currently shown, so the header Save/Cancel act on it.
+  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
+  protected readonly headerSection = computed<SectionState | null>(() => {
+    const id = this.selectedSectionId();
+    return this.visibleSections.find((s) => s.config.id === id) ?? null;
+  });
+  protected readonly senderEmailInput = signal('');
+  // Sending-phone verification (anti-abuse gate for Free-plan newsletter sends).
+  protected readonly phoneStatus = signal<PhoneVerificationStatus | null>(null);
+  protected readonly phoneInput = signal('');
+  protected readonly phoneCodeInput = signal('');
+  protected readonly phoneBusy = signal(false);
+  protected readonly phoneCodeSentTo = signal<string | null>(null);
+  protected readonly settingsSvc = inject(SettingsService);
+  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
+  protected readonly verifiedEmailsList = computed<string[]>(() => {
+    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+  });
+  protected readonly verifyingEmail = signal<string | null>(null);
 
-            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
-            <div
-              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
-            >
-              <span class="font-semibold text-base-content flex items-center gap-1.5">
-                <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
-                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
-              </span>
-              <span>
-                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
-              </span>
-              <span class="text-base-content/50 flex items-center gap-1">
-                You can request verification again in
-                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
-                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
-                </span>
-                seconds.
-              </span>
-            </div>
-            }
+  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
+  protected trackSection = (_: number, section: SectionState) => section.config.id;
 
-            <!-- List of verified emails -->
-            <div class="space-y-2">
-              <h4 class="pc-eyebrow">Verified sender emails</h4>
-              @if (verifiedEmailsList().length === 0) {
-              <pc-empty-state
-                icon="envelope"
-                [bordered]="false"
-                title="No verified sender emails yet"
-                hint="Add an email above to request verification."
-              />
-              } @else {
-              <div class="flex flex-wrap gap-2">
-                @for (email of verifiedEmailsList(); track email) {
-                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
-                  <pc-icon name="check-circle" [size]="4"></pc-icon>
-                  {{ email }}
-                </span>
-                }
-              </div>
-              }
-            </div>
-
-            <!-- Sending phone verification (anti-abuse gate for Free-plan sends) -->
-            <div class="space-y-3 border-t border-base-200 pt-6">
-              <div class="space-y-1">
-                <h3 class="text-xs font-semibold text-base-content/90">Sending phone verification</h3>
-                <p class="text-xs text-base-content/50">
-                  Free-plan workspaces verify a mobile number once before their first newsletter send. It keeps spammers
-                  off the shared sending pool your newsletters depend on.
-                </p>
-              </div>
-
-              @if (phoneStatus()?.verified) {
-              <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
-                <pc-icon name="check-circle" [size]="4"></pc-icon>
-                {{ phoneStatus()?.phone }} verified
-              </span>
-              } @else {
-              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-                <div class="flex-1">
-                  <input
-                    type="tel"
-                    placeholder="+1 555 123 4567"
-                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                    [value]="phoneInput()"
-                    (input)="phoneInput.set($any($event.target).value)"
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  (click)="requestPhoneCode()"
-                  [disabled]="phoneBusy() || !phoneInput().trim()"
-                >
-                  @if (phoneBusy() && !phoneCodeSentTo()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else { Send code }
-                </button>
-              </div>
-
-              @if (phoneCodeSentTo()) {
-              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-                <div class="flex-1">
-                  <input
-                    type="text"
-                    inputmode="numeric"
-                    maxlength="6"
-                    placeholder="6-digit code"
-                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                    [value]="phoneCodeInput()"
-                    (input)="phoneCodeInput.set($any($event.target).value)"
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  (click)="confirmPhoneCode()"
-                  [disabled]="phoneBusy() || phoneCodeInput().trim().length < 6"
-                >
-                  @if (phoneBusy()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else { Verify }
-                </button>
-              </div>
-              <p class="text-xs text-base-content/50">
-                We texted a code to <strong>{{ phoneCodeSentTo() }}</strong>. It expires in 10 minutes.
-              </p>
-              } }
-            </div>
-          </div>
-          } @if (section.config.id === 'data') {
-          <div class="border-t border-base-200 pt-6 mt-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
-                <p class="text-xs text-base-content/50">
-                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
-                  changed.
-                </p>
-                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
-                <p class="text-xs text-warning mt-1 font-medium">
-                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
-                </p>
-                }
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary shrink-0"
-                (click)="recomputeAddressFingerprints()"
-                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
-              >
-                @if (recomputingFingerprints()) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Recompute fingerprints
-              </button>
-            </div>
-          </div>
-          } @if (section.config.id === 'notifications') {
-          <div class="space-y-5">
-            <div class="border-b border-base-200 pb-3 space-y-1">
-              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
-              <p class="text-xs text-base-content/60">
-                Customize which email and in-app notifications you would like to receive for your own account.
-              </p>
-            </div>
-
-            <div class="pc-table-shell">
-              <table class="table pc-table w-full">
-                <thead>
-                  <tr class="border-b border-base-200">
-                    <th>Notification type</th>
-                    <th class="text-center w-36">Email</th>
-                    <th class="text-center w-36">In-app alerts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-base-content">{{ group.label }}</div>
-                      @if (group.helper) {
-                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
-                      }
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        [id]="group.emailField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.emailField.controlName]"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      @if (group.inAppField) {
-                      <input
-                        [id]="group.inAppField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.inAppField.controlName]"
-                      />
-                      }
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-          }
-
-          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
-          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
-        </form>
-      </section>
-      } }
-
-      <!-- Custom self-saving sections: one shell driven by the same config array as the nav -->
-      @for (custom of visibleCustomSections; track custom.id) { @if (isSelected(custom.id)) {
-      <section class="space-y-5 pc-panel p-5">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">{{ custom.title }}</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">{{ custom.description }}</p>
-        </header>
-
-        @switch (custom.id) { @case ('email-sync') {
-        <div class="grid gap-8 lg:grid-cols-2">
-          <!-- Microsoft Office 365 Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
-                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
-                <path fill="#81bc06" d="M12 1h10v10H12z" />
-                <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                <path fill="#ffba08" d="M12 12h10v10H12z" />
-              </svg>
-              Microsoft Office 365
-            </h3>
-            <pc-ms-sync-settings></pc-ms-sync-settings>
-          </div>
-
-          <!-- Google Suite Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              Google Suite (Gmail)
-            </h3>
-            <pc-google-sync-settings></pc-google-sync-settings>
-          </div>
-        </div>
-        } @case ('domains') {
-        <pc-domains-settings></pc-domains-settings>
-        } @case ('donations') {
-        <pc-donations-settings></pc-donations-settings>
-        } @case ('storage') {
-        <pc-storage-settings></pc-storage-settings>
-        } @case ('billing') {
-        <pc-billing-settings></pc-billing-settings>
-        } @case ('passkeys') {
-        <pc-passkey-settings></pc-passkey-settings>
-        } @case ('api-keys') {
-        <pc-api-keys-settings></pc-api-keys-settings>
-        } @case ('account') {
-        <pc-account-settings></pc-account-settings>
-        } }
-      </section>
-      } }
-    </main>
-  </div>
-  } @else {
-  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg"></span>
-      <p class="font-medium">Loading your settings…</p>
-    </div>
-  </div>
+  /** The custom (self-saving) sections visible in the current mode. */
+  protected get visibleCustomSections(): CustomSectionConfig[] {
+    return CUSTOM_SECTIONS.filter((s) => s.mode === this.currentMode);
   }
-</div>
+
+  /** Nav-button classes shared by config-driven and custom section buttons. */
+  protected navClass(id: string): string {
+    return this.isSelected(id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60';
+  }
+
+  public readonly section = input<string>();
+
+  constructor() {
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
+    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+
+    // Navbar crumb ("Settings"/"Workspace") comes from the route's `data.breadcrumb`
+    // via BreadcrumbDefaultsService — no manual publish needed here anymore.
+
+    effect(() => {
+      const s = this.section();
+      if (s) {
+        this.selectedSectionId.set(s);
+      } else {
+        if (this.currentMode === 'settings') {
+          this.selectedSectionId.set('notifications');
+        } else if (this.currentMode === 'workspace') {
+          this.selectedSectionId.set('organization');
+        }
+      }
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      this.applySnapshot(snapshot, false);
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
+
+      const commsSection = this.sections.find((s) => s.id === 'communications');
+      if (commsSection) {
+        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
+        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
+
+        const options = [
+          { label: 'Select a verified email', value: '' },
+          ...verifiedEmails.map((email) => ({ label: email, value: email })),
+        ];
+
+        if (fromEmailField) {
+          fromEmailField.options = options;
+        }
+        if (replyToField) {
+          replyToField.options = options;
+        }
+      }
+    });
+  }
+
+  protected get visibleSections(): SectionState[] {
+    if (this.currentMode === 'settings') {
+      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
+    }
+    if (this.currentMode === 'workspace') {
+      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
+    }
+    return [];
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.settingsSvc.load();
+    this.hasLoaded.set(true);
+    this.applySnapshot(this.settingsSvc.snapshot(), true);
+    await this.loadUserPrefs();
+    await this.loadLastFingerprintRecomputeTime();
+    if (this.currentMode === 'workspace') {
+      await this.loadPhoneStatus();
+    }
+  }
+
+  private async loadPhoneStatus(): Promise<void> {
+    try {
+      this.phoneStatus.set(await this.settingsSvc.getPhoneVerificationStatus());
+    } catch {
+      // Non-blocking: the communications section still renders without the phone card state.
+    }
+  }
+
+  protected async requestPhoneCode(): Promise<void> {
+    const phone = this.phoneInput().trim();
+    if (!phone) return;
+    this.phoneBusy.set(true);
+    try {
+      const result = await this.settingsSvc.requestPhoneVerification(phone);
+      this.phoneCodeSentTo.set(result.phone);
+      this.phoneCodeInput.set('');
+      this.alerts.showSuccess(`We texted a verification code to ${result.phone}.`);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not send the code.');
+    } finally {
+      this.phoneBusy.set(false);
+    }
+  }
+
+  protected async confirmPhoneCode(): Promise<void> {
+    const code = this.phoneCodeInput().trim();
+    if (!code) return;
+    this.phoneBusy.set(true);
+    try {
+      const result = await this.settingsSvc.confirmPhoneVerification(code);
+      this.alerts.showSuccess(`Phone ${result.phone} is verified — you're clear to send newsletters.`);
+      this.phoneCodeSentTo.set(null);
+      this.phoneInput.set('');
+      this.phoneCodeInput.set('');
+      await this.loadPhoneStatus();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not verify the code.');
+    } finally {
+      this.phoneBusy.set(false);
+    }
+  }
+
+  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
+  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
+    { value: 1, label: 'Mon' },
+    { value: 2, label: 'Tue' },
+    { value: 3, label: 'Wed' },
+    { value: 4, label: 'Thu' },
+    { value: 5, label: 'Fri' },
+    { value: 6, label: 'Sat' },
+    { value: 0, label: 'Sun' },
+  ];
+
+  private parseDays(raw: unknown): Set<number> {
+    return new Set(
+      String(raw ?? '')
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !Number.isNaN(n)),
+    );
+  }
+
+  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
+    return this.parseDays(section.payload()[controlName]).has(day);
+  }
+
+  protected toggleDay(section: SectionState, controlName: string, day: number): void {
+    const days = this.parseDays(section.payload()[controlName]);
+    if (days.has(day)) days.delete(day);
+    else days.add(day);
+    const ordered = this.dayChips
+      .map((c) => c.value)
+      .filter((d) => days.has(d))
+      .join(',');
+    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
+    section.form[controlName]().markAsDirty();
+  }
+
+  protected getNotificationGroups(section: SectionState) {
+    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
+    const fields = section.fields;
+
+    for (const field of fields) {
+      if (field.config.key.endsWith('_in_app')) continue;
+
+      const inAppControlName = `${field.controlName}_in_app`;
+      const inAppField = fields.find((f) => f.controlName === inAppControlName);
+
+      groups.push({
+        label: field.config.label,
+        helper: field.config.helper || '',
+        emailField: field,
+        inAppField: inAppField,
+      });
+    }
+    return groups;
+  }
+
+  protected isEmailVerified(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+    return verified.includes(email.toLowerCase().trim());
+  }
+
+  protected isSaving(section: SectionState) {
+    return this.savingSectionId() === section.config.id;
+  }
+
+  protected isSectionDirty(section: SectionState) {
+    return section.form().dirty();
+  }
+
+  protected isSectionInvalid(section: SectionState) {
+    return section.form().invalid();
+  }
+
+  protected isSelected(sectionId: string) {
+    return this.selectedSectionId() === sectionId;
+  }
+
+  protected isVerifyCooldown(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  protected async loadLastFingerprintRecomputeTime() {
+    try {
+      const res = await this.householdsSvc.getLastFingerprintRecomputation();
+      if (res && res.lastRunAt) {
+        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
+      } else {
+        this.lastFingerprintRecomputeTime.set(null);
+      }
+    } catch (err) {
+      console.error('Failed to load last fingerprint recompute time', err);
+    }
+  }
+
+  protected async loadUserPrefs() {
+    try {
+      const currentUser = await this.auth.getCurrentUser();
+      if (currentUser) {
+        const user = await this.userService.getProfileById(currentUser.id);
+        this.currentUserDetail.set(user);
+        const prefs = user.notification_preferences || {
+          mention_in_comment: true,
+          mention_in_comment_in_app: true,
+          task_assigned: true,
+          task_assigned_in_app: true,
+          task_due: true,
+          task_due_in_app: true,
+          person_assigned: true,
+          person_assigned_in_app: true,
+          export_ready: true,
+          export_ready_in_app: true,
+          import_summary: true,
+          import_summary_in_app: true,
+        };
+        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
+        if (notifState) {
+          notifState.payload.update((p) => ({
+            ...p,
+            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
+            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
+            notifications_task_assigned: prefs.task_assigned ?? true,
+            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
+            notifications_task_due: prefs.task_due ?? true,
+            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
+            notifications_person_assigned: prefs.person_assigned ?? true,
+            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            notifications_export_ready: prefs.export_ready ?? true,
+            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
+            notifications_import_summary: prefs.import_summary ?? true,
+            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
+          }));
+          notifState.form().reset();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load user preferences in settings page', err);
+    }
+  }
+
+  protected async recomputeAddressFingerprints() {
+    if (this.isFingerprintRecomputeCooldown()) {
+      this.alerts.showError('Fingerprints can only be recomputed once a month.');
+      return;
+    }
+
+    this.recomputingFingerprints.set(true);
+    try {
+      await this.householdsSvc.recomputeAddressFingerprints();
+      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
+      await this.loadLastFingerprintRecomputeTime();
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
+      );
+    } finally {
+      this.recomputingFingerprints.set(false);
+    }
+  }
+
+  protected resetSection(section: SectionState) {
+    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
+    if (section.config.id === 'notifications') {
+      void this.loadUserPrefs();
+    }
+  }
+
+  protected async saveSection(section: SectionState) {
+    if (!section.form().dirty()) return;
+
+    const entries: SettingsEntryType[] = [];
+    for (const field of section.fields) {
+      const fieldSignal = (section.form as any)[field.controlName]();
+      if (!fieldSignal.dirty()) continue;
+
+      // Skip user notification preferences from tenant settings upsert
+      if (section.config.id === 'notifications') {
+        continue;
+      }
+
+      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
+      entries.push({ key: field.config.key, value });
+    }
+
+    this.savingSectionId.set(section.config.id);
+    try {
+      if (entries.length > 0) {
+        const snapshot = await this.settingsSvc.upsert(entries);
+        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
+      }
+
+      if (section.config.id === 'notifications') {
+        const user = this.currentUserDetail();
+        if (user) {
+          const raw = section.payload();
+          const parseBool = (val: any) => val === true || val === 'true';
+          const payload: UpdateAuthUserType = {
+            notification_preferences: {
+              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
+              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
+              task_assigned: parseBool(raw['notifications_task_assigned']),
+              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
+              task_due: parseBool(raw['notifications_task_due']),
+              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
+              person_assigned: parseBool(raw['notifications_person_assigned']),
+              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
+              export_ready: parseBool(raw['notifications_export_ready']),
+              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
+              import_summary: parseBool(raw['notifications_import_summary']),
+              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
+            },
+          };
+          await this.userService.updateUserProfile(user.id, payload);
+          await this.loadUserPrefs();
+        }
+      }
+      this.alerts.showSuccess('Settings updated successfully');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to save settings';
+      this.alerts.showError(message);
+    } finally {
+      this.savingSectionId.set(null);
+    }
+  }
+
+  protected selectSection(sectionId: string) {
+    void this.router.navigate(['/', this.currentMode, sectionId]);
+  }
+
+  protected async verifySenderEmail(email: string | null | undefined) {
+    if (!email) return;
+    const normalized = email.toLowerCase().trim();
+
+    if (this.isVerifyCooldown(normalized)) {
+      this.alerts.showError('Please wait at least one minute before requesting verification again.');
+      return;
+    }
+
+    this.verifyingEmail.set(normalized);
+
+    try {
+      await this.settingsSvc.requestEmailVerification(normalized);
+      this.lastVerificationTimes.update((prev) => ({
+        ...prev,
+        [normalized]: Date.now(),
+      }));
+      this.startEmailCooldown(normalized);
+      this.lastRequestedEmail.set(normalized);
+      // Clear only after success — on failure the user keeps their input to retry.
+      this.senderEmailInput.set('');
+      this.alerts.showSuccess(
+        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
+      );
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
+    } finally {
+      this.verifyingEmail.set(null);
+    }
+  }
+
+  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
+    const sections = target ? [target] : this.sectionStates;
+
+    for (const state of sections) {
+      const nextPayload = { ...state.payload() };
+      let changed = false;
+
+      for (const field of state.fields) {
+        const fieldSignal = (state.form as any)[field.controlName]();
+        if (!resetDirty && fieldSignal.dirty()) continue;
+
+        // Skip user notification preferences from tenant settings snapshot update
+        if (state.config.id === 'notifications') {
+          continue;
+        }
+
+        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
+        if (nextPayload[field.controlName] !== incoming) {
+          nextPayload[field.controlName] = incoming;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        state.payload.set(nextPayload);
+      }
+
+      if (resetDirty) {
+        state.form().reset();
+      }
+    }
+  }
+
+  private buildSectionState(section: SettingsSectionConfig): SectionState {
+    const initialPayload: Record<string, any> = {};
+    const fieldStates: SectionFieldState[] = [];
+
+    for (const field of section.fields) {
+      const controlName = this.controlNameFor(field.key);
+      initialPayload[controlName] = this.normalizeIncomingValue(
+        field,
+        this.settingsSvc.getValue(field.key, field.defaultValue),
+      );
+      fieldStates.push({ config: field, controlName });
+    }
+
+    const payload = signal(initialPayload);
+    const formSignal = form(payload, (p) => {
+      for (const field of section.fields) {
+        const controlName = this.controlNameFor(field.key);
+        if (field.type === 'email') {
+          email(p[controlName]);
+        }
+        if (field.type === 'url') {
+          pattern(p[controlName], /^https?:\/\//i);
+        }
+        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
+          validate(p[controlName], (ctx) => {
+            const val = ((ctx.value() as string) || '').toLowerCase().trim();
+            if (!val) return null;
+            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+            if (!verified.includes(val)) {
+              return { kind: 'not-verified', message: 'Email address must be verified.' };
+            }
+            return null;
+          });
+        }
+      }
+    });
+
+    return { config: section, payload, form: formSignal, fields: fieldStates };
+  }
+
+  private controlNameFor(key: string) {
+    return key.replace(/[^a-zA-Z0-9]+/g, '_');
+  }
+
+  private defaultForField(field: SettingsFieldConfig) {
+    switch (field.type) {
+      case 'toggle':
+        return false;
+      case 'number':
+        return null;
+      case 'select':
+        return field.options?.[0]?.value ?? '';
+      default:
+        return '';
+    }
+  }
+
+  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
+    const fallback = field.defaultValue ?? this.defaultForField(field);
+
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(raw ?? fallback ?? false);
+      case 'number': {
+        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
+        const numeric = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
+      }
+      case 'select': {
+        const options = field.options ?? [];
+        const candidate = raw === undefined || raw === null ? fallback : String(raw);
+        const match = options.find((option) => option.value === candidate);
+        if (match) return match.value;
+        return (fallback ?? options[0]?.value ?? '') as string;
+      }
+      case 'date':
+        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
+      case 'day-toggles':
+        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+      case 'text':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'textarea':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      default:
+        return raw ?? fallback ?? '';
+    }
+  }
+
+  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(value);
+      case 'number': {
+        if (value === '' || value === null || value === undefined) return null;
+        const numeric = typeof value === 'number' ? value : Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+      }
+      case 'select': {
+        const candidate = value === null || value === undefined ? '' : String(value);
+        const options = field.options ?? [];
+        const match = options.find((option) => option.value === candidate);
+        return match ? match.value : this.defaultForField(field);
+      }
+      case 'date':
+        return typeof value === 'string' ? value : value ? String(value) : '';
+      case 'day-toggles':
+        return value === null || value === undefined ? '' : String(value);
+      case 'textarea':
+      case 'text':
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+        return value === null || value === undefined ? '' : String(value);
+      default:
+        return value ?? '';
+    }
+  }
+
+  private startEmailCooldown(email: string) {
+    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.emailCooldownSeconds()[email] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.emailCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[email];
+          return next;
+        });
+      } else {
+        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
+      }
+    }, 1000);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/services/api/donations-service.ts
@@ -79547,6 +79006,542 @@ export class DonationsSettingsComponent implements OnInit {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/settings/settings-page.html
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="pc-eyebrow">
+        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
+      </p>
+      <h1 class="text-xl font-bold tracking-tight">
+        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
+      </h1>
+      <p class="text-xs text-base-content/60">
+        @switch (currentMode) { @case ('settings') { Personal to you. Nothing here affects teammates. } @case
+        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
+      </p>
+    </div>
+
+    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
+    @if (hasLoaded() && headerSection(); as section) {
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        class="btn btn-outline btn-accent btn-sm"
+        (click)="resetSection(section)"
+        [disabled]="!isSectionDirty(section) || isSaving(section)"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        (click)="saveSection(section)"
+        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+      >
+        @if (isSaving(section)) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } Save settings
+      </button>
+    </div>
+    }
+  </header>
+
+  @if (hasLoaded()) {
+  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
+    <!-- Sidebar Navigation -->
+    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
+      <nav
+        class="flex flex-row gap-0.5 overflow-x-auto pc-panel p-1.5 md:flex-col md:overflow-visible"
+        aria-label="Settings sections"
+      >
+        @for (section of visibleSections; track trackSection($index, section)) {
+        <button
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [class]="navClass(section.config.id)"
+          (click)="selectSection(section.config.id)"
+        >
+          <pc-icon
+            [name]="section.config.icon"
+            [class.text-primary]="isSelected(section.config.id)"
+            [class.opacity-70]="!isSelected(section.config.id)"
+            [size]="5"
+          />
+          {{ section.config.title }}
+          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
+          @if (isSectionDirty(section)) {
+          <span
+            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
+            title="Unsaved changes in this section"
+            aria-label="Unsaved changes in this section"
+          ></span>
+          }
+        </button>
+        }
+        <!-- Custom self-saving sections (config array in settings-page.ts) -->
+        @for (custom of visibleCustomSections; track custom.id) {
+        <button
+          [id]="'settings-nav-' + custom.id"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [class]="navClass(custom.id)"
+          (click)="selectSection(custom.id)"
+        >
+          <pc-icon
+            [name]="custom.icon"
+            [class.text-primary]="isSelected(custom.id)"
+            [class.opacity-70]="!isSelected(custom.id)"
+            [size]="5"
+          />
+          {{ custom.title }}
+        </button>
+        }
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 w-full max-w-4xl">
+      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
+      <section class="space-y-5 pc-panel p-5">
+        @if (section.config.id !== 'notifications') {
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
+        </header>
+        }
+
+        <!-- (form content) -->
+        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
+          @if (section.config.id === 'sla') {
+          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
+            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+            <p class="text-xs leading-relaxed text-base-content/80">
+              Saving new service levels re-evaluates every currently open email and task against the updated targets.
+              Some may immediately count as breached (or clear) on the dashboard.
+            </p>
+          </div>
+          } @if (section.config.id === 'communications') {
+          <!-- Compliance copy (§3): outbound email is regulated (CAN-SPAM / CASL); the platform can't guarantee it -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3.5 py-2.5">
+            <pc-icon name="information-circle" [size]="5" class="mt-0.5 shrink-0 text-info"></pc-icon>
+            <p class="text-xs leading-relaxed text-base-content/80">
+              You are responsible for ensuring your emails comply with the anti-spam and privacy laws that apply to you
+              and your recipients (such as CAN-SPAM and CASL) — including consent, accurate sender details, a valid
+              physical address, and a working unsubscribe link. pplCRM appends the disclaimer and unsubscribe link you
+              configure below, but is a platform only and cannot guarantee that any message satisfies your legal
+              obligations. When in doubt, consult a qualified legal or compliance advisor.
+            </p>
+          </div>
+          }
+
+          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
+            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
+            'notifications') {
+            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
+              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
+                {{ field.config.label }}
+              </label>
+
+              @switch (field.config.type) { @case ('textarea') {
+              <textarea
+                [id]="field.controlName"
+                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+                rows="4"
+              ></textarea>
+              } @case ('toggle') {
+              <label class="flex items-center gap-3 cursor-pointer py-1">
+                <input
+                  [id]="field.controlName"
+                  type="checkbox"
+                  class="toggle toggle-primary toggle-md"
+                  [formField]="section.form[field.controlName]"
+                />
+                <span class="text-xs font-normal text-base-content/70">
+                  {{ field.config.placeholder ?? 'Enabled' }}
+                </span>
+              </label>
+              } @case ('select') {
+              <select
+                [id]="field.controlName"
+                class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              >
+                @for (option of field.config.options ?? []; track option.value ?? $index) {
+                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+              } @case ('number') {
+              <input
+                [id]="field.controlName"
+                type="number"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('date') {
+              <input
+                [id]="field.controlName"
+                type="date"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('day-toggles') {
+              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
+                @for (day of dayChips; track day.value) {
+                <button
+                  type="button"
+                  class="btn btn-sm min-w-12 font-medium"
+                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
+                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
+                  (click)="toggleDay(section, field.controlName, day.value)"
+                >
+                  {{ day.label }}
+                </button>
+                }
+              </div>
+              } @default {
+              <input
+                [id]="field.controlName"
+                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } } @if (field.config.helper) {
+              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
+              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
+                <pc-icon name="exclamation-circle"></pc-icon>
+                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
+              </p>
+              }
+            </div>
+            } }
+          </div>
+
+          <!-- Custom extensions for specific sections -->
+          @if (section.config.id === 'communications') {
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
+            <div class="space-y-1">
+              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
+              <p class="text-xs text-base-content/50">
+                Add and verify email addresses to select them as campaign defaults.
+              </p>
+            </div>
+
+            <!-- Add new sender email form -->
+            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+              <div class="flex-1">
+                <input
+                  type="email"
+                  placeholder="sender@example.com"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                  [value]="senderEmailInput()"
+                  (input)="senderEmailInput.set($any($event.target).value)"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary"
+                (click)="verifySenderEmail(senderEmailInput())"
+                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
+              >
+                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
+                <span class="countdown font-mono text-xs"
+                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
+                >s } @else { Request verification }
+              </button>
+            </div>
+
+            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
+            <div
+              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
+            >
+              <span class="font-semibold text-base-content flex items-center gap-1.5">
+                <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
+                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
+              </span>
+              <span>
+                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
+              </span>
+              <span class="text-base-content/50 flex items-center gap-1">
+                You can request verification again in
+                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
+                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
+                </span>
+                seconds.
+              </span>
+            </div>
+            }
+
+            <!-- List of verified emails -->
+            <div class="space-y-2">
+              <h4 class="pc-eyebrow">Verified sender emails</h4>
+              @if (verifiedEmailsList().length === 0) {
+              <pc-empty-state
+                icon="envelope"
+                [bordered]="false"
+                title="No verified sender emails yet"
+                hint="Add an email above to request verification."
+              />
+              } @else {
+              <div class="flex flex-wrap gap-2">
+                @for (email of verifiedEmailsList(); track email) {
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
+                  <pc-icon name="check-circle" [size]="4"></pc-icon>
+                  {{ email }}
+                </span>
+                }
+              </div>
+              }
+            </div>
+
+            <!-- Sending phone verification (anti-abuse gate for Free-plan sends) -->
+            <div class="space-y-3 border-t border-base-200 pt-6">
+              <div class="space-y-1">
+                <h3 class="text-xs font-semibold text-base-content/90">Sending phone verification</h3>
+                <p class="text-xs text-base-content/50">
+                  Free-plan workspaces verify a mobile number once before their first newsletter send. It keeps spammers
+                  off the shared sending pool your newsletters depend on.
+                </p>
+              </div>
+
+              @if (phoneStatus()?.verified) {
+              <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
+                <pc-icon name="check-circle" [size]="4"></pc-icon>
+                {{ phoneStatus()?.phone }} verified
+              </span>
+              } @else {
+              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+                <div class="flex-1">
+                  <input
+                    type="tel"
+                    placeholder="+1 555 123 4567"
+                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                    [value]="phoneInput()"
+                    (input)="phoneInput.set($any($event.target).value)"
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  (click)="requestPhoneCode()"
+                  [disabled]="phoneBusy() || !phoneInput().trim()"
+                >
+                  @if (phoneBusy() && !phoneCodeSentTo()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } @else { Send code }
+                </button>
+              </div>
+
+              @if (phoneCodeSentTo()) {
+              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+                <div class="flex-1">
+                  <input
+                    type="text"
+                    inputmode="numeric"
+                    maxlength="6"
+                    placeholder="6-digit code"
+                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                    [value]="phoneCodeInput()"
+                    (input)="phoneCodeInput.set($any($event.target).value)"
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  (click)="confirmPhoneCode()"
+                  [disabled]="phoneBusy() || phoneCodeInput().trim().length < 6"
+                >
+                  @if (phoneBusy()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } @else { Verify }
+                </button>
+              </div>
+              <p class="text-xs text-base-content/50">
+                We texted a code to <strong>{{ phoneCodeSentTo() }}</strong>. It expires in 10 minutes.
+              </p>
+              } }
+            </div>
+          </div>
+          } @if (section.config.id === 'data') {
+          <div class="border-t border-base-200 pt-6 mt-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
+                <p class="text-xs text-base-content/50">
+                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
+                  changed.
+                </p>
+                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
+                <p class="text-xs text-warning mt-1 font-medium">
+                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
+                </p>
+                }
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
+                (click)="recomputeAddressFingerprints()"
+                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
+              >
+                @if (recomputingFingerprints()) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Recompute fingerprints
+              </button>
+            </div>
+          </div>
+          } @if (section.config.id === 'notifications') {
+          <div class="space-y-5">
+            <div class="border-b border-base-200 pb-3 space-y-1">
+              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
+              <p class="text-xs text-base-content/60">
+                Customize which email and in-app notifications you would like to receive for your own account.
+              </p>
+            </div>
+
+            <div class="pc-table-shell">
+              <table class="table pc-table w-full">
+                <thead>
+                  <tr class="border-b border-base-200">
+                    <th>Notification type</th>
+                    <th class="text-center w-36">Email</th>
+                    <th class="text-center w-36">In-app alerts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
+                  <tr class="hover:bg-base-200/20">
+                    <td class="align-middle">
+                      <div class="font-semibold text-base-content">{{ group.label }}</div>
+                      @if (group.helper) {
+                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
+                      }
+                    </td>
+                    <td class="align-middle text-center">
+                      <input
+                        [id]="group.emailField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.emailField.controlName]"
+                      />
+                    </td>
+                    <td class="align-middle text-center">
+                      @if (group.inAppField) {
+                      <input
+                        [id]="group.inAppField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.inAppField.controlName]"
+                      />
+                      }
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          }
+
+          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
+          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
+        </form>
+      </section>
+      } }
+
+      <!-- Custom self-saving sections: one shell driven by the same config array as the nav -->
+      @for (custom of visibleCustomSections; track custom.id) { @if (isSelected(custom.id)) {
+      <section class="space-y-5 pc-panel p-5">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">{{ custom.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ custom.description }}</p>
+        </header>
+
+        @switch (custom.id) { @case ('email-sync') {
+        <div class="grid gap-8 lg:grid-cols-2">
+          <!-- Microsoft Office 365 Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
+                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+                <path fill="#81bc06" d="M12 1h10v10H12z" />
+                <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                <path fill="#ffba08" d="M12 12h10v10H12z" />
+              </svg>
+              Microsoft Office 365
+            </h3>
+            <pc-ms-sync-settings></pc-ms-sync-settings>
+          </div>
+
+          <!-- Google Suite Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+              Google Suite (Gmail)
+            </h3>
+            <pc-google-sync-settings></pc-google-sync-settings>
+          </div>
+        </div>
+        } @case ('domains') {
+        <pc-domains-settings></pc-domains-settings>
+        } @case ('donations') {
+        <pc-donations-settings></pc-donations-settings>
+        } @case ('storage') {
+        <pc-storage-settings></pc-storage-settings>
+        } @case ('billing') {
+        <pc-billing-settings></pc-billing-settings>
+        } @case ('passkeys') {
+        <pc-passkey-settings></pc-passkey-settings>
+        } @case ('api-keys') {
+        <pc-api-keys-settings></pc-api-keys-settings>
+        } @case ('account') {
+        <pc-account-settings></pc-account-settings>
+        } }
+      </section>
+      } }
+    </main>
+  </div>
+  } @else {
+  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg"></span>
+      <p class="font-medium">Loading your settings…</p>
+    </div>
+  </div>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
