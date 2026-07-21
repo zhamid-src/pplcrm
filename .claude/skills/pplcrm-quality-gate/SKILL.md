@@ -36,7 +36,10 @@ npx eslint <changed-file-1> <changed-file-2> --report-unused-disable-directives-
 
 If that exits 0, the pre-commit hook's `*.{ts,html}` step will pass. This is the single check that matters for the hook. The full CLAUDE.md pipeline (`prettier --write .`, `nx lint frontend`, `nx lint backend`, builds, tests) is still required before a PR — `nx lint backend` is the only path that enforces the tenant-safety rule (see `pplcrm-tenant-safety`), so neither check alone is sufficient.
 
-Heads-up: as of this writing `nx lint backend` fails on **2 pre-existing** `local/no-unscoped-db-query` errors, both on the `donation_pledges` table (`donations/controller.ts:560` and `donations/repositories/pledges.repo.ts:51`), that predate your change. Don't burn time assuming your diff caused them — check whether the flagged lines are yours.
+Heads-up on **pre-existing failures** — check whether the flagged lines/tests are yours before burning time:
+
+- ~~`nx lint backend` fails on 2 `donation_pledges` `no-unscoped-db-query` errors~~ — fixed; `nx lint backend` passes clean as of 2026-07-21.
+- `nx test backend` has **18 pre-existing failing tests** (verified failing at HEAD `88743bda` on 2026-07-21): the public-submission specs in `modules/web-forms/controller.spec.ts`, `web-forms/routes/web-forms-public.route.spec.ts`, `events/controller.spec.ts` (rsvpPublic), and `volunteer-events/controller.spec.ts` (signupVolunteerPublic). Root cause: commit `47221fe0` ("require API keys for all public form/event submissions") changed the public submission paths without updating their specs. `job-claim.spec.ts` can also fail in the full parallel run but passes in isolation (test-parallelism flake). Deploy CI has **no test step**, which is how these landed on main.
 
 The other hook step is formatting only:
 

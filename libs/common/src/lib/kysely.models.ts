@@ -93,6 +93,7 @@ export interface Models {
   form_submissions: FormSubmissions;
   background_jobs: BackgroundJobs;
   webhook_events: WebhookEvents;
+  ops_heartbeats: OpsHeartbeats;
   data_exports: DataExports;
   potential_duplicates: PotentialDuplicates;
   dismissed_duplicate_groups: DismissedDuplicateGroups;
@@ -1036,6 +1037,17 @@ export interface BackgroundJobs {
   locked_by: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+/**
+ * Global (non-tenant) liveness markers for the in-process background worker. The `ops_watchdog`
+ * cron job updates `beat_at` every cycle; `GET /healthz/worker` reports 503 when it goes stale
+ * (dead-man's switch for the external availability probe).
+ */
+export interface OpsHeartbeats {
+  name: string;
+  beat_at: Generated<Timestamp>;
+  details: Json | null;
 }
 
 export interface WebhookEvents {

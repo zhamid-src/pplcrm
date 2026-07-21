@@ -111,14 +111,14 @@
   `;
 
   class DocPage extends HTMLElement {
-    static get observedAttributes() { return ['size', 'width', 'height', 'margin']; }
+    static get observedAttributes() {
+      return ['size', 'width', 'height', 'margin'];
+    }
 
     constructor() {
       super();
       this._root = this.attachShadow({ mode: 'open' });
-      this._mo = typeof MutationObserver === 'function'
-        ? new MutationObserver(() => this._scheduleMeasure())
-        : null;
+      this._mo = typeof MutationObserver === 'function' ? new MutationObserver(() => this._scheduleMeasure()) : null;
     }
 
     get pageWidth() {
@@ -129,16 +129,22 @@
       const named = PAPER[(this.getAttribute('size') || '').toLowerCase()];
       return safeLen(this.getAttribute('height'), named ? named[1] : PAPER.letter[1]);
     }
-    get pageMargin() { return safeLen(this.getAttribute('margin'), '0.75in'); }
+    get pageMargin() {
+      return safeLen(this.getAttribute('margin'), '0.75in');
+    }
 
     connectedCallback() {
       if (!this._sheet) this._render();
       this._syncSize();
       this._syncPrintPageRule();
       this._ensureTextWrapDefaults();
-      if (this._mo) this._mo.observe(this, {
-        subtree: true, childList: true, characterData: true, attributes: true,
-      });
+      if (this._mo)
+        this._mo.observe(this, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+          attributes: true,
+        });
       this._onResize = () => this._scheduleMeasure();
       window.addEventListener('resize', this._onResize);
       if (document.fonts && document.fonts.ready) {
@@ -150,7 +156,10 @@
     disconnectedCallback() {
       window.removeEventListener('resize', this._onResize);
       if (this._mo) this._mo.disconnect();
-      if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
+      if (this._raf) {
+        cancelAnimationFrame(this._raf);
+        this._raf = null;
+      }
       // Drop the head rules when the last doc-page leaves, so a deleted
       // document's @page geometry and text-wrap defaults can't apply to
       // whatever replaces it.
@@ -187,12 +196,23 @@
     /** Runtime sizing lives in a shadow <style> :host rule, never on the
      *  light-DOM host element, so serialize-persist can't write it back. */
     _syncSize(hdrH, ftrH) {
-      this._vars.textContent = ':host{' +
-        '--doc-page-w:' + this.pageWidth + ';' +
-        '--doc-page-h:' + this.pageHeight + ';' +
-        '--doc-page-margin:' + this.pageMargin + ';' +
-        '--doc-hdr-h:' + (hdrH || 0) + 'px;' +
-        '--doc-ftr-h:' + (ftrH || 0) + 'px}';
+      this._vars.textContent =
+        ':host{' +
+        '--doc-page-w:' +
+        this.pageWidth +
+        ';' +
+        '--doc-page-h:' +
+        this.pageHeight +
+        ';' +
+        '--doc-page-margin:' +
+        this.pageMargin +
+        ';' +
+        '--doc-hdr-h:' +
+        (hdrH || 0) +
+        'px;' +
+        '--doc-ftr-h:' +
+        (ftrH || 0) +
+        'px}';
     }
 
     /** @page is a no-op inside shadow DOM, so the rule lives in <head>.
@@ -208,7 +228,11 @@
       }
       document.head.appendChild(tag);
       tag.textContent =
-        '@page { size: ' + this.pageWidth + ' ' + this.pageHeight + '; margin: 0; } ' +
+        '@page { size: ' +
+        this.pageWidth +
+        ' ' +
+        this.pageHeight +
+        '; margin: 0; } ' +
         '@media print { html, body { margin: 0 !important; padding: 0 !important; background: none !important; height: auto !important; overflow: visible !important; } ' +
         'h1,h2,h3,h4,h5,h6 { break-after: avoid; } ' +
         'figure,pre,blockquote,img,svg,tr { break-inside: avoid; } ' +
@@ -232,14 +256,16 @@
       tag.id = 'doc-page-text-wrap';
       tag.setAttribute('data-omelette-injected', '');
       tag.textContent =
-        ':where(h1,h2,h3,h4,h5,h6){text-wrap:balance}' +
-        ':where(p,li,blockquote,figcaption){text-wrap:pretty}';
+        ':where(h1,h2,h3,h4,h5,h6){text-wrap:balance}' + ':where(p,li,blockquote,figcaption){text-wrap:pretty}';
       document.head.appendChild(tag);
     }
 
     _scheduleMeasure() {
       if (this._raf) return;
-      this._raf = requestAnimationFrame(() => { this._raf = null; this._measure(); });
+      this._raf = requestAnimationFrame(() => {
+        this._raf = null;
+        this._measure();
+      });
     }
 
     /** Slot heights feed the print spacers (--doc-hdr-h / --doc-ftr-h), so

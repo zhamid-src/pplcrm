@@ -1,3 +1,6 @@
+// Must stay the first import — initializes Sentry before anything it instruments.
+import './instrument';
+
 import { env } from './env';
 
 import { migrateToLatest } from './app/kyselyinit';

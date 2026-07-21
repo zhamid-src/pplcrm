@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import { sql } from 'kysely';
 import { Client } from 'pg';
 
@@ -83,6 +84,9 @@ export class BackgroundJobWorker {
     this.ensurePruneRetentionJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure retention prune job scheduled'),
     );
+    this.ensureOpsWatchdogJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure ops watchdog job scheduled'),
+    );
 
     // Run stale job recovery on startup and then every 5 minutes
     this.recoverStaleJobs().catch((err) => logger.error({ err }, 'Failed to recover stale jobs on startup'));
@@ -159,6 +163,36 @@ export class BackgroundJobWorker {
       });
     } catch (err) {
       logger.error({ err }, 'Failed to ensure address fingerprints job scheduled');
+    }
+  }
+
+  private async ensureOpsWatchdogJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'ops_watchdog')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling ops watchdog background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'ops_watchdog' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure ops watchdog job scheduled');
     }
   }
 
@@ -652,6 +686,12 @@ export class BackgroundJobWorker {
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.error({ err, jobId: job.id }, 'Failed to process background job');
+      // Job failures never surface through a request path, so capture them here explicitly
+      // (no-op when SENTRY_DSN is unset).
+      Sentry.captureException(err, {
+        tags: { jobType: String(payload.type ?? 'unknown') },
+        extra: { jobId: job.id, attempts: job.attempts },
+      });
 
       try {
         // If it was an import job, mark the import as failed and store the error message
@@ -892,6 +932,10 @@ export class BackgroundJobWorker {
       delayMs = 24 * 60 * 60 * 1000;
     } else if (type === 'prune_retention') {
       delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'ops_watchdog') {
+      // Must keep rescheduling even after a permanently-failed run — a dead watchdog means a
+      // stale heartbeat, and /healthz/worker would (correctly) alert until it recovers.
+      delayMs = 5 * 60 * 1000;
     }
 
     if (delayMs > 0) {

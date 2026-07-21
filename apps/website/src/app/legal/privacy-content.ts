@@ -11,7 +11,7 @@ export const PRIVACY_DOC: LegalDoc = {
   title: 'Privacy policy',
   intro:
     'What we collect, why, where it lives, and the things we will never do with it. Written to be read, not skimmed past.',
-  updated: 'July 19, 2026',
+  updated: 'July 21, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -136,6 +136,7 @@ export const PRIVACY_DOC: LegalDoc = {
         '**SendGrid.** Delivers newsletters and automation emails from your organization’s own verified domain and reports delivery and engagement events.',
         '**Twilio.** Sends SMS one-time codes for volunteer verification and free-plan sending verification.',
         '**Anthropic.** Powers the newsletter deliverability check’s AI content review. It receives only the draft being checked (subject, body text and link list) when a check runs — never your contact lists — and under our agreement the content is not used to train models.',
+        '**Sentry.** Collects error reports from our backend servers when something breaks, so we can fix it. Reports contain the technical failure details (the error, where in our code it happened, which background job or request type failed) with sign-in cookies, credentials and request bodies stripped before sending — never your contact lists or workspace records. Sentry stores these reports in the United States. Nothing from Sentry runs in your browser.',
         '**Google Maps.** Geocodes household addresses and renders maps.',
         '**Google and Microsoft.** Mailbox sync, only for workspaces that connect them.',
         '**Zapier.** Only if your organization creates an integration; data flows are defined by the workflows you build.',
@@ -148,7 +149,7 @@ export const PRIVACY_DOC: LegalDoc = {
     },
     {
       kind: 'p',
-      text: 'Workspaces are hosted in Canada, and your workspace data stays in Canada for processing and backups. Three narrow exceptions apply: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, and newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States.',
+      text: 'Workspaces are hosted in Canada, and your workspace data stays in Canada for processing and backups. Four narrow exceptions apply: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States, and technical error reports from our backend (with credentials and workspace content stripped) are stored by Sentry in the United States.',
     },
     {
       kind: 'h2',

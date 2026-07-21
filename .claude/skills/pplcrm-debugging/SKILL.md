@@ -22,6 +22,11 @@ So there are two completely different failure paths, debugged differently:
    there is no id. You correlate by **timestamp + the underlying stack trace** in the server log,
    not by an id.
 
+Since 2026-07-21, unexpected 500s (tRPC `INTERNAL_SERVER_ERROR`), unhandled Fastify route errors,
+and every background-job/webhook failure are ALSO captured to **Sentry** when `SENTRY_DSN` is set
+(prod) — with the full stack and a `trpcPath`/`jobType` tag, so check Sentry before grepping logs.
+PII is scrubbed at the source (`apps/backend/src/instrument.ts`); see `pplcrm-observability`.
+
 ## The tRPC round trip (cite these when tracing)
 
 A procedure throws → the client shows a toast. Every hop:
@@ -60,10 +65,10 @@ unknown errors as `app.log.error({ err }, 'Unhandled error')` and returns a JSen
 
 ## Grepping Pino output
 
-Both loggers use the `pino-pretty` transport (`apps/backend/src/app/logger.ts` for the standalone
-`logger` that tRPC/workers use; `apps/backend/src/fastify.server.ts` for the Fastify request
-logger), so log lines are **human-pretty, not JSON** in local/dev runs. Grep by the literal message
-label or the code string:
+Both loggers (`apps/backend/src/app/logger.ts` for the standalone `logger` that tRPC/workers use;
+`apps/backend/src/fastify.server.ts` for the Fastify request logger) use `pino-pretty` **only
+outside production** — log lines are human-pretty in local/dev runs, plain JSON in production (for
+Log Analytics). Grep by the literal message label or the code string:
 
 ```bash
 # A tRPC failure and its root cause (run against your captured server output / log file):

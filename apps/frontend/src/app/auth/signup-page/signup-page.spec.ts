@@ -1,4 +1,4 @@
-import type { ComponentFixture} from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { SignUpPage } from './signup-page';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';

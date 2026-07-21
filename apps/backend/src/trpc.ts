@@ -1,5 +1,6 @@
 // tsco:ignore
 //
+import * as Sentry from '@sentry/node';
 import { TRPCError, initTRPC } from '@trpc/server';
 import { ZodError } from 'zod';
 import type { Context } from './context';
@@ -35,6 +36,13 @@ const trpc = initTRPC.context<Context>().create({
       (typeof errorObj['path'] === 'string' ? errorObj['path'] : undefined) ??
       (shape.data?.path as string | undefined) ??
       '';
+
+    // Only unexpected 500s go to Sentry — AppErrors are mapped to non-500 codes by
+    // errorMappingMiddleware before this runs, so expected domain failures stay out.
+    // No-op when SENTRY_DSN is unset (see instrument.ts).
+    if (error.code === 'INTERNAL_SERVER_ERROR') {
+      Sentry.captureException(error.cause ?? error, { tags: { trpcPath: pathStr } });
+    }
 
     const isSignIn = pathStr === 'signIn' || pathStr.endsWith('.signIn') || pathStr === 'auth.signIn';
 

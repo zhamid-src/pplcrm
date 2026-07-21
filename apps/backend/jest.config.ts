@@ -5,10 +5,7 @@ const config: Config = {
   preset: '../../jest.preset.cjs',
   testEnvironment: 'node',
   transform: {
-    '^.+\\.[tj]s$': [
-      'ts-jest',
-      { tsconfig: '<rootDir>/tsconfig.spec.json', useESM: true, diagnostics: false },
-    ],
+    '^.+\\.[tj]s$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json', useESM: true, diagnostics: false }],
   },
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {

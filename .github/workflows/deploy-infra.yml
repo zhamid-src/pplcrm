@@ -1,0 +1,56 @@
+name: Deploy infra (monitoring)
+
+# Deploys infra/azure/monitoring.bicep — availability probes, action group (push+email), and
+# metric alerts (see the pplcrm-observability skill). Runs whenever the monitoring template or
+# its params change on main, so alert thresholds are merge-to-deploy.
+#
+# monitoring.bicep needs NO secrets (it references the existing Postgres server rather than
+# provisioning it), which is exactly why it is split from main.bicep — the data-plane template
+# requires pgAdminPassword and stays a manual deploy (see infra/azure/README.md).
+#
+# The service principal behind AZURE_CREDENTIALS needs rights to create Microsoft.Insights /
+# Microsoft.OperationalInsights resources in the resource group (Contributor on the RG covers it).
+#
+# Required secrets:   AZURE_CREDENTIALS            (service-principal JSON — same as deploy.yml)
+# Required variables: AZURE_RESOURCE_GROUP, AZURE_API_APP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/azure/monitoring.bicep'
+      - 'infra/azure/canadacentral-monitoring.bicepparam'
+      - '.github/workflows/deploy-infra.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-infra-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  monitoring:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # containerAppResourceId wires the Container App restart/replica alerts; before the app is
+      # hand-created (PROD-CHECKLIST §5) it resolves empty and those alerts are simply skipped.
+      - name: Deploy monitoring bicep
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            APP_ID=$(az containerapp show \
+              -n "${{ vars.AZURE_API_APP }}" \
+              -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --query id -o tsv 2>/dev/null || true)
+            echo "containerAppResourceId: ${APP_ID:-<empty — Container App alerts skipped>}"
+            az deployment group create \
+              --name "monitoring-${{ github.sha }}" \
+              -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              -f infra/azure/monitoring.bicep \
+              -p infra/azure/canadacentral-monitoring.bicepparam \
+              -p containerAppResourceId="$APP_ID"

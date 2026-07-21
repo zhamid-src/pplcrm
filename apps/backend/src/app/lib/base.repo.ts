@@ -3,6 +3,7 @@
 import type { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
 
 import type {
+  AnyColumn,
   DeleteQueryBuilder,
   DeleteResult,
   InsertQueryBuilder,
@@ -142,7 +143,9 @@ export class BaseRepository<T extends keyof Models> {
   ): Promise<Selectable<Models[T]> | undefined> {
     const insertResult = await this.getInsert(trx)
       .values(input.row)
-      .onConflict((oc) => oc.columns(['tenant_id', input.onConflictColumn]).doNothing())
+      // The 'tenant_id' casts here and below are safe: repositories only exist for tenant-scoped
+      // tables. (The literal stopped inferring once the global ops_heartbeats table joined Models.)
+      .onConflict((oc) => oc.columns(['tenant_id' as AnyColumn<Models, T>, input.onConflictColumn]).doNothing())
       .returningAll()
       .executeTakeFirst();
 
@@ -157,7 +160,11 @@ export class BaseRepository<T extends keyof Models> {
     return this.getSelect(trx)
       .selectAll()
       .where(lhs, '=', matchValue)
-      .where('tenant_id', '=', input.row.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>)
+      .where(
+        'tenant_id' as ReferenceExpression<Models, T>,
+        '=',
+        input.row.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>,
+      )
       .executeTakeFirst() as unknown as Selectable<Models[T]> | undefined;
   }
 

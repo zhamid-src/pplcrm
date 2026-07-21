@@ -129,6 +129,28 @@ jobs:
             else
               echo "::warning::${{ vars.AZURE_API_APP }} does not exist yet — create it manually (PROD-CHECKLIST §5), then re-run."
             fi
+      # Post-deploy smoke test: the new revision must answer /healthz (200 = process up AND Postgres
+      # reachable) before we bother rolling the edges. 10 × 15s covers a single-revision rollover.
+      # Skips with the same guard as the update step (nothing was deployed on the first run).
+      - name: Smoke test backend /healthz
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            if ! az containerapp show -n "${{ vars.AZURE_API_APP }}" -g "${{ vars.AZURE_RESOURCE_GROUP }}" >/dev/null 2>&1; then
+              echo "app not created yet — skipping smoke test"
+              exit 0
+            fi
+            for i in $(seq 1 10); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://api.pplcrm.com/healthz || true)
+              if [ "$code" = "200" ]; then
+                echo "healthz OK after $i attempt(s)"
+                exit 0
+              fi
+              echo "attempt $i/10: got $code"
+              sleep 15
+            done
+            echo "::error::api.pplcrm.com/healthz did not return 200 after the new revision rolled"
+            exit 1
       # ── Cloudflare Pages: marketing site ──
       # Angular emits the static site under a `browser/` subdir; deploy THAT, not its parent.
       # --branch=main forces the *production* deployment (the custom domain serves production),

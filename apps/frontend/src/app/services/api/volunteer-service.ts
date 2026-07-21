@@ -37,11 +37,14 @@ export class VolunteerService extends TRPCService<'volunteer_events'> {
     return this.api.volunteer.signupVolunteer.mutate(payload);
   }
 
-  public updateShift(id: string, data: {
-    status?: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
-    hours_worked?: number | null;
-    notes?: string | null;
-  }) {
+  public updateShift(
+    id: string,
+    data: {
+      status?: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
+      hours_worked?: number | null;
+      notes?: string | null;
+    },
+  ) {
     return this.api.volunteer.updateShift.mutate({ id, data });
   }
 

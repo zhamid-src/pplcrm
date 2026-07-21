@@ -13,7 +13,7 @@ export const SECURITY_DOC: LegalDoc = {
   title: 'Security',
   intro:
     'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
-  updated: 'July 19, 2026',
+  updated: 'July 21, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -126,7 +126,7 @@ export const SECURITY_DOC: LegalDoc = {
     },
     {
       kind: 'p',
-      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data.',
+      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data. Our servers are also monitored around the clock: automated probes check the service from outside every few minutes and page us when it is unreachable, and server errors are reported to an error-tracking service (with credentials and workspace content stripped — see the privacy policy’s subprocessor list) so we usually know about a problem before you do.',
     },
     {
       kind: 'h2',

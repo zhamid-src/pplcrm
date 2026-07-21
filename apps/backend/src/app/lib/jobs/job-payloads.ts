@@ -128,6 +128,9 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
     confirmUrl: z.string(),
   }),
   z.object({ type: z.literal('check_due_tasks') }),
+  // Ops watchdog: cron that digests failed jobs/webhooks + queue backlog to the ops email and
+  // writes the dead-man heartbeat behind GET /healthz/worker.
+  z.object({ type: z.literal('ops_watchdog') }),
 
   // ── Newsletters ──────────────────────────────────────────────────────────
   z.object({

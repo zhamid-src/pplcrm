@@ -7,10 +7,7 @@ import themes from 'daisyui/src/theming/themes/index.js'; // 👈 critical: add 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default {
-  content: [
-    join(__dirname, 'src/**/!(*.stories|*.spec).{html,ts}'),
-    ...createGlobPatternsForDependencies(__dirname),
-  ],
+  content: [join(__dirname, 'src/**/!(*.stories|*.spec).{html,ts}'), ...createGlobPatternsForDependencies(__dirname)],
   plugins: [daisyui],
   daisyui: {
     themes: [

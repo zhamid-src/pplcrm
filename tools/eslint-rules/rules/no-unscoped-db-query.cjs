@@ -40,12 +40,7 @@
 'use strict';
 
 /** Terminal methods that materialise a Kysely query. */
-const EXECUTE_METHODS = new Set([
-  'execute',
-  'executeTakeFirst',
-  'executeTakeFirstOrThrow',
-  'stream',
-]);
+const EXECUTE_METHODS = new Set(['execute', 'executeTakeFirst', 'executeTakeFirstOrThrow', 'stream']);
 
 /** Kysely builder methods that start a write/read chain we want to track. */
 const SCOPE_METHODS = new Set(['selectFrom', 'updateTable', 'deleteFrom']);
@@ -95,8 +90,7 @@ module.exports = {
   meta: {
     type: 'problem',
     docs: {
-      description:
-        'Require a WHERE tenant_id filter on every Kysely selectFrom / updateTable / deleteFrom query.',
+      description: 'Require a WHERE tenant_id filter on every Kysely selectFrom / updateTable / deleteFrom query.',
       category: 'Security',
       recommended: false,
     },
@@ -122,9 +116,7 @@ module.exports = {
 
   create(context) {
     const options = context.options[0] ?? {};
-    const ignoreTables = new Set(
-      options.ignoreTables ?? ['authusers', 'sessions', 'tenants', 'tags'],
-    );
+    const ignoreTables = new Set(options.ignoreTables ?? ['authusers', 'sessions', 'tenants', 'tags']);
 
     return {
       CallExpression(node) {
@@ -144,20 +136,14 @@ module.exports = {
 
         // Determine the table name from the first argument
         const tableArg = scopeCall.args[0];
-        const tableName =
-          tableArg?.type === 'Literal' && typeof tableArg.value === 'string'
-            ? tableArg.value
-            : null;
+        const tableName = tableArg?.type === 'Literal' && typeof tableArg.value === 'string' ? tableArg.value : null;
 
         // Skip ignored tables
         if (tableName && ignoreTables.has(tableName)) return;
 
         // Check if any .where() call in the chain references tenant_id
         const hasTenantFilter = chain.some(
-          (c) =>
-            c.name === 'where' &&
-            c.args.length >= 1 &&
-            stringArgIncludes(c.args[0], 'tenant_id'),
+          (c) => c.name === 'where' && c.args.length >= 1 && stringArgIncludes(c.args[0], 'tenant_id'),
         );
 
         if (!hasTenantFilter) {

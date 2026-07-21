@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import { Client } from 'pg';
 import type { Transaction } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
@@ -462,6 +463,12 @@ export class WebhookEventWorker {
     } catch (err) {
       const errorMsg = err instanceof Error && err.message ? err.message : String(err);
       logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
+      // Webhook failures never surface through a request path, so capture them here explicitly
+      // (no-op when SENTRY_DSN is unset).
+      Sentry.captureException(err, {
+        tags: { webhookType: eventRecord.type },
+        extra: { webhookEventId: eventRecord.id, attempts: eventRecord.attempts },
+      });
 
       const attempts = Number(eventRecord.attempts || 0);
       const maxAttempts = Number(eventRecord.max_attempts || 3);

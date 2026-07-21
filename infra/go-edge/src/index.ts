@@ -32,6 +32,9 @@ async function proxyToBackend(request: Request, target: string): Promise<Respons
     method: request.method,
     headers,
     redirect: 'manual',
+    // Bound how long a dead/hung backend can hold the request open. Note this also aborts
+    // slow response *bodies* — acceptable on this thin surface.
+    signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
   };
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     init.body = request.body;
@@ -41,13 +44,27 @@ async function proxyToBackend(request: Request, target: string): Promise<Respons
   return fetch(target, init);
 }
 
+const BACKEND_TIMEOUT_MS = 30_000;
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     // Companion backend surface → proxy unchanged. Everything else is the static SPA.
     if (url.pathname.startsWith('/api/')) {
-      return proxyToBackend(request, `${env.BACKEND_ORIGIN}${url.pathname}${url.search}`);
+      // The await matters: without it the rejected promise escapes the try. fetch only *throws* on
+      // network-level failure (backend down, DNS, timeout) — backend 5xx responses pass through.
+      try {
+        return await proxyToBackend(request, `${env.BACKEND_ORIGIN}${url.pathname}${url.search}`);
+      } catch {
+        return new Response(
+          JSON.stringify({
+            status: 'unavailable',
+            message: 'pplCRM is temporarily unreachable. Please try again in a minute.',
+          }),
+          { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '30' } },
+        );
+      }
     }
 
     return env.ASSETS.fetch(request);

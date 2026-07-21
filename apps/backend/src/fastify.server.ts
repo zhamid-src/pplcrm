@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -36,6 +37,10 @@ export class FastifyServer {
       },
       exposeHeadRoutes: false,
     });
+
+    // Report unhandled route errors to Sentry (no-op when SENTRY_DSN is unset — see instrument.ts).
+    // tRPC errors don't reach Fastify's error handler; those are captured in trpc.ts instead.
+    Sentry.setupFastifyErrorHandler(this.server);
 
     // Globally serialize BigInt properties as strings in responses
     this.server.setReplySerializer((payload) =>

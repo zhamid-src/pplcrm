@@ -69,6 +69,13 @@ const envSchema = z.object({
   // Shared secret Postmark is configured to send in the X-Postmark-Webhook-Token header of
   // bounce/complaint webhooks. The webhook rejects requests without it.
   POSTMARK_WEBHOOK_TOKEN: z.string().optional(),
+  // Where the ops watchdog cron emails its failed-jobs/backlog digest (via Postmark, directly —
+  // not through the job queue). Unset = digest is logged but not emailed.
+  OPS_ALERT_EMAIL: z.string().email().optional(),
+  // Sentry error tracking. Unset = Sentry disabled entirely (no startup cost, no traffic).
+  // NOTE: instrument.ts reads this from process.env directly (it must run before this file's
+  // parse); it is declared here so the schema stays the single inventory of backend config.
+  SENTRY_DSN: z.string().optional(),
   // Anthropic Claude API key for the newsletter preflight's AI content review. Optional — when
   // unset the preflight scores from the deterministic lint alone (fail-open, layer skipped).
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -197,6 +204,8 @@ export const env = {
   sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
   sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
   postmarkWebhookToken: parsedEnv.POSTMARK_WEBHOOK_TOKEN,
+  opsAlertEmail: parsedEnv.OPS_ALERT_EMAIL,
+  sentryDsn: parsedEnv.SENTRY_DSN,
   anthropicApiKey: parsedEnv.ANTHROPIC_API_KEY,
   anthropicModel: parsedEnv.ANTHROPIC_MODEL,
   twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,

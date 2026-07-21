@@ -175,8 +175,33 @@ Verify each is registered in the respective **live** dashboard and its signing s
 - [ ] **Container App is min 1 / max 1.** Bump `--max-replicas` for load. Scaling out is safe (the job queue
       uses `SELECT ... FOR UPDATE SKIP LOCKED`), but cron/worker run in-process on every replica — confirm no
       double-scheduling before going wide.
-- [ ] Add HTTP **health probes** (liveness `GET /`, readiness `GET /healthz`) via a YAML patch — the app
-      currently uses default TCP probes (Container Apps ignores the Docker HEALTHCHECK).
+- [ ] Add HTTP **health probes** via a YAML patch — the app currently uses default TCP probes
+      (Container Apps ignores the Docker HEALTHCHECK; `az containerapp update` has no probe flags, so
+      YAML is the only path). Liveness must stay on `GET /` (process-only) — pointing liveness at
+      `/healthz` would restart-loop the app during a DB outage; readiness on `GET /healthz` correctly
+      pulls it from ingress instead:
+
+      ```bash
+      az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml
+      # edit: under properties.template.containers[0] add
+      #   probes:
+      #   - type: Startup
+      #     httpGet: { path: /, port: 3000 }
+      #     periodSeconds: 5
+      #     failureThreshold: 30
+      #   - type: Liveness
+      #     httpGet: { path: /, port: 3000 }
+      #     periodSeconds: 30
+      #     failureThreshold: 3
+      #   - type: Readiness
+      #     httpGet: { path: /healthz, port: 3000 }
+      #     periodSeconds: 30
+      #     failureThreshold: 3
+      az containerapp update -n pplcrm-api -g pplcrm-cad-prod --yaml /tmp/pplcrm-api.yaml
+      ```
+
+      One-time op — later `az containerapp update --image` deploys don't touch probes.
+
 - [ ] Review backups/retention on Postgres and Blob; confirm they match the retention windows the marketing
       site claims (see `pplcrm-website-claims`).
 - [ ] Consider putting `api.pplcrm.com` behind the Cloudflare proxy (currently DNS-only/grey for the managed

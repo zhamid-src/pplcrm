@@ -32,6 +32,7 @@ import {
   handleSendTransactionalEmail,
   handleSendWebformNotifications,
 } from './handlers/notifications.handlers';
+import { handleOpsWatchdog } from './handlers/ops.handlers';
 import { handleGoogleSync, handleMsSync, handleScheduleSyncJobs } from './handlers/sync.handlers';
 import {
   handleDetectLapsedSupporters,
@@ -125,6 +126,9 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
       break;
     case 'check_due_tasks':
       await handleCheckDueTasks(db);
+      break;
+    case 'ops_watchdog':
+      await handleOpsWatchdog(db);
       break;
     case 'send-newsletter':
       await handleSendNewsletter(job, db, jobId);

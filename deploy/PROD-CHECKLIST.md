@@ -93,7 +93,8 @@ tier is outgrown.
       on the app, or make the GHCR package public).
 - [ ] Create app **`pplcrm-api`** — **deferred to §5**: it needs the CI-built image _and_ the §4 env vars, so it's
       created there in one shot. Target config: ingress **external**, **targetPort 3000**, **min 1 / max 1** replica,
-      liveness probe `GET /`, readiness probe `GET /healthz`.
+      liveness probe `GET /`, readiness probe `GET /healthz` (probes are YAML-only — exact patch in
+      GO-LIVE-CHECKLIST §10; liveness must NOT hit `/healthz` or a DB outage restart-loops the app).
 - [ ] Bind custom domain `api.pplcrm.com` (managed cert) + add the proxied `api.` CNAME (§1) — **after the app
       exists (§5)**.
 
@@ -215,7 +216,11 @@ live separately):
 
 ## 8. Verification (smoke test after deploy)
 
-- [ ] `curl https://api.pplcrm.com/healthz` → 200 `{status:"ok"}` (DB reachable); `GET /` → 200.
+- [ ] `curl https://api.pplcrm.com/healthz` → 200 `{status:"ok"}` (DB reachable); `GET /` → 200. (CI now
+      runs this automatically after every backend deploy — the "Smoke test backend /healthz" step in
+      `deploy.yml` fails the workflow if the new revision doesn't answer.)
+- [ ] `curl https://api.pplcrm.com/healthz/worker` → 200 `{status:"ok"}` once the ops watchdog has run
+      (≤5 min after boot); 503 `{status:"stale"}` means the in-process job worker isn't beating.
 - [ ] `https://app.pplcrm.com` loads; sign up a throwaway tenant; verify email actually arrives (Postmark).
 - [ ] Cross-origin works: CRM (app.) reaches tRPC (api.) — you're logged in and data loads.
 - [ ] `https://<org>.pplforms.com/f/<slug>` loads a public form; submit it (confirms wildcard DNS/TLS + `?t=` tenant resolution).
@@ -230,8 +235,14 @@ live separately):
 ## 9. Post-launch / operations
 
 - [ ] Confirm the in-process worker/cron is running (background jobs draining; no stuck `background_jobs`).
-- [ ] Set up alerting on `/healthz` failures, Container App restarts, and DB connection saturation
-      (keep `DB_POOL_MAX` under Postgres `max_connections`).
+- [x] Set up alerting on `/healthz` failures, Container App restarts, and DB connection saturation
+      (keep `DB_POOL_MAX` under Postgres `max_connections`). **Done in bicep, deployed by CI** —
+      `infra/azure/monitoring.bicep` provisions App Insights availability tests (api/app/go/forms +
+      optional `/healthz/worker`), an action group (Azure app push + email to `opsAlertEmail`), and
+      metric alerts (Container App restarts/replicas, Postgres cpu/storage/connections). The
+      `deploy-infra.yml` workflow deploys it on any change under `infra/azure/` monitoring files
+      (or via workflow_dispatch) — no secrets needed; see `infra/azure/README.md`. Test with the
+      action group's "Test action group" button.
 - [ ] Verify DB backups / point-in-time restore are enabled on the Flexible Server.
 - [ ] Establish the migration workflow going forward: **new timestamped migration files only**, never edit applied ones.
 - [ ] Plan secret rotation (`SHARED_SECRET`, `OAUTH_TOKEN_ENC_KEY` — rotating the latter forces mailbox re-consent).

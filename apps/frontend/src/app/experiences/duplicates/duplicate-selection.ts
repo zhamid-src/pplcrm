@@ -31,11 +31,8 @@ export class DuplicateSelectionComponent implements OnInit {
   public counts = signal<DuplicateCounts>({ people: 0, households: 0, companies: 0 });
 
   ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     const end = this._loading.begin();

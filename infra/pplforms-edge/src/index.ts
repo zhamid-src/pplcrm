@@ -70,6 +70,9 @@ async function proxyToBackend(request: Request, target: string): Promise<Respons
     headers,
     // Preserve backend 3xx (e.g. donation redirects to the payment provider) verbatim.
     redirect: 'manual',
+    // Bound how long a dead/hung backend can hold the request open. Note this also aborts
+    // slow response *bodies* — acceptable on this thin surface.
+    signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
   };
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     init.body = request.body;
@@ -78,6 +81,42 @@ async function proxyToBackend(request: Request, target: string): Promise<Respons
   }
 
   return fetch(target, init);
+}
+
+const BACKEND_TIMEOUT_MS = 30_000;
+
+const UNAVAILABLE_MESSAGE = 'pplCRM is temporarily unreachable. Please try again in a minute.';
+
+/** The backend is down/unreachable — a browser navigation (donation page /d/*) gets a tiny page. */
+function unavailableHtml(): Response {
+  const html = `<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Temporarily unavailable</title>
+<style>
+  body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; background: #f6f6f7; color: #1f2328; }
+  main { text-align: center; padding: 2rem; }
+  h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 .5rem; }
+  p { margin: 0; color: #57606a; }
+</style>
+<main>
+  <h1>Temporarily unavailable</h1>
+  <p>${UNAVAILABLE_MESSAGE}</p>
+</main>
+</html>`;
+  return new Response(html, {
+    status: 503,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'retry-after': '30' },
+  });
+}
+
+/** API callers get JSON in the backend's jsend-ish error shape. */
+function unavailableJson(): Response {
+  return new Response(JSON.stringify({ status: 'unavailable', message: UNAVAILABLE_MESSAGE }), {
+    status: 503,
+    headers: { 'content-type': 'application/json', 'retry-after': '30' },
+  });
 }
 
 export default {
@@ -91,6 +130,13 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
-    return proxyToBackend(request, target);
+    // The await matters: without it the rejected promise escapes the try.
+    try {
+      return await proxyToBackend(request, target);
+    } catch {
+      // fetch only *throws* on network-level failure (backend down, DNS, timeout) — backend 5xx
+      // responses pass through above untouched.
+      return url.pathname.startsWith('/d/') ? unavailableHtml() : unavailableJson();
+    }
   },
 };

@@ -125,10 +125,8 @@ module.exports = [
    *      with "Definition for rule ... was not found". `nx lint frontend`
    *      is unaffected since it already loads apps/frontend/eslint.config.cjs
    *      directly, which sets the actual severities/options for these rules. */
-  ...compat
-    .config({ extends: ['plugin:@angular-eslint/recommended'] })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['apps/frontend/**/*.ts', 'libs/uxcommon/**/*.ts'],
-    })),
+  ...compat.config({ extends: ['plugin:@angular-eslint/recommended'] }).map((cfg) => ({
+    ...cfg,
+    files: ['apps/frontend/**/*.ts', 'libs/uxcommon/**/*.ts'],
+  })),
 ];

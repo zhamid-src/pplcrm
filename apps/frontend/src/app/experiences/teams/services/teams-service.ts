@@ -31,7 +31,9 @@ export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
   }
 
   public count(): Promise<number> {
-    return this.api.teams.getAll.query({ startRow: 0, endRow: 1 }).then((res: RouterOutputs['teams']['getAll']) => res.count ?? 0);
+    return this.api.teams.getAll
+      .query({ startRow: 0, endRow: 1 })
+      .then((res: RouterOutputs['teams']['getAll']) => res.count ?? 0);
   }
 
   public detachTag(_id: string, _tag_name: string) {

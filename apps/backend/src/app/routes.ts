@@ -21,6 +21,10 @@ import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route
 import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
 import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
 
+// A worker heartbeat older than this = the in-process job worker is wedged (the ops watchdog
+// beats every 5 minutes; 20 = 3-4 missed cycles plus slack for retry backoff).
+const WORKER_HEARTBEAT_STALE_MS = 20 * 60 * 1000;
+
 export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   // --- Public REST routes (No Auth required) ---
 
@@ -89,6 +93,26 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
       return res.send({ status: 'ok' });
     } catch {
       return res.code(503).send({ status: 'unavailable' });
+    }
+  });
+
+  // Job-worker dead-man's switch, probed by the external availability test (NOT wired into the
+  // container's readiness probe — a jammed queue must not pull the API from ingress). The ops
+  // watchdog cron updates ops_heartbeats every 5 minutes; a beat older than 20 minutes (3-4
+  // missed cycles plus slack) means the in-process worker is wedged even though HTTP is fine.
+  // Missing row/table (fresh DB, migration not applied yet) also reports stale — the safe
+  // direction, and the reason for the catch.
+  fastify.get('/healthz/worker', async (_req, res) => {
+    try {
+      const row = await BaseRepository.dbInstance
+        .selectFrom('ops_heartbeats')
+        .select('beat_at')
+        .where('name', '=', 'ops_watchdog')
+        .executeTakeFirst();
+      const stale = !row || Date.now() - new Date(row.beat_at).getTime() > WORKER_HEARTBEAT_STALE_MS;
+      return stale ? res.code(503).send({ status: 'stale' }) : res.send({ status: 'ok' });
+    } catch {
+      return res.code(503).send({ status: 'stale' });
     }
   });
 

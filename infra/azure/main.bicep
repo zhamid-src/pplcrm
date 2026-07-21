@@ -142,6 +142,11 @@ resource uploadsContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   }
 }
 
+// --- Monitoring lives in monitoring.bicep ---
+// Split out deliberately: monitoring references the Postgres server via `existing`, so CI
+// (.github/workflows/deploy-infra.yml) can deploy it without pgAdminPassword. This template
+// stays the manual, password-bearing data-plane deploy.
+
 output pgServerNameOut string = pg.name
 output pgFqdn string = pg.properties.fullyQualifiedDomainName
 output storageAccountNameOut string = storage.name

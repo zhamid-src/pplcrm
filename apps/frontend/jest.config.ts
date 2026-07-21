@@ -4,10 +4,7 @@ const config: Config = {
   preset: 'jest-preset-angular',
   setupFilesAfterEnv: ['<rootDir>/src/test-setup.ts'],
   transform: {
-    '^.+\\.(ts|mjs|js)$': [
-      'jest-preset-angular',
-      { tsconfig: '<rootDir>/tsconfig.spec.json' }
-    ],
+    '^.+\\.(ts|mjs|js)$': ['jest-preset-angular', { tsconfig: '<rootDir>/tsconfig.spec.json' }],
   },
   moduleNameMapper: {
     '^common/(.*)$': '<rootDir>/../../common/$1',
@@ -21,11 +18,11 @@ const config: Config = {
     '.*environments/environment$': '<rootDir>/src/__mocks__/environment.mock.ts',
     '.*environments/environment\\.prod$': '<rootDir>/src/__mocks__/environment.prod.mock.ts',
     '\\.(html)$': '<rootDir>/src/__mocks__/html.mock.ts',
-    '\\.svg\\?raw$': '<rootDir>/src/__mocks__/svg.mock.ts'
+    '\\.svg\\?raw$': '<rootDir>/src/__mocks__/svg.mock.ts',
   },
   moduleFileExtensions: ['ts', 'html', 'js', 'json', 'mjs'],
   testMatch: ['<rootDir>/src/**/*.spec.ts'],
-  coverageDirectory: '../../coverage/apps/frontend'
+  coverageDirectory: '../../coverage/apps/frontend',
 };
 
 export default config;
