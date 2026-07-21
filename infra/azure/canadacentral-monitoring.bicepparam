@@ -11,6 +11,10 @@ param pgServerName = 'pplcrm-pg'
 // be signed into the Azure mobile app).
 param opsAlertEmail = 'hello@pplcrm.com'
 
+// SMS is the primary wake-you-up channel — app push is unreliable for this subscription's
+// guest (#EXT#) identity.
+param opsAlertSmsNumber = '4168236993'
+
 // One real tenant forms host to probe. Leave '' to skip the forms availability test.
 param formsProbeUrl = ''
 

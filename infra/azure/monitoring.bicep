@@ -29,6 +29,12 @@ param opsAlertEmail string
 @description('Azure ACCOUNT email for mobile-app push (must match the account signed into the Azure mobile app — push silently no-ops otherwise). Empty = use opsAlertEmail.')
 param azurePushEmail string = ''
 
+@description('Mobile number for SMS alerts, national format without country code (e.g. 4168236993). Empty = no SMS receiver.')
+param opsAlertSmsNumber string = ''
+
+@description('Country code for the SMS number.')
+param opsAlertSmsCountryCode string = '1'
+
 @description('Resource id of the pplcrm-api Container App (hand-created, not in bicep). Empty = skip the Container App metric alerts.')
 param containerAppResourceId string = ''
 
@@ -136,6 +142,17 @@ resource opsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
         useCommonAlertSchema: true
       }
     ]
+    // SMS is the wake-you-up channel: the Azure-app push receiver is unreliable for this
+    // subscription's #EXT# guest identity (matching silently fails), so don't rely on push alone.
+    smsReceivers: empty(opsAlertSmsNumber)
+      ? []
+      : [
+          {
+            name: 'ops-sms'
+            countryCode: opsAlertSmsCountryCode
+            phoneNumber: opsAlertSmsNumber
+          }
+        ]
   }
 }
 
