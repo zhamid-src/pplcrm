@@ -18,9 +18,10 @@ import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
 import { FormRenderComponent } from './form-render';
+import { DonationFormRenderComponent } from './donation-render';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
-import { publicPageUrl } from '../../../shared/public-pages';
+import { donationPageUrl, publicPageUrl } from '../../../shared/public-pages';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 interface TemplateCard {
@@ -106,6 +107,7 @@ const BUILDER_CARDS: readonly BuilderCard[] = [
     StatusBadge,
     Icon,
     FormRenderComponent,
+    DonationFormRenderComponent,
     RouterLink,
     NgTemplateOutlet,
     DatePipe,
@@ -188,7 +190,10 @@ export class FormsPageComponent implements OnInit {
   protected readonly publicUrl = computed(() => {
     const form = this.selected();
     if (!form?.slug) return '';
-    return publicPageUrl(this.auth.getUser()?.tenant_slug, `f/${form.slug}`);
+    const tenantSlug = this.auth.getUser()?.tenant_slug;
+    // Donation forms are server-rendered on /d/:slug (Stripe checkout); standard forms on /f/:slug.
+    if (this.isDonationForm(form)) return donationPageUrl(tenantSlug, form.slug);
+    return publicPageUrl(tenantSlug, `f/${form.slug}`);
   });
 
   private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
@@ -239,19 +244,21 @@ export class FormsPageComponent implements OnInit {
   // ── Selection / navigation ─────────────────────────────────────────────
 
   protected select(id: string): void {
-    // Donation forms live in this list but keep their Stripe-backed editor and /d/:slug public page.
-    // Selecting one hands off to the fundraising editor instead of the living-funnel inline pane.
-    const form = this.forms().find((f) => f.id === id);
-    if (form && this.isDonationForm(form)) {
-      void this.router.navigate(['/donation-pages', id]);
-      return;
-    }
+    // Every form — donation forms included — previews in the same pane. Donation forms keep their
+    // Stripe-backed editor (/donation-pages/:id/edit) and /d/:slug public page; the pane shows a
+    // read-only preview and hands off to that editor via `openDonationEditor()`.
     if (this.selectedId() === id) return;
     this.selectedId.set(id);
     this.tab.set('form');
     this.submissions.set([]);
     this.submissionsTotal.set(0);
     this.submissionsLoaded.set(false);
+  }
+
+  /** Donation forms aren't editable inline; open the Stripe-backed fundraising editor instead. */
+  protected openDonationEditor(): void {
+    const id = this.selectedId();
+    if (id) void this.router.navigate(['/donation-pages', id, 'edit']);
   }
 
   protected setTab(tab: 'form' | 'responses'): void {
