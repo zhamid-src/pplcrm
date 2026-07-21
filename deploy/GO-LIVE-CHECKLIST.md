@@ -175,11 +175,12 @@ Verify each is registered in the respective **live** dashboard and its signing s
 - [ ] **Container App is min 1 / max 1.** Bump `--max-replicas` for load. Scaling out is safe (the job queue
       uses `SELECT ... FOR UPDATE SKIP LOCKED`), but cron/worker run in-process on every replica — confirm no
       double-scheduling before going wide.
-- [ ] Add HTTP **health probes** via a YAML patch — the app currently uses default TCP probes
-      (Container Apps ignores the Docker HEALTHCHECK; `az containerapp update` has no probe flags, so
-      YAML is the only path). Liveness must stay on `GET /` (process-only) — pointing liveness at
-      `/healthz` would restart-loop the app during a DB outage; readiness on `GET /healthz` correctly
-      pulls it from ingress instead:
+- [x] Add HTTP **health probes** via a YAML patch — **applied 2026-07-21** (revision
+      `pplcrm-api--0000029`). Container Apps ignores the Docker HEALTHCHECK and `az containerapp
+    update` has no probe flags, so YAML is the only path. Liveness must stay on `GET /`
+      (process-only) — pointing liveness at `/healthz` would restart-loop the app during a DB
+      outage; readiness on `GET /healthz` correctly pulls it from ingress instead. For reference
+      (probes survive image deploys; this only ever needs re-doing on an app re-create):
 
       ```bash
       az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml

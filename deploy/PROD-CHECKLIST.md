@@ -85,8 +85,10 @@ tier is outgrown.
 
 ## 3. Azure — compute
 
-- [ ] Register providers (fresh subscription): `az provider register --namespace Microsoft.App --wait` and
-      `--namespace Microsoft.OperationalInsights --wait`.
+- [ ] Register providers (fresh subscription): `az provider register --namespace Microsoft.App --wait`,
+      `--namespace Microsoft.OperationalInsights --wait`, `--namespace Microsoft.Insights --wait`, and
+      `--namespace Microsoft.AlertsManagement --wait` (the last two are needed by monitoring.bicep —
+      availability tests/action groups/metric alerts fail with `MissingSubscriptionRegistration` without them).
 - [ ] Create a **Container Apps environment** in Canada Central (hosts only `pplcrm-api`; the `*.pplforms.com` and
       `go.` edges are Cloudflare Workers, and `app.` is Cloudflare Pages — none of them run here).
 - [ ] Grant pull access to **GHCR** for the backend image `ghcr.io/pplcrm-org/pplcrm/backend` (registry credential
