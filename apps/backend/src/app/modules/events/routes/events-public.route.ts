@@ -2,35 +2,18 @@ import type { FastifyPluginCallback } from 'fastify';
 import { TRPCError } from '@trpc/server';
 
 import { EventsController } from '../controller';
-import { validateApiKeyFromRequest } from '../../../lib/validate-api-key';
-import { resolveTenantFromRequest } from '../../../lib/public-tenant';
+import { resolveTenantById, resolveTenantFromRequest } from '../../../lib/public-tenant';
+import { checkKeyedSubmissionRateLimit, tenantIdFromOptionalApiKey } from '../../../lib/validate-api-key';
 
 const ctrl = new EventsController();
-
-// Per-key sliding-window rate limiting
-const keySubmissionTimestamps = new Map<string, number[]>();
-const RATE_LIMIT_MAX = 10;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
-function isRateLimited(tenantId: string): boolean {
-  const now = Date.now();
-  let timestamps = keySubmissionTimestamps.get(tenantId) || [];
-  timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-  if (timestamps.length >= RATE_LIMIT_MAX) return true;
-  timestamps.push(now);
-  if (timestamps.length > 0) {
-    keySubmissionTimestamps.set(tenantId, timestamps);
-  } else {
-    keySubmissionTimestamps.delete(tenantId);
-  }
-  return false;
-}
 
 function getStatusFromError(err: unknown): number {
   if (err instanceof TRPCError) {
     switch (err.code) {
       case 'BAD_REQUEST':
         return 400;
+      case 'UNAUTHORIZED':
+        return 401;
       case 'NOT_FOUND':
         return 404;
       case 'CONFLICT':
@@ -73,20 +56,23 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // RSVP submission from the SPA page (JSON body).
   fastify.post<{ Params: { slug: string }; Body: Record<string, string> }>('/rsvp/:slug', async (req, reply) => {
     const { slug } = req.params;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
 
     try {
-      // Validate API key and get tenant
-      const tenantId = await validateApiKeyFromRequest(req);
+      // Optional workspace API key (server-side integrations): the key identifies the tenant
+      // and swaps the anonymous per-IP limit for a per-tenant one.
+      const keyTenantId = await tenantIdFromOptionalApiKey(req);
+      if (keyTenantId) checkKeyedSubmissionRateLimit(keyTenantId, 'rsvp');
 
-      // Check rate limit per tenant
-      if (isRateLimited(tenantId)) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: 'Rate limit exceeded. Please try again in a minute.',
-        });
+      const tenant = keyTenantId ? await resolveTenantById(keyTenantId) : await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Event not found.' });
       }
-
-      await ctrl.rsvpPublic(tenantId, String(slug), req.body || {});
+      await ctrl.rsvpPublic(tenant.id, String(slug), req.body || {}, clientIp, {
+        skipIpRateLimit: keyTenantId != null,
+      });
       return reply.status(200).send({ success: true });
     } catch (err) {
       fastify.log.error(err);

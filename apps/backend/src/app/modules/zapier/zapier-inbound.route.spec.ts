@@ -6,12 +6,9 @@ import { TooManyRequestsError } from '../../errors/app-errors';
 // Control the shared rate limiter so we can assert the route's onRequest hook
 // translates a limit breach into a 429 without pumping 120 real requests.
 vi.mock('../../lib/rate-limiter', () => ({ checkRateLimit: vi.fn() }));
-// Stop the tenant lookup from touching Postgres; an unknown key -> 401.
-vi.mock('./zapier.service', () => ({
-  ZapierService: class {
-    lookupTenantByApiKey = vi.fn().mockResolvedValue(null);
-  },
-}));
+// Stop the tenant lookup from touching Postgres; an unknown key -> 401. (Zapier
+// authenticates with the shared workspace API key — lib/validate-api-key.)
+vi.mock('../../lib/validate-api-key', () => ({ lookupTenantByApiKey: vi.fn().mockResolvedValue(null) }));
 vi.mock('../persons/services/persons.service', () => ({ PersonsService: class {} }));
 
 import { checkRateLimit } from '../../lib/rate-limiter';

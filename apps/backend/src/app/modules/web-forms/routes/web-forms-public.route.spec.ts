@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import webFormsPublicRoute from './web-forms-public.route';
 import { BaseRepository } from '../../../lib/base.repo';
+import { generateApiKey, getKeyPreview, hashApiKey } from '../../../lib/api-key';
 import { DonationsController } from '../../donations/controller';
 import { env } from '../../../../env';
 
@@ -190,6 +191,7 @@ async function cleanTenant(tenantId: string): Promise<void> {
     .where('id', '=', tenantId)
     .execute();
   await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('workspace_api_keys').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('form_submissions').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('campaign_subscriptions').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenantId).execute();
@@ -587,6 +589,84 @@ describe('web-forms public route (/api/forms)', () => {
       const jobs = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', seed.tenantId).execute();
       const types = jobs.map((j: { payload: unknown }) => parseJson(j.payload)['type']);
       expect(types).toContain('send-subscription-confirmation');
+    });
+
+    describe('workspace API key (server-side integrations)', () => {
+      // Mirrors the settings flow: only the SHA-256 hash and a preview are stored.
+      async function createWorkspaceKey(tenantId: string): Promise<string> {
+        const key = generateApiKey();
+        await db
+          .insertInto('workspace_api_keys')
+          .values({ tenant_id: tenantId, key_hash: hashApiKey(key), key_preview: getKeyPreview(key) })
+          .execute();
+        return key;
+      }
+
+      // No ?t= and no subdomain — the key alone must identify the tenant.
+      const postKeyed = (slug: string, key: string, payload: Record<string, string>, ip?: string) =>
+        app.inject({
+          method: 'POST',
+          url: `/api/forms/submit/${slug}`,
+          remoteAddress: ip ?? nextIp(),
+          headers: { 'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${key}` },
+          payload,
+        });
+
+      it('identifies the tenant from the key alone and stamps last_used_at', async () => {
+        const key = await createWorkspaceKey(seed.tenantId);
+        const res = await postKeyed(seed.publishedSlug, key, {
+          full_name: 'Server Side',
+          email: 'server@example.com',
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(await submissions()).toHaveLength(1);
+        const keyRow = await db
+          .selectFrom('workspace_api_keys')
+          .selectAll()
+          .where('tenant_id', '=', seed.tenantId)
+          .executeTakeFirstOrThrow();
+        expect(keyRow.last_used_at).not.toBeNull();
+      });
+
+      it('rejects an unknown key with 401 and writes nothing', async () => {
+        const res = await postKeyed(seed.publishedSlug, 'ws_definitely-not-a-real-key', {
+          full_name: 'Nope',
+          email: 'nope@example.com',
+        });
+
+        expect(res.statusCode).toBe(401);
+        expect(await submissions()).toHaveLength(0);
+        expect(await persons()).toHaveLength(0);
+      });
+
+      it("never reaches across tenants — tenant B's key cannot submit tenant A's form", async () => {
+        const otherKey = await createWorkspaceKey(seed.otherTenantId);
+        const res = await postKeyed(seed.publishedSlug, otherKey, {
+          full_name: 'Cross Tenant',
+          email: 'cross-key@example.com',
+        });
+
+        expect(res.statusCode).toBe(404);
+        expect(await submissions()).toHaveLength(0);
+        expect(await persons()).toHaveLength(0);
+      });
+
+      it('bypasses the per-IP limit — server integrations share one IP', async () => {
+        const key = await createWorkspaceKey(seed.tenantId);
+        const ip = nextIp();
+        for (let i = 0; i < 6; i++) {
+          const ok = await postKeyed(
+            seed.publishedSlug,
+            key,
+            { full_name: 'Batch Import', email: `batch-${i}@example.com`, _hp: '' },
+            ip,
+          );
+          expect(ok.statusCode).toBe(200);
+        }
+        // The anonymous per-IP cap is 5/minute; all six keyed submissions landed.
+        expect(await submissions()).toHaveLength(6);
+      });
     });
 
     it('rejects an oversized payload at the body-size limit', async () => {

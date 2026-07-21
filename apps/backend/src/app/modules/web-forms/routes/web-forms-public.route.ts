@@ -4,34 +4,15 @@ import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 import { WebFormsController } from '../controller';
 import { DonationsController } from '../../donations/controller';
 import formBody from '@fastify/formbody';
-import { validateApiKeyFromRequest } from '../../../lib/validate-api-key';
-import { resolveTenantFromRequest } from '../../../lib/public-tenant';
+import { resolveTenantById, resolveTenantFromRequest } from '../../../lib/public-tenant';
+import { checkKeyedSubmissionRateLimit, tenantIdFromOptionalApiKey } from '../../../lib/validate-api-key';
 import { env } from '../../../../env';
 
 const webFormsController = new WebFormsController();
 const donationsController = new DonationsController();
 
-// Per-key sliding-window rate limiting for form submissions
-const keySubmissionTimestamps = new Map<string, number[]>();
-const RATE_LIMIT_MAX = 10;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-
-function isRateLimited(tenantId: string): boolean {
-  const now = Date.now();
-  let timestamps = keySubmissionTimestamps.get(tenantId) || [];
-  timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-  if (timestamps.length >= RATE_LIMIT_MAX) return true;
-  timestamps.push(now);
-  if (timestamps.length > 0) {
-    keySubmissionTimestamps.set(tenantId, timestamps);
-  } else {
-    keySubmissionTimestamps.delete(tenantId);
-  }
-  return false;
 }
 
 /**
@@ -577,32 +558,29 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   fastify.post<{ Params: { slug: string }; Body: Record<string, string> }>('/submit/:slug', async (req, reply) => {
     const { slug } = req.params;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
     const isJsonExpected =
       req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
 
     try {
-      // Validate API key and get tenant
-      const tenantId = await validateApiKeyFromRequest(req);
+      // Optional workspace API key (server-side "bring your own form" integrations): the key
+      // identifies the tenant and swaps the anonymous per-IP limit for a per-tenant one.
+      // Anonymous browser/embed submissions carry no key and take the subdomain/?t= path.
+      const keyTenantId = await tenantIdFromOptionalApiKey(req);
+      if (keyTenantId) checkKeyedSubmissionRateLimit(keyTenantId, 'forms');
 
-      // Check rate limit per tenant
-      if (isRateLimited(tenantId)) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: 'Rate limit exceeded. Please try again in a minute.',
-        });
+      const tenant = keyTenantId ? await resolveTenantById(keyTenantId) : await resolveTenantFromRequest(req);
+      if (!tenant) {
+        if (isJsonExpected) return reply.status(404).send({ error: 'Web form not found or inactive.' });
+        reply.status(404).type('text/html');
+        return reply.send(errorHtml('Web form not found or inactive.'));
       }
-
-      // Fetch form with tenant scoping
-      const form = await webFormsController.getFormBySlugAndTenant(tenantId, String(slug));
-      if (!form || form.status !== 'published') {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Web form not found or inactive.',
-        });
-      }
-
       const body = req.body || {};
-      const result = await webFormsController.submitFormPublic(form, tenantId, body);
+      const result = await webFormsController.submitFormPublic(tenant, String(slug), body, clientIp, {
+        skipIpRateLimit: keyTenantId != null,
+      });
 
       if (isJsonExpected) {
         // The SPA/JSON caller follows `redirect_url` (Stripe hosted checkout / plain form redirect).

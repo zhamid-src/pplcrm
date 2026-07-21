@@ -14,11 +14,8 @@ const eventTypeSchema = z.enum([
 ]);
 
 export const ZapierRouter = router({
-  // Reports whether a key exists; the key is shown only once, at regeneration.
-  getApiKeyStatus: authProcedure.query(({ ctx }) => zapierService.getApiKeyStatus(ctx.auth.tenant_id)),
-
-  regenerateApiKey: authProcedure.mutation(({ ctx }) => zapierService.regenerateApiKey(ctx.auth.tenant_id)),
-
+  // Zapier authenticates with the workspace API key (settings.generateApiKey / the API Keys
+  // settings page) — there is no separate Zapier key.
   getSubscriptions: authProcedure.query(({ ctx }) => zapierService.getSubscriptions(ctx.auth.tenant_id)),
 
   subscribe: authProcedure
