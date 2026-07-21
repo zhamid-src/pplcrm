@@ -185,12 +185,35 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     if (params['mock_checkout_success'] && isPurchasablePlan(params['plan'])) {
       await this.handleMockActivation(params['plan'], params['interval'] === 'year' ? 'year' : 'month');
     } else if (params['checkout_success']) {
-      this.alerts.showSuccess('Subscription activated successfully! Thank you for your purchase.');
+      await this.syncFromStripe('Subscription activated successfully! Thank you for your purchase.');
+      this.clearQueryParams();
+    } else if (params['portal_return']) {
+      await this.syncFromStripe(null);
       this.clearQueryParams();
     } else if (params['mock_portal_success']) {
       this.alerts.showSuccess('Simulated Customer Portal: Retrieved successfully.');
       this.clearQueryParams();
     }
+  }
+
+  /** Returning from Stripe Checkout/Portal: reconcile the plan straight from Stripe (webhooks
+   * can lag or be unconfigured for the active Stripe mode), then reload the page data. */
+  private async syncFromStripe(successMessage: string | null): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const res = await this.api.billing.syncSubscription.mutate();
+      if (successMessage) {
+        this.alerts.showSuccess(successMessage);
+      } else if (res.synced) {
+        this.alerts.showSuccess('Your billing details are up to date.');
+      }
+    } catch (err) {
+      console.error(err);
+      this.alerts.showError('Could not refresh your subscription from Stripe. Reload the page to try again.');
+    } finally {
+      end();
+    }
+    await this.loadBilling();
   }
 
   protected async subscribe(plan: PlanDef) {
@@ -268,6 +291,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
         plan: null,
         interval: null,
         checkout_success: null,
+        portal_return: null,
         mock_portal_success: null,
       },
       queryParamsHandling: 'merge',

@@ -105,6 +105,8 @@ interface TenantBillingRow {
   subscription_plan: string | null;
   subscription_quantity: number | null;
   subscription_interval: BillingInterval;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
 }
 
 function asTenantBillingRow(row: unknown): TenantBillingRow | undefined {
@@ -117,6 +119,8 @@ function asTenantBillingRow(row: unknown): TenantBillingRow | undefined {
     subscription_plan: typeof r['subscription_plan'] === 'string' ? r['subscription_plan'] : null,
     subscription_quantity: typeof r['subscription_quantity'] === 'number' ? r['subscription_quantity'] : null,
     subscription_interval: asBillingInterval(r['subscription_interval']),
+    stripe_customer_id: typeof r['stripe_customer_id'] === 'string' ? r['stripe_customer_id'] : null,
+    stripe_subscription_id: typeof r['stripe_subscription_id'] === 'string' ? r['stripe_subscription_id'] : null,
   };
 }
 
@@ -326,10 +330,95 @@ export class BillingController {
 
     const session = await getStripe().billingPortal.sessions.create({
       customer: stripeCustomerId,
-      return_url: `${frontendUrl}/workspace/billing`,
+      // `portal_return` tells the billing page to pull the live subscription state from Stripe
+      // (syncSubscriptionFromStripe) — a plan switched in the Portal is reflected immediately
+      // instead of waiting on webhook delivery.
+      return_url: `${frontendUrl}/workspace/billing?portal_return=true`,
     });
 
     return { url: session.url };
+  }
+
+  /**
+   * Mirror the tenant's live Stripe subscription onto the `tenants` row — the same write
+   * `customer.subscription.updated` performs, minus the notification email (the webhook stays
+   * the authoritative sender, so a later-delivered event never duplicates it).
+   *
+   * Called by the billing page when the user returns from Checkout (`checkout_success`) or the
+   * Billing Portal (`portal_return`), so a plan change takes effect immediately even when
+   * webhook delivery is delayed or not configured for the active Stripe mode (e.g. sandbox keys
+   * without a sandbox webhook endpoint). No-ops in mock mode and for tenants with no Stripe
+   * customer.
+   */
+  public async syncSubscriptionFromStripe(auth: { tenant_id: string }): Promise<{ synced: boolean; plan: string }> {
+    const tenant = asTenantBillingRow(
+      await tenantsRepo.getOneBy('id', {
+        tenant_id: auth.tenant_id,
+        value: auth.tenant_id,
+      }),
+    );
+    if (!tenant) {
+      throw new NotFoundError('Tenant not found');
+    }
+
+    const currentPlan = tenant.subscription_plan ?? 'free';
+    if (isMockMode || !tenant.stripe_customer_id) {
+      return { synced: false, plan: currentPlan };
+    }
+
+    const subscriptions = await getStripe().subscriptions.list({
+      customer: tenant.stripe_customer_id,
+      status: 'all',
+      limit: 10,
+    });
+    const live = subscriptions.data.find((s) => ['active', 'trialing', 'past_due'].includes(s.status));
+
+    if (!live) {
+      // Nothing billable on the customer. Only mirror a cancellation if we previously stored a
+      // subscription — a tenant that never subscribed stays untouched.
+      if (!tenant.stripe_subscription_id) {
+        return { synced: false, plan: currentPlan };
+      }
+      await tenantsRepo.update({
+        tenant_id: tenant.id,
+        id: tenant.id,
+        row: {
+          subscription_status: 'canceled',
+          subscription_plan: 'free',
+          subscription_ends_at: new Date().toISOString(),
+          subscription_quantity: 1,
+          subscription_interval: 'month',
+        },
+      });
+      logger.info(`[syncSubscriptionFromStripe] No live subscription — tenant ${tenant.id} set to free`);
+      return { synced: true, plan: 'free' };
+    }
+
+    const item = live.items.data[0];
+    const priceMatch = planForPriceId(item?.price.id);
+    if (item && !priceMatch) {
+      logger.warn(
+        `[syncSubscriptionFromStripe] Price ${item.price.id} matches no configured STRIPE_PLAN_*_PRICE_ID — ` +
+          `tenant ${tenant.id} keeps plan '${currentPlan}'. Check that the env price IDs belong to the active Stripe mode.`,
+      );
+    }
+    const planName: string = priceMatch?.plan ?? currentPlan;
+    const interval: BillingInterval = priceMatch?.interval ?? tenant.subscription_interval;
+
+    await tenantsRepo.update({
+      tenant_id: tenant.id,
+      id: tenant.id,
+      row: {
+        stripe_subscription_id: live.id,
+        subscription_plan: planName,
+        subscription_status: live.status,
+        subscription_ends_at: subscriptionPeriodEnd(live),
+        subscription_quantity: item?.quantity ?? 1,
+        subscription_interval: interval,
+      },
+    });
+    logger.info(`[syncSubscriptionFromStripe] Tenant ${tenant.id} synced to plan '${planName}' (${live.status})`);
+    return { synced: true, plan: planName };
   }
 
   public async handleWebhook(payload: string, signature: string) {

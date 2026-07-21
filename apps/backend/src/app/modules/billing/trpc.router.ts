@@ -22,6 +22,10 @@ export const BillingRouter = router({
 
   createPortal: adminOrOwnerProcedure.mutation(({ ctx }) => controller.createPortalSession(ctx.auth)),
 
+  /** Webhook-independent reconciliation: pull the live subscription from Stripe and mirror it
+   * onto the tenant. Called on return from Checkout/Portal so plan changes apply immediately. */
+  syncSubscription: adminOrOwnerProcedure.mutation(({ ctx }) => controller.syncSubscriptionFromStripe(ctx.auth)),
+
   // Local mock testing mutation endpoints
   activateMockPlan: adminOrOwnerProcedure
     .input(

@@ -19,13 +19,19 @@ vi.mock('../../../env', async (importOriginal) => {
 // Spy on Stripe constructor and webhooks constructEvent. `vi.mock` factories are hoisted above
 // module-level const declarations, so the mock fns themselves must go through `vi.hoisted` —
 // referencing a plain outer `const` here throws "Cannot access before initialization".
-const { stripeSubscriptionsRetrieve, stripeSubscriptionsUpdate, stripeCheckoutSessionsCreate, stripeCustomersCreate } =
-  vi.hoisted(() => ({
-    stripeSubscriptionsRetrieve: vi.fn(),
-    stripeSubscriptionsUpdate: vi.fn(),
-    stripeCheckoutSessionsCreate: vi.fn(),
-    stripeCustomersCreate: vi.fn(),
-  }));
+const {
+  stripeSubscriptionsRetrieve,
+  stripeSubscriptionsUpdate,
+  stripeSubscriptionsList,
+  stripeCheckoutSessionsCreate,
+  stripeCustomersCreate,
+} = vi.hoisted(() => ({
+  stripeSubscriptionsRetrieve: vi.fn(),
+  stripeSubscriptionsUpdate: vi.fn(),
+  stripeSubscriptionsList: vi.fn(),
+  stripeCheckoutSessionsCreate: vi.fn(),
+  stripeCustomersCreate: vi.fn(),
+}));
 vi.mock('stripe', () => ({
   default: class MockStripe {
     webhooks = {
@@ -34,6 +40,7 @@ vi.mock('stripe', () => ({
     subscriptions = {
       retrieve: stripeSubscriptionsRetrieve,
       update: stripeSubscriptionsUpdate,
+      list: stripeSubscriptionsList,
     };
     checkout = {
       sessions: {
@@ -294,6 +301,98 @@ describe('BillingController.processWebhookEvent — subscription_quantity persis
     expect(stripeSubscriptionsUpdate).not.toHaveBeenCalled();
     const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', tenantId).executeTakeFirst();
     expect(tenant.subscription_quantity).toBe(1);
+  });
+});
+
+describe('BillingController.syncSubscriptionFromStripe — webhook-independent reconciliation', () => {
+  const db = (BaseRepository as any)._db;
+  let controller: BillingController;
+  let tenantId: string;
+
+  beforeEach(() => {
+    controller = new BillingController();
+    stripeSubscriptionsList.mockReset();
+  });
+
+  afterEach(async () => {
+    await cleanBillingTenant(db, tenantId);
+  });
+
+  it('mirrors the live subscription (plan, quantity, interval, period end) onto the tenant', async () => {
+    ({ tenantId } = await seedBillingTenant(db));
+    const periodEnd = 1799999999; // seconds
+    stripeSubscriptionsList.mockResolvedValue({
+      data: [
+        {
+          id: 'sub_live_movement',
+          status: 'active',
+          items: {
+            data: [{ price: { id: 'price_test_movement' }, quantity: 3, current_period_end: periodEnd }],
+          },
+        },
+      ],
+    });
+
+    const res = await controller.syncSubscriptionFromStripe({ tenant_id: tenantId });
+
+    expect(res).toEqual({ synced: true, plan: 'movement' });
+    const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', tenantId).executeTakeFirst();
+    expect(tenant.subscription_plan).toBe('movement');
+    expect(tenant.subscription_status).toBe('active');
+    expect(tenant.subscription_quantity).toBe(3);
+    expect(tenant.subscription_interval).toBe('month');
+    expect(tenant.stripe_subscription_id).toBe('sub_live_movement');
+    expect(new Date(tenant.subscription_ends_at).getTime()).toBe(periodEnd * 1000);
+  });
+
+  it('keeps the stored plan when the live price id matches no configured price, but still syncs status/quantity', async () => {
+    ({ tenantId } = await seedBillingTenant(db, { subscription_quantity: 1 }));
+    stripeSubscriptionsList.mockResolvedValue({
+      data: [
+        {
+          id: 'sub_live_unknown_price',
+          status: 'past_due',
+          items: { data: [{ price: { id: 'price_from_another_mode' }, quantity: 2, current_period_end: null }] },
+        },
+      ],
+    });
+
+    const res = await controller.syncSubscriptionFromStripe({ tenant_id: tenantId });
+
+    expect(res).toEqual({ synced: true, plan: 'grassroots' });
+    const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', tenantId).executeTakeFirst();
+    expect(tenant.subscription_plan).toBe('grassroots');
+    expect(tenant.subscription_status).toBe('past_due');
+    expect(tenant.subscription_quantity).toBe(2);
+  });
+
+  it('downgrades to free when the customer has no live subscription but one was stored', async () => {
+    ({ tenantId } = await seedBillingTenant(db, { subscription_quantity: 4, subscription_interval: 'year' }));
+    stripeSubscriptionsList.mockResolvedValue({ data: [{ id: 'sub_old', status: 'canceled', items: { data: [] } }] });
+
+    const res = await controller.syncSubscriptionFromStripe({ tenant_id: tenantId });
+
+    expect(res).toEqual({ synced: true, plan: 'free' });
+    const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', tenantId).executeTakeFirst();
+    expect(tenant.subscription_plan).toBe('free');
+    expect(tenant.subscription_status).toBe('canceled');
+    expect(tenant.subscription_quantity).toBe(1);
+    expect(tenant.subscription_interval).toBe('month');
+  });
+
+  it('does not touch a tenant that has a Stripe customer but never subscribed', async () => {
+    ({ tenantId } = await seedBillingTenant(db, {
+      subscription_plan: 'free',
+      subscription_status: 'inactive',
+      stripe_subscription_id: null,
+    }));
+    stripeSubscriptionsList.mockResolvedValue({ data: [] });
+
+    const res = await controller.syncSubscriptionFromStripe({ tenant_id: tenantId });
+
+    expect(res).toEqual({ synced: false, plan: 'free' });
+    const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', tenantId).executeTakeFirst();
+    expect(tenant.subscription_status).toBe('inactive');
   });
 });
 
