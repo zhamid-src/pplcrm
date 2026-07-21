@@ -7,10 +7,9 @@ param regionCode = 'cad'
 // The region-1 server was hand-built as `pplcrm-pg` (see canadacentral.bicepparam).
 param pgServerName = 'pplcrm-pg'
 
-// Ops alerting. Email digests/alerts go to opsAlertEmail; mobile push must target the AZURE
-// account signed into the Azure mobile app on your phone (they differ here).
+// Ops alerting (email + Azure mobile-app push both go here; push requires this Azure account to
+// be signed into the Azure mobile app).
 param opsAlertEmail = 'hello@pplcrm.com'
-param azurePushEmail = 'hello@pplcrm.com'
 
 // One real tenant forms host to probe. Leave '' to skip the forms availability test.
 param formsProbeUrl = ''
