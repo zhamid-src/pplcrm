@@ -14,6 +14,7 @@ param opsAlertEmail = 'hello@pplcrm.com'
 // One real tenant forms host to probe. Leave '' to skip the forms availability test.
 param formsProbeUrl = ''
 
-// Flip to true (and merge) only after the backend ships GET /healthz/worker AND its
-// ops_heartbeats migration has run in prod — probing it earlier would 404-alert forever.
-param enableWorkerProbe = false
+// Enabled 2026-07-21: /healthz/worker is live in prod (backend deployed + ops_heartbeats
+// migration applied + first watchdog beat verified). Was false until then — probing the
+// endpoint before it exists 404-alerts forever.
+param enableWorkerProbe = true

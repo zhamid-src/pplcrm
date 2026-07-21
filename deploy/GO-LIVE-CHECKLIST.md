@@ -166,7 +166,10 @@ Verify each is registered in the respective **live** dashboard and its signing s
   same-origin by design (the Workers proxy `/api`), so CORS never needs to open up. Widening it is a
   security regression.
 - Migrations: `node --env-file=.env.production --import tsx apps/backend/src/app/kyselyinit.ts` from an
-  IP allow-listed on the Postgres firewall, using the quoted owner creds.
+  IP allow-listed on the Postgres firewall, using the quoted owner creds. **Gotcha (2026-07-21):** the
+  owner's ISP uses CGNAT — the egress IP rotates within `153.67.41.0/24` between connections, so the
+  `AllowAdminClient` rule is that whole /24, not a single IP. A single-IP rule will ETIMEDOUT minutes
+  after you create it.
 
 ## 10. Scaling & hardening for real traffic (currently sized for a pipeline test)
 
@@ -177,7 +180,7 @@ Verify each is registered in the respective **live** dashboard and its signing s
       double-scheduling before going wide.
 - [x] Add HTTP **health probes** via a YAML patch — **applied 2026-07-21** (revision
       `pplcrm-api--0000029`). Container Apps ignores the Docker HEALTHCHECK and `az containerapp
-    update` has no probe flags, so YAML is the only path. Liveness must stay on `GET /`
+  update` has no probe flags, so YAML is the only path. Liveness must stay on `GET /`
       (process-only) — pointing liveness at `/healthz` would restart-loop the app during a DB
       outage; readiness on `GET /healthz` correctly pulls it from ingress instead. For reference
       (probes survive image deploys; this only ever needs re-doing on an app re-create):
