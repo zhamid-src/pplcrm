@@ -131,6 +131,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
           '**Teams & access**: default role for invitations and the MFA requirement.',
           '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
           '**Appearance**: default theme and date format for the workspace.',
+          '**API keys**: the workspace API key for server-side integrations — submitting forms, RSVPs, and volunteer signups from your own backend, or connecting Zapier. Shown once at generation; regenerating invalidates the old key.',
           '**Billing**: your plan, live usage, and payment details.',
         ],
       },

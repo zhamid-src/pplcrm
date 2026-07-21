@@ -12,6 +12,10 @@ export class WorkspaceApiKeysRepo extends BaseRepository<'workspace_api_keys'> {
     return this.getSelect().selectAll().where('tenant_id', '=', tenantId).executeTakeFirst();
   }
 
+  // Cross-tenant BY DESIGN: this resolves which tenant owns a presented API key, so there is
+  // no tenant_id to scope by (same posture as the former Zapier settings-table lookup,
+  // SECURITY-REVIEW.md 2.4). The no-unscoped-db-query rule cannot see through getSelect(),
+  // so this carries no disable comment — this note is the reviewed justification.
   public async getByKeyHash(keyHash: string) {
     return this.getSelect().selectAll().where('key_hash', '=', keyHash).executeTakeFirst();
   }

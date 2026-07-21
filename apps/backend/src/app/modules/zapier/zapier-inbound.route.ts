@@ -1,15 +1,14 @@
 import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import type { Kysely } from 'kysely';
 import { z } from 'zod';
-import { ZapierService } from './zapier.service';
 import { PersonsService } from '../persons/services/persons.service';
 import type { IAuthKeyPayload } from '@common';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../logger';
 import { checkRateLimit } from '../../lib/rate-limiter';
+import { lookupTenantByApiKey } from '../../lib/validate-api-key';
 import { TooManyRequestsError } from '../../errors/app-errors';
 
-const zapierService = new ZapierService();
 const personsService = new PersonsService();
 
 // The API key is the sole authenticator for these unauthenticated-by-default write
@@ -65,7 +64,7 @@ async function extractTenantId(req: FastifyRequest): Promise<string | null> {
   if (!authHeader?.startsWith('Bearer ')) return null;
   const apiKey = authHeader.slice(7).trim();
   if (!apiKey) return null;
-  return zapierService.lookupTenantByApiKey(apiKey);
+  return lookupTenantByApiKey(apiKey);
 }
 
 const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {

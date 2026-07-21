@@ -1,51 +1,27 @@
 import crypto from 'crypto';
-import { scryptSync, timingSafeEqual } from 'crypto';
+
+import { hashToken } from './token-hash';
 
 /**
- * API key format: "ws_<random32>"
- * Total length: 36 chars (includes "ws_" prefix)
+ * Workspace API key: "ws_" + 32 random bytes (base64url). The key is high-entropy, so it is
+ * stored as a deterministic unsalted SHA-256 hash — lookup is a single indexed equality
+ * query. (Salted slow hashes like scrypt exist to protect low-entropy passwords; for a
+ * 256-bit random token they add nothing but would force scanning every tenant's hash.)
+ * Same scheme as every other bearer token in the codebase (token-hash.ts).
  */
 const KEY_PREFIX = 'ws_';
 const RANDOM_BYTES = 32;
+const PREVIEW_LENGTH = 8;
 
 export function generateApiKey(): string {
-  const random = crypto.randomBytes(RANDOM_BYTES).toString('base64url');
-  return `${KEY_PREFIX}${random}`;
+  return `${KEY_PREFIX}${crypto.randomBytes(RANDOM_BYTES).toString('base64url')}`;
 }
 
-/**
- * Hash an API key using scrypt (constant-time, resistant to timing attacks).
- * Same algorithm as password hashing; treats the key as a secret.
- */
 export function hashApiKey(key: string): string {
-  const salt = crypto.randomBytes(16);
-  const derivedKey = scryptSync(key, salt, 64);
-  // Store as: salt:derivedKey (both base64 for DB portability)
-  return `${salt.toString('base64')}:${derivedKey.toString('base64')}`;
+  return hashToken(key);
 }
 
-/**
- * Verify an API key against a stored hash. Constant-time comparison.
- */
-export function verifyApiKey(key: string, hash: string): boolean {
-  try {
-    const [saltB64, derivedB64] = hash.split(':');
-    if (!saltB64 || !derivedB64) return false;
-
-    const salt = Buffer.from(saltB64, 'base64');
-    const storedDerived = Buffer.from(derivedB64, 'base64');
-    const computedDerived = scryptSync(key, salt, 64);
-
-    // Constant-time comparison
-    return timingSafeEqual(computedDerived, storedDerived);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Extract a preview (first 8 chars) for UI display.
- */
+/** First characters only, for UI display ("ws_a1b2c…"). The full key is never retrievable. */
 export function getKeyPreview(key: string): string {
-  return key.substring(0, 8);
+  return key.substring(0, PREVIEW_LENGTH);
 }

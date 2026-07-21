@@ -25,7 +25,10 @@ interface ApiKeyInfo {
         <div class="settings-section">
           <div class="section-header">
             <h3>Workspace API Key</h3>
-            <p class="description">Use your API key to programmatically submit form responses and event RSVPs.</p>
+            <p class="description">
+              One key for server-side integrations: submit form responses, event RSVPs, and volunteer signups from your
+              own backend, or connect Zapier. Keep it secret — never embed it in a public web page.
+            </p>
           </div>
 
           @if (keyInfo()) {

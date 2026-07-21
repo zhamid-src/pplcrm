@@ -111,8 +111,8 @@ const CUSTOM_SECTIONS: CustomSectionConfig[] = [
     id: 'api-keys',
     mode: 'workspace',
     icon: 'lock-closed',
-    title: 'API Keys',
-    description: 'Generate and manage API keys for programmatic access to form submissions and event RSVPs.',
+    title: 'API keys',
+    description: 'One key for server-side integrations: submit forms, RSVPs, and signups, or connect Zapier.',
   },
 ];
 

@@ -12,6 +12,10 @@ import { EventsRepo } from './repositories/events.repo';
 
 const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
+const ipRsvpTimestamps = new Map<string, number[]>();
+const RSVP_RATE_LIMIT_MAX = 5;
+const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
 export class EventsController extends BaseController<'events', EventsRepo> {
   private readonly campaignsRepo = new CampaignsRepo();
   constructor() {
@@ -596,7 +600,29 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
   }
 
-  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>) {
+  public async rsvpPublic(
+    tenantId: string,
+    slug: string,
+    payload: Record<string, string>,
+    clientIp: string,
+    opts?: { skipIpRateLimit?: boolean },
+  ) {
+    // Rate limiting. Keyed (workspace-API-key) submissions skip the per-IP window — they come
+    // from one integration server and are rate-limited per tenant by the route.
+    if (!opts?.skipIpRateLimit) {
+      const now = Date.now();
+      let timestamps = ipRsvpTimestamps.get(clientIp) || [];
+      timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
+      if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Rate limit exceeded. Please try again in a minute.',
+        });
+      }
+      timestamps.push(now);
+      ipRsvpTimestamps.set(clientIp, timestamps);
+    }
+
     const event = await this.getEventBySlug(tenantId, slug);
     if (!event) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });

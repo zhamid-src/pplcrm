@@ -46,6 +46,19 @@ export async function resolveTenantBySlug(tenantSlug: string): Promise<PublicTen
   return row ? { id: String(row.id), slug: tenantSlug } : null;
 }
 
+/**
+ * Resolve a tenant by id — the workspace-API-key path, where the key (not the Host/`?t=`)
+ * already identifies the tenant. Same allow-listed `tenants` self-lookup as above.
+ */
+export async function resolveTenantById(tenantId: string): Promise<PublicTenant | null> {
+  const row = await BaseRepository.dbInstance
+    .selectFrom('tenants')
+    .select('slug')
+    .where('id', '=', tenantId)
+    .executeTakeFirst();
+  return row?.slug ? { id: tenantId, slug: String(row.slug) } : null;
+}
+
 /** Org display name for public pages (same source as the /f/:slug page header). */
 export async function publicOrgName(tenantId: string): Promise<string> {
   const row = await BaseRepository.dbInstance

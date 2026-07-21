@@ -155,6 +155,10 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       'publish',
       'archive',
       'responses',
+      'api',
+      'api key',
+      'zapier',
+      'integration',
     ],
     related: ['newsletters', 'automations', 'import', 'tags-issues'],
     blocks: [
@@ -201,6 +205,21 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
           'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
           'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
         ],
+      },
+      { kind: 'h2', id: 'api', text: 'Bring your own form (API)' },
+      {
+        kind: 'p',
+        text: 'Already have a form that matches your website’s design? Keep it. Point its submit action at your form’s public endpoint — `POST /api/forms/submit/<slug>?t=<workspace>` on the API domain (the same URL the raw-HTML embed uses) — with your enabled field names, and every submission still becomes a person, applies your tags and lists, and respects double opt-in. Include the hidden `_hp` field and leave it empty; it’s the spam trap.',
+      },
+      {
+        kind: 'p',
+        text: 'Submitting from your own server or backend instead? Generate a **workspace API key** (Workspace settings → **API keys**) and send it as an `Authorization: Bearer` header. The key identifies your workspace on its own — no `?t=` needed — and lifts the anonymous per-visitor rate limit in favor of a per-workspace one built for batch traffic. The same key authenticates Zapier and the event RSVP and volunteer signup endpoints.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Never put the API key in a public page',
+        text: 'The key is a secret — anyone who has it can write into your workspace. Browser-side forms don’t need it (the public endpoint works keyless); the key belongs only in server-side code. If it ever leaks, regenerate it in Workspace settings → API keys, which invalidates the old key instantly.',
       },
       {
         kind: 'callout',
