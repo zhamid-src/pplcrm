@@ -4,6 +4,15 @@
   <div class="pc-panel">
     <!-- Actions row -->
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
+      @if (isDonationForm(form)) {
+      <!-- Donation forms don't write form_submissions, so there's no Responses tab; donors land in
+           the Donations ledger. Editing keeps its Stripe-backed fundraising editor. -->
+      <span class="pc-eyebrow">Donation form</span>
+      <button class="btn btn-primary btn-sm gap-1.5" (click)="openDonationEditor()" type="button">
+        <pc-icon name="pencil-square" [size]="4"></pc-icon>
+        Edit donation form
+      </button>
+      } @else {
       <div class="join">
         <button
           class="btn join-item btn-sm"
@@ -46,6 +55,7 @@
         </button>
         } }
       </div>
+      }
     </div>
 
     <!-- Public link row -->
@@ -73,6 +83,9 @@
         >
           <pc-icon name="document-duplicate" [size]="4"></pc-icon>
         </button>
+        <!-- The donation embed snippet lives in the fundraising editor (it carries the amount +
+             address fields Stripe needs), so it isn't offered from this read-only pane. -->
+        @if (!isDonationForm(form)) {
         <button
           class="btn btn-ghost btn-xs btn-square"
           (click)="openEmbed()"
@@ -83,13 +96,15 @@
         >
           <pc-icon name="file-code" [size]="4"></pc-icon>
         </button>
+        }
       </div>
     </div>
 
     <!-- State banner -->
     @if (form.status === 'draft') {
     <div class="border-b border-base-200 bg-info/10 px-5 py-2.5 text-xs text-info-content/80">
-      Draft: only your team can see this preview. Publish to accept responses.
+      @if (isDonationForm(form)) { Draft: only your team can see this preview. Open the editor to publish it. } @else {
+      Draft: only your team can see this preview. Publish to accept responses. }
     </div>
     } @else if (form.status === 'archived') {
     <div class="border-b border-base-200 bg-base-200 px-5 py-2.5 text-xs text-base-content/70">
@@ -98,7 +113,15 @@
     }
 
     <!-- Tab content -->
-    @if (tab() === 'form') {
+    @if (isDonationForm(form)) {
+    <div class="bg-base-200/40 p-8">
+      <pc-donation-render
+        [form]="form"
+        [orgName]="orgName()"
+        [closed]="form.status === 'archived'"
+      ></pc-donation-render>
+    </div>
+    } @else if (tab() === 'form') {
     <div class="bg-base-200/40 p-8">
       <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
     </div>

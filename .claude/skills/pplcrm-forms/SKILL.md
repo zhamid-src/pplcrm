@@ -62,10 +62,15 @@ grid + form-editor model is gone; `forms-grid.ts` and `form-editor.ts` were dele
 - **Donations are separate, on purpose.** `form_type ∈ donation|recurring_donation` keeps the legacy
   `add`/`update` path, the Stripe checkout in `submitFormPublic`, and the `/donation-pages`
   (fundraising) UI. `listForms` **now includes donation types** (the old `form_type not in (...)`
-  filter was removed) so every form shows in one list, but this is _surfacing only_: the forms-page
-  `select()` routes a click on a donation form to `/donation-pages/:id` (the fundraising editor)
-  instead of the living-funnel inline pane, `typeChip()`/`isDonationForm()` render a **Donation** chip,
-  and the card shows "Donation form" instead of a `form_submissions` count. `form_submissions` is
+  filter was removed) so every form shows in one list. Selecting a donation form previews it
+  **inline in the same pane** as every other form — a read-only card rendered by `pc-donation-render`
+  (`donation-render.ts`), which mirrors the fixed `/d/:slug` shape (amount + contact + address) rather
+  than the normalized standard-form `fields`. The pane's chrome is donation-aware: no Form/Responses
+  tab (donations don't write `form_submissions`), the public-link row points at `/d/:slug`
+  (`publicUrl()` branches on `isDonationForm`), the embed button is hidden, and an **Edit donation
+  form** button (`openDonationEditor()`) hands off to the Stripe-backed fundraising editor at
+  `/donation-pages/:id/edit`. `typeChip()`/`isDonationForm()` still render a **Donation** chip and the
+  list card shows "Donation form" instead of a `form_submissions` count. `form_submissions` is
   still **not** written for them, and their public page is still `/d/:slug`. `type` (the template
   chip) is NULL for donation forms. Don't merge the two field/type sets — the editor and public
   rendering stay separate.
@@ -131,11 +136,13 @@ reasons, so the next agent doesn't have to re-derive them:
 `/donation-pages/add` (fundraising) creation flow — the one true "create a donation form" path
 today. No dead end, no new UI invented.
 
-**Partially shipped (light surfacing, 2026-07-15):** donation forms now _appear_ in the Forms list
-(`listForms` no longer filters them; **Donation** chip; card reads "Donation form"), but clicking one
-routes to `/donation-pages/:id` — they are **not** editable inline and do **not** render on `/f/:slug`.
-This closes the "I want to see all my forms in one place" gap without touching the field model, Stripe,
-or the public render path.
+**Partially shipped (light surfacing, 2026-07-15; inline preview added 2026-07-20):** donation forms
+_appear_ in the Forms list (`listForms` no longer filters them; **Donation** chip; card reads
+"Donation form") and now **preview inline** in the same pane as every other form via
+`pc-donation-render`. They remain **not** editable inline (the **Edit donation form** button opens the
+fundraising editor at `/donation-pages/:id/edit`) and still do **not** render on `/f/:slug` (their
+public page stays `/d/:slug`). This closes the "see and preview all my forms in one place" gap without
+touching the field model, Stripe, or the public render path.
 
 **Full convergence is still deferred.** Revisit when the Forms field model natively supports a
 payment-type field (amount + a Stripe Elements-equivalent widget) AND the public page architecture can
