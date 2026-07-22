@@ -5,7 +5,7 @@ export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' 
 @Component({
   selector: 'pc-status-badge',
   template: `
-    <span class="badge font-semibold uppercase" [class]="badgeClass()">
+    <span class="badge whitespace-nowrap font-semibold uppercase" [class]="badgeClass()">
       <ng-content></ng-content>
     </span>
   `,
