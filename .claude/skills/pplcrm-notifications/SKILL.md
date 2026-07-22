@@ -40,4 +40,6 @@ try/catch — a notification failure must never fail the business mutation.
   tenant admin/owner (`companion-access/controller.ts` → `notifyAdminsOfPendingVolunteer`),
   unconditionally (no preference key, deliberate).
 - Staff have no phone on `authusers`; `profiles.mobile` exists but SMS is not part
-  of the notification system (SMS is companion-verification + ops alerts only).
+  of the notification system (SMS goes only to companion volunteers — verification
+  codes and assignment link delivery via `lib/mail/volunteer-link-notify.ts` — and
+  ops alerts).

@@ -105,6 +105,7 @@ apps/
             sanitize-util.ts
             sendgrid-whitelabel.service.ts
             transactional-mail.service.ts
+            volunteer-link-notify.ts
           routing/
             geo.ts
             plan-routes.ts
@@ -2464,6 +2465,81 @@ const purify = DOMPurify(window);
 export function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return '';
   return purify.sanitize(html);
+}
+````
+
+## File: apps/backend/src/app/lib/mail/volunteer-link-notify.ts
+````typescript
+import type { Kysely, Transaction } from 'kysely';
+
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { normalizeE164 } from '../sms/phone';
+import { SmsService } from '../sms/sms.service';
+import { TransactionalEmailService } from './transactional-mail.service';
+
+export interface VolunteerLinkSendResult {
+  email: boolean;
+  sms: boolean;
+}
+
+interface NotifyVolunteerOfLinkInput {
+  tenant_id: string;
+  person: { first_name: string | null; email: string | null; mobile: string | null };
+  orgName: string;
+  /** What the link opens, in the volunteer's words — e.g. 'delivery route' or 'canvassing turf'. */
+  kindLabel: string;
+  /** Route/turf display name, shown in the email. */
+  itemName: string;
+  url: string;
+}
+
+/**
+ * Send a volunteer their personal companion link by email and/or SMS — whichever
+ * contacts are on file — through the transactional outbox, inside the caller's
+ * transaction (so an assignment that rolls back sends nothing). Returns which
+ * channels were enqueued; both false means staff must share the link manually.
+ *
+ * The link is personal: the companion gate verifies the holder against these same
+ * contacts (see pplcrm-companion-access), which is why the message tells them
+ * they'll confirm a code on first open.
+ */
+export async function notifyVolunteerOfLink(
+  input: NotifyVolunteerOfLinkInput,
+  trx: Transaction<Models> | Kysely<Models>,
+): Promise<VolunteerLinkSendResult> {
+  const firstName = input.person.first_name?.trim() || 'there';
+  const email = input.person.email?.trim() || null;
+  const sms = normalizeE164(input.person.mobile);
+
+  if (email) {
+    await new TransactionalEmailService().enqueueMail(
+      {
+        to: email,
+        subject: `Your ${input.kindLabel} from ${input.orgName}`,
+        text: `Hi ${firstName},\n\n${input.orgName} assigned you a ${input.kindLabel}: "${input.itemName}".\n\nOpen your personal link to get started: ${input.url}\n\nThe first time you open it, you'll confirm a one-time code sent to this contact — that keeps the link yours alone.`,
+        html: `<h2>You have a ${input.kindLabel}</h2>
+<p>Hi ${firstName},</p>
+<p>${input.orgName} assigned you a ${input.kindLabel}: <strong>"${input.itemName}"</strong>.</p>
+<div class="btn-container"><a href="${input.url}" class="btn">Open my ${input.kindLabel}</a></div>
+<p>The first time you open it, you'll confirm a one-time code sent to this contact — that keeps the link yours alone.</p>`,
+        tenant_id: input.tenant_id,
+      },
+      trx,
+    );
+  }
+
+  if (sms) {
+    await new SmsService().enqueueSms(
+      {
+        to: sms,
+        body: `${input.orgName}: your ${input.kindLabel} is ready. Open your personal link: ${input.url}`,
+        tenant_id: input.tenant_id,
+      },
+      trx,
+    );
+  }
+
+  return { email: email != null, sms: sms != null };
 }
 ````
 
@@ -7901,8 +7977,11 @@ import type {
   VotingStatus,
 } from '../../../../../../libs/common/src';
 
+import { env } from '../../../env';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
+import { notifyVolunteerOfLink, type VolunteerLinkSendResult } from '../../lib/mail/volunteer-link-notify';
+import { publicOrgName } from '../../lib/public-tenant';
 import { CampaignPersonFactsRepo } from '../campaigns/repositories/campaign-person-facts.repo';
 import { CampaignSubscriptionsRepo } from '../campaigns/repositories/campaign-subscriptions.repo';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
@@ -8255,7 +8334,10 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
 
   // -------------------------------------------------------- assignment ------
 
-  public async assignTurf(auth: IAuthKeyPayload, input: AssignTurfType): Promise<{ token: string }> {
+  public async assignTurf(
+    auth: IAuthKeyPayload,
+    input: AssignTurfType,
+  ): Promise<{ token: string; sent: VolunteerLinkSendResult }> {
     const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: input.turf_id });
     if (!turf) throw new NotFoundError('Turf not found');
     const teamId = input.team_id != null ? String(input.team_id) : null;
@@ -8266,7 +8348,7 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
     // email or mobile on file — the gate explains it if they don't).
     const person = await this.knocks.db
       .selectFrom('persons')
-      .select(['id'])
+      .select(['first_name', 'email', 'mobile'])
       .where('tenant_id', '=', auth.tenant_id)
       .where('id', '=', volunteerPersonId)
       .executeTakeFirst();
@@ -8274,6 +8356,8 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
 
     const token = generateTurfToken();
     const expiresAt = await this.assignmentExpiry(auth.tenant_id, String(turf.campaign_id ?? ''));
+    const orgName = await publicOrgName(auth.tenant_id);
+    let sent: VolunteerLinkSendResult = { email: false, sms: false };
 
     await this.turfsRepo()
       .transaction()
@@ -8302,6 +8386,18 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
           },
           trx,
         );
+        // Assignment sends the personal link — same transaction, so a rollback sends nothing.
+        sent = await notifyVolunteerOfLink(
+          {
+            tenant_id: auth.tenant_id,
+            person,
+            orgName,
+            kindLabel: 'canvassing turf',
+            itemName: turf.name,
+            url: `${env.companionUrl}/t/${encodeURIComponent(token)}`,
+          },
+          trx,
+        );
       });
 
     await this.userActivity.log({
@@ -8310,10 +8406,14 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
       activity: 'assign',
       entity: 'turf',
       entity_id: input.turf_id,
-      metadata: { volunteer_person_id: volunteerPersonId, ...(teamId ? { team_id: teamId } : { link: 'tokenised' }) },
+      metadata: {
+        volunteer_person_id: volunteerPersonId,
+        link_sent: sent,
+        ...(teamId ? { team_id: teamId } : { link: 'tokenised' }),
+      },
     });
 
-    return { token };
+    return { token, sent };
   }
 
   /**
@@ -30124,6 +30224,85 @@ export default defineConfig({
 }
 ````
 
+## File: apps/website/functions/api/geo-rates.ts
+````typescript
+/**
+ * Cloudflare Pages Function — GET /api/geo-rates
+ *
+ * Serves the marketing site's multi-currency pricing (see the website's ui/currency.service.ts).
+ * Does both region detection and rate lookup at the edge so the browser makes a single
+ * same-origin call — no third-party request from the client, no CORS, no API key shipped to the
+ * browser:
+ *   - `country` comes from Cloudflare's `request.cf.country` (derived from the visitor's IP).
+ *   - `rates` are fetched server-side from a free, no-key FX API (USD base).
+ *
+ * The response is edge-cached ~12h via `Cache-Control: s-maxage`, so most requests never hit the
+ * FX API. This function is intentionally dependency-free (no `@common` import): country→currency
+ * mapping and formatting live on the client, so the edge stays a thin data source.
+ *
+ * Directory-mode Pages Function: it only owns `/api/geo-rates`; static asset serving and the SPA
+ * `_redirects` fallback are untouched.
+ */
+
+/** Display currencies we return rates for. USD is the billing currency (always 1). */
+const RATE_CURRENCIES = ['EUR', 'GBP', 'CAD'] as const;
+type RateCurrency = (typeof RATE_CURRENCIES)[number];
+
+/** Free, no-key, USD-base FX source (ECB-backed). Swap here if it ever changes. */
+const FX_URL = 'https://open.er-api.com/v6/latest/USD';
+
+/** Edge + browser cache lifetime for the response (12 hours, in seconds). */
+const CACHE_SECONDS = 43_200;
+
+/** Minimal shape of the Cloudflare request/context we rely on (avoids a workers-types dep). */
+interface CfRequest extends Request {
+  readonly cf?: { readonly country?: string };
+}
+interface PagesContext {
+  readonly request: CfRequest;
+}
+
+type Rates = { readonly USD: 1 } & Partial<Record<RateCurrency, number>>;
+
+/** Narrow one entry of the FX API's `rates` object to a positive finite number, or undefined. */
+function toRate(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Fetch USD-base rates for our display currencies. Returns `{ USD: 1 }` alone on any failure. */
+async function fetchRates(): Promise<Rates> {
+  const rates: { USD: 1 } & Partial<Record<RateCurrency, number>> = { USD: 1 };
+  try {
+    const res = await fetch(FX_URL, { headers: { accept: 'application/json' } });
+    if (!res.ok) return rates;
+    const body: unknown = await res.json();
+    const table =
+      typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
+    if (typeof table !== 'object' || table === null) return rates;
+    const record = table as Record<string, unknown>;
+    for (const code of RATE_CURRENCIES) {
+      const rate = toRate(record[code]);
+      if (rate !== undefined) rates[code] = rate;
+    }
+  } catch {
+    // Network/parse failure: fall through with USD-only. The client stays in USD.
+  }
+  return rates;
+}
+
+export async function onRequestGet(context: PagesContext): Promise<Response> {
+  const country = context.request.cf?.country ?? null;
+  const rates = await fetchRates();
+  const payload = JSON.stringify({ country, rates });
+  return new Response(payload, {
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': `public, max-age=${CACHE_SECONDS}, s-maxage=${CACHE_SECONDS}`,
+    },
+  });
+}
+````
+
 ## File: apps/website/src/app/docs/docs-article.html
 ````html
 <pc-site-header variant="solid" />
@@ -31140,6 +31319,215 @@ export class Constellation {
       }
     }
   }
+}
+````
+
+## File: apps/website/src/app/ui/currency-switcher.ts
+````typescript
+import { Component, computed, inject, input } from '@angular/core';
+import type { CurrencyCode } from '@common';
+
+import { CurrencyService } from './currency.service';
+
+/**
+ * Currency picker for the site header. Lets a visitor override the auto-detected display currency;
+ * the choice persists (see {@link CurrencyService}). A DaisyUI `dropdown` — platform-first, no
+ * custom widget. Two looks (`onDark` for the navy hero header, solid otherwise) to match
+ * {@link SiteHeader}'s variants.
+ */
+@Component({
+  selector: 'pc-currency-switcher',
+  template: `
+    <div class="dropdown dropdown-end">
+      <button
+        type="button"
+        tabindex="0"
+        [class]="triggerClass()"
+        [attr.aria-label]="'Change currency, currently ' + active().label"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="15"
+          height="15"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" stroke-linecap="round" />
+        </svg>
+        <span class="tabular-nums">{{ active().code }}</span>
+        <svg
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <ul
+        tabindex="0"
+        class="menu dropdown-content z-10 mt-2 w-52 rounded-box border border-line bg-base-100 p-2 shadow-lg"
+      >
+        @for (opt of options; track opt.code) {
+          <li>
+            <button
+              type="button"
+              class="flex items-center justify-between gap-3 text-[13.5px]"
+              [class.text-primary]="opt.code === active().code"
+              [class.font-semibold]="opt.code === active().code"
+              (click)="select(opt.code, $event)"
+            >
+              <span>{{ opt.label }}</span>
+              <span class="tabular-nums text-base-content/50">{{ opt.symbol }} {{ opt.code }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    </div>
+  `,
+})
+export class CurrencySwitcher {
+  public readonly onDark = input<boolean>(false);
+
+  private readonly currency = inject(CurrencyService);
+
+  protected readonly options = this.currency.options;
+  protected readonly active = this.currency.active;
+
+  protected readonly triggerClass = computed<string>(() =>
+    this.onDark()
+      ? 'flex items-center gap-1.5 rounded-field border border-white/30 px-2.5 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/10'
+      : 'flex items-center gap-1.5 rounded-field border border-line px-2.5 py-1.5 text-[13px] font-medium text-base-content hover:border-primary hover:text-primary',
+  );
+
+  protected select(code: CurrencyCode, event: Event): void {
+    this.currency.setCurrency(code);
+    // DaisyUI dropdowns close on blur; drop focus so the menu dismisses after a pick.
+    (event.currentTarget as HTMLElement | null)?.blur();
+  }
+}
+````
+
+## File: apps/website/src/app/ui/site-header.ts
+````typescript
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { AuthHint } from './auth-hint';
+import { CurrencySwitcher } from './currency-switcher';
+import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
+import { SiteLogo } from './site-logo';
+
+type HeaderVariant = 'over-hero' | 'solid';
+
+/**
+ * Site header. Two looks from one component:
+ *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
+ *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
+ * Below `md` the nav collapses behind a hamburger toggle.
+ */
+@Component({
+  selector: 'pc-site-header',
+  imports: [RouterLink, SiteLogo, CurrencySwitcher],
+  template: `
+    <header [class]="barClass()">
+      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
+        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
+          <pc-site-logo [onDark]="onDark()" />
+        </a>
+
+        <!-- Desktop nav -->
+        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
+          }
+          <pc-currency-switcher [onDark]="onDark()" />
+          @if (signedIn()) {
+            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+          } @else {
+            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
+            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+          }
+        </nav>
+
+        <!-- Mobile toggle -->
+        <button
+          type="button"
+          class="btn btn-square btn-ghost btn-sm lg:hidden"
+          [class.text-white]="onDark()"
+          [attr.aria-expanded]="open()"
+          aria-label="Toggle menu"
+          (click)="open.set(!open())"
+        >
+          @if (open()) {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+            </svg>
+          } @else {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+            </svg>
+          }
+        </button>
+      </div>
+
+      <!-- Mobile menu -->
+      @if (open()) {
+        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
+              link.label
+            }}</a>
+          }
+          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+            <div class="pb-1">
+              <pc-currency-switcher />
+            </div>
+            @if (signedIn()) {
+              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+            } @else {
+              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
+              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+            }
+          </div>
+        </nav>
+      }
+    </header>
+  `,
+})
+export class SiteHeader {
+  public readonly variant = input<HeaderVariant>('solid');
+
+  private readonly auth = inject(AuthHint);
+
+  protected readonly nav = PRIMARY_NAV;
+  protected readonly loginUrl = LOGIN_URL;
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly dashboardUrl = DASHBOARD_URL;
+  protected readonly signedIn = this.auth.signedIn;
+  protected readonly open = signal(false);
+
+  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
+
+  protected readonly barClass = computed<string>(() =>
+    this.onDark() ? 'sticky top-0 z-50 bg-navy' : 'sticky top-0 z-50 border-b border-line bg-base-100',
+  );
+
+  protected readonly linkClass = computed<string>(() =>
+    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
+  );
+
+  protected readonly loginBtnClass = computed<string>(() =>
+    this.onDark()
+      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
+      : 'btn btn-outline btn-sm rounded-field',
+  );
 }
 ````
 
@@ -45384,8 +45772,10 @@ import type {
   getAllOptionsType,
 } from '../../../../../../libs/common/src';
 
+import { env } from '../../../env';
 import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
 import { geocodeAddress } from '../../lib/gis/geocode-address';
+import { notifyVolunteerOfLink, type VolunteerLinkSendResult } from '../../lib/mail/volunteer-link-notify';
 import { legMinutes, roadKm, type LatLng } from '../../lib/routing/geo';
 import { planRoutes, type PlanParams, type PlanStopInput } from '../../lib/routing/plan-routes';
 import {
@@ -45796,21 +46186,71 @@ export class DeliveriesController {
     let status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled' = route.status;
     if (personId && status === 'draft') status = 'assigned';
     if (!personId && status === 'assigned') status = 'draft';
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({ volunteer_person_id: personId, status, updatedby_id: auth.user_id, updated_at: new Date() })
+
+    if (!personId) {
+      await this.routesRepo.db
+        .updateTable('delivery_routes')
+        .set({ volunteer_person_id: null, status, updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .execute();
+      await this.logRouteActivity(undefined, auth, input.route_id, 'unassign', 'volunteer_unassigned', 'Volunteer removed');
+      return { id: input.route_id, status, sent: { email: false, sms: false } };
+    }
+
+    const person = await this.routesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
       .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', input.route_id)
-      .execute();
-    await this.logRouteActivity(
-      undefined,
-      auth,
-      input.route_id,
-      personId ? 'assign' : 'unassign',
-      personId ? 'volunteer_assigned' : 'volunteer_unassigned',
-      personId ? 'Volunteer assigned' : 'Volunteer removed',
-    );
-    return { id: input.route_id, status };
+      .where('id', '=', personId)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('Pick the volunteer this route belongs to.');
+
+    // The link is personal, so assignment sends it: mint a fresh token (the raw
+    // token is never stored — this is the only moment we can put it in a message)
+    // and enqueue the email/SMS in the same transaction as the assignment. A new
+    // token also retires any link a previously assigned volunteer still holds.
+    const rawToken = randomBytes(32).toString('base64url');
+    const url = `${env.companionUrl}/r/${rawToken}`;
+    const orgName = await this.publicOrgName(auth.tenant_id);
+    let sent: VolunteerLinkSendResult = { email: false, sms: false };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('delivery_routes')
+        .set({
+          volunteer_person_id: personId,
+          status,
+          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
+          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .execute();
+      sent = await notifyVolunteerOfLink(
+        {
+          tenant_id: auth.tenant_id,
+          person,
+          orgName,
+          kindLabel: 'delivery route',
+          itemName: String(route.name ?? 'Delivery route'),
+          url,
+        },
+        trx,
+      );
+      await this.logRouteActivity(
+        trx,
+        auth,
+        input.route_id,
+        'assign',
+        'volunteer_assigned',
+        sent.email || sent.sms
+          ? `Volunteer assigned — link sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`
+          : 'Volunteer assigned — no contact info on file, link not sent',
+      );
+    });
+    return { id: input.route_id, status, sent };
   }
 
   public async setRouteStatus(auth: IAuthKeyPayload, input: SetDeliveryRouteStatusType) {
@@ -47103,629 +47543,6 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
       return this.update({ tenant_id, id: draft.id, row: upd });
     }
     return this.add({ row });
-  }
-}
-````
-
-## File: apps/backend/src/app/modules/emails/controller.ts
-````typescript
-import { env } from '../../../env';
-import { getAllEmailFolders } from '../../config/email-folders.config';
-import { AppError, BadRequestError, InternalError, NotFoundError } from '../../errors/app-errors';
-import { EmailAttachmentsRepo } from './repositories/email-attachments.repo';
-import { EmailBodiesRepo } from './repositories/email-body.repo';
-import { EmailCommentsRepo } from './repositories/email-comments.repo';
-import { EmailDraftsRepo } from './repositories/email-drafts.repo';
-import { EmailRepo } from './repositories/email.repo';
-import { BaseController } from '../../lib/base.controller';
-import type { EmailStatus } from '../../../../../../libs/common/src/lib/emails';
-import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import type { Models, TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Selectable } from 'kysely';
-import type { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
-import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { notificationEnabled } from '../../lib/profile-preferences';
-import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { processMentions } from '../../lib/mail/mentions-util';
-import { sanitizeHtml } from '../../lib/mail/sanitize-util';
-import { StorageService } from '../../lib/storage.service';
-import { signedEmailAttachmentUrl } from '../../lib/signed-download';
-import { sql } from 'kysely';
-import { logger } from '../../logger';
-
-export class EmailsController extends BaseController<'emails', EmailRepo> {
-  private attachmentsRepo = new EmailAttachmentsRepo();
-  private bodiesRepo = new EmailBodiesRepo();
-  private commentsRepo = new EmailCommentsRepo();
-  private draftsRepo = new EmailDraftsRepo();
-  private activityRepo = new UserActivityRepo();
-  private mailService = new TransactionalEmailService();
-  private storageService = new StorageService();
-
-  constructor() {
-    super(new EmailRepo());
-  }
-
-  public async addComment(tenant_id: string, email_id: string, author_id: string, comment: string) {
-    if (!comment?.trim()) {
-      throw new BadRequestError('Comment cannot be empty');
-    }
-    try {
-      const row = await this.commentsRepo.add({
-        row: {
-          tenant_id,
-          email_id,
-          author_id,
-          comment,
-          createdby_id: author_id,
-          updatedby_id: author_id,
-        },
-      });
-      if (!row) throw new InternalError('Failed to add comment');
-
-      const commentLink = `${env.appUrl}/emails/${email_id}`;
-      processMentions(this.commentsRepo.db, tenant_id, comment, commentLink, author_id).catch((err) =>
-        logger.error({ err }, 'Failed to process email comment mentions'),
-      );
-
-      return row;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to add comment', undefined, { cause: err });
-    }
-  }
-
-  public async assignEmail(
-    tenant_id: string,
-    id: string,
-    user_id: string | null,
-    actor_id?: string,
-    assigned_to_name?: string | null,
-  ) {
-    try {
-      const updated = await this.getRepo().assignEmail(tenant_id, id, user_id);
-
-      if (!updated) throw new NotFoundError('Email not found');
-
-      // --- Log activity ---
-      if (actor_id) {
-        const activityType = user_id ? 'assign' : 'unassign';
-        const metadata: Record<string, unknown> = {};
-        if (user_id) metadata['assigned_to_id'] = user_id;
-        if (assigned_to_name) metadata['assigned_to_name'] = assigned_to_name;
-
-        this.activityRepo
-          .log({
-            tenant_id,
-            user_id: actor_id,
-            activity: activityType,
-            entity: 'email',
-            entity_id: id,
-            metadata,
-          })
-          .catch((e) => logger.error({ err: e }, 'Failed to log email assign activity'));
-      }
-
-      // Notify the assignee (in-app + email, each behind its own preference).
-      // Self-assignment ("I'll take it") stays silent — you already know.
-      if (user_id && user_id !== actor_id) {
-        try {
-          const email = (await this.getRepo().getOneBy('id', { tenant_id, value: id })) as
-            | Selectable<Models['emails']>
-            | undefined;
-          if (email) {
-            const subject = email.subject || '(No Subject)';
-            const assignee = await this.getRepo()
-              .db.selectFrom('authusers')
-              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-              .where('authusers.tenant_id', '=', tenant_id)
-              .where('authusers.id', '=', user_id)
-              .executeTakeFirst();
-            if (assignee && notificationEnabled(assignee.profile_preferences, 'email_assigned_in_app')) {
-              const notificationsRepo = new NotificationsRepo();
-              await notificationsRepo.pushNotification({
-                tenant_id,
-                user_id,
-                title: 'Email Assigned',
-                message: `You have been assigned the email: "${subject}"`,
-                type: 'email',
-                link: `/inbox?email=${id}`,
-              });
-            }
-            if (assignee?.email && notificationEnabled(assignee.profile_preferences, 'email_assigned')) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `New email assigned: ${subject}`,
-                text: `Hi ${assignee.first_name},\n\nAn inbox conversation has been assigned to you: "${subject}".\n\nView it: ${env.appUrl}/inbox?email=${id}`,
-                html: `<h2>Email assigned to you</h2>
-<p>Hi ${assignee.first_name},</p>
-<p>An inbox conversation has been assigned to you: <strong>"${subject}"</strong>.</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/inbox?email=${id}" class="btn">Open in Inbox</a>
-</div>`,
-                tenant_id,
-              });
-            }
-          }
-        } catch (nErr) {
-          logger.error({ err: nErr }, 'Failed to notify assignee of email assignment');
-        }
-      }
-
-      return updated;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to assign email', undefined, { cause: err });
-    }
-  }
-
-  /** Sidebar Inbox badge: open Inbox conversations assigned to this user. */
-  public async countAssignedOpen(user_id: string, tenant_id: string, campaign_id: string) {
-    try {
-      return await this.getRepo().countAssignedOpen(user_id, tenant_id, campaign_id);
-    } catch (err) {
-      throw new InternalError('Failed to count assigned open emails', undefined, { cause: err });
-    }
-  }
-
-  public async getActivitiesForEmail(tenant_id: string, email_id: string) {
-    try {
-      const res = await this.activityRepo.getForEntity(tenant_id, 'email', email_id);
-      return res.rows;
-    } catch (err) {
-      throw new InternalError('Failed to fetch email activities', undefined, { cause: err });
-    }
-  }
-
-  public override async delete(tenant_id: TypeTenantId<'emails'>, idToDelete: string) {
-    return this.deleteMany(tenant_id, [idToDelete]);
-  }
-
-  public async deleteComment(tenant_id: string, _email_id: string, comment_id: string) {
-    try {
-      const deleted = await this.commentsRepo.delete({ tenant_id, id: comment_id /*, email_id */ });
-      if (!deleted) throw new NotFoundError('Comment not found');
-      return deleted;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to delete comment', undefined, { cause: err });
-    }
-  }
-
-  public async deleteDraft(tenant_id: string, _user_id: string, id: string) {
-    try {
-      const deleted = await this.draftsRepo.delete({ tenant_id, id });
-      if (!deleted) throw new NotFoundError('Draft not found');
-      return deleted;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to delete draft', undefined, { cause: err });
-    }
-  }
-
-  public override async deleteMany(tenant_id: TypeTenantId<'emails'>, idsToDelete: string[]) {
-    // Go through idsToDelete and check which ones are in the trash folder (hard delete)
-    // and which ones are not (soft delete - move to trash)
-    const emailsInTrash = await this.getRepo().getByIdsInFolder(tenant_id as string, idsToDelete, ALL_FOLDERS.TRASH);
-    const idsInTrash = emailsInTrash.map((e) => String(e.id));
-    const idsNotInTrash = idsToDelete.filter((id) => !idsInTrash.includes(id));
-
-    const numTrashed =
-      idsNotInTrash.length > 0 ? await this.getRepo().moveToTrash(tenant_id as string, idsNotInTrash) : 0;
-
-    let numDeleted: number | boolean = false;
-    if (idsInTrash.length > 0) {
-      // Capture the attachment file references BEFORE the cascade removes the
-      // email_attachments rows, so we can clean up storage afterwards.
-      const fileIds = await this.getAttachmentFileIds(tenant_id as string, idsInTrash);
-      numDeleted = await super.deleteMany(tenant_id, idsInTrash);
-      // Hard delete is permanent — purge orphaned attachment blobs + file rows.
-      await this.purgeOrphanedFiles(tenant_id as string, fileIds);
-    }
-
-    return numTrashed !== 0 || numDeleted;
-  }
-
-  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
-  private async getAttachmentFileIds(tenant_id: string, emailIds: string[]): Promise<string[]> {
-    if (emailIds.length === 0) return [];
-    const rows = await this.attachmentsRepo.db
-      .selectFrom('email_attachments')
-      .select('file_id')
-      .distinct()
-      .where('tenant_id', '=', tenant_id)
-      .where('email_id', 'in', emailIds)
-      .where('file_id', 'is not', null)
-      .execute();
-    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
-  }
-
-  /**
-   * Delete file rows + storage blobs for files that are no longer referenced by
-   * any remaining email attachment (files are sha256-deduped and can be shared).
-   * Storage deletion is best-effort: a failed blob delete must not abort the txn.
-   */
-  private async purgeOrphanedFiles(tenant_id: string, fileIds: string[]): Promise<void> {
-    if (fileIds.length === 0) return;
-
-    const db = this.attachmentsRepo.db;
-    for (const fileId of fileIds) {
-      try {
-        const stillReferenced = await db
-          .selectFrom('email_attachments')
-          .select('id')
-          .where('tenant_id', '=', tenant_id)
-          .where('file_id', '=', fileId)
-          .limit(1)
-          .executeTakeFirst();
-
-        if (stillReferenced) continue;
-
-        const file = await db
-          .selectFrom('files')
-          .select(['id', 'storage_key'])
-          .where('tenant_id', '=', tenant_id)
-          .where('id', '=', fileId)
-          .executeTakeFirst();
-
-        if (!file) continue;
-
-        await db.deleteFrom('files').where('tenant_id', '=', tenant_id).where('id', '=', fileId).execute();
-
-        if (file.storage_key) {
-          try {
-            await this.storageService.delete(file.storage_key);
-          } catch (err) {
-            logger.error({ err }, `Failed to delete storage blob ${file.storage_key} for file ${fileId}`);
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, `Failed to purge orphaned file ${fileId}`);
-      }
-    }
-  }
-
-  public async getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {
-    try {
-      return await this.attachmentsRepo.getAllAttachments(tenant_id, email_id, options);
-    } catch (err) {
-      throw new InternalError('Failed to fetch attachments', undefined, { cause: err });
-    }
-  }
-
-  public async getAttachmentsByEmailId(tenant_id: string, email_id: string) {
-    try {
-      return await this.attachmentsRepo.getByEmailId(tenant_id, email_id);
-    } catch (err) {
-      throw new InternalError('Failed to fetch attachments for email', undefined, { cause: err });
-    }
-  }
-
-  public async getDraft(tenant_id: string, _user_id: string, value: string) {
-    try {
-      const draft = await this.draftsRepo.getOneBy('id', { tenant_id, value });
-      if (!draft) throw new NotFoundError('Draft not found');
-      return draft;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to fetch draft', undefined, { cause: err });
-    }
-  }
-
-  public async getEmailBody(tenant_id: string, value: string) {
-    try {
-      const email = (await this.bodiesRepo.getOneBy('email_id', { tenant_id, value })) as
-        | Selectable<Models['email_bodies']>
-        | undefined;
-      if (email) {
-        return {
-          ...email,
-          body_html: sanitizeHtml(email.body_html),
-        };
-      }
-
-      // If no body exists, attempt to load from drafts table
-      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value })) as EmailDraftType | undefined;
-      if (draft)
-        return {
-          email_id: value,
-          body_html: sanitizeHtml(draft.body_html),
-          body_delta: draft.body_delta ?? null,
-        } as any;
-
-      throw new NotFoundError('Failed to fetch email body');
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to fetch email body', undefined, { cause: err });
-    }
-  }
-
-  public async getEmailHeader(tenant_id: string, id: string, user_id?: string) {
-    try {
-      const [emailWithHeaders, comments, rawAttachments] = await Promise.all([
-        this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id, user_id),
-        this.commentsRepo.getForEmail(tenant_id, id),
-        this.attachmentsRepo.getByEmailId(tenant_id, id),
-      ]);
-      // Attach a short-lived, email-scoped download URL so the client can link to
-      // attachments without putting a session token in the URL (SECURITY-REVIEW.md 1.3).
-      const attachments = ((rawAttachments ?? []) as Array<Record<string, unknown>>).map((a) => ({
-        ...a,
-        download_url: signedEmailAttachmentUrl(String(id), String(a['id']), tenant_id),
-      }));
-      if (emailWithHeaders) {
-        let person: Record<string, unknown> | null = null;
-        if (emailWithHeaders.from_email) {
-          const fromEmail = emailWithHeaders.from_email.trim().toLowerCase();
-          const matchedPerson = await this.getRepo()
-            .db.selectFrom('persons')
-            .leftJoin('companies', 'companies.id', 'persons.company_id')
-            .select([
-              'persons.id',
-              'persons.first_name',
-              'persons.last_name',
-              'persons.email',
-              'persons.mobile',
-              'persons.notes',
-              'companies.name as company_name',
-            ])
-            .where('persons.tenant_id', '=', tenant_id)
-            .where((eb) =>
-              eb.or([eb(sql`lower(persons.email)`, '=', fromEmail), eb(sql`lower(persons.email2)`, '=', fromEmail)]),
-            )
-            .executeTakeFirst();
-
-          if (matchedPerson) {
-            const tagsAndIssues = await this.getRepo()
-              .db.selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select(['tags.name', 'tags.color', 'tags.type'])
-              .where('map_peoples_tags.tenant_id', '=', tenant_id)
-              .where('map_peoples_tags.person_id', '=', matchedPerson.id)
-              .execute();
-
-            person = {
-              ...matchedPerson,
-              tags: tagsAndIssues.filter((t) => t.type === 'tag').map((t) => ({ name: t.name, color: t.color })),
-              issues: tagsAndIssues.filter((t) => t.type === 'issue').map((t) => ({ name: t.name, color: t.color })),
-            };
-          }
-        }
-        return { email: emailWithHeaders, comments, attachments, person };
-      }
-
-      // Fallback to draft if regular email not found
-      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value: id })) as EmailDraftType | undefined;
-      if (draft)
-        return {
-          email: {
-            id: draft.id,
-            to_list: (draft.to_list || []).map((e: string) => ({ email: e })),
-            cc_list: (draft.cc_list || []).map((e: string) => ({ email: e })),
-            bcc_list: (draft.bcc_list || []).map((e: string) => ({ email: e })),
-            from_email: null,
-            subject: draft.subject,
-          },
-          comments: [],
-          attachments: [],
-        } as any;
-
-      throw new NotFoundError('Email not found');
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to fetch email header', undefined, { cause: err });
-    }
-  }
-
-  public async getEmails(
-    user_id: string,
-    tenant_id: string,
-    campaign_id: string,
-    folder_id: string,
-    limit?: number,
-    offset?: number,
-  ) {
-    try {
-      if (folder_id === ALL_FOLDERS.DRAFTS) {
-        const drafts = await this.draftsRepo.listByUser(tenant_id, campaign_id, user_id, limit, offset);
-        return drafts.map((d) => ({
-          id: d.id,
-          folder_id,
-          from_email: '',
-          to_email: Array.isArray(d.to_list) ? d.to_list.join(', ') : '',
-          subject: d.subject,
-          preview: '',
-          assigned_to: undefined,
-          updated_at: d.updated_at,
-          date_sent: d.updated_at,
-          is_favourite: false,
-          attachment_count: 0,
-          has_attachment: false,
-          status: 'open',
-        }));
-      }
-      return await this.getRepo().getByFolderWithAttachmentFlag(
-        user_id,
-        tenant_id,
-        campaign_id,
-        folder_id,
-        limit,
-        offset,
-      );
-    } catch (err) {
-      throw new InternalError('Failed to fetch emails', undefined, { cause: err });
-    }
-  }
-
-  public getFolders(_tenant_id: string) {
-    // Return hardcoded folders configuration (same for all tenants)
-    return Promise.resolve(getAllEmailFolders());
-  }
-
-  public async getFoldersWithCounts(user_id: string, tenant_id: string, campaign_id: string) {
-    try {
-      const [folders, emailCounts, draftCount] = await Promise.all([
-        this.getFolders(tenant_id),
-        this.getRepo().getEmailCountsByFolder(user_id, tenant_id, campaign_id),
-        this.draftsRepo.countByUser(tenant_id, campaign_id, user_id),
-      ]);
-
-      return folders.map((folder) => ({
-        ...folder,
-        email_count: folder.id === ALL_FOLDERS.DRAFTS ? draftCount : emailCounts[folder.id] || 0,
-      }));
-    } catch (err) {
-      throw new InternalError('Failed to fetch folder counts', undefined, { cause: err });
-    }
-  }
-
-  public async hasAttachment(tenant_id: string, email_id: string) {
-    try {
-      return await this.attachmentsRepo.hasAttachment(tenant_id, email_id);
-    } catch (err) {
-      throw new InternalError('Failed to check attachment flag', undefined, { cause: err });
-    }
-  }
-
-  public async hasAttachmentByEmailIds(tenant_id: string, email_ids: string[]) {
-    if (!email_ids?.length) return Promise.resolve([]);
-
-    try {
-      return this.attachmentsRepo.hasAttachmentByEmailIds(tenant_id, email_ids);
-    } catch (err) {
-      throw new InternalError('Failed to check attachment flags', undefined, { cause: err });
-    }
-  }
-
-  public restoreFromTrash(tenant_id: string, idsToRestore: string[]) {
-    return this.getRepo().restoreFromTrash(tenant_id, idsToRestore);
-  }
-
-  public async moveToFolder(tenant_id: string, id: string, folder_id: string, actor_id?: string) {
-    try {
-      const isTrash = folder_id === ALL_FOLDERS.TRASH;
-      const deleted_at = isTrash ? new Date() : null;
-
-      const updated = await this.getRepo()
-        .getUpdate()
-        .set({ folder_id, deleted_at })
-        .where('tenant_id', '=', tenant_id)
-        .where('id', '=', id)
-        .returningAll()
-        .executeTakeFirst();
-
-      if (!updated) throw new NotFoundError('Email not found');
-
-      // --- Log activity ---
-      if (actor_id) {
-        this.activityRepo
-          .log({
-            tenant_id,
-            user_id: actor_id,
-            activity: isTrash ? 'delete' : 'update',
-            entity: 'email',
-            entity_id: id,
-            metadata: { folder_id },
-          })
-          .catch((e) => logger.error({ err: e }, 'Failed to log email move activity'));
-      }
-
-      return updated;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to move email to folder', undefined, { cause: err });
-    }
-  }
-
-  public async saveDraft(
-    tenant_id: string,
-    campaign_id: string,
-    user_id: string,
-    draft: {
-      id?: string;
-      to_list: string[];
-      cc_list?: string[];
-      bcc_list?: string[];
-      subject?: string;
-      body_html?: string;
-    },
-  ) {
-    try {
-      if (draft.body_html) {
-        draft.body_html = sanitizeHtml(draft.body_html);
-      }
-      const saved = await this.draftsRepo.saveDraft(tenant_id, campaign_id, user_id, draft);
-      if (!saved) throw new InternalError('Failed to save draft');
-      return saved;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to save draft', undefined, { cause: err });
-    }
-  }
-
-  public async setFavourite(tenant_id: string, id: string, favourite: boolean) {
-    try {
-      return this.getRepo().setFavourite(tenant_id, id, favourite);
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to set favourite', undefined, { cause: err });
-    }
-  }
-
-  public async setStatus(tenant_id: string, id: string, status: EmailStatus, actor_id?: string) {
-    try {
-      const updated = await this.getRepo().setStatus(tenant_id, id, status);
-      if (!updated) throw new NotFoundError('Email not found');
-
-      // --- Log activity ---
-      if (actor_id) {
-        const activityType = status === 'closed' ? 'close' : 'reopen';
-        this.activityRepo
-          .log({
-            tenant_id,
-            user_id: actor_id,
-            activity: activityType,
-            entity: 'email',
-            entity_id: id,
-            metadata: { status },
-          })
-          .catch((e) => logger.error({ err: e }, 'Failed to log email status activity'));
-      }
-
-      return updated;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to set status', undefined, { cause: err });
-    }
-  }
-
-  public async setEmailReadStatus(tenant_id: string, user_id: string, email_id: string, is_read: boolean) {
-    try {
-      const email = await this.getRepo().getOneBy('id', { tenant_id, value: email_id });
-      if (!email) throw new NotFoundError('Email not found');
-
-      await this.getRepo()
-        .db.insertInto('email_read_states')
-        .values({
-          tenant_id,
-          user_id,
-          email_id,
-          is_read,
-        })
-        .onConflict((oc) =>
-          oc.columns(['tenant_id', 'user_id', 'email_id']).doUpdateSet({
-            is_read,
-          }),
-        )
-        .execute();
-
-      return { success: true, email_id, is_read };
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to set email read status', undefined, { cause: err });
-    }
   }
 }
 ````
@@ -52222,85 +52039,6 @@ interface ImportMeta {
 }
 ````
 
-## File: apps/website/functions/api/geo-rates.ts
-````typescript
-/**
- * Cloudflare Pages Function — GET /api/geo-rates
- *
- * Serves the marketing site's multi-currency pricing (see the website's ui/currency.service.ts).
- * Does both region detection and rate lookup at the edge so the browser makes a single
- * same-origin call — no third-party request from the client, no CORS, no API key shipped to the
- * browser:
- *   - `country` comes from Cloudflare's `request.cf.country` (derived from the visitor's IP).
- *   - `rates` are fetched server-side from a free, no-key FX API (USD base).
- *
- * The response is edge-cached ~12h via `Cache-Control: s-maxage`, so most requests never hit the
- * FX API. This function is intentionally dependency-free (no `@common` import): country→currency
- * mapping and formatting live on the client, so the edge stays a thin data source.
- *
- * Directory-mode Pages Function: it only owns `/api/geo-rates`; static asset serving and the SPA
- * `_redirects` fallback are untouched.
- */
-
-/** Display currencies we return rates for. USD is the billing currency (always 1). */
-const RATE_CURRENCIES = ['EUR', 'GBP', 'CAD'] as const;
-type RateCurrency = (typeof RATE_CURRENCIES)[number];
-
-/** Free, no-key, USD-base FX source (ECB-backed). Swap here if it ever changes. */
-const FX_URL = 'https://open.er-api.com/v6/latest/USD';
-
-/** Edge + browser cache lifetime for the response (12 hours, in seconds). */
-const CACHE_SECONDS = 43_200;
-
-/** Minimal shape of the Cloudflare request/context we rely on (avoids a workers-types dep). */
-interface CfRequest extends Request {
-  readonly cf?: { readonly country?: string };
-}
-interface PagesContext {
-  readonly request: CfRequest;
-}
-
-type Rates = { readonly USD: 1 } & Partial<Record<RateCurrency, number>>;
-
-/** Narrow one entry of the FX API's `rates` object to a positive finite number, or undefined. */
-function toRate(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
-}
-
-/** Fetch USD-base rates for our display currencies. Returns `{ USD: 1 }` alone on any failure. */
-async function fetchRates(): Promise<Rates> {
-  const rates: { USD: 1 } & Partial<Record<RateCurrency, number>> = { USD: 1 };
-  try {
-    const res = await fetch(FX_URL, { headers: { accept: 'application/json' } });
-    if (!res.ok) return rates;
-    const body: unknown = await res.json();
-    const table =
-      typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
-    if (typeof table !== 'object' || table === null) return rates;
-    const record = table as Record<string, unknown>;
-    for (const code of RATE_CURRENCIES) {
-      const rate = toRate(record[code]);
-      if (rate !== undefined) rates[code] = rate;
-    }
-  } catch {
-    // Network/parse failure: fall through with USD-only. The client stays in USD.
-  }
-  return rates;
-}
-
-export async function onRequestGet(context: PagesContext): Promise<Response> {
-  const country = context.request.cf?.country ?? null;
-  const rates = await fetchRates();
-  const payload = JSON.stringify({ country, rates });
-  return new Response(payload, {
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': `public, max-age=${CACHE_SECONDS}, s-maxage=${CACHE_SECONDS}`,
-    },
-  });
-}
-````
-
 ## File: apps/website/src/app/coming-soon/coming-soon-page.ts
 ````typescript
 import { Component, input } from '@angular/core';
@@ -53062,98 +52800,6 @@ export class SecurityPage {
 }
 ````
 
-## File: apps/website/src/app/ui/currency-switcher.ts
-````typescript
-import { Component, computed, inject, input } from '@angular/core';
-import type { CurrencyCode } from '@common';
-
-import { CurrencyService } from './currency.service';
-
-/**
- * Currency picker for the site header. Lets a visitor override the auto-detected display currency;
- * the choice persists (see {@link CurrencyService}). A DaisyUI `dropdown` — platform-first, no
- * custom widget. Two looks (`onDark` for the navy hero header, solid otherwise) to match
- * {@link SiteHeader}'s variants.
- */
-@Component({
-  selector: 'pc-currency-switcher',
-  template: `
-    <div class="dropdown dropdown-end">
-      <button
-        type="button"
-        tabindex="0"
-        [class]="triggerClass()"
-        [attr.aria-label]="'Change currency, currently ' + active().label"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          width="15"
-          height="15"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="9" />
-          <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" stroke-linecap="round" />
-        </svg>
-        <span class="tabular-nums">{{ active().code }}</span>
-        <svg
-          viewBox="0 0 24 24"
-          width="14"
-          height="14"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          aria-hidden="true"
-        >
-          <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
-      <ul
-        tabindex="0"
-        class="menu dropdown-content z-10 mt-2 w-52 rounded-box border border-line bg-base-100 p-2 shadow-lg"
-      >
-        @for (opt of options; track opt.code) {
-          <li>
-            <button
-              type="button"
-              class="flex items-center justify-between gap-3 text-[13.5px]"
-              [class.text-primary]="opt.code === active().code"
-              [class.font-semibold]="opt.code === active().code"
-              (click)="select(opt.code, $event)"
-            >
-              <span>{{ opt.label }}</span>
-              <span class="tabular-nums text-base-content/50">{{ opt.symbol }} {{ opt.code }}</span>
-            </button>
-          </li>
-        }
-      </ul>
-    </div>
-  `,
-})
-export class CurrencySwitcher {
-  public readonly onDark = input<boolean>(false);
-
-  private readonly currency = inject(CurrencyService);
-
-  protected readonly options = this.currency.options;
-  protected readonly active = this.currency.active;
-
-  protected readonly triggerClass = computed<string>(() =>
-    this.onDark()
-      ? 'flex items-center gap-1.5 rounded-field border border-white/30 px-2.5 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/10'
-      : 'flex items-center gap-1.5 rounded-field border border-line px-2.5 py-1.5 text-[13px] font-medium text-base-content hover:border-primary hover:text-primary',
-  );
-
-  protected select(code: CurrencyCode, event: Event): void {
-    this.currency.setCurrency(code);
-    // DaisyUI dropdowns close on blur; drop focus so the menu dismisses after a pick.
-    (event.currentTarget as HTMLElement | null)?.blur();
-  }
-}
-````
-
 ## File: apps/website/src/app/ui/seo.ts
 ````typescript
 import { DOCUMENT, Injectable, inject } from '@angular/core';
@@ -53270,123 +52916,6 @@ export class SeoTitleStrategy extends TitleStrategy {
 
     this.seo.applyRoute({ title, description, path: snapshot.url });
   }
-}
-````
-
-## File: apps/website/src/app/ui/site-header.ts
-````typescript
-import { Component, computed, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { AuthHint } from './auth-hint';
-import { CurrencySwitcher } from './currency-switcher';
-import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
-import { SiteLogo } from './site-logo';
-
-type HeaderVariant = 'over-hero' | 'solid';
-
-/**
- * Site header. Two looks from one component:
- *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
- *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
- * Below `md` the nav collapses behind a hamburger toggle.
- */
-@Component({
-  selector: 'pc-site-header',
-  imports: [RouterLink, SiteLogo, CurrencySwitcher],
-  template: `
-    <header [class]="barClass()">
-      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
-        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
-          <pc-site-logo [onDark]="onDark()" />
-        </a>
-
-        <!-- Desktop nav -->
-        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
-          }
-          <pc-currency-switcher [onDark]="onDark()" />
-          @if (signedIn()) {
-            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-          } @else {
-            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
-            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-          }
-        </nav>
-
-        <!-- Mobile toggle -->
-        <button
-          type="button"
-          class="btn btn-square btn-ghost btn-sm lg:hidden"
-          [class.text-white]="onDark()"
-          [attr.aria-expanded]="open()"
-          aria-label="Toggle menu"
-          (click)="open.set(!open())"
-        >
-          @if (open()) {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
-            </svg>
-          } @else {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
-            </svg>
-          }
-        </button>
-      </div>
-
-      <!-- Mobile menu -->
-      @if (open()) {
-        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
-              link.label
-            }}</a>
-          }
-          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
-            <div class="pb-1">
-              <pc-currency-switcher />
-            </div>
-            @if (signedIn()) {
-              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-            } @else {
-              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
-              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-            }
-          </div>
-        </nav>
-      }
-    </header>
-  `,
-})
-export class SiteHeader {
-  public readonly variant = input<HeaderVariant>('solid');
-
-  private readonly auth = inject(AuthHint);
-
-  protected readonly nav = PRIMARY_NAV;
-  protected readonly loginUrl = LOGIN_URL;
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly dashboardUrl = DASHBOARD_URL;
-  protected readonly signedIn = this.auth.signedIn;
-  protected readonly open = signal(false);
-
-  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
-
-  protected readonly barClass = computed<string>(() =>
-    this.onDark() ? 'sticky top-0 z-50 bg-navy' : 'sticky top-0 z-50 border-b border-line bg-base-100',
-  );
-
-  protected readonly linkClass = computed<string>(() =>
-    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
-  );
-
-  protected readonly loginBtnClass = computed<string>(() =>
-    this.onDark()
-      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
-      : 'btn btn-outline btn-sm rounded-field',
-  );
 }
 ````
 
@@ -56585,6 +56114,629 @@ export class EmailRepo extends BaseRepository<'emails'> {
       default:
         // Real folder
         return (eb) => eb('emails.folder_id', '=', folder_id);
+    }
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/emails/controller.ts
+````typescript
+import { env } from '../../../env';
+import { getAllEmailFolders } from '../../config/email-folders.config';
+import { AppError, BadRequestError, InternalError, NotFoundError } from '../../errors/app-errors';
+import { EmailAttachmentsRepo } from './repositories/email-attachments.repo';
+import { EmailBodiesRepo } from './repositories/email-body.repo';
+import { EmailCommentsRepo } from './repositories/email-comments.repo';
+import { EmailDraftsRepo } from './repositories/email-drafts.repo';
+import { EmailRepo } from './repositories/email.repo';
+import { BaseController } from '../../lib/base.controller';
+import type { EmailStatus } from '../../../../../../libs/common/src/lib/emails';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import type { Models, TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Selectable } from 'kysely';
+import type { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
+import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { notificationEnabled } from '../../lib/profile-preferences';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { processMentions } from '../../lib/mail/mentions-util';
+import { sanitizeHtml } from '../../lib/mail/sanitize-util';
+import { StorageService } from '../../lib/storage.service';
+import { signedEmailAttachmentUrl } from '../../lib/signed-download';
+import { sql } from 'kysely';
+import { logger } from '../../logger';
+
+export class EmailsController extends BaseController<'emails', EmailRepo> {
+  private attachmentsRepo = new EmailAttachmentsRepo();
+  private bodiesRepo = new EmailBodiesRepo();
+  private commentsRepo = new EmailCommentsRepo();
+  private draftsRepo = new EmailDraftsRepo();
+  private activityRepo = new UserActivityRepo();
+  private mailService = new TransactionalEmailService();
+  private storageService = new StorageService();
+
+  constructor() {
+    super(new EmailRepo());
+  }
+
+  public async addComment(tenant_id: string, email_id: string, author_id: string, comment: string) {
+    if (!comment?.trim()) {
+      throw new BadRequestError('Comment cannot be empty');
+    }
+    try {
+      const row = await this.commentsRepo.add({
+        row: {
+          tenant_id,
+          email_id,
+          author_id,
+          comment,
+          createdby_id: author_id,
+          updatedby_id: author_id,
+        },
+      });
+      if (!row) throw new InternalError('Failed to add comment');
+
+      const commentLink = `${env.appUrl}/emails/${email_id}`;
+      processMentions(this.commentsRepo.db, tenant_id, comment, commentLink, author_id).catch((err) =>
+        logger.error({ err }, 'Failed to process email comment mentions'),
+      );
+
+      return row;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to add comment', undefined, { cause: err });
+    }
+  }
+
+  public async assignEmail(
+    tenant_id: string,
+    id: string,
+    user_id: string | null,
+    actor_id?: string,
+    assigned_to_name?: string | null,
+  ) {
+    try {
+      const updated = await this.getRepo().assignEmail(tenant_id, id, user_id);
+
+      if (!updated) throw new NotFoundError('Email not found');
+
+      // --- Log activity ---
+      if (actor_id) {
+        const activityType = user_id ? 'assign' : 'unassign';
+        const metadata: Record<string, unknown> = {};
+        if (user_id) metadata['assigned_to_id'] = user_id;
+        if (assigned_to_name) metadata['assigned_to_name'] = assigned_to_name;
+
+        this.activityRepo
+          .log({
+            tenant_id,
+            user_id: actor_id,
+            activity: activityType,
+            entity: 'email',
+            entity_id: id,
+            metadata,
+          })
+          .catch((e) => logger.error({ err: e }, 'Failed to log email assign activity'));
+      }
+
+      // Notify the assignee (in-app + email, each behind its own preference).
+      // Self-assignment ("I'll take it") stays silent — you already know.
+      if (user_id && user_id !== actor_id) {
+        try {
+          const email = (await this.getRepo().getOneBy('id', { tenant_id, value: id })) as
+            | Selectable<Models['emails']>
+            | undefined;
+          if (email) {
+            const subject = email.subject || '(No Subject)';
+            const assignee = await this.getRepo()
+              .db.selectFrom('authusers')
+              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+              .where('authusers.tenant_id', '=', tenant_id)
+              .where('authusers.id', '=', user_id)
+              .executeTakeFirst();
+            if (assignee && notificationEnabled(assignee.profile_preferences, 'email_assigned_in_app')) {
+              const notificationsRepo = new NotificationsRepo();
+              await notificationsRepo.pushNotification({
+                tenant_id,
+                user_id,
+                title: 'Email Assigned',
+                message: `You have been assigned the email: "${subject}"`,
+                type: 'email',
+                link: `/inbox?email=${id}`,
+              });
+            }
+            if (assignee?.email && notificationEnabled(assignee.profile_preferences, 'email_assigned')) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `New email assigned: ${subject}`,
+                text: `Hi ${assignee.first_name},\n\nAn inbox conversation has been assigned to you: "${subject}".\n\nView it: ${env.appUrl}/inbox?email=${id}`,
+                html: `<h2>Email assigned to you</h2>
+<p>Hi ${assignee.first_name},</p>
+<p>An inbox conversation has been assigned to you: <strong>"${subject}"</strong>.</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/inbox?email=${id}" class="btn">Open in Inbox</a>
+</div>`,
+                tenant_id,
+              });
+            }
+          }
+        } catch (nErr) {
+          logger.error({ err: nErr }, 'Failed to notify assignee of email assignment');
+        }
+      }
+
+      return updated;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to assign email', undefined, { cause: err });
+    }
+  }
+
+  /** Sidebar Inbox badge: open Inbox conversations assigned to this user. */
+  public async countAssignedOpen(user_id: string, tenant_id: string, campaign_id: string) {
+    try {
+      return await this.getRepo().countAssignedOpen(user_id, tenant_id, campaign_id);
+    } catch (err) {
+      throw new InternalError('Failed to count assigned open emails', undefined, { cause: err });
+    }
+  }
+
+  public async getActivitiesForEmail(tenant_id: string, email_id: string) {
+    try {
+      const res = await this.activityRepo.getForEntity(tenant_id, 'email', email_id);
+      return res.rows;
+    } catch (err) {
+      throw new InternalError('Failed to fetch email activities', undefined, { cause: err });
+    }
+  }
+
+  public override async delete(tenant_id: TypeTenantId<'emails'>, idToDelete: string) {
+    return this.deleteMany(tenant_id, [idToDelete]);
+  }
+
+  public async deleteComment(tenant_id: string, _email_id: string, comment_id: string) {
+    try {
+      const deleted = await this.commentsRepo.delete({ tenant_id, id: comment_id /*, email_id */ });
+      if (!deleted) throw new NotFoundError('Comment not found');
+      return deleted;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to delete comment', undefined, { cause: err });
+    }
+  }
+
+  public async deleteDraft(tenant_id: string, _user_id: string, id: string) {
+    try {
+      const deleted = await this.draftsRepo.delete({ tenant_id, id });
+      if (!deleted) throw new NotFoundError('Draft not found');
+      return deleted;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to delete draft', undefined, { cause: err });
+    }
+  }
+
+  public override async deleteMany(tenant_id: TypeTenantId<'emails'>, idsToDelete: string[]) {
+    // Go through idsToDelete and check which ones are in the trash folder (hard delete)
+    // and which ones are not (soft delete - move to trash)
+    const emailsInTrash = await this.getRepo().getByIdsInFolder(tenant_id as string, idsToDelete, ALL_FOLDERS.TRASH);
+    const idsInTrash = emailsInTrash.map((e) => String(e.id));
+    const idsNotInTrash = idsToDelete.filter((id) => !idsInTrash.includes(id));
+
+    const numTrashed =
+      idsNotInTrash.length > 0 ? await this.getRepo().moveToTrash(tenant_id as string, idsNotInTrash) : 0;
+
+    let numDeleted: number | boolean = false;
+    if (idsInTrash.length > 0) {
+      // Capture the attachment file references BEFORE the cascade removes the
+      // email_attachments rows, so we can clean up storage afterwards.
+      const fileIds = await this.getAttachmentFileIds(tenant_id as string, idsInTrash);
+      numDeleted = await super.deleteMany(tenant_id, idsInTrash);
+      // Hard delete is permanent — purge orphaned attachment blobs + file rows.
+      await this.purgeOrphanedFiles(tenant_id as string, fileIds);
+    }
+
+    return numTrashed !== 0 || numDeleted;
+  }
+
+  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
+  private async getAttachmentFileIds(tenant_id: string, emailIds: string[]): Promise<string[]> {
+    if (emailIds.length === 0) return [];
+    const rows = await this.attachmentsRepo.db
+      .selectFrom('email_attachments')
+      .select('file_id')
+      .distinct()
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', 'in', emailIds)
+      .where('file_id', 'is not', null)
+      .execute();
+    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
+  }
+
+  /**
+   * Delete file rows + storage blobs for files that are no longer referenced by
+   * any remaining email attachment (files are sha256-deduped and can be shared).
+   * Storage deletion is best-effort: a failed blob delete must not abort the txn.
+   */
+  private async purgeOrphanedFiles(tenant_id: string, fileIds: string[]): Promise<void> {
+    if (fileIds.length === 0) return;
+
+    const db = this.attachmentsRepo.db;
+    for (const fileId of fileIds) {
+      try {
+        const stillReferenced = await db
+          .selectFrom('email_attachments')
+          .select('id')
+          .where('tenant_id', '=', tenant_id)
+          .where('file_id', '=', fileId)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (stillReferenced) continue;
+
+        const file = await db
+          .selectFrom('files')
+          .select(['id', 'storage_key'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', fileId)
+          .executeTakeFirst();
+
+        if (!file) continue;
+
+        await db.deleteFrom('files').where('tenant_id', '=', tenant_id).where('id', '=', fileId).execute();
+
+        if (file.storage_key) {
+          try {
+            await this.storageService.delete(file.storage_key);
+          } catch (err) {
+            logger.error({ err }, `Failed to delete storage blob ${file.storage_key} for file ${fileId}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, `Failed to purge orphaned file ${fileId}`);
+      }
+    }
+  }
+
+  public async getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {
+    try {
+      return await this.attachmentsRepo.getAllAttachments(tenant_id, email_id, options);
+    } catch (err) {
+      throw new InternalError('Failed to fetch attachments', undefined, { cause: err });
+    }
+  }
+
+  public async getAttachmentsByEmailId(tenant_id: string, email_id: string) {
+    try {
+      return await this.attachmentsRepo.getByEmailId(tenant_id, email_id);
+    } catch (err) {
+      throw new InternalError('Failed to fetch attachments for email', undefined, { cause: err });
+    }
+  }
+
+  public async getDraft(tenant_id: string, _user_id: string, value: string) {
+    try {
+      const draft = await this.draftsRepo.getOneBy('id', { tenant_id, value });
+      if (!draft) throw new NotFoundError('Draft not found');
+      return draft;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to fetch draft', undefined, { cause: err });
+    }
+  }
+
+  public async getEmailBody(tenant_id: string, value: string) {
+    try {
+      const email = (await this.bodiesRepo.getOneBy('email_id', { tenant_id, value })) as
+        | Selectable<Models['email_bodies']>
+        | undefined;
+      if (email) {
+        return {
+          ...email,
+          body_html: sanitizeHtml(email.body_html),
+        };
+      }
+
+      // If no body exists, attempt to load from drafts table
+      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value })) as EmailDraftType | undefined;
+      if (draft)
+        return {
+          email_id: value,
+          body_html: sanitizeHtml(draft.body_html),
+          body_delta: draft.body_delta ?? null,
+        } as any;
+
+      throw new NotFoundError('Failed to fetch email body');
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to fetch email body', undefined, { cause: err });
+    }
+  }
+
+  public async getEmailHeader(tenant_id: string, id: string, user_id?: string) {
+    try {
+      const [emailWithHeaders, comments, rawAttachments] = await Promise.all([
+        this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id, user_id),
+        this.commentsRepo.getForEmail(tenant_id, id),
+        this.attachmentsRepo.getByEmailId(tenant_id, id),
+      ]);
+      // Attach a short-lived, email-scoped download URL so the client can link to
+      // attachments without putting a session token in the URL (SECURITY-REVIEW.md 1.3).
+      const attachments = ((rawAttachments ?? []) as Array<Record<string, unknown>>).map((a) => ({
+        ...a,
+        download_url: signedEmailAttachmentUrl(String(id), String(a['id']), tenant_id),
+      }));
+      if (emailWithHeaders) {
+        let person: Record<string, unknown> | null = null;
+        if (emailWithHeaders.from_email) {
+          const fromEmail = emailWithHeaders.from_email.trim().toLowerCase();
+          const matchedPerson = await this.getRepo()
+            .db.selectFrom('persons')
+            .leftJoin('companies', 'companies.id', 'persons.company_id')
+            .select([
+              'persons.id',
+              'persons.first_name',
+              'persons.last_name',
+              'persons.email',
+              'persons.mobile',
+              'persons.notes',
+              'companies.name as company_name',
+            ])
+            .where('persons.tenant_id', '=', tenant_id)
+            .where((eb) =>
+              eb.or([eb(sql`lower(persons.email)`, '=', fromEmail), eb(sql`lower(persons.email2)`, '=', fromEmail)]),
+            )
+            .executeTakeFirst();
+
+          if (matchedPerson) {
+            const tagsAndIssues = await this.getRepo()
+              .db.selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select(['tags.name', 'tags.color', 'tags.type'])
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where('map_peoples_tags.person_id', '=', matchedPerson.id)
+              .execute();
+
+            person = {
+              ...matchedPerson,
+              tags: tagsAndIssues.filter((t) => t.type === 'tag').map((t) => ({ name: t.name, color: t.color })),
+              issues: tagsAndIssues.filter((t) => t.type === 'issue').map((t) => ({ name: t.name, color: t.color })),
+            };
+          }
+        }
+        return { email: emailWithHeaders, comments, attachments, person };
+      }
+
+      // Fallback to draft if regular email not found
+      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value: id })) as EmailDraftType | undefined;
+      if (draft)
+        return {
+          email: {
+            id: draft.id,
+            to_list: (draft.to_list || []).map((e: string) => ({ email: e })),
+            cc_list: (draft.cc_list || []).map((e: string) => ({ email: e })),
+            bcc_list: (draft.bcc_list || []).map((e: string) => ({ email: e })),
+            from_email: null,
+            subject: draft.subject,
+          },
+          comments: [],
+          attachments: [],
+        } as any;
+
+      throw new NotFoundError('Email not found');
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to fetch email header', undefined, { cause: err });
+    }
+  }
+
+  public async getEmails(
+    user_id: string,
+    tenant_id: string,
+    campaign_id: string,
+    folder_id: string,
+    limit?: number,
+    offset?: number,
+  ) {
+    try {
+      if (folder_id === ALL_FOLDERS.DRAFTS) {
+        const drafts = await this.draftsRepo.listByUser(tenant_id, campaign_id, user_id, limit, offset);
+        return drafts.map((d) => ({
+          id: d.id,
+          folder_id,
+          from_email: '',
+          to_email: Array.isArray(d.to_list) ? d.to_list.join(', ') : '',
+          subject: d.subject,
+          preview: '',
+          assigned_to: undefined,
+          updated_at: d.updated_at,
+          date_sent: d.updated_at,
+          is_favourite: false,
+          attachment_count: 0,
+          has_attachment: false,
+          status: 'open',
+        }));
+      }
+      return await this.getRepo().getByFolderWithAttachmentFlag(
+        user_id,
+        tenant_id,
+        campaign_id,
+        folder_id,
+        limit,
+        offset,
+      );
+    } catch (err) {
+      throw new InternalError('Failed to fetch emails', undefined, { cause: err });
+    }
+  }
+
+  public getFolders(_tenant_id: string) {
+    // Return hardcoded folders configuration (same for all tenants)
+    return Promise.resolve(getAllEmailFolders());
+  }
+
+  public async getFoldersWithCounts(user_id: string, tenant_id: string, campaign_id: string) {
+    try {
+      const [folders, emailCounts, draftCount] = await Promise.all([
+        this.getFolders(tenant_id),
+        this.getRepo().getEmailCountsByFolder(user_id, tenant_id, campaign_id),
+        this.draftsRepo.countByUser(tenant_id, campaign_id, user_id),
+      ]);
+
+      return folders.map((folder) => ({
+        ...folder,
+        email_count: folder.id === ALL_FOLDERS.DRAFTS ? draftCount : emailCounts[folder.id] || 0,
+      }));
+    } catch (err) {
+      throw new InternalError('Failed to fetch folder counts', undefined, { cause: err });
+    }
+  }
+
+  public async hasAttachment(tenant_id: string, email_id: string) {
+    try {
+      return await this.attachmentsRepo.hasAttachment(tenant_id, email_id);
+    } catch (err) {
+      throw new InternalError('Failed to check attachment flag', undefined, { cause: err });
+    }
+  }
+
+  public async hasAttachmentByEmailIds(tenant_id: string, email_ids: string[]) {
+    if (!email_ids?.length) return Promise.resolve([]);
+
+    try {
+      return this.attachmentsRepo.hasAttachmentByEmailIds(tenant_id, email_ids);
+    } catch (err) {
+      throw new InternalError('Failed to check attachment flags', undefined, { cause: err });
+    }
+  }
+
+  public restoreFromTrash(tenant_id: string, idsToRestore: string[]) {
+    return this.getRepo().restoreFromTrash(tenant_id, idsToRestore);
+  }
+
+  public async moveToFolder(tenant_id: string, id: string, folder_id: string, actor_id?: string) {
+    try {
+      const isTrash = folder_id === ALL_FOLDERS.TRASH;
+      const deleted_at = isTrash ? new Date() : null;
+
+      const updated = await this.getRepo()
+        .getUpdate()
+        .set({ folder_id, deleted_at })
+        .where('tenant_id', '=', tenant_id)
+        .where('id', '=', id)
+        .returningAll()
+        .executeTakeFirst();
+
+      if (!updated) throw new NotFoundError('Email not found');
+
+      // --- Log activity ---
+      if (actor_id) {
+        this.activityRepo
+          .log({
+            tenant_id,
+            user_id: actor_id,
+            activity: isTrash ? 'delete' : 'update',
+            entity: 'email',
+            entity_id: id,
+            metadata: { folder_id },
+          })
+          .catch((e) => logger.error({ err: e }, 'Failed to log email move activity'));
+      }
+
+      return updated;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to move email to folder', undefined, { cause: err });
+    }
+  }
+
+  public async saveDraft(
+    tenant_id: string,
+    campaign_id: string,
+    user_id: string,
+    draft: {
+      id?: string;
+      to_list: string[];
+      cc_list?: string[];
+      bcc_list?: string[];
+      subject?: string;
+      body_html?: string;
+    },
+  ) {
+    try {
+      if (draft.body_html) {
+        draft.body_html = sanitizeHtml(draft.body_html);
+      }
+      const saved = await this.draftsRepo.saveDraft(tenant_id, campaign_id, user_id, draft);
+      if (!saved) throw new InternalError('Failed to save draft');
+      return saved;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to save draft', undefined, { cause: err });
+    }
+  }
+
+  public async setFavourite(tenant_id: string, id: string, favourite: boolean) {
+    try {
+      return this.getRepo().setFavourite(tenant_id, id, favourite);
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to set favourite', undefined, { cause: err });
+    }
+  }
+
+  public async setStatus(tenant_id: string, id: string, status: EmailStatus, actor_id?: string) {
+    try {
+      const updated = await this.getRepo().setStatus(tenant_id, id, status);
+      if (!updated) throw new NotFoundError('Email not found');
+
+      // --- Log activity ---
+      if (actor_id) {
+        const activityType = status === 'closed' ? 'close' : 'reopen';
+        this.activityRepo
+          .log({
+            tenant_id,
+            user_id: actor_id,
+            activity: activityType,
+            entity: 'email',
+            entity_id: id,
+            metadata: { status },
+          })
+          .catch((e) => logger.error({ err: e }, 'Failed to log email status activity'));
+      }
+
+      return updated;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to set status', undefined, { cause: err });
+    }
+  }
+
+  public async setEmailReadStatus(tenant_id: string, user_id: string, email_id: string, is_read: boolean) {
+    try {
+      const email = await this.getRepo().getOneBy('id', { tenant_id, value: email_id });
+      if (!email) throw new NotFoundError('Email not found');
+
+      await this.getRepo()
+        .db.insertInto('email_read_states')
+        .values({
+          tenant_id,
+          user_id,
+          email_id,
+          is_read,
+        })
+        .onConflict((oc) =>
+          oc.columns(['tenant_id', 'user_id', 'email_id']).doUpdateSet({
+            is_read,
+          }),
+        )
+        .execute();
+
+      return { success: true, email_id, is_read };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to set email read status', undefined, { cause: err });
     }
   }
 }
@@ -62316,6 +62468,214 @@ export class ComparePage {
 <pc-site-footer />
 ````
 
+## File: apps/website/src/app/ui/currency.service.ts
+````typescript
+import { afterNextRender, computed, Injectable, signal } from '@angular/core';
+import {
+  currencyForCountry,
+  currencyPriceSymbol,
+  formatCurrency,
+  isCurrencyCode,
+  SUPPORTED_CURRENCIES,
+  type CurrencyCode,
+  type CurrencyDef,
+  type ExchangeRates,
+} from '@common';
+
+/** localStorage key for the visitor's manual currency choice (overrides geo detection). */
+const STORAGE_CURRENCY = 'pc_currency';
+/** localStorage key for the cached FX rates + fetch timestamp. */
+const STORAGE_FX = 'pc_fx';
+/** How long cached rates stay fresh before we refetch (12 hours), matching the edge cache. */
+const FX_TTL_MS = 12 * 60 * 60 * 1000;
+/** Same-origin Cloudflare Pages Function that returns `{ country, rates }`. */
+const GEO_ENDPOINT = '/api/geo-rates';
+/** Public CORS-enabled FX source used only as a fallback when the edge endpoint is unavailable
+ * (local dev, or before the Pages Function is wired). USD base, no key. */
+const FX_DIRECT_URL = 'https://open.er-api.com/v6/latest/USD';
+
+interface CachedFx {
+  readonly rates: ExchangeRates;
+  readonly ts: number;
+}
+
+/**
+ * Picks which currency the marketing site displays prices in, and converts USD prices to it at
+ * live exchange rates. Billing is always USD — surfaces show a disclaimer via {@link isConverted}.
+ *
+ * Browser-only work (reading storage, detecting region, fetching rates) runs in `afterNextRender`,
+ * exactly like {@link AuthHint}: the prerendered (SSG) markup is always USD and the client
+ * re-prices after hydration, so there's no server/client mismatch. Everything degrades safely —
+ * if the geo/rate call fails we fall back to the browser locale, and with no rates we stay in USD.
+ */
+@Injectable({ providedIn: 'root' })
+export class CurrencyService {
+  /** The active display currency (USD until detection/override resolves after hydration). */
+  public readonly currency = signal<CurrencyCode>('USD');
+  /** USD-base rates; USD is always 1, other codes appear once loaded. */
+  public readonly rates = signal<ExchangeRates>({ USD: 1 });
+
+  /** The currencies offered in the switcher. */
+  public readonly options: readonly CurrencyDef[] = Object.values(SUPPORTED_CURRENCIES);
+  /** The active currency's display metadata (for the switcher trigger). */
+  public readonly active = computed<CurrencyDef>(() => SUPPORTED_CURRENCIES[this.currency()]);
+  /** The active currency's price symbol (e.g. `C$`), for inline copy like the disclaimer. */
+  public readonly priceSymbol = computed<string>(() => currencyPriceSymbol(this.currency()));
+
+  /** True only when we're actually converting away from USD (a rate for the currency is loaded).
+   * Gates the "billed in USD" disclaimer so it never shows while prices are still really USD. */
+  public readonly isConverted = computed<boolean>(() => {
+    const code = this.currency();
+    return code !== 'USD' && this.rates()[code] != null;
+  });
+
+  constructor() {
+    afterNextRender(() => this.init());
+  }
+
+  /** Set and persist the visitor's manual currency choice. */
+  public setCurrency(code: CurrencyCode): void {
+    this.currency.set(code);
+    try {
+      localStorage.setItem(STORAGE_CURRENCY, code);
+    } catch {
+      // Storage unavailable (private mode): the choice still applies for this session.
+    }
+  }
+
+  /** Format a whole-dollar USD price in the active currency; falls back to USD when no rate. */
+  public format(usd: number): string {
+    const code = this.currency();
+    const rate = code === 'USD' ? 1 : this.rates()[code];
+    if (rate == null) return formatCurrency(usd, 'USD');
+    return formatCurrency(Math.round(usd * rate), code);
+  }
+
+  /** Rounded monthly-equivalent of an annual USD total, in the active currency (`$24`). The
+   * annual total is converted to whole units first, then divided by 12 and rounded — surfaces
+   * showing it must keep the exact annual total alongside plus the rounding disclaimer, since
+   * equivalent × 12 ≠ the billed total. */
+  public formatMonthlyEquivalent(annualUsd: number): string {
+    const code = this.currency();
+    const rate = code === 'USD' ? 1 : this.rates()[code];
+    if (rate == null) return formatCurrency(Math.round(annualUsd / 12), 'USD');
+    return formatCurrency(Math.round(Math.round(annualUsd * rate) / 12), code);
+  }
+
+  private init(): void {
+    const override = this.readOverride();
+    if (override) this.currency.set(override);
+
+    const cached = this.readCachedRates();
+    if (cached) this.rates.set(cached);
+
+    void this.refresh(override != null);
+  }
+
+  /** Fetch fresh geo + rates; set the currency from geo only when there's no manual override. */
+  private async refresh(hasOverride: boolean): Promise<void> {
+    try {
+      const res = await fetch(GEO_ENDPOINT, { headers: { accept: 'application/json' } });
+      if (!res.ok) throw new Error(`geo-rates ${res.status}`);
+      const { country, rates } = this.parsePayload(await res.json());
+      this.rates.set(rates);
+      this.writeCachedRates(rates);
+      if (!hasOverride) this.applyDetected(currencyForCountry(country), rates);
+    } catch {
+      // Edge endpoint unavailable (local dev, or not wired yet): fetch rates directly from the
+      // public FX API and detect the region from the browser locale instead of the visitor's IP.
+      const rates = await this.fetchRatesDirect();
+      if (rates) {
+        this.rates.set(rates);
+        this.writeCachedRates(rates);
+      }
+      // Only switch if we actually have a rate for the detected currency, else stay in USD.
+      if (!hasOverride) this.applyDetected(currencyForCountry(this.regionFromLocale()), this.rates());
+    }
+  }
+
+  /** Fallback rate source when the edge endpoint fails. Queries a public CORS FX API straight from
+   * the browser; returns null on any failure so we simply stay in USD. */
+  private async fetchRatesDirect(): Promise<ExchangeRates | null> {
+    try {
+      const res = await fetch(FX_DIRECT_URL, { headers: { accept: 'application/json' } });
+      if (!res.ok) return null;
+      const body: unknown = await res.json();
+      const table =
+        typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
+      return this.sanitizeRates(table);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Adopt a geo/locale-detected currency only when a rate for it is available. */
+  private applyDetected(code: CurrencyCode, rates: ExchangeRates): void {
+    if (code === 'USD' || rates[code] != null) this.currency.set(code);
+  }
+
+  private readOverride(): CurrencyCode | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_CURRENCY);
+      return raw && isCurrencyCode(raw) ? raw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private readCachedRates(): ExchangeRates | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_FX);
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null) return null;
+      const { rates, ts } = parsed as Partial<CachedFx>;
+      if (typeof ts !== 'number' || Date.now() - ts > FX_TTL_MS) return null;
+      return this.sanitizeRates(rates);
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCachedRates(rates: ExchangeRates): void {
+    try {
+      const entry: CachedFx = { rates, ts: Date.now() };
+      localStorage.setItem(STORAGE_FX, JSON.stringify(entry));
+    } catch {
+      // Non-fatal: we just refetch next visit.
+    }
+  }
+
+  /** Validate the Pages Function response into a country + sanitized rates. */
+  private parsePayload(body: unknown): { country: string | null; rates: ExchangeRates } {
+    if (typeof body !== 'object' || body === null) return { country: null, rates: { USD: 1 } };
+    const record = body as { country?: unknown; rates?: unknown };
+    const country = typeof record.country === 'string' ? record.country : null;
+    return { country, rates: this.sanitizeRates(record.rates) };
+  }
+
+  /** Keep only positive numeric rates for known currency codes; USD is always 1. */
+  private sanitizeRates(raw: unknown): ExchangeRates {
+    const clean: ExchangeRates = { USD: 1 };
+    if (typeof raw !== 'object' || raw === null) return clean;
+    const record = raw as Record<string, unknown>;
+    for (const def of this.options) {
+      if (def.code === 'USD') continue;
+      const value = record[def.code];
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) clean[def.code] = value;
+    }
+    return clean;
+  }
+
+  /** Region subtag from the browser locale (e.g. "en-GB" → "GB"), or null. */
+  private regionFromLocale(): string | null {
+    const locale = typeof navigator !== 'undefined' ? navigator.language : '';
+    const region = locale.split('-')[1];
+    return region ? region.toUpperCase() : null;
+  }
+}
+````
+
 ## File: apps/website/src/index.html
 ````html
 <!doctype html>
@@ -63015,2395 +63375,6 @@ export const legacyImportJobSchema = z.object({
 });
 
 export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
-````
-
-## File: apps/backend/src/app/modules/auth/controller.ts
-````typescript
-import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
-import { createSigner } from 'fast-jwt';
-import type { QueryResult, Transaction } from 'kysely';
-import { RESERVED_SUBDOMAINS, slugifyHandle } from '../../../../../../libs/common/src';
-import { signedFileDownloadUrl } from '../../lib/signed-download';
-
-import type {
-  IAuthKeyPayload,
-  INow,
-  InviteAuthUserType,
-  UpdateAuthUserType,
-  getAllOptionsType,
-  signInInputType,
-  signUpInputType,
-} from '../../../../../../libs/common/src';
-import type {
-  AuthUsersType,
-  GetOperandType,
-  Keys,
-  Models,
-  OperationDataType,
-  TablesOperationMap,
-} from '../../../../../../libs/common/src/lib/kysely.models';
-import { env } from '../../../env';
-import {
-  AppError,
-  BadRequestError,
-  ConflictError,
-  ForbiddenError,
-  InternalError,
-  NotFoundError,
-  PreconditionFailedError,
-  ServerMisconfigError,
-  UnauthorizedError,
-} from '../../errors/app-errors';
-import { BaseController } from '../../lib/base.controller';
-import type { QueryParams } from '../../lib/base.repo';
-import { COMMON_PASSWORDS } from '../../lib/common-passwords';
-import { getPwnedCount } from '../../lib/hibp';
-import { parseProfilePreferences } from '../../lib/profile-preferences';
-import { getPlanLimits } from '../billing/usage-limits';
-import { isDisposableEmail } from '../../lib/mail/disposable-email-domains';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { hashPassword, verifyPasswordConstantTime } from '../../lib/password-hash';
-import { StorageService } from '../../lib/storage.service';
-import { generateToken, hashToken } from '../../lib/token-hash';
-import { logger } from '../../logger';
-import { EmailRepo } from '../emails/repositories/email.repo';
-import { PersonsRepo } from '../persons/repositories/persons.repo';
-import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
-import { seedStarterForms, seedStarterTags } from './onboarding-seed';
-import { DEMO_MODE_INVITES_BLOCKED_MESSAGE, assertNotDemoMode } from '../demo/demo-guard';
-import { seedDemoData } from '../demo/demo-seed';
-import { AuthUsersRepo } from './repositories/authusers.repo';
-import { SessionsRepo } from './repositories/sessions.repo';
-import { TenantsRepo } from './repositories/tenants.repo';
-
-export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
-  private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  private static readonly AVATAR_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
-
-  private emailsRepo: EmailRepo = new EmailRepo();
-  private mailService = new TransactionalEmailService();
-  private personsRepo: PersonsRepo = new PersonsRepo();
-  private profiles: UserProfiles = new UserProfiles();
-  private sessions: SessionsRepo = new SessionsRepo();
-  private storage = new StorageService();
-  private tenants: TenantsRepo = new TenantsRepo();
-
-  constructor() {
-    super(new AuthUsersRepo());
-  }
-
-  /**
-   * Admin deactivation: sets `deactivated_at` (indefinite, blocks sign-in, revokes sessions).
-   * Deliberately NOT `deletion_scheduled_at` — that column hard-deletes via the deletion worker
-   * and is auto-cleared when the user signs back in.
-   */
-  public async adminDeactivateUser(auth: IAuthKeyPayload, userId: string) {
-    const callerRole = auth.role;
-    if (callerRole !== 'admin' && callerRole !== 'owner') {
-      throw new ForbiddenError('Only admins and owners can deactivate users.');
-    }
-
-    const targetId = String(userId);
-    if (targetId === auth.user_id) {
-      throw new BadRequestError('You cannot deactivate yourself.');
-    }
-
-    const repo = this.getRepo();
-    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: targetId });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-
-    if (callerRole === 'admin' && authUser.role === 'owner') {
-      throw new ForbiddenError('Admins cannot deactivate owner accounts.');
-    }
-    if (authUser.deactivated_at) {
-      throw new BadRequestError('This account is already deactivated.');
-    }
-
-    const deactivatedAt = new Date();
-    await repo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('authusers')
-        .set({ deactivated_at: deactivatedAt, updated_at: deactivatedAt, updatedby_id: auth.user_id })
-        .where('id', '=', targetId)
-        .where('tenant_id', '=', auth.tenant_id)
-        .execute();
-
-      // Deactivation takes effect immediately, not at next token expiry.
-      await this.sessions.deleteByUserId(targetId, auth.tenant_id, trx);
-
-      await this.userActivity.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'update',
-          entity: 'authusers',
-          entity_id: targetId,
-          quantity: 1,
-          metadata: {
-            id: targetId,
-            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
-            changes: { deactivated_at: { from: null, to: deactivatedAt.toISOString() } },
-          },
-        },
-        trx,
-      );
-    });
-
-    return { success: true, deactivated_at: deactivatedAt };
-  }
-
-  /** Reverses admin deactivation; also clears a self-scheduled deletion so there is one way back. */
-  public async adminReactivateUser(auth: IAuthKeyPayload, userId: string) {
-    const callerRole = auth.role;
-    if (callerRole !== 'admin' && callerRole !== 'owner') {
-      throw new ForbiddenError('Only admins and owners can reactivate users.');
-    }
-
-    const targetId = String(userId);
-    const repo = this.getRepo();
-    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: targetId });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-
-    if (callerRole === 'admin' && authUser.role === 'owner') {
-      throw new ForbiddenError('Admins cannot reactivate owner accounts.');
-    }
-    if (!authUser.deactivated_at && !authUser.deletion_scheduled_at) {
-      throw new BadRequestError('This account is already active.');
-    }
-
-    await repo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('authusers')
-        .set({ deactivated_at: null, deletion_scheduled_at: null, updated_at: new Date(), updatedby_id: auth.user_id })
-        .where('id', '=', targetId)
-        .where('tenant_id', '=', auth.tenant_id)
-        .execute();
-
-      await this.userActivity.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'update',
-          entity: 'authusers',
-          entity_id: targetId,
-          quantity: 1,
-          metadata: {
-            id: targetId,
-            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
-            changes: {
-              deactivated_at: { from: authUser.deactivated_at ?? null, to: null },
-              ...(authUser.deletion_scheduled_at
-                ? { deletion_scheduled_at: { from: authUser.deletion_scheduled_at, to: null } }
-                : {}),
-            },
-          },
-        },
-        trx,
-      );
-    });
-
-    return { success: true };
-  }
-
-  /** Re-sends the invitation email to a user who hasn't activated yet, with a fresh temp password + code. */
-  public async adminResendInvite(auth: IAuthKeyPayload, userId: string) {
-    // Same capability as inviteUser — locked during the demo (see demo-guard).
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id, DEMO_MODE_INVITES_BLOCKED_MESSAGE);
-    const callerRole = auth.role;
-    if (callerRole !== 'admin' && callerRole !== 'owner') {
-      throw new ForbiddenError('Only admins and owners can resend invitations.');
-    }
-
-    const repo = this.getRepo();
-    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: String(userId) });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-
-    if (callerRole === 'admin' && authUser.role === 'owner') {
-      throw new ForbiddenError('Admins cannot resend invitations for owners.');
-    }
-    if (authUser.verified) {
-      throw new BadRequestError('This user has already activated their account.');
-    }
-    if (authUser.deactivated_at) {
-      throw new BadRequestError('This account is deactivated. Reactivate it before resending the invitation.');
-    }
-
-    const tempPassword = this.generateTempPassword();
-    const password = await hashPassword(tempPassword);
-
-    await repo.transaction().execute(async (trx) => {
-      // The old temp password stops working; the emailed activation link carries a fresh code.
-      await trx
-        .updateTable('authusers')
-        .set({ password, updated_at: new Date(), updatedby_id: auth.user_id })
-        .where('id', '=', String(authUser.id))
-        .where('tenant_id', '=', auth.tenant_id)
-        .execute();
-
-      const codeObj = await repo.addPasswordResetCode(authUser.id, trx);
-      await this.enqueueInviteEmail(trx, {
-        to: authUser.email,
-        tenantId: auth.tenant_id,
-        firstName: authUser.first_name,
-        inviterName: auth.name,
-        tempPassword,
-        code: codeObj?.password_reset_code,
-      });
-
-      await this.userActivity.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'update',
-          entity: 'authusers',
-          entity_id: String(authUser.id),
-          quantity: 1,
-          metadata: {
-            id: String(authUser.id),
-            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
-            action: 'resend_invite',
-          },
-        },
-        trx,
-      );
-    });
-
-    return { success: true };
-  }
-
-  public async adminTriggerPasswordReset(auth: IAuthKeyPayload, userId: string) {
-    const callerRole = auth.role;
-    if (callerRole === 'user') {
-      throw new ForbiddenError('You do not have permission to trigger password resets.');
-    }
-
-    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-
-    if (callerRole === 'admin' && authUser.role === 'owner') {
-      throw new ForbiddenError('Admins cannot trigger password resets for owners.');
-    }
-
-    return await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        const codeObj = await this.getRepo().addPasswordResetCode(authUser.id, trx);
-        const code = codeObj?.password_reset_code;
-
-        await this.mailService.enqueueMail(
-          {
-            to: authUser.email,
-            tenant_id: auth.tenant_id,
-            subject: 'Reset your pplCRM password',
-            text: `Hi ${authUser.first_name},\n\nAn administrator has requested a password reset for your pplCRM account.\n\nReset your password using this link:\n${env.appUrl}/new-password?code=${code}\n\nThis link is valid for 15 minutes.`,
-            html: `<h2>Reset your password</h2>
-<p>Hi ${authUser.first_name},</p>
-<p>An administrator has requested a password reset for your pplCRM account. Click the button below to choose a new password:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset password</a>
-</div>
-<p class="warning">For security, this reset link is single-use and expires in 15 minutes.</p>`,
-          },
-          trx,
-        );
-
-        return { success: true };
-      });
-  }
-
-  public async cancelAccountDeletion(auth: IAuthKeyPayload) {
-    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        await trx.updateTable('authusers').set({ deletion_scheduled_at: null }).where('id', '=', authUser.id).execute();
-
-        await this.mailService.enqueueMail(
-          {
-            to: authUser.email,
-            tenant_id: auth.tenant_id,
-            subject: 'Your account deletion was canceled',
-            text: `Your request to delete your account has been canceled, and your account is fully restored.`,
-            html: `<h2>Account deletion canceled</h2>
-<p>Your request to delete your account has been canceled, and your account is fully restored. Welcome back!</p>`,
-          },
-          trx,
-        );
-      });
-
-    return { success: true };
-  }
-
-  public async cancelEmailChange(auth: IAuthKeyPayload) {
-    if (!auth?.user_id) {
-      throw new UnauthorizedError();
-    }
-
-    const repo = this.getRepo();
-    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-    const authUser = user as AuthUsersType;
-
-    if (!authUser.previous_email) {
-      throw new BadRequestError('No email change in progress.');
-    }
-
-    const previousEmail = authUser.previous_email;
-
-    await repo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('authusers')
-        .set({
-          email: previousEmail,
-          role: authUser.previous_role,
-          verified: true,
-          previous_email: null,
-          previous_role: null,
-          password_reset_code: null,
-          password_reset_code_created_at: null,
-          updated_at: new Date(),
-          updatedby_id: auth.user_id,
-        })
-        .where('id', '=', authUser.id)
-        .execute();
-    });
-
-    return { success: true };
-  }
-
-  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
-    const db = this.getRepo().db;
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'deletion_scheduled_at'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is scheduled for this account.');
-    if (tenant.deletion_scheduled_at <= new Date()) {
-      throw new BadRequestError('The deletion window has already passed and data has been removed.');
-    }
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    await db.updateTable('tenants').set({ deletion_scheduled_at: null }).where('id', '=', auth.tenant_id).execute();
-
-    if (ownerEmail?.email) {
-      await this.mailService.sendMail({
-        to: ownerEmail.email,
-        tenant_id: String(auth.tenant_id),
-        subject: 'Your account deletion was canceled',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion request has been canceled. Your account and all data remain intact.`,
-        html: `<h2>Account deletion canceled</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your account deletion request has been canceled. Your account and all data remain intact. Welcome back!</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  public async cancelTenantDeletionByToken(tenantId: string, token: string) {
-    const expectedToken = this.makeDeletionCancelToken(tenantId);
-    const expected = Buffer.from(expectedToken);
-    const provided = Buffer.from(token.length === expected.length ? token : expectedToken); // same length for safe compare
-    if (token.length !== expectedToken.length || !timingSafeEqual(expected, provided)) {
-      throw new BadRequestError('Invalid or expired cancellation link.');
-    }
-
-    const db = this.getRepo().db;
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'deletion_scheduled_at'])
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Account not found.');
-    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is pending for this account.');
-    if (tenant.deletion_scheduled_at <= new Date()) {
-      throw new BadRequestError('The deletion window has already passed and data has been removed.');
-    }
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    await db.updateTable('tenants').set({ deletion_scheduled_at: null }).where('id', '=', tenantId).execute();
-
-    if (ownerEmail?.email) {
-      await this.mailService.sendMail({
-        to: ownerEmail.email,
-        subject: 'Your account deletion was canceled',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion has been canceled. Your account and all data remain intact. You can sign back in at any time.`,
-        html: `<h2>Account deletion canceled</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your account deletion has been canceled. Your account and all data remain intact.</p>
-<p><a href="${env.appUrl}/signin">Sign back in</a> to continue using pplCRM.</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  public async currentUser(auth: IAuthKeyPayload) {
-    // There's no user ID, which means that the user is unauthorized
-    if (!auth?.user_id) {
-      throw new UnauthorizedError();
-    }
-    const options = {
-      columns: ['id', 'email', 'first_name', 'role', 'verified', 'passkey_setup_dismissed_at'],
-    } as QueryParams<'authusers'>;
-
-    try {
-      const user = await this.getRepo().getOneBy('id', {
-        tenant_id: auth.tenant_id,
-        value: auth.user_id,
-        options,
-      });
-      if (!user) return null;
-
-      const typedUser = user as { id: string; verified: boolean; passkey_setup_dismissed_at: Date | null };
-      const profile = (await this.profiles.getOneByAuthId(String(typedUser.id))) as Models['profiles'] | undefined;
-      const avatar_url = profile?.['avatar_file_id']
-        ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
-        : null;
-
-      let tenant_deletion_scheduled_at: Date | null = null;
-      let tenant_paused_at: Date | null = null;
-      let tenant_demo_mode_at: Date | null = null;
-      let tenant_slug: string | null = null;
-      let workspace_api_key_preview: { preview: string; createdAt: string; lastUsedAt: string | null } | null = null;
-      if (auth.tenant_id) {
-        const tenant = await this.getRepo()
-          .db.selectFrom('tenants')
-          .select(['deletion_scheduled_at', 'paused_at', 'demo_mode_at', 'slug'])
-          .where('id', '=', auth.tenant_id)
-          .executeTakeFirst();
-        if (tenant?.deletion_scheduled_at) {
-          tenant_deletion_scheduled_at = tenant.deletion_scheduled_at;
-        }
-        if (tenant?.paused_at) {
-          tenant_paused_at = tenant.paused_at;
-        }
-        tenant_demo_mode_at = tenant?.demo_mode_at ?? null;
-        tenant_slug = tenant?.slug ?? null;
-
-        // Fetch API key preview
-        const workspaceApiKeysRepo = (await import('../settings/repositories/workspace-api-keys.repo'))
-          .WorkspaceApiKeysRepo;
-        const apiKeyRepo = new workspaceApiKeysRepo();
-        const apiKey = await apiKeyRepo.getByTenantId(auth.tenant_id);
-        if (apiKey) {
-          workspace_api_key_preview = {
-            preview: apiKey.key_preview,
-            createdAt: apiKey.created_at.toISOString(),
-            lastUsedAt: apiKey.last_used_at?.toISOString() ?? null,
-          };
-        }
-      }
-
-      return {
-        ...user,
-        avatar_url,
-        email_verified: this.coerceBoolean(typedUser.verified),
-        passkey_setup_dismissed_at: typedUser.passkey_setup_dismissed_at ?? null,
-        tenant_deletion_scheduled_at,
-        tenant_paused_at,
-        tenant_demo_mode_at,
-        tenant_slug,
-        workspace_api_key_preview,
-      };
-    } catch (err) {
-      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
-    }
-  }
-
-  public async deleteAvatar(auth: IAuthKeyPayload) {
-    const existingProfile = await this.profiles.getOneByAuthId(auth.user_id);
-    if (!existingProfile?.avatar_file_id) return { success: true };
-
-    const fileId = existingProfile.avatar_file_id;
-
-    await this.getRepo()
-      .db.transaction()
-      .execute(async (trx) => {
-        try {
-          const oldFile = await trx
-            .selectFrom('files')
-            .select('storage_key')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', fileId)
-            .executeTakeFirst();
-          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-          await trx.deleteFrom('files').where('tenant_id', '=', auth.tenant_id).where('id', '=', fileId).execute();
-        } catch {
-          /* non-critical */
-        }
-
-        await trx
-          .updateTable('profiles')
-          .set({ avatar_file_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('auth_id', '=', auth.user_id)
-          .execute();
-      });
-
-    return { success: true };
-  }
-
-  public async deleteUser(auth: IAuthKeyPayload, userId: string) {
-    const callerRole = auth.role;
-    if (callerRole !== 'admin' && callerRole !== 'owner') {
-      throw new ForbiddenError('Only admins and owners can delete users.');
-    }
-
-    const userIdToDelete = String(userId);
-    if (userIdToDelete === auth.user_id) {
-      throw new BadRequestError('You cannot delete yourself.');
-    }
-
-    const repo = this.getRepo();
-    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: userIdToDelete });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-
-    if (callerRole === 'admin' && authUser.role === 'owner') {
-      throw new ForbiddenError('Admins cannot delete owner accounts.');
-    }
-
-    return await repo.transaction().execute(async (trx) => {
-      const profile = await this.profiles.getOneByAuthId(userIdToDelete);
-      if (profile?.avatar_file_id) {
-        try {
-          const oldFile = await trx
-            .selectFrom('files')
-            .select('storage_key')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', profile.avatar_file_id)
-            .executeTakeFirst();
-          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-          await trx
-            .deleteFrom('files')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', profile.avatar_file_id)
-            .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to clean up user avatar on delete');
-        }
-      }
-
-      await trx
-        .deleteFrom('profiles')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('auth_id', '=', userIdToDelete)
-        .execute();
-      await this.sessions.deleteByUserId(userIdToDelete, auth.tenant_id, trx);
-      await trx
-        .deleteFrom('authusers')
-        .where('id', '=', userIdToDelete)
-        .where('tenant_id', '=', auth.tenant_id)
-        .execute();
-
-      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, userIdToDelete);
-
-      await this.userActivity.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'delete',
-          entity: 'authusers',
-          entity_id: userIdToDelete,
-          quantity: 1,
-          metadata: {
-            id: userIdToDelete,
-            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
-          },
-        },
-        trx,
-      );
-
-      return { success: true };
-    });
-  }
-
-  public async dismissPasskeyPrompt(auth: IAuthKeyPayload) {
-    await this.getRepo()
-      .db.updateTable('authusers')
-      .set({ passkey_setup_dismissed_at: new Date() })
-      .where('id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .execute();
-    return { success: true };
-  }
-
-  public async ensureAtLeastOneOwner(
-    tenantId: string,
-    trx: Transaction<Models>,
-    isRoleChange = false,
-    excludeUserId?: string,
-  ) {
-    const activeOwners = await trx
-      .selectFrom('authusers')
-      .select(['id'])
-      .where('tenant_id', '=', tenantId)
-      .where((eb) =>
-        eb.or([eb('role', '=', 'owner'), eb.and([eb('role', '=', 'viewer'), eb('previous_role', '=', 'owner')])]),
-      )
-      .where('deletion_scheduled_at', 'is', null)
-      .where('deactivated_at', 'is', null)
-      .execute();
-
-    if (activeOwners.length > 0) {
-      return;
-    }
-
-    // Find the oldest active user to promote
-    let query = trx
-      .selectFrom('authusers')
-      .select(['id'])
-      .where('tenant_id', '=', tenantId)
-      .where('deletion_scheduled_at', 'is', null)
-      .where('deactivated_at', 'is', null);
-
-    if (excludeUserId) {
-      query = query.where('id', '!=', excludeUserId);
-    }
-
-    const oldestUser = await query.orderBy('created_at', 'asc').executeTakeFirst();
-
-    if (oldestUser) {
-      await trx.updateTable('authusers').set({ role: 'owner' }).where('id', '=', oldestUser.id).execute();
-    } else if (isRoleChange) {
-      throw new BadRequestError('The system must have at least one owner.');
-    }
-  }
-
-  public async getAllUsers(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    const sanitizedOptions = options ? ({ ...options, columns: undefined } as typeof options) : undefined;
-    const result = await this.getRepo().getAllWithCounts({
-      tenant_id: auth.tenant_id,
-      options: sanitizedOptions as never,
-    });
-    return {
-      rows: result.rows.map((row) => ({
-        ...this.sanitizeUser(row),
-        avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
-      })),
-      count: result.count,
-    };
-  }
-
-  public async getTenantAccountStatus(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .select(['deletion_scheduled_at', 'suspended_at', 'paused_at'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-
-    return {
-      deletion_scheduled_at: tenant.deletion_scheduled_at ?? null,
-      suspended_at: tenant.suspended_at ?? null,
-      paused_at: tenant.paused_at ?? null,
-    };
-  }
-
-  /** Seat usage for the invite/users UI: plan name, seat limit, and seats consumed (invited counts too). */
-  public async getSeatUsage(auth: IAuthKeyPayload) {
-    const db = this.getRepo().db;
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['subscription_plan', 'subscription_quantity'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    if (!tenant) throw new NotFoundError('Tenant not found');
-
-    const plan = (tenant.subscription_plan as string | null) || 'free';
-    const limits = getPlanLimits(plan, tenant.subscription_quantity ?? 1);
-
-    // Matches the billing usage check: every non-deactivated login (including pending invites) holds a seat.
-    const seatRow = await db
-      .selectFrom('authusers')
-      .select((eb) => eb.fn.countAll().as('cnt'))
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('deletion_scheduled_at', 'is', null)
-      .where('deactivated_at', 'is', null)
-      .executeTakeFirst();
-
-    return { plan, seatLimit: limits.seats, seatsUsed: Number(seatRow?.cnt ?? 0) };
-  }
-
-  public async getUserById(auth: IAuthKeyPayload, id: string) {
-    const callerRole = auth.role;
-    if (callerRole === 'user' && auth.user_id !== String(id)) {
-      throw new ForbiddenError('You do not have permission to view this user.');
-    }
-
-    const record = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: id });
-    if (!record) throw new NotFoundError('User not found');
-    const authUser = record as AuthUsersType;
-    const profile = (await this.profiles.getOneByAuthId(String(authUser.id))) as Models['profiles'] | undefined;
-    const stats = await this.buildUserStats(auth, String(authUser.id));
-    const sanitized = this.sanitizeUser({ ...authUser, profile });
-    const avatar_url = profile?.['avatar_file_id']
-      ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
-      : null;
-    return { ...sanitized, avatar_url, stats };
-  }
-
-  public async getUsersList(auth: IAuthKeyPayload) {
-    const result = await this.getRepo().getAllWithCounts({
-      tenant_id: auth.tenant_id,
-    });
-    return result.rows.map((row) => ({
-      ...this.sanitizeUser(row),
-      avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
-    }));
-  }
-
-  public async inviteUser(auth: IAuthKeyPayload, input: InviteAuthUserType) {
-    // Demo teammates are seeded; real invites unlock with a plan (see demo-guard).
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id, DEMO_MODE_INVITES_BLOCKED_MESSAGE);
-    const callerRole = auth.role;
-    if (callerRole === 'user') {
-      throw new ForbiddenError('You do not have permission to invite users.');
-    }
-    if (callerRole === 'admin' && input.role === 'owner') {
-      throw new ForbiddenError('Admins cannot invite users with the Owner role.');
-    }
-
-    const email = input.email.toLowerCase();
-    await this.verifyUserDoesNotExist(email);
-
-    // Seat cap: enforce the plan's staff-seat allowance up front. Every non-deactivated login,
-    // including still-pending invites, holds a seat (matches getSeatUsage and the billing usage
-    // check), so a full workspace must free or buy a seat before adding another — otherwise the
-    // limit is only ever measured after the fact by the async usage job.
-    const seatTenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .select(['subscription_plan', 'subscription_quantity'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    const seatLimit = getPlanLimits(
-      seatTenant?.subscription_plan ?? null,
-      seatTenant?.subscription_quantity ?? 1,
-    ).seats;
-    if (Number.isFinite(seatLimit)) {
-      const seatRow = await this.getRepo()
-        .db.selectFrom('authusers')
-        .select((eb) => eb.fn.countAll().as('cnt'))
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('deletion_scheduled_at', 'is', null)
-        .where('deactivated_at', 'is', null)
-        .executeTakeFirst();
-      if (Number(seatRow?.cnt ?? 0) >= seatLimit) {
-        throw new ForbiddenError(
-          `Your plan includes ${seatLimit} staff seat${seatLimit === 1 ? '' : 's'}, all of which are in use. ` +
-            `Upgrade your plan or deactivate a user before inviting another.`,
-        );
-      }
-    }
-
-    // Fall back to the tenant's configured default invite role when the caller didn't specify one.
-    let role = input.role ?? null;
-    if (!role) {
-      const defaultRole = await this.getTenantSetting(auth.tenant_id, 'access.default_role');
-      if (typeof defaultRole === 'string' && defaultRole.trim()) role = defaultRole.trim();
-    }
-    if (callerRole === 'admin' && role === 'owner') {
-      throw new ForbiddenError('Admins cannot invite users with the Owner role.');
-    }
-
-    const tempPassword = this.generateTempPassword();
-    const password = await hashPassword(tempPassword);
-    const repo = this.getRepo();
-
-    const created = await repo.transaction().execute(async (trx) => {
-      const row = {
-        tenant_id: auth.tenant_id,
-        email,
-        password,
-        first_name: input.first_name,
-        role,
-        verified: false,
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
-      } as OperationDataType<'authusers', 'insert'>;
-      const user = await repo.add({ row }, trx);
-      if (!user) throw new InternalError('User creation failed');
-
-      const profileRow = {
-        id: user.id,
-        tenant_id: auth.tenant_id,
-        auth_id: user.id,
-        last_name: input.last_name ?? null,
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
-      } as OperationDataType<'profiles', 'insert'>;
-      await this.profiles.add({ row: profileRow }, trx);
-
-      const codeObj = await repo.addPasswordResetCode(user.id, trx);
-      await this.enqueueInviteEmail(trx, {
-        to: email,
-        tenantId: auth.tenant_id,
-        firstName: input.first_name,
-        inviterName: auth.name,
-        tempPassword,
-        code: codeObj?.password_reset_code,
-      });
-
-      await this.userActivity.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'create',
-          entity: 'authusers',
-          entity_id: String(user.id),
-          quantity: 1,
-          metadata: {
-            id: String(user.id),
-            entity_label: `${user.first_name} ${input.last_name || ''}`.trim(),
-          },
-        },
-        trx,
-      );
-
-      return user;
-    });
-
-    const db = repo.db;
-    try {
-      const { queueUsageLimitCheck } = await import('../billing/usage-limits');
-      await queueUsageLimitCheck(auth.tenant_id, db);
-    } catch (err) {
-      logger.error({ err }, 'Failed to trigger usage check in inviteUser');
-    }
-
-    return this.sanitizeUser({ ...created, last_name: input.last_name });
-  }
-
-  public makeDeletionCancelToken(tenantId: string): string {
-    return createHmac('sha256', env.sharedSecret).update(`cancel-deletion:${tenantId}`).digest('hex');
-  }
-
-  public async pauseTenant(auth: IAuthKeyPayload) {
-    const db = this.getRepo().db;
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'paused_at'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-    if (tenant.paused_at) throw new BadRequestError('Account is already paused.');
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    await db.transaction().execute(async (trx) => {
-      await trx.updateTable('tenants').set({ paused_at: new Date() }).where('id', '=', auth.tenant_id).execute();
-
-      // Sign out all users immediately so the pause takes effect for active sessions
-      await trx.deleteFrom('sessions').where('tenant_id', '=', auth.tenant_id).execute();
-    });
-
-    if (ownerEmail?.email) {
-      await this.mailService.sendMail({
-        to: ownerEmail.email,
-        tenant_id: String(auth.tenant_id),
-        subject: 'Your account has been paused',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account has been paused. Your data is preserved and billing has been paused. You can reactivate your account at any time by logging back in and visiting your account settings.`,
-        html: `<h2>Account paused</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your account has been paused as requested. Your data is safely preserved and you will not be billed during this period.</p>
-<p>You can reactivate your account at any time by signing back in and visiting your account settings.</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Issue a fresh access token from the refresh token alone (delivered via the HttpOnly cookie,
-   * SECURITY-REVIEW.md 2.1). It deliberately does NOT require the (possibly gone) access token, so
-   * the client can silently re-auth on a cold page load using only the cookie. The refresh token is
-   * the sole authenticator here, and it's rotated on every use.
-   */
-  public async renewAuthToken(refreshToken: string | undefined) {
-    if (!refreshToken) {
-      throw new UnauthorizedError();
-    }
-    try {
-      const refreshHash = hashToken(refreshToken);
-
-      // Resolve the session by the refresh token hash. Cross-tenant by design — the refresh token
-      // itself identifies which session (and therefore tenant) this is. Rotated sessions are
-      // accepted here (their reuse window is checked below) so concurrent renewals replaying the
-      // same cookie don't strand a tab.
-      // eslint-disable-next-line local/no-unscoped-db-query
-      const session = await this.sessions.db
-        .selectFrom('sessions')
-        .select(['id', 'user_id', 'tenant_id', 'session_id', 'expires_at', 'last_used_at', 'status'])
-        .where('refresh_token', '=', refreshHash)
-        .where('status', 'in', ['active', 'rotated'])
-        .executeTakeFirst();
-
-      if (!session) {
-        throw new UnauthorizedError();
-      }
-
-      const now = new Date();
-
-      // A rotated session's refresh token stays honored for a short reuse window so concurrent
-      // renewals (two tabs cold-loading with the same cookie, or a rotation response lost to a
-      // dev-server restart) succeed instead of signing a tab out. Beyond the window, a replay is
-      // treated as a stolen/reused token. `last_used_at` was stamped at rotation time by
-      // markRotatedBySessionHash, so here it is the rotation timestamp.
-      if (session.status === 'rotated') {
-        const rotatedAgoMs = session.last_used_at ? now.getTime() - session.last_used_at.getTime() : Infinity;
-        if (rotatedAgoMs > ROTATION_REUSE_GRACE_MS) {
-          throw new UnauthorizedError();
-        }
-      }
-
-      if (session.expires_at && session.expires_at < now) {
-        throw new UnauthorizedError('Session has expired. Please sign in again.');
-      }
-
-      if (session.last_used_at) {
-        const idleMs = now.getTime() - session.last_used_at.getTime();
-        if (idleMs > IDLE_TIMEOUT_MS) {
-          throw new UnauthorizedError('Session timed out due to inactivity. Please sign in again.');
-        }
-      }
-
-      // The JWT carries the user's display name; pull it from the account (scoped to the session's
-      // tenant) since we no longer have the old token to read it from.
-      const user = await this.getRepo()
-        .db.selectFrom('authusers')
-        .select(['first_name'])
-        .where('id', '=', session.user_id)
-        .where('tenant_id', '=', session.tenant_id)
-        .executeTakeFirst();
-
-      if (!user) {
-        throw new UnauthorizedError();
-      }
-
-      // Rotate: mint a new session/refresh pair (preserving the original absolute expiry). The old
-      // session is marked rotated rather than deleted: the auth gates stop accepting it
-      // immediately, but its refresh token remains replayable within ROTATION_REUSE_GRACE_MS (see
-      // above) so a sibling tab holding the same cookie can still re-auth. Access tokens that
-      // still reference it recover via the client's refresh-and-retry on UNAUTHORIZED.
-      const tokens = await this.createTokens({
-        user_id: String(session.user_id),
-        tenant_id: String(session.tenant_id),
-        name: user.first_name ?? '',
-        existingExpiresAt: session.expires_at ?? null,
-      });
-      if (session.status === 'active') {
-        await this.sessions.markRotatedBySessionHash(session.session_id, String(session.tenant_id));
-      }
-      // Sweep this user's rotated sessions whose reuse window has passed — they're inert.
-      await this.sessions.deleteRotatedBefore(
-        String(session.user_id),
-        String(session.tenant_id),
-        new Date(now.getTime() - ROTATION_REUSE_GRACE_MS),
-      );
-      return tokens;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new UnauthorizedError();
-    }
-  }
-
-  public async resendVerificationEmail(email: string) {
-    // Never reveal whether an account exists (or is already verified): return a
-    // uniform success for unknown/verified addresses to prevent enumeration.
-    let user: AuthUsersType;
-    try {
-      user = await this.getUserByEmail(email);
-    } catch (err) {
-      if (err instanceof NotFoundError) return { success: true };
-      throw err;
-    }
-    if (user.verified) {
-      return { success: true };
-    }
-    return await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
-        const code = codeObj?.password_reset_code;
-
-        await this.mailService.enqueueMail(
-          {
-            to: email,
-            tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-            subject: 'Verify your email address',
-            text: `We need to verify your email address so you can use your pplCRM account. Verify it using this link: ${env.appUrl}/verify-email?code=${code}`,
-            html: `<h2>Verify your email address</h2>
-<p>We need to verify your email address so you can use your pplCRM account. Click the button below to verify it:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify email address</a>
-</div>
-<p class="warning">For security, this link expires in 24 hours.</p>`,
-          },
-          trx,
-        );
-        return { success: true };
-      });
-  }
-
-  public async resetPassword(plaintextPassword: string, code: string) {
-    await this.validateNewPassword(plaintextPassword);
-    const password = await hashPassword(plaintextPassword);
-
-    const user = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['email', 'first_name', 'tenant_id', 'verified'])
-      .where('password_reset_code', '=', hashToken(code))
-      .executeTakeFirst();
-
-    if (!user) {
-      throw new BadRequestError('Invalid or expired password reset link.');
-    }
-
-    // Check if the code is valid. An unverified user is activating an invitation — that link
-    // lives 7 days; a password reset for an established account stays short-lived.
-    const msec = await this.getCodeAge(code);
-    if (user.verified) {
-      if (msec > PASSWORD_RESET_CODE_MAX_AGE_MS) {
-        throw new BadRequestError('The code is expired. Please request a new code');
-      }
-    } else if (msec > INVITE_ACTIVATION_MAX_AGE_MS) {
-      throw new BadRequestError('This invitation has expired. Ask an administrator to send a new one.');
-    }
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        // Invalidate all active sessions for this user
-        const u = await trx
-          .selectFrom('authusers')
-          .select('id')
-          .where('password_reset_code', '=', hashToken(code))
-          .executeTakeFirst();
-        if (u) {
-          await trx.deleteFrom('sessions').where('user_id', '=', u.id).execute();
-        }
-
-        const result = await this.getRepo().updatePassword(password, code, trx);
-        if (result.numUpdatedRows === BigInt(0)) {
-          throw new UnauthorizedError();
-        }
-
-        await this.mailService.enqueueMail(
-          {
-            to: user.email,
-            tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-            subject: 'Your pplCRM password was changed',
-            text: `Hi ${user.first_name},\n\nThis is a confirmation that the password for your pplCRM account was recently changed. If you did not make this change, please contact support immediately.`,
-            html: `<h2>Password changed</h2>
-<p>Hi ${user.first_name},</p>
-<p>This is a confirmation that the password for your pplCRM account was recently changed.</p>
-<p class="warning">If you did not make this change, please contact support immediately.</p>`,
-          },
-          trx,
-        );
-      });
-  }
-
-  public async resumeTenant(auth: IAuthKeyPayload) {
-    const db = this.getRepo().db;
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'paused_at'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-    if (!tenant.paused_at) throw new BadRequestError('Account is not paused.');
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    await db.updateTable('tenants').set({ paused_at: null }).where('id', '=', auth.tenant_id).execute();
-
-    if (ownerEmail?.email) {
-      await this.mailService.sendMail({
-        to: ownerEmail.email,
-        tenant_id: String(auth.tenant_id),
-        subject: 'Your account has been reactivated',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account has been successfully reactivated. Welcome back!`,
-        html: `<h2>Account reactivated</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your account has been reactivated. Everything is back to normal. Welcome back!</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  public async scheduleAccountDeletion(auth: IAuthKeyPayload) {
-    const repo = this.getRepo();
-    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    await repo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('authusers')
-        .set({ deletion_scheduled_at: deletionDate })
-        .where('id', '=', authUser.id)
-        .execute();
-
-      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, String(authUser.id));
-
-      await this.mailService.enqueueMail(
-        {
-          to: authUser.email,
-          tenant_id: auth.tenant_id,
-          subject: 'Your account is scheduled for deletion',
-          text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by signing back in.`,
-          html: `<h2>Account scheduled for deletion</h2>
-<p>Hi ${authUser.first_name},</p>
-<p>As requested, your pplCRM account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
-<p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply signing back in.</p>
-<p class="warning">If you did not make this request, please sign in immediately to cancel the deletion and secure your account.</p>`,
-        },
-        trx,
-      );
-    });
-
-    return { success: true, deletion_scheduled_at: deletionDate };
-  }
-
-  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
-    const db = this.getRepo().db;
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'name', 'deletion_scheduled_at'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-    if (tenant.deletion_scheduled_at) throw new BadRequestError('Account deletion is already scheduled.');
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    const deletionDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const cancelToken = this.makeDeletionCancelToken(String(auth.tenant_id));
-    const cancelUrl = `${env.appUrl}/cancel-deletion?tid=${auth.tenant_id}&token=${cancelToken}`;
-    const deletionDateStr = deletionDate.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
-
-    await db.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('tenants')
-        .set({ deletion_scheduled_at: deletionDate })
-        .where('id', '=', auth.tenant_id)
-        .execute();
-
-      // Invalidate every active session for the tenant so all users are signed out immediately
-      await trx.deleteFrom('sessions').where('tenant_id', '=', auth.tenant_id).execute();
-
-      if (ownerEmail?.email) {
-        await this.mailService.enqueueMail(
-          {
-            to: ownerEmail.email,
-            tenant_id: String(auth.tenant_id),
-            subject: 'Your account is scheduled for deletion in 24 hours',
-            text: `Hi ${ownerEmail.first_name},\n\nYour organization account has been scheduled for permanent deletion. All data will be permanently removed on ${deletionDateStr}.\n\nChanged your mind? You have 24 hours to cancel:\n${cancelUrl}\n\nAfter that, all data will be permanently removed and cannot be recovered.`,
-            html: `<h2>Account scheduled for deletion</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your organization account has been scheduled for permanent deletion on <strong>${deletionDateStr}</strong>. All data associated with your account (contacts, emails, campaigns, and everything else) will be permanently and irreversibly removed.</p>
-<p><strong>Changed your mind?</strong> You have 24 hours to cancel this request:</p>
-<div class="btn-container">
-  <a href="${cancelUrl}" class="btn">Cancel account deletion</a>
-</div>
-<p class="warning">After the 24-hour window, all data will be permanently deleted and cannot be recovered.</p>`,
-          },
-          trx,
-        );
-      }
-    });
-
-    return { success: true };
-  }
-
-  public async sendPasswordResetEmail(email: string) {
-    // Never reveal whether an account exists: return success uniformly so an
-    // attacker cannot enumerate registered emails via this endpoint.
-    let user: AuthUsersType;
-    try {
-      user = await this.getUserByEmail(email);
-    } catch (err) {
-      if (err instanceof NotFoundError) return true;
-      throw err;
-    }
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
-        const code = codeObj?.password_reset_code;
-
-        // send the reset email
-        await this.mailService.enqueueMail(
-          {
-            to: email,
-            tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-            subject: 'Reset your pplCRM password',
-            text: `We received a request to reset the password for your pplCRM account. Reset it using this link: ${env.appUrl}/new-password?code=${code}`,
-            html: `<h2>Reset your password</h2>
-<p>We received a request to reset the password for your pplCRM account. Click the button below to choose a new password:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset password</a>
-</div>
-<p>If you did not request a password reset, no further action is required.</p>
-<p class="warning">This reset link is single-use and expires in 15 minutes.</p>`,
-          },
-          trx,
-        );
-      });
-    return true;
-  }
-
-  public async signIn(input: signInInputType, ipAddress?: string, userAgent?: string) {
-    const user = await this.getUserByEmailOrNull(input.email.toLowerCase());
-
-    // Always run a password verification — against a dummy hash when the account does not exist —
-    // so a non-existent email and a wrong password cost the same and fail with the same 401. This
-    // closes the enumeration oracle: previously an unknown email threw NotFoundError (404) and
-    // returned faster (no argon2), distinguishing registered emails despite the generic message.
-    const valid = await verifyPasswordConstantTime(input.password, user?.password);
-    if (!user || !valid) {
-      throw new UnauthorizedError();
-    }
-
-    // Checked before the verified/deletion branches: a deactivated account must not receive
-    // "verify your email" guidance, and signing in must NOT auto-restore it (that shortcut is
-    // only for self-scheduled deletion below).
-    if (user.deactivated_at) {
-      throw new ForbiddenError('This account has been deactivated. Contact an administrator to restore access.');
-    }
-
-    if (!user.verified) {
-      throw new ForbiddenError(
-        'Your email address is not verified yet. Please check your inbox (and spam folder) for a verification link.',
-      );
-    }
-
-    // Tenant-wide MFA enforcement: when enabled, every user gets the email-OTP challenge on a new
-    // device/location, even if they never individually enabled two-factor auth.
-    const tenantMfaRequired = (await this.getTenantSetting(user.tenant_id, 'access.mfa_required')) === true;
-    const requires2FA =
-      (user.two_factor_enabled || tenantMfaRequired) &&
-      (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
-
-    if (requires2FA) {
-      const otpCode = randomInt(100000, 1000000).toString();
-      await this.getRepo()
-        .db.updateTable('authusers')
-        .set({
-          // Store only the hash; the plaintext OTP is emailed to the user.
-          two_factor_code: hashToken(otpCode),
-          two_factor_expires_at: new Date(Date.now() + 5 * 60 * 1000),
-          // Reset the failed-attempt counter for this fresh challenge.
-          two_factor_attempts: 0,
-        })
-        .where('id', '=', user.id)
-        .execute();
-
-      await this.mailService.sendMail({
-        to: user.email,
-        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'Your pplCRM sign-in code',
-        text: `Your sign-in verification code is ${otpCode}. It expires in 5 minutes.`,
-        html: `<h2>Your sign-in code</h2>
-<p>Use the 6-digit code below to finish signing in. It is valid for 5 minutes.</p>
-<div class="otp-container">
-  <span class="otp-code">${otpCode}</span>
-</div>
-<p class="warning">If you did not try to sign in, please secure your account immediately.</p>`,
-      });
-
-      return { requires2FA: true, email: user.email };
-    }
-
-    if (user.deletion_scheduled_at) {
-      await this.getRepo()
-        .db.updateTable('authusers')
-        .set({ deletion_scheduled_at: null })
-        .where('id', '=', user.id)
-        .execute();
-
-      await this.mailService.sendMail({
-        to: user.email,
-        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'Your account has been restored',
-        text: `Welcome back! Your request to delete your account has been canceled, and your account is fully restored.`,
-        html: `<h2>Account restored</h2>
-<p>Welcome back! Your request to delete your account has been canceled, and your account is fully restored.</p>`,
-      });
-    }
-
-    if (user.tenant_id) {
-      const tenant = await this.getRepo()
-        .db.selectFrom('tenants')
-        .select(['suspended_at', 'paused_at'])
-        .where('id', '=', user.tenant_id)
-        .executeTakeFirst();
-
-      if (tenant?.suspended_at) {
-        throw new ForbiddenError(
-          'This account has been suspended. Please contact support if you believe this is an error.',
-        );
-      }
-      // Paused accounts (user-initiated) allow login so the owner can reactivate from settings
-    }
-
-    return this.createTokens({
-      user_id: String(user.id),
-      tenant_id: String(user.tenant_id),
-      name: user.first_name,
-      ipAddress,
-      userAgent,
-      rememberMe: input.rememberMe,
-    });
-  }
-
-  public async signOut(auth: IAuthKeyPayload | null) {
-    if (!auth?.session_id) {
-      return null;
-    }
-    return this.sessions.deleteBySessionId(auth.session_id);
-  }
-
-  public async signUp(input: signUpInputType) {
-    const email = input.email.toLowerCase();
-    let token: { auth_token: string; refresh_token: string; refresh_expires_at: Date | null } = {
-      auth_token: '',
-      refresh_token: '',
-      refresh_expires_at: null,
-    };
-
-    // Anti-abuse: throwaway inboxes are the raw material of spam accounts. A real org signs up
-    // with a mailbox it keeps; verification links also die with a temporary inbox anyway.
-    if (isDisposableEmail(email)) {
-      throw new BadRequestError(
-        'Temporary or disposable email addresses cannot be used to sign up. Please use your organization or personal mailbox.',
-      );
-    }
-
-    try {
-      await this.verifyUserDoesNotExist(email);
-      await this.validateNewPassword(input.password);
-      const password = await hashPassword(input.password);
-
-      await this.tenants.transaction().execute(async (trx) => {
-        const tenant_id = await this.createTenant(trx, input.organization);
-        const user = await this.createUser(trx, tenant_id, password, email, input);
-        const userId = String(user.id);
-        const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
-        await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
-
-        // Create the tenant's permanent office context (Campaigns §15). Election
-        // campaigns are added later by the user; this one always exists.
-        const campaign = await trx
-          .insertInto('campaigns')
-          .values({
-            tenant_id,
-            admin_id: user.id,
-            createdby_id: user.id,
-            updatedby_id: user.id,
-            name: `${input.organization} Office`,
-            kind: 'office',
-            status: 'active',
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        // Create default settings (current_campaign and notifications)
-        await trx
-          .insertInto('settings')
-          .values([
-            {
-              tenant_id,
-              key: 'current_campaign',
-              value: { id: Number(campaign.id) },
-              createdby_id: user.id,
-              updatedby_id: user.id,
-            },
-            {
-              tenant_id,
-              key: 'notifications',
-              value: false,
-              createdby_id: user.id,
-              updatedby_id: user.id,
-            },
-          ])
-          .execute();
-
-        // Create the tenant's permanent placeholder household and store its ID on
-        // the tenant so it can be quickly identified without scanning all households.
-        const placeholderHousehold = await trx
-          .insertInto('households')
-          .values({
-            tenant_id,
-            campaign_id: campaign.id,
-            createdby_id: user.id,
-            updatedby_id: user.id,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        await trx
-          .updateTable('tenants')
-          .set({ placeholder_household_id: placeholderHousehold.id })
-          .where('id', '=', tenant_id)
-          .execute();
-
-        // Starter tags/issues and forms survive exit-demo; the demo dataset does
-        // not — see modules/demo. Tags first: the demo seeder attaches to them by name.
-        await seedStarterTags({ tenant_id, user_id: userId }, trx);
-        const starterForms = await seedStarterForms({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
-        await seedDemoData(
-          {
-            tenant_id,
-            user_id: userId,
-            campaign_id: String(campaign.id),
-            placeholder_household_id: String(placeholderHousehold.id),
-            forms: starterForms,
-          },
-          trx,
-        );
-
-        const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
-        const verificationCode = codeObj?.password_reset_code;
-        await this.mailService.enqueueMail(
-          {
-            to: email,
-            tenant_id,
-            subject: 'Welcome to pplCRM! Verify your email address',
-            text: `Welcome to pplCRM! We need to verify your email address so you can use your pplCRM account. Verify it using this link: ${env.appUrl}/verify-email?code=${verificationCode}`,
-            html: `<h2>Verify your email address</h2>
-<p>Welcome to pplCRM! We need to verify your email address so you can use your pplCRM account. Click the button below to verify it:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/verify-email?code=${verificationCode}" class="btn">Verify email address</a>
-</div>
-<p class="warning">For security, this link expires in 24 hours.</p>`,
-          },
-          trx,
-        );
-
-        token = await this.createTokens(
-          {
-            user_id: profile.id,
-            tenant_id: user.tenant_id,
-            name: user.first_name,
-          },
-          trx,
-        );
-      });
-
-      return token;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
-    }
-  }
-
-  public async updateUser(auth: IAuthKeyPayload, id: string, data: UpdateAuthUserType) {
-    const userId = String(id);
-    const callerRole = auth.role;
-
-    if (callerRole === 'user' && userId !== auth.user_id) {
-      throw new ForbiddenError('You do not have permission to update other users.');
-    }
-
-    const existing = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
-    if (!existing) throw new NotFoundError('User not found');
-    const existingUser = existing as AuthUsersType;
-
-    const isRoleChange = data.role !== undefined && data.role !== existingUser.role;
-
-    // Nobody edits their own role — not even an owner. Losing owner/admin by accident is a
-    // lockout risk, and granting yourself more access must go through another admin/owner.
-    if (isRoleChange && userId === auth.user_id) {
-      throw new ForbiddenError('You cannot change your own role.');
-    }
-
-    if (isRoleChange && existingUser.deactivated_at) {
-      throw new BadRequestError('Deactivated accounts keep their role. Reactivate the account first.');
-    }
-
-    if (callerRole === 'user') {
-      if (isRoleChange) {
-        throw new ForbiddenError('You do not have permission to change roles.');
-      }
-    }
-
-    if (callerRole === 'admin') {
-      if (existingUser.role === 'owner') {
-        if (data.role !== undefined && data.role !== 'owner') {
-          throw new ForbiddenError('Admins cannot demote an owner.');
-        }
-      } else {
-        if (data.role === 'owner') {
-          throw new ForbiddenError('Admins cannot promote a non-owner to an owner.');
-        }
-      }
-    }
-
-    if (data.verified !== undefined && Boolean(data.verified) !== Boolean(existingUser.verified)) {
-      throw new ForbiddenError('Verification status cannot be changed manually.');
-    }
-
-    const row: Record<string, unknown> = {};
-
-    const isOwnEmailChange =
-      data.email && data.email.toLowerCase() !== existingUser.email.toLowerCase() && userId === auth.user_id;
-
-    if (data.email) {
-      const nextEmail = data.email.toLowerCase();
-      if (nextEmail !== existingUser.email.toLowerCase()) {
-        const other = await this.getRepo().getByEmail(nextEmail, { columns: ['id'] });
-        const otherUser = other as AuthUsersType | undefined;
-        if (otherUser && String(otherUser.id) !== userId) {
-          throw new ConflictError('Email already exists');
-        }
-        row['email'] = nextEmail;
-        row['verified'] = false;
-
-        if (isOwnEmailChange) {
-          row['previous_email'] = existingUser.email;
-          row['previous_role'] = existingUser.role;
-          row['role'] = 'viewer';
-        }
-      }
-    }
-    if (data.first_name !== undefined) row['first_name'] = data.first_name;
-    if (data.last_name !== undefined) row['last_name'] = data.last_name ?? '';
-    if (data.role !== undefined) row['role'] = data.role ?? null;
-    if (data.verified !== undefined) row['verified'] = data.verified;
-    if (data.two_factor_enabled !== undefined) row['two_factor_enabled'] = data.two_factor_enabled;
-    if (Object.keys(row).length > 0) {
-      row['updated_at'] = new Date();
-      row['updatedby_id'] = auth.user_id;
-    }
-
-    let updated = existingUser;
-    if (Object.keys(row).length > 0) {
-      updated = await this.getRepo()
-        .transaction()
-        .execute(async (trx) => {
-          const result = await this.getRepo().update(
-            {
-              tenant_id: auth.tenant_id,
-              id: userId,
-              row: row as OperationDataType<'authusers', 'update'>,
-            },
-            trx,
-          );
-          if (!result) throw new InternalError('Update failed');
-          const updatedUser = result as unknown as AuthUsersType;
-
-          await this.ensureAtLeastOneOwner(auth.tenant_id, trx, true, userId);
-
-          if (row['email']) {
-            const oldEmail = existingUser.email;
-            const nextEmail = row['email'];
-
-            const codeObj = await this.getRepo().addPasswordResetCode(userId, trx);
-            const code = codeObj?.password_reset_code;
-
-            if (!isOwnEmailChange) {
-              await this.sessions.deleteByUserId(userId, auth.tenant_id, trx);
-            }
-
-            await this.mailService.enqueueMail(
-              {
-                to: nextEmail as string,
-                tenant_id: auth.tenant_id,
-                subject: 'Verify your new email address',
-                text: `We need to verify your new email address so you can keep using your pplCRM account. Verify it using this link: ${env.appUrl}/verify-email?code=${code}`,
-                html: `<h2>Verify your new email address</h2>
-<p>We need to verify your new email address so you can keep using your pplCRM account. Click the button below to verify it:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify email address</a>
-</div>
-<p class="warning">For security, this link expires in 24 hours.</p>`,
-              },
-              trx,
-            );
-
-            await this.mailService.enqueueMail(
-              {
-                to: oldEmail,
-                tenant_id: auth.tenant_id,
-                subject: 'The email address on your pplCRM account is changing',
-                text: `Hi ${existingUser.first_name},\n\nA request was made to change the email address for your pplCRM account to ${nextEmail}. If you did not make this change, please contact support immediately.`,
-                html: `<h2>Email change requested</h2>
-<p>Hi ${existingUser.first_name},</p>
-<p>A request was made to change the email address for your pplCRM account to <strong>${nextEmail}</strong>.</p>
-<p>We have sent a verification link to the new address. Until it is verified, sign-in under that address is inactive.</p>
-<p class="warning">If you did not make this change, please contact support immediately to secure your account.</p>`,
-              },
-              trx,
-            );
-          }
-
-          const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at', 'password'];
-          const changes: Record<string, unknown> = {};
-          for (const key of Object.keys(row)) {
-            if (skipKeys.includes(key)) continue;
-            const oldVal = (existingUser as Record<string, unknown>)[key];
-            const newVal = (row as Record<string, unknown>)[key];
-            if (oldVal !== newVal) {
-              changes[key] = { from: oldVal ?? null, to: newVal ?? null };
-            }
-          }
-          await this.userActivity.log(
-            {
-              tenant_id: auth.tenant_id,
-              user_id: auth.user_id,
-              activity: 'update',
-              entity: 'authusers',
-              entity_id: userId,
-              quantity: 1,
-              metadata: {
-                id: userId,
-                entity_label: `${updatedUser.first_name} ${updatedUser.last_name || ''}`.trim(),
-                changes,
-              },
-            },
-            trx,
-          );
-
-          return updatedUser;
-        });
-    }
-
-    await this.syncProfile(auth, userId, data);
-    const profile = (await this.profiles.getOneByAuthId(userId)) as Models['profiles'] | undefined;
-    return this.sanitizeUser({ ...updated, profile });
-  }
-
-  public async uploadAvatar(auth: IAuthKeyPayload, input: { dataBase64: string; mimeType: string; filename: string }) {
-    const { dataBase64, mimeType, filename } = input;
-
-    if (!AuthController.AVATAR_ALLOWED_TYPES.includes(mimeType)) {
-      throw new BadRequestError(`Unsupported image type. Allowed: ${AuthController.AVATAR_ALLOWED_TYPES.join(', ')}`);
-    }
-
-    const buffer = Buffer.from(dataBase64, 'base64');
-    if (buffer.length > AuthController.AVATAR_MAX_BYTES) {
-      throw new BadRequestError('File too large. Maximum size is 5 MB.');
-    }
-
-    const storageFileUUID = randomUUID();
-    const ext = mimeType.split('/')[1] || 'jpg';
-    const storageKey = `avatars/${auth.tenant_id}/${auth.user_id}/${storageFileUUID}.${ext}`;
-    const sha256_hex = createHash('sha256').update(buffer).digest('hex');
-
-    await this.storage.upload(storageKey, buffer, mimeType);
-
-    let finalFileId = '';
-
-    await this.getRepo()
-      .db.transaction()
-      .execute(async (trx) => {
-        const existingProfile = await this.profiles.getOneByAuthId(auth.user_id);
-
-        // Clean up old avatar
-        if (existingProfile?.avatar_file_id) {
-          try {
-            const oldFile = await trx
-              .selectFrom('files')
-              .select('storage_key')
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('id', '=', existingProfile.avatar_file_id)
-              .executeTakeFirst();
-            if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-            await trx
-              .deleteFrom('files')
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('id', '=', existingProfile.avatar_file_id)
-              .execute();
-          } catch {
-            /* non-critical */
-          }
-        }
-
-        // Insert new file record
-        const fileResult = await trx
-          .insertInto('files')
-          .values({
-            tenant_id: auth.tenant_id,
-            filename,
-            mime_type: mimeType,
-            size_bytes: buffer.length,
-            storage_key: storageKey,
-            sha256_hex,
-            uploaded_by: auth.user_id,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        const fileId = String(fileResult.id);
-        finalFileId = fileId;
-
-        // Update or insert profile
-        if (existingProfile) {
-          await trx
-            .updateTable('profiles')
-            .set({ avatar_file_id: fileId, updated_at: new Date(), updatedby_id: auth.user_id })
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('auth_id', '=', auth.user_id)
-            .execute();
-        } else {
-          await trx
-            .insertInto('profiles')
-            .values({
-              tenant_id: auth.tenant_id,
-              auth_id: auth.user_id,
-              avatar_file_id: fileId,
-              createdby_id: auth.user_id,
-              updatedby_id: auth.user_id,
-            })
-            .execute();
-        }
-      });
-
-    return { file_id: finalFileId, avatar_url: signedFileDownloadUrl(String(finalFileId), auth.tenant_id) };
-  }
-
-  public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string, rememberMe?: boolean) {
-    // Do not reveal whether the email is registered: an unknown account fails with the same
-    // "Invalid verification code" as a wrong code, not a distinct 404. (A user with no active
-    // challenge already has a null stored code and hits the same failure below.)
-    const user = await this.getUserByEmailOrNull(email.toLowerCase());
-    if (!user) {
-      throw new BadRequestError('Invalid verification code.');
-    }
-
-    // The OTP is stored hashed; hash the input and compare with a timing-safe
-    // equality to eliminate the brute-force side-channel.
-    const storedCode = user.two_factor_code ?? '';
-    const inputHash = code ? hashToken(String(code)) : '';
-    const codeMatch =
-      storedCode.length > 0 &&
-      storedCode.length === inputHash.length &&
-      timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputHash));
-    if (!codeMatch) {
-      // Per-account brute-force cap: after too many wrong guesses, invalidate the
-      // OTP entirely so it can't be ground down within its validity window — the
-      // user must sign in again to receive a fresh code.
-      const attempts = Number(user.two_factor_attempts ?? 0) + 1;
-      if (attempts >= MAX_2FA_ATTEMPTS) {
-        await this.getRepo()
-          .db.updateTable('authusers')
-          .set({ two_factor_code: null, two_factor_expires_at: null, two_factor_attempts: 0 })
-          .where('id', '=', user.id)
-          .where('tenant_id', '=', user.tenant_id)
-          .execute();
-        throw new BadRequestError('Too many incorrect codes. Please sign in again to get a new code.');
-      }
-      await this.getRepo()
-        .db.updateTable('authusers')
-        .set({ two_factor_attempts: attempts })
-        .where('id', '=', user.id)
-        .where('tenant_id', '=', user.tenant_id)
-        .execute();
-      throw new BadRequestError('Invalid verification code.');
-    }
-
-    if (user.deactivated_at) {
-      throw new ForbiddenError('This account has been deactivated. Contact an administrator to restore access.');
-    }
-
-    if (!user.verified) {
-      throw new ForbiddenError(
-        'Your email address is not verified yet. Please check your inbox (and spam folder) for a verification link.',
-      );
-    }
-
-    if (!user.two_factor_expires_at || (user.two_factor_expires_at as unknown as Date).getTime() < Date.now()) {
-      throw new BadRequestError('Verification code has expired. Please log in again.');
-    }
-
-    await this.getRepo()
-      .db.updateTable('authusers')
-      .set({
-        two_factor_code: null,
-        two_factor_expires_at: null,
-        two_factor_attempts: 0,
-      })
-      .where('id', '=', user.id)
-      .execute();
-
-    if (user.deletion_scheduled_at) {
-      await this.getRepo()
-        .db.updateTable('authusers')
-        .set({ deletion_scheduled_at: null })
-        .where('id', '=', user.id)
-        .execute();
-
-      await this.mailService.sendMail({
-        to: user.email,
-        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'Your account has been restored',
-        text: `Welcome back! Your request to delete your account has been canceled, and your account is fully restored.`,
-        html: `<h2>Account restored</h2>
-<p>Welcome back! Your request to delete your account has been canceled, and your account is fully restored.</p>`,
-      });
-    }
-
-    if (user.tenant_id) {
-      const tenant = await this.getRepo()
-        .db.selectFrom('tenants')
-        .select(['suspended_at', 'paused_at'])
-        .where('id', '=', user.tenant_id)
-        .executeTakeFirst();
-
-      if (tenant?.suspended_at) {
-        throw new ForbiddenError(
-          'This account has been suspended. Please contact support if you believe this is an error.',
-        );
-      }
-      // Paused accounts (user-initiated) allow login so the owner can reactivate from settings
-    }
-
-    return this.createTokens({
-      user_id: String(user.id),
-      tenant_id: String(user.tenant_id),
-      name: user.first_name,
-      ipAddress,
-      userAgent,
-      rememberMe,
-    });
-  }
-
-  public async verifyEmail(code: string) {
-    const msec = await this.getCodeAge(code);
-    // 24 hours in milliseconds for verification links
-    if (msec > 24 * 60 * 60 * 1000) {
-      throw new BadRequestError('The verification link has expired. Please request a new one.');
-    }
-
-    const repo = this.getRepo();
-    const user = await repo.db
-      .selectFrom('authusers')
-      .select(['id', 'previous_email', 'previous_role'])
-      .where('password_reset_code', '=', hashToken(code))
-      .executeTakeFirst();
-
-    if (!user) {
-      throw new BadRequestError('Invalid or expired verification link.');
-    }
-
-    await repo.transaction().execute(async (trx) => {
-      const updateData: Record<string, unknown> = {
-        verified: true,
-        password_reset_code: null,
-        password_reset_code_created_at: null,
-      };
-
-      if (user.previous_email) {
-        // Email change confirmation: restore role and clear pending state.
-        // Invalidate all existing sessions — an old-email session token
-        // should not remain valid after the address has been changed.
-        updateData['role'] = user.previous_role;
-        updateData['previous_email'] = null;
-        updateData['previous_role'] = null;
-        await trx.deleteFrom('sessions').where('user_id', '=', user.id).execute();
-      }
-
-      await trx.updateTable('authusers').set(updateData).where('id', '=', user.id).execute();
-    });
-
-    return { success: true };
-  }
-
-  private async buildUserStats(auth: IAuthKeyPayload, userId: string) {
-    const defaults = {
-      emails_assigned: { total: 0, open: 0, closed: 0 },
-      contacts_added: { total: 0, last_created_at: null as Date | null },
-      files_imported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
-      files_exported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
-    };
-
-    try {
-      const [emails, contacts, activity] = await Promise.all([
-        this.emailsRepo.getAssignmentStats({ tenant_id: auth.tenant_id, user_id: userId }),
-        this.personsRepo.getCreatedStats({ tenant_id: auth.tenant_id, user_id: userId }),
-        this.userActivity.getStats({ tenant_id: auth.tenant_id, user_id: userId }),
-      ]);
-
-      const importActivity = activity['import'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
-      const exportActivity = activity['export'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
-
-      return {
-        emails_assigned: emails,
-        contacts_added: contacts,
-        files_imported: {
-          count: importActivity.count ?? 0,
-          total_rows: importActivity.total_quantity ?? 0,
-          last_activity_at: importActivity.last_activity_at ?? null,
-        },
-        files_exported: {
-          count: exportActivity.count ?? 0,
-          total_rows: exportActivity.total_quantity ?? 0,
-          last_activity_at: exportActivity.last_activity_at ?? null,
-        },
-      };
-    } catch (err) {
-      logger.error({ err }, 'Failed to build user stats');
-      return defaults;
-    }
-  }
-
-  private coerceBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true';
-    return false;
-  }
-
-  private coerceDate(value: unknown): Date | null {
-    if (!value) return null;
-    if (value instanceof Date) return new Date(value.getTime());
-    const date = new Date(value as string);
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-
-  private async createProfile(trx: Transaction<Models>, id: string, tenant_id: string, auth_id: string) {
-    const row = { id, tenant_id, auth_id } as OperationDataType<'profiles', 'insert'>;
-    const profile = await this.profiles.add({ row }, trx);
-    if (!profile) {
-      throw new InternalError('Something went wrong, please try again');
-    }
-    return profile;
-  }
-
-  private async createTenant(trx: Transaction<Models>, name: string) {
-    const slug = await this.generateTenantSlug(trx, name);
-    const row = { name, slug } as OperationDataType<'tenants', 'insert'>;
-    const tenantAddResult = await this.tenants.add({ row }, trx);
-    if (!tenantAddResult) {
-      throw new InternalError('Something went wrong, please try again');
-    }
-    return tenantAddResult.id;
-  }
-
-  /**
-   * Produce a globally-unique, DNS-safe subdomain label for a new tenant: slugify the org name, fall
-   * back to a random `org-xxxxxx` when the name yields nothing usable or hits a reserved label, then
-   * suffix on collision. The tenant id isn't known before insert, so the fallback is random rather
-   * than id-derived.
-   */
-  private async generateTenantSlug(trx: Transaction<Models>, name: string): Promise<string> {
-    let base = slugifyHandle(name);
-    if (!base || RESERVED_SUBDOMAINS.has(base)) {
-      base = `org-${randomBytes(4).toString('hex')}`;
-    }
-    let candidate = base;
-    let n = 2;
-    while (await this.tenantSlugTaken(trx, candidate)) {
-      candidate = `${base}-${n++}`;
-    }
-    return candidate;
-  }
-
-  private async tenantSlugTaken(trx: Transaction<Models>, slug: string): Promise<boolean> {
-    const row = await trx.selectFrom('tenants').select('id').where('slug', '=', slug).executeTakeFirst();
-    return !!row;
-  }
-
-  private async createTokens(
-    input: {
-      user_id: string;
-      tenant_id: string;
-      name: string;
-      oldSession?: string;
-      ipAddress?: string;
-      userAgent?: string;
-      rememberMe?: boolean;
-      existingExpiresAt?: Date | null;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    // Delete the old session
-    if (input.oldSession) await this.sessions.deleteBySessionId(input.oldSession, trx);
-
-    // Generate plaintext tokens — only their hashes are persisted in the DB.
-    const plainSessionId = generateToken();
-    const plainRefreshToken = generateToken();
-
-    const now = new Date();
-    const expiresAt =
-      input.existingExpiresAt !== undefined
-        ? input.existingExpiresAt // renewal: preserve original absolute expiry
-        : new Date(now.getTime() + (input.rememberMe ? REMEMBER_ME_EXPIRY_MS : SESSION_EXPIRY_MS));
-
-    const row = {
-      user_id: input.user_id,
-      tenant_id: input.tenant_id,
-      ip_address: input.ipAddress || '',
-      user_agent: input.userAgent || '',
-      status: 'active',
-      session_id: hashToken(plainSessionId),
-      refresh_token: hashToken(plainRefreshToken),
-      expires_at: expiresAt,
-      last_used_at: now,
-    } as OperationDataType<'sessions', 'insert'>;
-
-    const currentSession = await this.sessions.add({ row }, trx);
-
-    if (!currentSession) {
-      throw new InternalError('Session creation failed');
-    }
-
-    const key = process.env['SHARED_SECRET'];
-    if (!key) {
-      throw new ServerMisconfigError('Server misconfiguration');
-    }
-
-    const signer = createSigner({
-      algorithm: 'HS256',
-      key,
-      expiresIn: '30m',
-    });
-    try {
-      const auth_token = signer({
-        user_id: input.user_id,
-        tenant_id: input.tenant_id,
-        name: input.name,
-        session_id: plainSessionId, // plaintext in JWT; hash is in DB
-      });
-      // refresh_token goes to the client as an HttpOnly cookie (set by the router), never the body.
-      return { auth_token, refresh_token: plainRefreshToken, refresh_expires_at: expiresAt };
-    } catch (err) {
-      throw new InternalError('Token creation failed', undefined, { cause: err });
-    }
-  }
-
-  private async createUser(
-    trx: Transaction<Models>,
-    tenant_id: string,
-    password: string,
-    email: string,
-    input: {
-      email: string;
-      first_name: string;
-      password: string;
-      organization: string;
-    },
-  ) {
-    const row = {
-      tenant_id,
-      password,
-      email,
-      first_name: input.first_name,
-      role: 'owner',
-      verified: false,
-    } as OperationDataType<'authusers', 'insert'>;
-    try {
-      const user = await this.getRepo().add({ row }, trx);
-      if (!user) throw new InternalError('Something went wrong, please try again');
-      return user;
-    } catch (err) {
-      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
-    }
-  }
-
-  /** The invitation email — initial invite and admin resend share the copy. */
-  private async enqueueInviteEmail(
-    trx: Transaction<Models>,
-    opts: {
-      to: string;
-      tenantId: string;
-      firstName: string;
-      inviterName: string | undefined;
-      tempPassword: string;
-      code: string | null | undefined;
-    },
-  ) {
-    const inviter = opts.inviterName || 'your team';
-    await this.mailService.enqueueMail(
-      {
-        to: opts.to,
-        tenant_id: opts.tenantId,
-        subject: `You've been invited to join ${inviter} on pplCRM`,
-        text: `Hi ${opts.firstName},\n\nYou have been invited to join the campaign team by ${inviter}.\n\nYour temporary password is: ${opts.tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${opts.code}\n\nThis invitation expires in 7 days.`,
-        html: `<h2>You've been invited</h2>
-<p>Hi ${opts.firstName},</p>
-<p>You have been invited to join the campaign team by <strong>${inviter}</strong>.</p>
-<p>To join the team, activate your account, and set up your password, click the button below:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/new-password?code=${opts.code}" class="btn">Activate account</a>
-</div>
-<p>Your temporary password is: <code>${opts.tempPassword}</code></p>
-<p>This invitation expires in 7 days.</p>
-<p class="warning">If you did not expect this invitation, you can safely ignore this email.</p>`,
-      },
-      trx,
-    );
-  }
-
-  private generateTempPassword(length = 18) {
-    return randomBytes(Math.max(12, Math.ceil(length / 2)))
-      .toString('base64url')
-      .slice(0, length);
-  }
-
-  /** Reads a single tenant configuration value from the settings key/value table. */
-  private async getTenantSetting(tenant_id: string | number | null | undefined, key: string): Promise<unknown> {
-    if (tenant_id === null || tenant_id === undefined) return undefined;
-    const row = await this.getRepo()
-      .db.selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', String(tenant_id))
-      .where('key', '=', key)
-      .executeTakeFirst();
-    return row?.value;
-  }
-
-  private async getCodeAge(code: string): Promise<number> {
-    const nowData: QueryResult<INow> = await this.getRepo().nowTime();
-    if (!nowData || !nowData?.rows[0]?.now) {
-      throw new InternalError('Something went wrong, please try again');
-    }
-
-    const data: AuthUsersType = (await this.getRepo().getPasswordResetCodeTime(code)) as AuthUsersType;
-    if (!data) {
-      throw new PreconditionFailedError('Invalid password reset code');
-    }
-    const thenTimestamp = (data.password_reset_code_created_at || new Date().toString()) as string;
-    const then = new Date(thenTimestamp);
-
-    const now = new Date(nowData?.rows[0]?.now || new Date().toString());
-
-    return now.getTime() - then.getTime();
-  }
-
-  // NOTE (SECURITY-REVIEW 4.7): `authusers.email` is UNIQUE globally, not per-tenant, and this lookup
-  // is intentionally tenant-agnostic (sign-in has no tenant context yet). Consequence: one email
-  // address belongs to exactly one tenant — a person cannot be a member of two organizations under
-  // the same email. This is the current, intended product constraint; making email per-tenant would
-  // be a schema-level change (drop the global unique, add UNIQUE(tenant_id, email), and thread a
-  // tenant selector through sign-in).
-  private async getUserByEmail(email: string) {
-    const user = (await this.getRepo().getByEmail(email)) as AuthUsersType;
-
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-    return user;
-  }
-
-  // Same lookup as getUserByEmail but returns null instead of throwing, for the pre-auth flows
-  // (sign-in, 2FA) that must not reveal — via a distinct error code or path — whether an email
-  // is registered. Callers equalize behavior for the found/not-found cases themselves.
-  private async getUserByEmailOrNull(email: string): Promise<AuthUsersType | null> {
-    const user = (await this.getRepo().getByEmail(email)) as AuthUsersType | undefined;
-    return user ?? null;
-  }
-
-  private async isNewDeviceOrLocation(userId: string, ipAddress?: string, userAgent?: string): Promise<boolean> {
-    // Fail closed: if the client IP can't be determined, treat it as a new
-    // device so the 2FA challenge is issued rather than silently skipped.
-    if (!ipAddress) return true;
-    const existing = await this.sessions.db
-      .selectFrom('sessions')
-      .select('id')
-      .where('user_id', '=', userId)
-      .where('ip_address', '=', ipAddress)
-      .where('user_agent', '=', userAgent || '')
-      .where('status', '=', 'active')
-      .executeTakeFirst();
-    return !existing;
-  }
-
-  private sanitizeUser(record: Record<string, unknown>) {
-    const lastName: string =
-      (record['last_name'] as string | null | undefined) ??
-      (record['profile_last_name'] as string | null | undefined) ??
-      (record['effective_last_name'] as string | null | undefined) ??
-      ((record['profile'] as Record<string, unknown>)?.['last_name'] as string | null | undefined) ??
-      '';
-
-    let notificationPreferences = {
-      mention_in_comment: true,
-      mention_in_comment_in_app: true,
-      task_assigned: true,
-      task_assigned_in_app: true,
-      task_due: true,
-      task_due_in_app: true,
-      person_assigned: true,
-      person_assigned_in_app: true,
-      email_assigned: true,
-      email_assigned_in_app: true,
-      export_ready: true,
-      export_ready_in_app: true,
-      import_summary: true,
-      import_summary_in_app: true,
-    };
-
-    const rawPreferences = (record['profile'] as Record<string, unknown>)?.['preferences'] ?? record['preferences'];
-    const parsedPreferences = parseProfilePreferences(rawPreferences);
-    if (parsedPreferences?.notifications) {
-      notificationPreferences = {
-        ...notificationPreferences,
-        ...parsedPreferences.notifications,
-      };
-    }
-
-    return {
-      id: record['id'] != null ? String(record['id']) : '',
-      email: (record['email'] as string | null | undefined) ?? '',
-      first_name: (record['first_name'] as string | null | undefined) ?? '',
-      last_name: lastName,
-      role: record['role'] != null ? String(record['role']) : null,
-      verified: this.coerceBoolean(record['verified']),
-      email_verified: this.coerceBoolean(record['verified']),
-      two_factor_enabled: this.coerceBoolean(record['two_factor_enabled']),
-      deletion_scheduled_at: this.coerceDate(record['deletion_scheduled_at']),
-      deactivated_at: this.coerceDate(record['deactivated_at']),
-      last_active_at: this.coerceDate(record['last_active_at']),
-      created_at: this.coerceDate(record['created_at']),
-      updated_at: this.coerceDate(record['updated_at']),
-      previous_email: (record['previous_email'] as string | null | undefined) ?? null,
-      previous_role: (record['previous_role'] as string | null | undefined) ?? null,
-      notification_preferences: notificationPreferences,
-    };
-  }
-
-  private async syncProfile(auth: IAuthKeyPayload, authUserId: string, data: UpdateAuthUserType) {
-    const existingProfile = (await this.profiles.getOneByAuthId(authUserId)) as Models['profiles'] | undefined;
-    const profileId = existingProfile?.id != null ? String(existingProfile.id) : authUserId;
-
-    let finalPreferences: Record<string, unknown> | null = existingProfile?.preferences
-      ? ((parseProfilePreferences(existingProfile.preferences) as Record<string, unknown> | null) ?? null)
-      : null;
-
-    if (data.notification_preferences) {
-      finalPreferences = {
-        ...(finalPreferences || {}),
-        notifications: {
-          ...(((finalPreferences || {})['notifications'] as Record<string, unknown>) || {}),
-          ...data.notification_preferences,
-        },
-      };
-    }
-
-    if (existingProfile) {
-      const row: Record<string, unknown> = {
-        updatedby_id: auth.user_id,
-        updated_at: new Date(),
-      };
-      if (data.last_name !== undefined) {
-        row['last_name'] = data.last_name ?? null;
-      }
-      if (finalPreferences !== null) {
-        row['preferences'] = JSON.stringify(finalPreferences);
-      }
-
-      if (data.last_name !== undefined || data.notification_preferences !== undefined) {
-        await this.profiles.update({ tenant_id: auth.tenant_id, id: profileId, row });
-      }
-      return;
-    }
-
-    const insertRow = {
-      id: authUserId,
-      tenant_id: auth.tenant_id,
-      auth_id: authUserId,
-      last_name: data.last_name ?? null,
-      preferences: finalPreferences ? JSON.stringify(finalPreferences) : null,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'profiles', 'insert'>;
-    await this.profiles.add({ row: insertRow });
-  }
-
-  private async updateTenantWithAdmin(
-    trx: Transaction<Models>,
-    tenant_id: string,
-    admin_id: string,
-    createdby_id: string,
-  ) {
-    const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
-    const id = tenant_id as GetOperandType<'tenants', 'update', Keys<TablesOperationMap['tenants']['update']>>;
-    await this.tenants.update({ id, tenant_id, row }, trx);
-  }
-
-  private async validateNewPassword(password: string): Promise<void> {
-    if (COMMON_PASSWORDS.has(password.toLowerCase())) {
-      throw new BadRequestError('This password is too common. Please choose a different password.');
-    }
-    const count = await getPwnedCount(password);
-    if (count > 0) {
-      throw new BadRequestError(
-        'This password has appeared in a known data breach. Please choose a different password.',
-      );
-    }
-  }
-
-  private async verifyUserDoesNotExist(email: string) {
-    const exists = await this.getRepo().existsByEmail(email);
-    if (exists) {
-      throw new ConflictError('This email already exists. Did you want to sign in?');
-    }
-  }
-}
-
-const PASSWORD_RESET_CODE_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
-const INVITE_ACTIVATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
-// How long a rotated-away refresh token may still be replayed (concurrent tabs sharing one cookie).
-const ROTATION_REUSE_GRACE_MS = 60 * 1000;
-const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
-const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
 ````
 
 ## File: apps/backend/src/app/modules/billing/subscription-sync.ts
@@ -68470,214 +66441,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 CMD ["node", "--enable-source-maps", "dist/apps/backend/main.js"]
 ````
 
-## File: apps/website/src/app/ui/currency.service.ts
-````typescript
-import { afterNextRender, computed, Injectable, signal } from '@angular/core';
-import {
-  currencyForCountry,
-  currencyPriceSymbol,
-  formatCurrency,
-  isCurrencyCode,
-  SUPPORTED_CURRENCIES,
-  type CurrencyCode,
-  type CurrencyDef,
-  type ExchangeRates,
-} from '@common';
-
-/** localStorage key for the visitor's manual currency choice (overrides geo detection). */
-const STORAGE_CURRENCY = 'pc_currency';
-/** localStorage key for the cached FX rates + fetch timestamp. */
-const STORAGE_FX = 'pc_fx';
-/** How long cached rates stay fresh before we refetch (12 hours), matching the edge cache. */
-const FX_TTL_MS = 12 * 60 * 60 * 1000;
-/** Same-origin Cloudflare Pages Function that returns `{ country, rates }`. */
-const GEO_ENDPOINT = '/api/geo-rates';
-/** Public CORS-enabled FX source used only as a fallback when the edge endpoint is unavailable
- * (local dev, or before the Pages Function is wired). USD base, no key. */
-const FX_DIRECT_URL = 'https://open.er-api.com/v6/latest/USD';
-
-interface CachedFx {
-  readonly rates: ExchangeRates;
-  readonly ts: number;
-}
-
-/**
- * Picks which currency the marketing site displays prices in, and converts USD prices to it at
- * live exchange rates. Billing is always USD — surfaces show a disclaimer via {@link isConverted}.
- *
- * Browser-only work (reading storage, detecting region, fetching rates) runs in `afterNextRender`,
- * exactly like {@link AuthHint}: the prerendered (SSG) markup is always USD and the client
- * re-prices after hydration, so there's no server/client mismatch. Everything degrades safely —
- * if the geo/rate call fails we fall back to the browser locale, and with no rates we stay in USD.
- */
-@Injectable({ providedIn: 'root' })
-export class CurrencyService {
-  /** The active display currency (USD until detection/override resolves after hydration). */
-  public readonly currency = signal<CurrencyCode>('USD');
-  /** USD-base rates; USD is always 1, other codes appear once loaded. */
-  public readonly rates = signal<ExchangeRates>({ USD: 1 });
-
-  /** The currencies offered in the switcher. */
-  public readonly options: readonly CurrencyDef[] = Object.values(SUPPORTED_CURRENCIES);
-  /** The active currency's display metadata (for the switcher trigger). */
-  public readonly active = computed<CurrencyDef>(() => SUPPORTED_CURRENCIES[this.currency()]);
-  /** The active currency's price symbol (e.g. `C$`), for inline copy like the disclaimer. */
-  public readonly priceSymbol = computed<string>(() => currencyPriceSymbol(this.currency()));
-
-  /** True only when we're actually converting away from USD (a rate for the currency is loaded).
-   * Gates the "billed in USD" disclaimer so it never shows while prices are still really USD. */
-  public readonly isConverted = computed<boolean>(() => {
-    const code = this.currency();
-    return code !== 'USD' && this.rates()[code] != null;
-  });
-
-  constructor() {
-    afterNextRender(() => this.init());
-  }
-
-  /** Set and persist the visitor's manual currency choice. */
-  public setCurrency(code: CurrencyCode): void {
-    this.currency.set(code);
-    try {
-      localStorage.setItem(STORAGE_CURRENCY, code);
-    } catch {
-      // Storage unavailable (private mode): the choice still applies for this session.
-    }
-  }
-
-  /** Format a whole-dollar USD price in the active currency; falls back to USD when no rate. */
-  public format(usd: number): string {
-    const code = this.currency();
-    const rate = code === 'USD' ? 1 : this.rates()[code];
-    if (rate == null) return formatCurrency(usd, 'USD');
-    return formatCurrency(Math.round(usd * rate), code);
-  }
-
-  /** Rounded monthly-equivalent of an annual USD total, in the active currency (`$24`). The
-   * annual total is converted to whole units first, then divided by 12 and rounded — surfaces
-   * showing it must keep the exact annual total alongside plus the rounding disclaimer, since
-   * equivalent × 12 ≠ the billed total. */
-  public formatMonthlyEquivalent(annualUsd: number): string {
-    const code = this.currency();
-    const rate = code === 'USD' ? 1 : this.rates()[code];
-    if (rate == null) return formatCurrency(Math.round(annualUsd / 12), 'USD');
-    return formatCurrency(Math.round(Math.round(annualUsd * rate) / 12), code);
-  }
-
-  private init(): void {
-    const override = this.readOverride();
-    if (override) this.currency.set(override);
-
-    const cached = this.readCachedRates();
-    if (cached) this.rates.set(cached);
-
-    void this.refresh(override != null);
-  }
-
-  /** Fetch fresh geo + rates; set the currency from geo only when there's no manual override. */
-  private async refresh(hasOverride: boolean): Promise<void> {
-    try {
-      const res = await fetch(GEO_ENDPOINT, { headers: { accept: 'application/json' } });
-      if (!res.ok) throw new Error(`geo-rates ${res.status}`);
-      const { country, rates } = this.parsePayload(await res.json());
-      this.rates.set(rates);
-      this.writeCachedRates(rates);
-      if (!hasOverride) this.applyDetected(currencyForCountry(country), rates);
-    } catch {
-      // Edge endpoint unavailable (local dev, or not wired yet): fetch rates directly from the
-      // public FX API and detect the region from the browser locale instead of the visitor's IP.
-      const rates = await this.fetchRatesDirect();
-      if (rates) {
-        this.rates.set(rates);
-        this.writeCachedRates(rates);
-      }
-      // Only switch if we actually have a rate for the detected currency, else stay in USD.
-      if (!hasOverride) this.applyDetected(currencyForCountry(this.regionFromLocale()), this.rates());
-    }
-  }
-
-  /** Fallback rate source when the edge endpoint fails. Queries a public CORS FX API straight from
-   * the browser; returns null on any failure so we simply stay in USD. */
-  private async fetchRatesDirect(): Promise<ExchangeRates | null> {
-    try {
-      const res = await fetch(FX_DIRECT_URL, { headers: { accept: 'application/json' } });
-      if (!res.ok) return null;
-      const body: unknown = await res.json();
-      const table =
-        typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
-      return this.sanitizeRates(table);
-    } catch {
-      return null;
-    }
-  }
-
-  /** Adopt a geo/locale-detected currency only when a rate for it is available. */
-  private applyDetected(code: CurrencyCode, rates: ExchangeRates): void {
-    if (code === 'USD' || rates[code] != null) this.currency.set(code);
-  }
-
-  private readOverride(): CurrencyCode | null {
-    try {
-      const raw = localStorage.getItem(STORAGE_CURRENCY);
-      return raw && isCurrencyCode(raw) ? raw : null;
-    } catch {
-      return null;
-    }
-  }
-
-  private readCachedRates(): ExchangeRates | null {
-    try {
-      const raw = localStorage.getItem(STORAGE_FX);
-      if (!raw) return null;
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed !== 'object' || parsed === null) return null;
-      const { rates, ts } = parsed as Partial<CachedFx>;
-      if (typeof ts !== 'number' || Date.now() - ts > FX_TTL_MS) return null;
-      return this.sanitizeRates(rates);
-    } catch {
-      return null;
-    }
-  }
-
-  private writeCachedRates(rates: ExchangeRates): void {
-    try {
-      const entry: CachedFx = { rates, ts: Date.now() };
-      localStorage.setItem(STORAGE_FX, JSON.stringify(entry));
-    } catch {
-      // Non-fatal: we just refetch next visit.
-    }
-  }
-
-  /** Validate the Pages Function response into a country + sanitized rates. */
-  private parsePayload(body: unknown): { country: string | null; rates: ExchangeRates } {
-    if (typeof body !== 'object' || body === null) return { country: null, rates: { USD: 1 } };
-    const record = body as { country?: unknown; rates?: unknown };
-    const country = typeof record.country === 'string' ? record.country : null;
-    return { country, rates: this.sanitizeRates(record.rates) };
-  }
-
-  /** Keep only positive numeric rates for known currency codes; USD is always 1. */
-  private sanitizeRates(raw: unknown): ExchangeRates {
-    const clean: ExchangeRates = { USD: 1 };
-    if (typeof raw !== 'object' || raw === null) return clean;
-    const record = raw as Record<string, unknown>;
-    for (const def of this.options) {
-      if (def.code === 'USD') continue;
-      const value = record[def.code];
-      if (typeof value === 'number' && Number.isFinite(value) && value > 0) clean[def.code] = value;
-    }
-    return clean;
-  }
-
-  /** Region subtag from the browser locale (e.g. "en-GB" → "GB"), or null. */
-  private regionFromLocale(): string | null {
-    const locale = typeof navigator !== 'undefined' ? navigator.language : '';
-    const region = locale.split('-')[1];
-    return region ? region.toUpperCase() : null;
-  }
-}
-````
-
 ## File: apps/website/src/app/ui/site-footer.ts
 ````typescript
 import { Component } from '@angular/core';
@@ -70753,6 +68516,2395 @@ export class TransactionalEmailService {
       .execute();
   }
 }
+````
+
+## File: apps/backend/src/app/modules/auth/controller.ts
+````typescript
+import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
+import { createSigner } from 'fast-jwt';
+import type { QueryResult, Transaction } from 'kysely';
+import { RESERVED_SUBDOMAINS, slugifyHandle } from '../../../../../../libs/common/src';
+import { signedFileDownloadUrl } from '../../lib/signed-download';
+
+import type {
+  IAuthKeyPayload,
+  INow,
+  InviteAuthUserType,
+  UpdateAuthUserType,
+  getAllOptionsType,
+  signInInputType,
+  signUpInputType,
+} from '../../../../../../libs/common/src';
+import type {
+  AuthUsersType,
+  GetOperandType,
+  Keys,
+  Models,
+  OperationDataType,
+  TablesOperationMap,
+} from '../../../../../../libs/common/src/lib/kysely.models';
+import { env } from '../../../env';
+import {
+  AppError,
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  InternalError,
+  NotFoundError,
+  PreconditionFailedError,
+  ServerMisconfigError,
+  UnauthorizedError,
+} from '../../errors/app-errors';
+import { BaseController } from '../../lib/base.controller';
+import type { QueryParams } from '../../lib/base.repo';
+import { COMMON_PASSWORDS } from '../../lib/common-passwords';
+import { getPwnedCount } from '../../lib/hibp';
+import { parseProfilePreferences } from '../../lib/profile-preferences';
+import { getPlanLimits } from '../billing/usage-limits';
+import { isDisposableEmail } from '../../lib/mail/disposable-email-domains';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { hashPassword, verifyPasswordConstantTime } from '../../lib/password-hash';
+import { StorageService } from '../../lib/storage.service';
+import { generateToken, hashToken } from '../../lib/token-hash';
+import { logger } from '../../logger';
+import { EmailRepo } from '../emails/repositories/email.repo';
+import { PersonsRepo } from '../persons/repositories/persons.repo';
+import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
+import { seedStarterForms, seedStarterTags } from './onboarding-seed';
+import { DEMO_MODE_INVITES_BLOCKED_MESSAGE, assertNotDemoMode } from '../demo/demo-guard';
+import { seedDemoData } from '../demo/demo-seed';
+import { AuthUsersRepo } from './repositories/authusers.repo';
+import { SessionsRepo } from './repositories/sessions.repo';
+import { TenantsRepo } from './repositories/tenants.repo';
+
+export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
+  private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  private static readonly AVATAR_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+
+  private emailsRepo: EmailRepo = new EmailRepo();
+  private mailService = new TransactionalEmailService();
+  private personsRepo: PersonsRepo = new PersonsRepo();
+  private profiles: UserProfiles = new UserProfiles();
+  private sessions: SessionsRepo = new SessionsRepo();
+  private storage = new StorageService();
+  private tenants: TenantsRepo = new TenantsRepo();
+
+  constructor() {
+    super(new AuthUsersRepo());
+  }
+
+  /**
+   * Admin deactivation: sets `deactivated_at` (indefinite, blocks sign-in, revokes sessions).
+   * Deliberately NOT `deletion_scheduled_at` — that column hard-deletes via the deletion worker
+   * and is auto-cleared when the user signs back in.
+   */
+  public async adminDeactivateUser(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole !== 'admin' && callerRole !== 'owner') {
+      throw new ForbiddenError('Only admins and owners can deactivate users.');
+    }
+
+    const targetId = String(userId);
+    if (targetId === auth.user_id) {
+      throw new BadRequestError('You cannot deactivate yourself.');
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: targetId });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot deactivate owner accounts.');
+    }
+    if (authUser.deactivated_at) {
+      throw new BadRequestError('This account is already deactivated.');
+    }
+
+    const deactivatedAt = new Date();
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({ deactivated_at: deactivatedAt, updated_at: deactivatedAt, updatedby_id: auth.user_id })
+        .where('id', '=', targetId)
+        .where('tenant_id', '=', auth.tenant_id)
+        .execute();
+
+      // Deactivation takes effect immediately, not at next token expiry.
+      await this.sessions.deleteByUserId(targetId, auth.tenant_id, trx);
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'authusers',
+          entity_id: targetId,
+          quantity: 1,
+          metadata: {
+            id: targetId,
+            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
+            changes: { deactivated_at: { from: null, to: deactivatedAt.toISOString() } },
+          },
+        },
+        trx,
+      );
+    });
+
+    return { success: true, deactivated_at: deactivatedAt };
+  }
+
+  /** Reverses admin deactivation; also clears a self-scheduled deletion so there is one way back. */
+  public async adminReactivateUser(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole !== 'admin' && callerRole !== 'owner') {
+      throw new ForbiddenError('Only admins and owners can reactivate users.');
+    }
+
+    const targetId = String(userId);
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: targetId });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot reactivate owner accounts.');
+    }
+    if (!authUser.deactivated_at && !authUser.deletion_scheduled_at) {
+      throw new BadRequestError('This account is already active.');
+    }
+
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({ deactivated_at: null, deletion_scheduled_at: null, updated_at: new Date(), updatedby_id: auth.user_id })
+        .where('id', '=', targetId)
+        .where('tenant_id', '=', auth.tenant_id)
+        .execute();
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'authusers',
+          entity_id: targetId,
+          quantity: 1,
+          metadata: {
+            id: targetId,
+            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
+            changes: {
+              deactivated_at: { from: authUser.deactivated_at ?? null, to: null },
+              ...(authUser.deletion_scheduled_at
+                ? { deletion_scheduled_at: { from: authUser.deletion_scheduled_at, to: null } }
+                : {}),
+            },
+          },
+        },
+        trx,
+      );
+    });
+
+    return { success: true };
+  }
+
+  /** Re-sends the invitation email to a user who hasn't activated yet, with a fresh temp password + code. */
+  public async adminResendInvite(auth: IAuthKeyPayload, userId: string) {
+    // Same capability as inviteUser — locked during the demo (see demo-guard).
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id, DEMO_MODE_INVITES_BLOCKED_MESSAGE);
+    const callerRole = auth.role;
+    if (callerRole !== 'admin' && callerRole !== 'owner') {
+      throw new ForbiddenError('Only admins and owners can resend invitations.');
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: String(userId) });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot resend invitations for owners.');
+    }
+    if (authUser.verified) {
+      throw new BadRequestError('This user has already activated their account.');
+    }
+    if (authUser.deactivated_at) {
+      throw new BadRequestError('This account is deactivated. Reactivate it before resending the invitation.');
+    }
+
+    const tempPassword = this.generateTempPassword();
+    const password = await hashPassword(tempPassword);
+
+    await repo.transaction().execute(async (trx) => {
+      // The old temp password stops working; the emailed activation link carries a fresh code.
+      await trx
+        .updateTable('authusers')
+        .set({ password, updated_at: new Date(), updatedby_id: auth.user_id })
+        .where('id', '=', String(authUser.id))
+        .where('tenant_id', '=', auth.tenant_id)
+        .execute();
+
+      const codeObj = await repo.addPasswordResetCode(authUser.id, trx);
+      await this.enqueueInviteEmail(trx, {
+        to: authUser.email,
+        tenantId: auth.tenant_id,
+        firstName: authUser.first_name,
+        inviterName: auth.name,
+        tempPassword,
+        code: codeObj?.password_reset_code,
+      });
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'authusers',
+          entity_id: String(authUser.id),
+          quantity: 1,
+          metadata: {
+            id: String(authUser.id),
+            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
+            action: 'resend_invite',
+          },
+        },
+        trx,
+      );
+    });
+
+    return { success: true };
+  }
+
+  public async adminTriggerPasswordReset(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole === 'user') {
+      throw new ForbiddenError('You do not have permission to trigger password resets.');
+    }
+
+    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot trigger password resets for owners.');
+    }
+
+    return await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        const codeObj = await this.getRepo().addPasswordResetCode(authUser.id, trx);
+        const code = codeObj?.password_reset_code;
+
+        await this.mailService.enqueueMail(
+          {
+            to: authUser.email,
+            tenant_id: auth.tenant_id,
+            subject: 'Reset your pplCRM password',
+            text: `Hi ${authUser.first_name},\n\nAn administrator has requested a password reset for your pplCRM account.\n\nReset your password using this link:\n${env.appUrl}/new-password?code=${code}\n\nThis link is valid for 15 minutes.`,
+            html: `<h2>Reset your password</h2>
+<p>Hi ${authUser.first_name},</p>
+<p>An administrator has requested a password reset for your pplCRM account. Click the button below to choose a new password:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset password</a>
+</div>
+<p class="warning">For security, this reset link is single-use and expires in 15 minutes.</p>`,
+          },
+          trx,
+        );
+
+        return { success: true };
+      });
+  }
+
+  public async cancelAccountDeletion(auth: IAuthKeyPayload) {
+    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await trx.updateTable('authusers').set({ deletion_scheduled_at: null }).where('id', '=', authUser.id).execute();
+
+        await this.mailService.enqueueMail(
+          {
+            to: authUser.email,
+            tenant_id: auth.tenant_id,
+            subject: 'Your account deletion was canceled',
+            text: `Your request to delete your account has been canceled, and your account is fully restored.`,
+            html: `<h2>Account deletion canceled</h2>
+<p>Your request to delete your account has been canceled, and your account is fully restored. Welcome back!</p>`,
+          },
+          trx,
+        );
+      });
+
+    return { success: true };
+  }
+
+  public async cancelEmailChange(auth: IAuthKeyPayload) {
+    if (!auth?.user_id) {
+      throw new UnauthorizedError();
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    const authUser = user as AuthUsersType;
+
+    if (!authUser.previous_email) {
+      throw new BadRequestError('No email change in progress.');
+    }
+
+    const previousEmail = authUser.previous_email;
+
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({
+          email: previousEmail,
+          role: authUser.previous_role,
+          verified: true,
+          previous_email: null,
+          previous_role: null,
+          password_reset_code: null,
+          password_reset_code_created_at: null,
+          updated_at: new Date(),
+          updatedby_id: auth.user_id,
+        })
+        .where('id', '=', authUser.id)
+        .execute();
+    });
+
+    return { success: true };
+  }
+
+  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'deletion_scheduled_at'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is scheduled for this account.');
+    if (tenant.deletion_scheduled_at <= new Date()) {
+      throw new BadRequestError('The deletion window has already passed and data has been removed.');
+    }
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db.updateTable('tenants').set({ deletion_scheduled_at: null }).where('id', '=', auth.tenant_id).execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Your account deletion was canceled',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion request has been canceled. Your account and all data remain intact.`,
+        html: `<h2>Account deletion canceled</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account deletion request has been canceled. Your account and all data remain intact. Welcome back!</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public async cancelTenantDeletionByToken(tenantId: string, token: string) {
+    const expectedToken = this.makeDeletionCancelToken(tenantId);
+    const expected = Buffer.from(expectedToken);
+    const provided = Buffer.from(token.length === expected.length ? token : expectedToken); // same length for safe compare
+    if (token.length !== expectedToken.length || !timingSafeEqual(expected, provided)) {
+      throw new BadRequestError('Invalid or expired cancellation link.');
+    }
+
+    const db = this.getRepo().db;
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'deletion_scheduled_at'])
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Account not found.');
+    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is pending for this account.');
+    if (tenant.deletion_scheduled_at <= new Date()) {
+      throw new BadRequestError('The deletion window has already passed and data has been removed.');
+    }
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db.updateTable('tenants').set({ deletion_scheduled_at: null }).where('id', '=', tenantId).execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        subject: 'Your account deletion was canceled',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion has been canceled. Your account and all data remain intact. You can sign back in at any time.`,
+        html: `<h2>Account deletion canceled</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account deletion has been canceled. Your account and all data remain intact.</p>
+<p><a href="${env.appUrl}/signin">Sign back in</a> to continue using pplCRM.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public async currentUser(auth: IAuthKeyPayload) {
+    // There's no user ID, which means that the user is unauthorized
+    if (!auth?.user_id) {
+      throw new UnauthorizedError();
+    }
+    const options = {
+      columns: ['id', 'email', 'first_name', 'role', 'verified', 'passkey_setup_dismissed_at'],
+    } as QueryParams<'authusers'>;
+
+    try {
+      const user = await this.getRepo().getOneBy('id', {
+        tenant_id: auth.tenant_id,
+        value: auth.user_id,
+        options,
+      });
+      if (!user) return null;
+
+      const typedUser = user as { id: string; verified: boolean; passkey_setup_dismissed_at: Date | null };
+      const profile = (await this.profiles.getOneByAuthId(String(typedUser.id))) as Models['profiles'] | undefined;
+      const avatar_url = profile?.['avatar_file_id']
+        ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
+        : null;
+
+      let tenant_deletion_scheduled_at: Date | null = null;
+      let tenant_paused_at: Date | null = null;
+      let tenant_demo_mode_at: Date | null = null;
+      let tenant_slug: string | null = null;
+      let workspace_api_key_preview: { preview: string; createdAt: string; lastUsedAt: string | null } | null = null;
+      if (auth.tenant_id) {
+        const tenant = await this.getRepo()
+          .db.selectFrom('tenants')
+          .select(['deletion_scheduled_at', 'paused_at', 'demo_mode_at', 'slug'])
+          .where('id', '=', auth.tenant_id)
+          .executeTakeFirst();
+        if (tenant?.deletion_scheduled_at) {
+          tenant_deletion_scheduled_at = tenant.deletion_scheduled_at;
+        }
+        if (tenant?.paused_at) {
+          tenant_paused_at = tenant.paused_at;
+        }
+        tenant_demo_mode_at = tenant?.demo_mode_at ?? null;
+        tenant_slug = tenant?.slug ?? null;
+
+        // Fetch API key preview
+        const workspaceApiKeysRepo = (await import('../settings/repositories/workspace-api-keys.repo'))
+          .WorkspaceApiKeysRepo;
+        const apiKeyRepo = new workspaceApiKeysRepo();
+        const apiKey = await apiKeyRepo.getByTenantId(auth.tenant_id);
+        if (apiKey) {
+          workspace_api_key_preview = {
+            preview: apiKey.key_preview,
+            createdAt: apiKey.created_at.toISOString(),
+            lastUsedAt: apiKey.last_used_at?.toISOString() ?? null,
+          };
+        }
+      }
+
+      return {
+        ...user,
+        avatar_url,
+        email_verified: this.coerceBoolean(typedUser.verified),
+        passkey_setup_dismissed_at: typedUser.passkey_setup_dismissed_at ?? null,
+        tenant_deletion_scheduled_at,
+        tenant_paused_at,
+        tenant_demo_mode_at,
+        tenant_slug,
+        workspace_api_key_preview,
+      };
+    } catch (err) {
+      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
+    }
+  }
+
+  public async deleteAvatar(auth: IAuthKeyPayload) {
+    const existingProfile = await this.profiles.getOneByAuthId(auth.user_id);
+    if (!existingProfile?.avatar_file_id) return { success: true };
+
+    const fileId = existingProfile.avatar_file_id;
+
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        try {
+          const oldFile = await trx
+            .selectFrom('files')
+            .select('storage_key')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', fileId)
+            .executeTakeFirst();
+          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+          await trx.deleteFrom('files').where('tenant_id', '=', auth.tenant_id).where('id', '=', fileId).execute();
+        } catch {
+          /* non-critical */
+        }
+
+        await trx
+          .updateTable('profiles')
+          .set({ avatar_file_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('auth_id', '=', auth.user_id)
+          .execute();
+      });
+
+    return { success: true };
+  }
+
+  public async deleteUser(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole !== 'admin' && callerRole !== 'owner') {
+      throw new ForbiddenError('Only admins and owners can delete users.');
+    }
+
+    const userIdToDelete = String(userId);
+    if (userIdToDelete === auth.user_id) {
+      throw new BadRequestError('You cannot delete yourself.');
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: userIdToDelete });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot delete owner accounts.');
+    }
+
+    return await repo.transaction().execute(async (trx) => {
+      const profile = await this.profiles.getOneByAuthId(userIdToDelete);
+      if (profile?.avatar_file_id) {
+        try {
+          const oldFile = await trx
+            .selectFrom('files')
+            .select('storage_key')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', profile.avatar_file_id)
+            .executeTakeFirst();
+          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+          await trx
+            .deleteFrom('files')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', profile.avatar_file_id)
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to clean up user avatar on delete');
+        }
+      }
+
+      await trx
+        .deleteFrom('profiles')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('auth_id', '=', userIdToDelete)
+        .execute();
+      await this.sessions.deleteByUserId(userIdToDelete, auth.tenant_id, trx);
+      await trx
+        .deleteFrom('authusers')
+        .where('id', '=', userIdToDelete)
+        .where('tenant_id', '=', auth.tenant_id)
+        .execute();
+
+      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, userIdToDelete);
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'authusers',
+          entity_id: userIdToDelete,
+          quantity: 1,
+          metadata: {
+            id: userIdToDelete,
+            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
+          },
+        },
+        trx,
+      );
+
+      return { success: true };
+    });
+  }
+
+  public async dismissPasskeyPrompt(auth: IAuthKeyPayload) {
+    await this.getRepo()
+      .db.updateTable('authusers')
+      .set({ passkey_setup_dismissed_at: new Date() })
+      .where('id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .execute();
+    return { success: true };
+  }
+
+  public async ensureAtLeastOneOwner(
+    tenantId: string,
+    trx: Transaction<Models>,
+    isRoleChange = false,
+    excludeUserId?: string,
+  ) {
+    const activeOwners = await trx
+      .selectFrom('authusers')
+      .select(['id'])
+      .where('tenant_id', '=', tenantId)
+      .where((eb) =>
+        eb.or([eb('role', '=', 'owner'), eb.and([eb('role', '=', 'viewer'), eb('previous_role', '=', 'owner')])]),
+      )
+      .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null)
+      .execute();
+
+    if (activeOwners.length > 0) {
+      return;
+    }
+
+    // Find the oldest active user to promote
+    let query = trx
+      .selectFrom('authusers')
+      .select(['id'])
+      .where('tenant_id', '=', tenantId)
+      .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null);
+
+    if (excludeUserId) {
+      query = query.where('id', '!=', excludeUserId);
+    }
+
+    const oldestUser = await query.orderBy('created_at', 'asc').executeTakeFirst();
+
+    if (oldestUser) {
+      await trx.updateTable('authusers').set({ role: 'owner' }).where('id', '=', oldestUser.id).execute();
+    } else if (isRoleChange) {
+      throw new BadRequestError('The system must have at least one owner.');
+    }
+  }
+
+  public async getAllUsers(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    const sanitizedOptions = options ? ({ ...options, columns: undefined } as typeof options) : undefined;
+    const result = await this.getRepo().getAllWithCounts({
+      tenant_id: auth.tenant_id,
+      options: sanitizedOptions as never,
+    });
+    return {
+      rows: result.rows.map((row) => ({
+        ...this.sanitizeUser(row),
+        avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
+      })),
+      count: result.count,
+    };
+  }
+
+  public async getTenantAccountStatus(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['deletion_scheduled_at', 'suspended_at', 'paused_at'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+
+    return {
+      deletion_scheduled_at: tenant.deletion_scheduled_at ?? null,
+      suspended_at: tenant.suspended_at ?? null,
+      paused_at: tenant.paused_at ?? null,
+    };
+  }
+
+  /** Seat usage for the invite/users UI: plan name, seat limit, and seats consumed (invited counts too). */
+  public async getSeatUsage(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['subscription_plan', 'subscription_quantity'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!tenant) throw new NotFoundError('Tenant not found');
+
+    const plan = (tenant.subscription_plan as string | null) || 'free';
+    const limits = getPlanLimits(plan, tenant.subscription_quantity ?? 1);
+
+    // Matches the billing usage check: every non-deactivated login (including pending invites) holds a seat.
+    const seatRow = await db
+      .selectFrom('authusers')
+      .select((eb) => eb.fn.countAll().as('cnt'))
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null)
+      .executeTakeFirst();
+
+    return { plan, seatLimit: limits.seats, seatsUsed: Number(seatRow?.cnt ?? 0) };
+  }
+
+  public async getUserById(auth: IAuthKeyPayload, id: string) {
+    const callerRole = auth.role;
+    if (callerRole === 'user' && auth.user_id !== String(id)) {
+      throw new ForbiddenError('You do not have permission to view this user.');
+    }
+
+    const record = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: id });
+    if (!record) throw new NotFoundError('User not found');
+    const authUser = record as AuthUsersType;
+    const profile = (await this.profiles.getOneByAuthId(String(authUser.id))) as Models['profiles'] | undefined;
+    const stats = await this.buildUserStats(auth, String(authUser.id));
+    const sanitized = this.sanitizeUser({ ...authUser, profile });
+    const avatar_url = profile?.['avatar_file_id']
+      ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
+      : null;
+    return { ...sanitized, avatar_url, stats };
+  }
+
+  public async getUsersList(auth: IAuthKeyPayload) {
+    const result = await this.getRepo().getAllWithCounts({
+      tenant_id: auth.tenant_id,
+    });
+    return result.rows.map((row) => ({
+      ...this.sanitizeUser(row),
+      avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
+    }));
+  }
+
+  public async inviteUser(auth: IAuthKeyPayload, input: InviteAuthUserType) {
+    // Demo teammates are seeded; real invites unlock with a plan (see demo-guard).
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id, DEMO_MODE_INVITES_BLOCKED_MESSAGE);
+    const callerRole = auth.role;
+    if (callerRole === 'user') {
+      throw new ForbiddenError('You do not have permission to invite users.');
+    }
+    if (callerRole === 'admin' && input.role === 'owner') {
+      throw new ForbiddenError('Admins cannot invite users with the Owner role.');
+    }
+
+    const email = input.email.toLowerCase();
+    await this.verifyUserDoesNotExist(email);
+
+    // Seat cap: enforce the plan's staff-seat allowance up front. Every non-deactivated login,
+    // including still-pending invites, holds a seat (matches getSeatUsage and the billing usage
+    // check), so a full workspace must free or buy a seat before adding another — otherwise the
+    // limit is only ever measured after the fact by the async usage job.
+    const seatTenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['subscription_plan', 'subscription_quantity'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    const seatLimit = getPlanLimits(
+      seatTenant?.subscription_plan ?? null,
+      seatTenant?.subscription_quantity ?? 1,
+    ).seats;
+    if (Number.isFinite(seatLimit)) {
+      const seatRow = await this.getRepo()
+        .db.selectFrom('authusers')
+        .select((eb) => eb.fn.countAll().as('cnt'))
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('deletion_scheduled_at', 'is', null)
+        .where('deactivated_at', 'is', null)
+        .executeTakeFirst();
+      if (Number(seatRow?.cnt ?? 0) >= seatLimit) {
+        throw new ForbiddenError(
+          `Your plan includes ${seatLimit} staff seat${seatLimit === 1 ? '' : 's'}, all of which are in use. ` +
+            `Upgrade your plan or deactivate a user before inviting another.`,
+        );
+      }
+    }
+
+    // Fall back to the tenant's configured default invite role when the caller didn't specify one.
+    let role = input.role ?? null;
+    if (!role) {
+      const defaultRole = await this.getTenantSetting(auth.tenant_id, 'access.default_role');
+      if (typeof defaultRole === 'string' && defaultRole.trim()) role = defaultRole.trim();
+    }
+    if (callerRole === 'admin' && role === 'owner') {
+      throw new ForbiddenError('Admins cannot invite users with the Owner role.');
+    }
+
+    const tempPassword = this.generateTempPassword();
+    const password = await hashPassword(tempPassword);
+    const repo = this.getRepo();
+
+    const created = await repo.transaction().execute(async (trx) => {
+      const row = {
+        tenant_id: auth.tenant_id,
+        email,
+        password,
+        first_name: input.first_name,
+        role,
+        verified: false,
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      } as OperationDataType<'authusers', 'insert'>;
+      const user = await repo.add({ row }, trx);
+      if (!user) throw new InternalError('User creation failed');
+
+      const profileRow = {
+        id: user.id,
+        tenant_id: auth.tenant_id,
+        auth_id: user.id,
+        last_name: input.last_name ?? null,
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      } as OperationDataType<'profiles', 'insert'>;
+      await this.profiles.add({ row: profileRow }, trx);
+
+      const codeObj = await repo.addPasswordResetCode(user.id, trx);
+      await this.enqueueInviteEmail(trx, {
+        to: email,
+        tenantId: auth.tenant_id,
+        firstName: input.first_name,
+        inviterName: auth.name,
+        tempPassword,
+        code: codeObj?.password_reset_code,
+      });
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'create',
+          entity: 'authusers',
+          entity_id: String(user.id),
+          quantity: 1,
+          metadata: {
+            id: String(user.id),
+            entity_label: `${user.first_name} ${input.last_name || ''}`.trim(),
+          },
+        },
+        trx,
+      );
+
+      return user;
+    });
+
+    const db = repo.db;
+    try {
+      const { queueUsageLimitCheck } = await import('../billing/usage-limits');
+      await queueUsageLimitCheck(auth.tenant_id, db);
+    } catch (err) {
+      logger.error({ err }, 'Failed to trigger usage check in inviteUser');
+    }
+
+    return this.sanitizeUser({ ...created, last_name: input.last_name });
+  }
+
+  public makeDeletionCancelToken(tenantId: string): string {
+    return createHmac('sha256', env.sharedSecret).update(`cancel-deletion:${tenantId}`).digest('hex');
+  }
+
+  public async pauseTenant(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'paused_at'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (tenant.paused_at) throw new BadRequestError('Account is already paused.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db.transaction().execute(async (trx) => {
+      await trx.updateTable('tenants').set({ paused_at: new Date() }).where('id', '=', auth.tenant_id).execute();
+
+      // Sign out all users immediately so the pause takes effect for active sessions
+      await trx.deleteFrom('sessions').where('tenant_id', '=', auth.tenant_id).execute();
+    });
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Your account has been paused',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account has been paused. Your data is preserved and billing has been paused. You can reactivate your account at any time by logging back in and visiting your account settings.`,
+        html: `<h2>Account paused</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account has been paused as requested. Your data is safely preserved and you will not be billed during this period.</p>
+<p>You can reactivate your account at any time by signing back in and visiting your account settings.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Issue a fresh access token from the refresh token alone (delivered via the HttpOnly cookie,
+   * SECURITY-REVIEW.md 2.1). It deliberately does NOT require the (possibly gone) access token, so
+   * the client can silently re-auth on a cold page load using only the cookie. The refresh token is
+   * the sole authenticator here, and it's rotated on every use.
+   */
+  public async renewAuthToken(refreshToken: string | undefined) {
+    if (!refreshToken) {
+      throw new UnauthorizedError();
+    }
+    try {
+      const refreshHash = hashToken(refreshToken);
+
+      // Resolve the session by the refresh token hash. Cross-tenant by design — the refresh token
+      // itself identifies which session (and therefore tenant) this is. Rotated sessions are
+      // accepted here (their reuse window is checked below) so concurrent renewals replaying the
+      // same cookie don't strand a tab.
+      // eslint-disable-next-line local/no-unscoped-db-query
+      const session = await this.sessions.db
+        .selectFrom('sessions')
+        .select(['id', 'user_id', 'tenant_id', 'session_id', 'expires_at', 'last_used_at', 'status'])
+        .where('refresh_token', '=', refreshHash)
+        .where('status', 'in', ['active', 'rotated'])
+        .executeTakeFirst();
+
+      if (!session) {
+        throw new UnauthorizedError();
+      }
+
+      const now = new Date();
+
+      // A rotated session's refresh token stays honored for a short reuse window so concurrent
+      // renewals (two tabs cold-loading with the same cookie, or a rotation response lost to a
+      // dev-server restart) succeed instead of signing a tab out. Beyond the window, a replay is
+      // treated as a stolen/reused token. `last_used_at` was stamped at rotation time by
+      // markRotatedBySessionHash, so here it is the rotation timestamp.
+      if (session.status === 'rotated') {
+        const rotatedAgoMs = session.last_used_at ? now.getTime() - session.last_used_at.getTime() : Infinity;
+        if (rotatedAgoMs > ROTATION_REUSE_GRACE_MS) {
+          throw new UnauthorizedError();
+        }
+      }
+
+      if (session.expires_at && session.expires_at < now) {
+        throw new UnauthorizedError('Session has expired. Please sign in again.');
+      }
+
+      if (session.last_used_at) {
+        const idleMs = now.getTime() - session.last_used_at.getTime();
+        if (idleMs > IDLE_TIMEOUT_MS) {
+          throw new UnauthorizedError('Session timed out due to inactivity. Please sign in again.');
+        }
+      }
+
+      // The JWT carries the user's display name; pull it from the account (scoped to the session's
+      // tenant) since we no longer have the old token to read it from.
+      const user = await this.getRepo()
+        .db.selectFrom('authusers')
+        .select(['first_name'])
+        .where('id', '=', session.user_id)
+        .where('tenant_id', '=', session.tenant_id)
+        .executeTakeFirst();
+
+      if (!user) {
+        throw new UnauthorizedError();
+      }
+
+      // Rotate: mint a new session/refresh pair (preserving the original absolute expiry). The old
+      // session is marked rotated rather than deleted: the auth gates stop accepting it
+      // immediately, but its refresh token remains replayable within ROTATION_REUSE_GRACE_MS (see
+      // above) so a sibling tab holding the same cookie can still re-auth. Access tokens that
+      // still reference it recover via the client's refresh-and-retry on UNAUTHORIZED.
+      const tokens = await this.createTokens({
+        user_id: String(session.user_id),
+        tenant_id: String(session.tenant_id),
+        name: user.first_name ?? '',
+        existingExpiresAt: session.expires_at ?? null,
+      });
+      if (session.status === 'active') {
+        await this.sessions.markRotatedBySessionHash(session.session_id, String(session.tenant_id));
+      }
+      // Sweep this user's rotated sessions whose reuse window has passed — they're inert.
+      await this.sessions.deleteRotatedBefore(
+        String(session.user_id),
+        String(session.tenant_id),
+        new Date(now.getTime() - ROTATION_REUSE_GRACE_MS),
+      );
+      return tokens;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new UnauthorizedError();
+    }
+  }
+
+  public async resendVerificationEmail(email: string) {
+    // Never reveal whether an account exists (or is already verified): return a
+    // uniform success for unknown/verified addresses to prevent enumeration.
+    let user: AuthUsersType;
+    try {
+      user = await this.getUserByEmail(email);
+    } catch (err) {
+      if (err instanceof NotFoundError) return { success: true };
+      throw err;
+    }
+    if (user.verified) {
+      return { success: true };
+    }
+    return await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
+        const code = codeObj?.password_reset_code;
+
+        await this.mailService.enqueueMail(
+          {
+            to: email,
+            tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+            subject: 'Verify your email address',
+            text: `We need to verify your email address so you can use your pplCRM account. Verify it using this link: ${env.appUrl}/verify-email?code=${code}`,
+            html: `<h2>Verify your email address</h2>
+<p>We need to verify your email address so you can use your pplCRM account. Click the button below to verify it:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify email address</a>
+</div>
+<p class="warning">For security, this link expires in 24 hours.</p>`,
+          },
+          trx,
+        );
+        return { success: true };
+      });
+  }
+
+  public async resetPassword(plaintextPassword: string, code: string) {
+    await this.validateNewPassword(plaintextPassword);
+    const password = await hashPassword(plaintextPassword);
+
+    const user = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['email', 'first_name', 'tenant_id', 'verified'])
+      .where('password_reset_code', '=', hashToken(code))
+      .executeTakeFirst();
+
+    if (!user) {
+      throw new BadRequestError('Invalid or expired password reset link.');
+    }
+
+    // Check if the code is valid. An unverified user is activating an invitation — that link
+    // lives 7 days; a password reset for an established account stays short-lived.
+    const msec = await this.getCodeAge(code);
+    if (user.verified) {
+      if (msec > PASSWORD_RESET_CODE_MAX_AGE_MS) {
+        throw new BadRequestError('The code is expired. Please request a new code');
+      }
+    } else if (msec > INVITE_ACTIVATION_MAX_AGE_MS) {
+      throw new BadRequestError('This invitation has expired. Ask an administrator to send a new one.');
+    }
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        // Invalidate all active sessions for this user
+        const u = await trx
+          .selectFrom('authusers')
+          .select('id')
+          .where('password_reset_code', '=', hashToken(code))
+          .executeTakeFirst();
+        if (u) {
+          await trx.deleteFrom('sessions').where('user_id', '=', u.id).execute();
+        }
+
+        const result = await this.getRepo().updatePassword(password, code, trx);
+        if (result.numUpdatedRows === BigInt(0)) {
+          throw new UnauthorizedError();
+        }
+
+        await this.mailService.enqueueMail(
+          {
+            to: user.email,
+            tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+            subject: 'Your pplCRM password was changed',
+            text: `Hi ${user.first_name},\n\nThis is a confirmation that the password for your pplCRM account was recently changed. If you did not make this change, please contact support immediately.`,
+            html: `<h2>Password changed</h2>
+<p>Hi ${user.first_name},</p>
+<p>This is a confirmation that the password for your pplCRM account was recently changed.</p>
+<p class="warning">If you did not make this change, please contact support immediately.</p>`,
+          },
+          trx,
+        );
+      });
+  }
+
+  public async resumeTenant(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'paused_at'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (!tenant.paused_at) throw new BadRequestError('Account is not paused.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db.updateTable('tenants').set({ paused_at: null }).where('id', '=', auth.tenant_id).execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Your account has been reactivated',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account has been successfully reactivated. Welcome back!`,
+        html: `<h2>Account reactivated</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account has been reactivated. Everything is back to normal. Welcome back!</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public async scheduleAccountDeletion(auth: IAuthKeyPayload) {
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({ deletion_scheduled_at: deletionDate })
+        .where('id', '=', authUser.id)
+        .execute();
+
+      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, String(authUser.id));
+
+      await this.mailService.enqueueMail(
+        {
+          to: authUser.email,
+          tenant_id: auth.tenant_id,
+          subject: 'Your account is scheduled for deletion',
+          text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by signing back in.`,
+          html: `<h2>Account scheduled for deletion</h2>
+<p>Hi ${authUser.first_name},</p>
+<p>As requested, your pplCRM account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply signing back in.</p>
+<p class="warning">If you did not make this request, please sign in immediately to cancel the deletion and secure your account.</p>`,
+        },
+        trx,
+      );
+    });
+
+    return { success: true, deletion_scheduled_at: deletionDate };
+  }
+
+  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'name', 'deletion_scheduled_at'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (tenant.deletion_scheduled_at) throw new BadRequestError('Account deletion is already scheduled.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    const deletionDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const cancelToken = this.makeDeletionCancelToken(String(auth.tenant_id));
+    const cancelUrl = `${env.appUrl}/cancel-deletion?tid=${auth.tenant_id}&token=${cancelToken}`;
+    const deletionDateStr = deletionDate.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
+
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('tenants')
+        .set({ deletion_scheduled_at: deletionDate })
+        .where('id', '=', auth.tenant_id)
+        .execute();
+
+      // Invalidate every active session for the tenant so all users are signed out immediately
+      await trx.deleteFrom('sessions').where('tenant_id', '=', auth.tenant_id).execute();
+
+      if (ownerEmail?.email) {
+        await this.mailService.enqueueMail(
+          {
+            to: ownerEmail.email,
+            tenant_id: String(auth.tenant_id),
+            subject: 'Your account is scheduled for deletion in 24 hours',
+            text: `Hi ${ownerEmail.first_name},\n\nYour organization account has been scheduled for permanent deletion. All data will be permanently removed on ${deletionDateStr}.\n\nChanged your mind? You have 24 hours to cancel:\n${cancelUrl}\n\nAfter that, all data will be permanently removed and cannot be recovered.`,
+            html: `<h2>Account scheduled for deletion</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your organization account has been scheduled for permanent deletion on <strong>${deletionDateStr}</strong>. All data associated with your account (contacts, emails, campaigns, and everything else) will be permanently and irreversibly removed.</p>
+<p><strong>Changed your mind?</strong> You have 24 hours to cancel this request:</p>
+<div class="btn-container">
+  <a href="${cancelUrl}" class="btn">Cancel account deletion</a>
+</div>
+<p class="warning">After the 24-hour window, all data will be permanently deleted and cannot be recovered.</p>`,
+          },
+          trx,
+        );
+      }
+    });
+
+    return { success: true };
+  }
+
+  public async sendPasswordResetEmail(email: string) {
+    // Never reveal whether an account exists: return success uniformly so an
+    // attacker cannot enumerate registered emails via this endpoint.
+    let user: AuthUsersType;
+    try {
+      user = await this.getUserByEmail(email);
+    } catch (err) {
+      if (err instanceof NotFoundError) return true;
+      throw err;
+    }
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
+        const code = codeObj?.password_reset_code;
+
+        // send the reset email
+        await this.mailService.enqueueMail(
+          {
+            to: email,
+            tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+            subject: 'Reset your pplCRM password',
+            text: `We received a request to reset the password for your pplCRM account. Reset it using this link: ${env.appUrl}/new-password?code=${code}`,
+            html: `<h2>Reset your password</h2>
+<p>We received a request to reset the password for your pplCRM account. Click the button below to choose a new password:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset password</a>
+</div>
+<p>If you did not request a password reset, no further action is required.</p>
+<p class="warning">This reset link is single-use and expires in 15 minutes.</p>`,
+          },
+          trx,
+        );
+      });
+    return true;
+  }
+
+  public async signIn(input: signInInputType, ipAddress?: string, userAgent?: string) {
+    const user = await this.getUserByEmailOrNull(input.email.toLowerCase());
+
+    // Always run a password verification — against a dummy hash when the account does not exist —
+    // so a non-existent email and a wrong password cost the same and fail with the same 401. This
+    // closes the enumeration oracle: previously an unknown email threw NotFoundError (404) and
+    // returned faster (no argon2), distinguishing registered emails despite the generic message.
+    const valid = await verifyPasswordConstantTime(input.password, user?.password);
+    if (!user || !valid) {
+      throw new UnauthorizedError();
+    }
+
+    // Checked before the verified/deletion branches: a deactivated account must not receive
+    // "verify your email" guidance, and signing in must NOT auto-restore it (that shortcut is
+    // only for self-scheduled deletion below).
+    if (user.deactivated_at) {
+      throw new ForbiddenError('This account has been deactivated. Contact an administrator to restore access.');
+    }
+
+    if (!user.verified) {
+      throw new ForbiddenError(
+        'Your email address is not verified yet. Please check your inbox (and spam folder) for a verification link.',
+      );
+    }
+
+    // Tenant-wide MFA enforcement: when enabled, every user gets the email-OTP challenge on a new
+    // device/location, even if they never individually enabled two-factor auth.
+    const tenantMfaRequired = (await this.getTenantSetting(user.tenant_id, 'access.mfa_required')) === true;
+    const requires2FA =
+      (user.two_factor_enabled || tenantMfaRequired) &&
+      (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
+
+    if (requires2FA) {
+      const otpCode = randomInt(100000, 1000000).toString();
+      await this.getRepo()
+        .db.updateTable('authusers')
+        .set({
+          // Store only the hash; the plaintext OTP is emailed to the user.
+          two_factor_code: hashToken(otpCode),
+          two_factor_expires_at: new Date(Date.now() + 5 * 60 * 1000),
+          // Reset the failed-attempt counter for this fresh challenge.
+          two_factor_attempts: 0,
+        })
+        .where('id', '=', user.id)
+        .execute();
+
+      await this.mailService.sendMail({
+        to: user.email,
+        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+        subject: 'Your pplCRM sign-in code',
+        text: `Your sign-in verification code is ${otpCode}. It expires in 5 minutes.`,
+        html: `<h2>Your sign-in code</h2>
+<p>Use the 6-digit code below to finish signing in. It is valid for 5 minutes.</p>
+<div class="otp-container">
+  <span class="otp-code">${otpCode}</span>
+</div>
+<p class="warning">If you did not try to sign in, please secure your account immediately.</p>`,
+      });
+
+      return { requires2FA: true, email: user.email };
+    }
+
+    if (user.deletion_scheduled_at) {
+      await this.getRepo()
+        .db.updateTable('authusers')
+        .set({ deletion_scheduled_at: null })
+        .where('id', '=', user.id)
+        .execute();
+
+      await this.mailService.sendMail({
+        to: user.email,
+        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+        subject: 'Your account has been restored',
+        text: `Welcome back! Your request to delete your account has been canceled, and your account is fully restored.`,
+        html: `<h2>Account restored</h2>
+<p>Welcome back! Your request to delete your account has been canceled, and your account is fully restored.</p>`,
+      });
+    }
+
+    if (user.tenant_id) {
+      const tenant = await this.getRepo()
+        .db.selectFrom('tenants')
+        .select(['suspended_at', 'paused_at'])
+        .where('id', '=', user.tenant_id)
+        .executeTakeFirst();
+
+      if (tenant?.suspended_at) {
+        throw new ForbiddenError(
+          'This account has been suspended. Please contact support if you believe this is an error.',
+        );
+      }
+      // Paused accounts (user-initiated) allow login so the owner can reactivate from settings
+    }
+
+    return this.createTokens({
+      user_id: String(user.id),
+      tenant_id: String(user.tenant_id),
+      name: user.first_name,
+      ipAddress,
+      userAgent,
+      rememberMe: input.rememberMe,
+    });
+  }
+
+  public async signOut(auth: IAuthKeyPayload | null) {
+    if (!auth?.session_id) {
+      return null;
+    }
+    return this.sessions.deleteBySessionId(auth.session_id);
+  }
+
+  public async signUp(input: signUpInputType) {
+    const email = input.email.toLowerCase();
+    let token: { auth_token: string; refresh_token: string; refresh_expires_at: Date | null } = {
+      auth_token: '',
+      refresh_token: '',
+      refresh_expires_at: null,
+    };
+
+    // Anti-abuse: throwaway inboxes are the raw material of spam accounts. A real org signs up
+    // with a mailbox it keeps; verification links also die with a temporary inbox anyway.
+    if (isDisposableEmail(email)) {
+      throw new BadRequestError(
+        'Temporary or disposable email addresses cannot be used to sign up. Please use your organization or personal mailbox.',
+      );
+    }
+
+    try {
+      await this.verifyUserDoesNotExist(email);
+      await this.validateNewPassword(input.password);
+      const password = await hashPassword(input.password);
+
+      await this.tenants.transaction().execute(async (trx) => {
+        const tenant_id = await this.createTenant(trx, input.organization);
+        const user = await this.createUser(trx, tenant_id, password, email, input);
+        const userId = String(user.id);
+        const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
+        await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
+
+        // Create the tenant's permanent office context (Campaigns §15). Election
+        // campaigns are added later by the user; this one always exists.
+        const campaign = await trx
+          .insertInto('campaigns')
+          .values({
+            tenant_id,
+            admin_id: user.id,
+            createdby_id: user.id,
+            updatedby_id: user.id,
+            name: `${input.organization} Office`,
+            kind: 'office',
+            status: 'active',
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        // Create default settings (current_campaign and notifications)
+        await trx
+          .insertInto('settings')
+          .values([
+            {
+              tenant_id,
+              key: 'current_campaign',
+              value: { id: Number(campaign.id) },
+              createdby_id: user.id,
+              updatedby_id: user.id,
+            },
+            {
+              tenant_id,
+              key: 'notifications',
+              value: false,
+              createdby_id: user.id,
+              updatedby_id: user.id,
+            },
+          ])
+          .execute();
+
+        // Create the tenant's permanent placeholder household and store its ID on
+        // the tenant so it can be quickly identified without scanning all households.
+        const placeholderHousehold = await trx
+          .insertInto('households')
+          .values({
+            tenant_id,
+            campaign_id: campaign.id,
+            createdby_id: user.id,
+            updatedby_id: user.id,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        await trx
+          .updateTable('tenants')
+          .set({ placeholder_household_id: placeholderHousehold.id })
+          .where('id', '=', tenant_id)
+          .execute();
+
+        // Starter tags/issues and forms survive exit-demo; the demo dataset does
+        // not — see modules/demo. Tags first: the demo seeder attaches to them by name.
+        await seedStarterTags({ tenant_id, user_id: userId }, trx);
+        const starterForms = await seedStarterForms({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
+        await seedDemoData(
+          {
+            tenant_id,
+            user_id: userId,
+            campaign_id: String(campaign.id),
+            placeholder_household_id: String(placeholderHousehold.id),
+            forms: starterForms,
+          },
+          trx,
+        );
+
+        const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
+        const verificationCode = codeObj?.password_reset_code;
+        await this.mailService.enqueueMail(
+          {
+            to: email,
+            tenant_id,
+            subject: 'Welcome to pplCRM! Verify your email address',
+            text: `Welcome to pplCRM! We need to verify your email address so you can use your pplCRM account. Verify it using this link: ${env.appUrl}/verify-email?code=${verificationCode}`,
+            html: `<h2>Verify your email address</h2>
+<p>Welcome to pplCRM! We need to verify your email address so you can use your pplCRM account. Click the button below to verify it:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/verify-email?code=${verificationCode}" class="btn">Verify email address</a>
+</div>
+<p class="warning">For security, this link expires in 24 hours.</p>`,
+          },
+          trx,
+        );
+
+        token = await this.createTokens(
+          {
+            user_id: profile.id,
+            tenant_id: user.tenant_id,
+            name: user.first_name,
+          },
+          trx,
+        );
+      });
+
+      return token;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
+    }
+  }
+
+  public async updateUser(auth: IAuthKeyPayload, id: string, data: UpdateAuthUserType) {
+    const userId = String(id);
+    const callerRole = auth.role;
+
+    if (callerRole === 'user' && userId !== auth.user_id) {
+      throw new ForbiddenError('You do not have permission to update other users.');
+    }
+
+    const existing = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
+    if (!existing) throw new NotFoundError('User not found');
+    const existingUser = existing as AuthUsersType;
+
+    const isRoleChange = data.role !== undefined && data.role !== existingUser.role;
+
+    // Nobody edits their own role — not even an owner. Losing owner/admin by accident is a
+    // lockout risk, and granting yourself more access must go through another admin/owner.
+    if (isRoleChange && userId === auth.user_id) {
+      throw new ForbiddenError('You cannot change your own role.');
+    }
+
+    if (isRoleChange && existingUser.deactivated_at) {
+      throw new BadRequestError('Deactivated accounts keep their role. Reactivate the account first.');
+    }
+
+    if (callerRole === 'user') {
+      if (isRoleChange) {
+        throw new ForbiddenError('You do not have permission to change roles.');
+      }
+    }
+
+    if (callerRole === 'admin') {
+      if (existingUser.role === 'owner') {
+        if (data.role !== undefined && data.role !== 'owner') {
+          throw new ForbiddenError('Admins cannot demote an owner.');
+        }
+      } else {
+        if (data.role === 'owner') {
+          throw new ForbiddenError('Admins cannot promote a non-owner to an owner.');
+        }
+      }
+    }
+
+    if (data.verified !== undefined && Boolean(data.verified) !== Boolean(existingUser.verified)) {
+      throw new ForbiddenError('Verification status cannot be changed manually.');
+    }
+
+    const row: Record<string, unknown> = {};
+
+    const isOwnEmailChange =
+      data.email && data.email.toLowerCase() !== existingUser.email.toLowerCase() && userId === auth.user_id;
+
+    if (data.email) {
+      const nextEmail = data.email.toLowerCase();
+      if (nextEmail !== existingUser.email.toLowerCase()) {
+        const other = await this.getRepo().getByEmail(nextEmail, { columns: ['id'] });
+        const otherUser = other as AuthUsersType | undefined;
+        if (otherUser && String(otherUser.id) !== userId) {
+          throw new ConflictError('Email already exists');
+        }
+        row['email'] = nextEmail;
+        row['verified'] = false;
+
+        if (isOwnEmailChange) {
+          row['previous_email'] = existingUser.email;
+          row['previous_role'] = existingUser.role;
+          row['role'] = 'viewer';
+        }
+      }
+    }
+    if (data.first_name !== undefined) row['first_name'] = data.first_name;
+    if (data.last_name !== undefined) row['last_name'] = data.last_name ?? '';
+    if (data.role !== undefined) row['role'] = data.role ?? null;
+    if (data.verified !== undefined) row['verified'] = data.verified;
+    if (data.two_factor_enabled !== undefined) row['two_factor_enabled'] = data.two_factor_enabled;
+    if (Object.keys(row).length > 0) {
+      row['updated_at'] = new Date();
+      row['updatedby_id'] = auth.user_id;
+    }
+
+    let updated = existingUser;
+    if (Object.keys(row).length > 0) {
+      updated = await this.getRepo()
+        .transaction()
+        .execute(async (trx) => {
+          const result = await this.getRepo().update(
+            {
+              tenant_id: auth.tenant_id,
+              id: userId,
+              row: row as OperationDataType<'authusers', 'update'>,
+            },
+            trx,
+          );
+          if (!result) throw new InternalError('Update failed');
+          const updatedUser = result as unknown as AuthUsersType;
+
+          await this.ensureAtLeastOneOwner(auth.tenant_id, trx, true, userId);
+
+          if (row['email']) {
+            const oldEmail = existingUser.email;
+            const nextEmail = row['email'];
+
+            const codeObj = await this.getRepo().addPasswordResetCode(userId, trx);
+            const code = codeObj?.password_reset_code;
+
+            if (!isOwnEmailChange) {
+              await this.sessions.deleteByUserId(userId, auth.tenant_id, trx);
+            }
+
+            await this.mailService.enqueueMail(
+              {
+                to: nextEmail as string,
+                tenant_id: auth.tenant_id,
+                subject: 'Verify your new email address',
+                text: `We need to verify your new email address so you can keep using your pplCRM account. Verify it using this link: ${env.appUrl}/verify-email?code=${code}`,
+                html: `<h2>Verify your new email address</h2>
+<p>We need to verify your new email address so you can keep using your pplCRM account. Click the button below to verify it:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify email address</a>
+</div>
+<p class="warning">For security, this link expires in 24 hours.</p>`,
+              },
+              trx,
+            );
+
+            await this.mailService.enqueueMail(
+              {
+                to: oldEmail,
+                tenant_id: auth.tenant_id,
+                subject: 'The email address on your pplCRM account is changing',
+                text: `Hi ${existingUser.first_name},\n\nA request was made to change the email address for your pplCRM account to ${nextEmail}. If you did not make this change, please contact support immediately.`,
+                html: `<h2>Email change requested</h2>
+<p>Hi ${existingUser.first_name},</p>
+<p>A request was made to change the email address for your pplCRM account to <strong>${nextEmail}</strong>.</p>
+<p>We have sent a verification link to the new address. Until it is verified, sign-in under that address is inactive.</p>
+<p class="warning">If you did not make this change, please contact support immediately to secure your account.</p>`,
+              },
+              trx,
+            );
+          }
+
+          const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at', 'password'];
+          const changes: Record<string, unknown> = {};
+          for (const key of Object.keys(row)) {
+            if (skipKeys.includes(key)) continue;
+            const oldVal = (existingUser as Record<string, unknown>)[key];
+            const newVal = (row as Record<string, unknown>)[key];
+            if (oldVal !== newVal) {
+              changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+            }
+          }
+          await this.userActivity.log(
+            {
+              tenant_id: auth.tenant_id,
+              user_id: auth.user_id,
+              activity: 'update',
+              entity: 'authusers',
+              entity_id: userId,
+              quantity: 1,
+              metadata: {
+                id: userId,
+                entity_label: `${updatedUser.first_name} ${updatedUser.last_name || ''}`.trim(),
+                changes,
+              },
+            },
+            trx,
+          );
+
+          return updatedUser;
+        });
+    }
+
+    await this.syncProfile(auth, userId, data);
+    const profile = (await this.profiles.getOneByAuthId(userId)) as Models['profiles'] | undefined;
+    return this.sanitizeUser({ ...updated, profile });
+  }
+
+  public async uploadAvatar(auth: IAuthKeyPayload, input: { dataBase64: string; mimeType: string; filename: string }) {
+    const { dataBase64, mimeType, filename } = input;
+
+    if (!AuthController.AVATAR_ALLOWED_TYPES.includes(mimeType)) {
+      throw new BadRequestError(`Unsupported image type. Allowed: ${AuthController.AVATAR_ALLOWED_TYPES.join(', ')}`);
+    }
+
+    const buffer = Buffer.from(dataBase64, 'base64');
+    if (buffer.length > AuthController.AVATAR_MAX_BYTES) {
+      throw new BadRequestError('File too large. Maximum size is 5 MB.');
+    }
+
+    const storageFileUUID = randomUUID();
+    const ext = mimeType.split('/')[1] || 'jpg';
+    const storageKey = `avatars/${auth.tenant_id}/${auth.user_id}/${storageFileUUID}.${ext}`;
+    const sha256_hex = createHash('sha256').update(buffer).digest('hex');
+
+    await this.storage.upload(storageKey, buffer, mimeType);
+
+    let finalFileId = '';
+
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        const existingProfile = await this.profiles.getOneByAuthId(auth.user_id);
+
+        // Clean up old avatar
+        if (existingProfile?.avatar_file_id) {
+          try {
+            const oldFile = await trx
+              .selectFrom('files')
+              .select('storage_key')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('id', '=', existingProfile.avatar_file_id)
+              .executeTakeFirst();
+            if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+            await trx
+              .deleteFrom('files')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('id', '=', existingProfile.avatar_file_id)
+              .execute();
+          } catch {
+            /* non-critical */
+          }
+        }
+
+        // Insert new file record
+        const fileResult = await trx
+          .insertInto('files')
+          .values({
+            tenant_id: auth.tenant_id,
+            filename,
+            mime_type: mimeType,
+            size_bytes: buffer.length,
+            storage_key: storageKey,
+            sha256_hex,
+            uploaded_by: auth.user_id,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        const fileId = String(fileResult.id);
+        finalFileId = fileId;
+
+        // Update or insert profile
+        if (existingProfile) {
+          await trx
+            .updateTable('profiles')
+            .set({ avatar_file_id: fileId, updated_at: new Date(), updatedby_id: auth.user_id })
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('auth_id', '=', auth.user_id)
+            .execute();
+        } else {
+          await trx
+            .insertInto('profiles')
+            .values({
+              tenant_id: auth.tenant_id,
+              auth_id: auth.user_id,
+              avatar_file_id: fileId,
+              createdby_id: auth.user_id,
+              updatedby_id: auth.user_id,
+            })
+            .execute();
+        }
+      });
+
+    return { file_id: finalFileId, avatar_url: signedFileDownloadUrl(String(finalFileId), auth.tenant_id) };
+  }
+
+  public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string, rememberMe?: boolean) {
+    // Do not reveal whether the email is registered: an unknown account fails with the same
+    // "Invalid verification code" as a wrong code, not a distinct 404. (A user with no active
+    // challenge already has a null stored code and hits the same failure below.)
+    const user = await this.getUserByEmailOrNull(email.toLowerCase());
+    if (!user) {
+      throw new BadRequestError('Invalid verification code.');
+    }
+
+    // The OTP is stored hashed; hash the input and compare with a timing-safe
+    // equality to eliminate the brute-force side-channel.
+    const storedCode = user.two_factor_code ?? '';
+    const inputHash = code ? hashToken(String(code)) : '';
+    const codeMatch =
+      storedCode.length > 0 &&
+      storedCode.length === inputHash.length &&
+      timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputHash));
+    if (!codeMatch) {
+      // Per-account brute-force cap: after too many wrong guesses, invalidate the
+      // OTP entirely so it can't be ground down within its validity window — the
+      // user must sign in again to receive a fresh code.
+      const attempts = Number(user.two_factor_attempts ?? 0) + 1;
+      if (attempts >= MAX_2FA_ATTEMPTS) {
+        await this.getRepo()
+          .db.updateTable('authusers')
+          .set({ two_factor_code: null, two_factor_expires_at: null, two_factor_attempts: 0 })
+          .where('id', '=', user.id)
+          .where('tenant_id', '=', user.tenant_id)
+          .execute();
+        throw new BadRequestError('Too many incorrect codes. Please sign in again to get a new code.');
+      }
+      await this.getRepo()
+        .db.updateTable('authusers')
+        .set({ two_factor_attempts: attempts })
+        .where('id', '=', user.id)
+        .where('tenant_id', '=', user.tenant_id)
+        .execute();
+      throw new BadRequestError('Invalid verification code.');
+    }
+
+    if (user.deactivated_at) {
+      throw new ForbiddenError('This account has been deactivated. Contact an administrator to restore access.');
+    }
+
+    if (!user.verified) {
+      throw new ForbiddenError(
+        'Your email address is not verified yet. Please check your inbox (and spam folder) for a verification link.',
+      );
+    }
+
+    if (!user.two_factor_expires_at || (user.two_factor_expires_at as unknown as Date).getTime() < Date.now()) {
+      throw new BadRequestError('Verification code has expired. Please log in again.');
+    }
+
+    await this.getRepo()
+      .db.updateTable('authusers')
+      .set({
+        two_factor_code: null,
+        two_factor_expires_at: null,
+        two_factor_attempts: 0,
+      })
+      .where('id', '=', user.id)
+      .execute();
+
+    if (user.deletion_scheduled_at) {
+      await this.getRepo()
+        .db.updateTable('authusers')
+        .set({ deletion_scheduled_at: null })
+        .where('id', '=', user.id)
+        .execute();
+
+      await this.mailService.sendMail({
+        to: user.email,
+        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+        subject: 'Your account has been restored',
+        text: `Welcome back! Your request to delete your account has been canceled, and your account is fully restored.`,
+        html: `<h2>Account restored</h2>
+<p>Welcome back! Your request to delete your account has been canceled, and your account is fully restored.</p>`,
+      });
+    }
+
+    if (user.tenant_id) {
+      const tenant = await this.getRepo()
+        .db.selectFrom('tenants')
+        .select(['suspended_at', 'paused_at'])
+        .where('id', '=', user.tenant_id)
+        .executeTakeFirst();
+
+      if (tenant?.suspended_at) {
+        throw new ForbiddenError(
+          'This account has been suspended. Please contact support if you believe this is an error.',
+        );
+      }
+      // Paused accounts (user-initiated) allow login so the owner can reactivate from settings
+    }
+
+    return this.createTokens({
+      user_id: String(user.id),
+      tenant_id: String(user.tenant_id),
+      name: user.first_name,
+      ipAddress,
+      userAgent,
+      rememberMe,
+    });
+  }
+
+  public async verifyEmail(code: string) {
+    const msec = await this.getCodeAge(code);
+    // 24 hours in milliseconds for verification links
+    if (msec > 24 * 60 * 60 * 1000) {
+      throw new BadRequestError('The verification link has expired. Please request a new one.');
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.db
+      .selectFrom('authusers')
+      .select(['id', 'previous_email', 'previous_role'])
+      .where('password_reset_code', '=', hashToken(code))
+      .executeTakeFirst();
+
+    if (!user) {
+      throw new BadRequestError('Invalid or expired verification link.');
+    }
+
+    await repo.transaction().execute(async (trx) => {
+      const updateData: Record<string, unknown> = {
+        verified: true,
+        password_reset_code: null,
+        password_reset_code_created_at: null,
+      };
+
+      if (user.previous_email) {
+        // Email change confirmation: restore role and clear pending state.
+        // Invalidate all existing sessions — an old-email session token
+        // should not remain valid after the address has been changed.
+        updateData['role'] = user.previous_role;
+        updateData['previous_email'] = null;
+        updateData['previous_role'] = null;
+        await trx.deleteFrom('sessions').where('user_id', '=', user.id).execute();
+      }
+
+      await trx.updateTable('authusers').set(updateData).where('id', '=', user.id).execute();
+    });
+
+    return { success: true };
+  }
+
+  private async buildUserStats(auth: IAuthKeyPayload, userId: string) {
+    const defaults = {
+      emails_assigned: { total: 0, open: 0, closed: 0 },
+      contacts_added: { total: 0, last_created_at: null as Date | null },
+      files_imported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
+      files_exported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
+    };
+
+    try {
+      const [emails, contacts, activity] = await Promise.all([
+        this.emailsRepo.getAssignmentStats({ tenant_id: auth.tenant_id, user_id: userId }),
+        this.personsRepo.getCreatedStats({ tenant_id: auth.tenant_id, user_id: userId }),
+        this.userActivity.getStats({ tenant_id: auth.tenant_id, user_id: userId }),
+      ]);
+
+      const importActivity = activity['import'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
+      const exportActivity = activity['export'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
+
+      return {
+        emails_assigned: emails,
+        contacts_added: contacts,
+        files_imported: {
+          count: importActivity.count ?? 0,
+          total_rows: importActivity.total_quantity ?? 0,
+          last_activity_at: importActivity.last_activity_at ?? null,
+        },
+        files_exported: {
+          count: exportActivity.count ?? 0,
+          total_rows: exportActivity.total_quantity ?? 0,
+          last_activity_at: exportActivity.last_activity_at ?? null,
+        },
+      };
+    } catch (err) {
+      logger.error({ err }, 'Failed to build user stats');
+      return defaults;
+    }
+  }
+
+  private coerceBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true';
+    return false;
+  }
+
+  private coerceDate(value: unknown): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) return new Date(value.getTime());
+    const date = new Date(value as string);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  private async createProfile(trx: Transaction<Models>, id: string, tenant_id: string, auth_id: string) {
+    const row = { id, tenant_id, auth_id } as OperationDataType<'profiles', 'insert'>;
+    const profile = await this.profiles.add({ row }, trx);
+    if (!profile) {
+      throw new InternalError('Something went wrong, please try again');
+    }
+    return profile;
+  }
+
+  private async createTenant(trx: Transaction<Models>, name: string) {
+    const slug = await this.generateTenantSlug(trx, name);
+    const row = { name, slug } as OperationDataType<'tenants', 'insert'>;
+    const tenantAddResult = await this.tenants.add({ row }, trx);
+    if (!tenantAddResult) {
+      throw new InternalError('Something went wrong, please try again');
+    }
+    return tenantAddResult.id;
+  }
+
+  /**
+   * Produce a globally-unique, DNS-safe subdomain label for a new tenant: slugify the org name, fall
+   * back to a random `org-xxxxxx` when the name yields nothing usable or hits a reserved label, then
+   * suffix on collision. The tenant id isn't known before insert, so the fallback is random rather
+   * than id-derived.
+   */
+  private async generateTenantSlug(trx: Transaction<Models>, name: string): Promise<string> {
+    let base = slugifyHandle(name);
+    if (!base || RESERVED_SUBDOMAINS.has(base)) {
+      base = `org-${randomBytes(4).toString('hex')}`;
+    }
+    let candidate = base;
+    let n = 2;
+    while (await this.tenantSlugTaken(trx, candidate)) {
+      candidate = `${base}-${n++}`;
+    }
+    return candidate;
+  }
+
+  private async tenantSlugTaken(trx: Transaction<Models>, slug: string): Promise<boolean> {
+    const row = await trx.selectFrom('tenants').select('id').where('slug', '=', slug).executeTakeFirst();
+    return !!row;
+  }
+
+  private async createTokens(
+    input: {
+      user_id: string;
+      tenant_id: string;
+      name: string;
+      oldSession?: string;
+      ipAddress?: string;
+      userAgent?: string;
+      rememberMe?: boolean;
+      existingExpiresAt?: Date | null;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    // Delete the old session
+    if (input.oldSession) await this.sessions.deleteBySessionId(input.oldSession, trx);
+
+    // Generate plaintext tokens — only their hashes are persisted in the DB.
+    const plainSessionId = generateToken();
+    const plainRefreshToken = generateToken();
+
+    const now = new Date();
+    const expiresAt =
+      input.existingExpiresAt !== undefined
+        ? input.existingExpiresAt // renewal: preserve original absolute expiry
+        : new Date(now.getTime() + (input.rememberMe ? REMEMBER_ME_EXPIRY_MS : SESSION_EXPIRY_MS));
+
+    const row = {
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
+      ip_address: input.ipAddress || '',
+      user_agent: input.userAgent || '',
+      status: 'active',
+      session_id: hashToken(plainSessionId),
+      refresh_token: hashToken(plainRefreshToken),
+      expires_at: expiresAt,
+      last_used_at: now,
+    } as OperationDataType<'sessions', 'insert'>;
+
+    const currentSession = await this.sessions.add({ row }, trx);
+
+    if (!currentSession) {
+      throw new InternalError('Session creation failed');
+    }
+
+    const key = process.env['SHARED_SECRET'];
+    if (!key) {
+      throw new ServerMisconfigError('Server misconfiguration');
+    }
+
+    const signer = createSigner({
+      algorithm: 'HS256',
+      key,
+      expiresIn: '30m',
+    });
+    try {
+      const auth_token = signer({
+        user_id: input.user_id,
+        tenant_id: input.tenant_id,
+        name: input.name,
+        session_id: plainSessionId, // plaintext in JWT; hash is in DB
+      });
+      // refresh_token goes to the client as an HttpOnly cookie (set by the router), never the body.
+      return { auth_token, refresh_token: plainRefreshToken, refresh_expires_at: expiresAt };
+    } catch (err) {
+      throw new InternalError('Token creation failed', undefined, { cause: err });
+    }
+  }
+
+  private async createUser(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    password: string,
+    email: string,
+    input: {
+      email: string;
+      first_name: string;
+      password: string;
+      organization: string;
+    },
+  ) {
+    const row = {
+      tenant_id,
+      password,
+      email,
+      first_name: input.first_name,
+      role: 'owner',
+      verified: false,
+    } as OperationDataType<'authusers', 'insert'>;
+    try {
+      const user = await this.getRepo().add({ row }, trx);
+      if (!user) throw new InternalError('Something went wrong, please try again');
+      return user;
+    } catch (err) {
+      throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
+    }
+  }
+
+  /** The invitation email — initial invite and admin resend share the copy. */
+  private async enqueueInviteEmail(
+    trx: Transaction<Models>,
+    opts: {
+      to: string;
+      tenantId: string;
+      firstName: string;
+      inviterName: string | undefined;
+      tempPassword: string;
+      code: string | null | undefined;
+    },
+  ) {
+    const inviter = opts.inviterName || 'your team';
+    await this.mailService.enqueueMail(
+      {
+        to: opts.to,
+        tenant_id: opts.tenantId,
+        subject: `You've been invited to join ${inviter} on pplCRM`,
+        text: `Hi ${opts.firstName},\n\nYou have been invited to join the campaign team by ${inviter}.\n\nYour temporary password is: ${opts.tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${opts.code}\n\nThis invitation expires in 7 days.`,
+        html: `<h2>You've been invited</h2>
+<p>Hi ${opts.firstName},</p>
+<p>You have been invited to join the campaign team by <strong>${inviter}</strong>.</p>
+<p>To join the team, activate your account, and set up your password, click the button below:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/new-password?code=${opts.code}" class="btn">Activate account</a>
+</div>
+<p>Your temporary password is: <code>${opts.tempPassword}</code></p>
+<p>This invitation expires in 7 days.</p>
+<p class="warning">If you did not expect this invitation, you can safely ignore this email.</p>`,
+      },
+      trx,
+    );
+  }
+
+  private generateTempPassword(length = 18) {
+    return randomBytes(Math.max(12, Math.ceil(length / 2)))
+      .toString('base64url')
+      .slice(0, length);
+  }
+
+  /** Reads a single tenant configuration value from the settings key/value table. */
+  private async getTenantSetting(tenant_id: string | number | null | undefined, key: string): Promise<unknown> {
+    if (tenant_id === null || tenant_id === undefined) return undefined;
+    const row = await this.getRepo()
+      .db.selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', String(tenant_id))
+      .where('key', '=', key)
+      .executeTakeFirst();
+    return row?.value;
+  }
+
+  private async getCodeAge(code: string): Promise<number> {
+    const nowData: QueryResult<INow> = await this.getRepo().nowTime();
+    if (!nowData || !nowData?.rows[0]?.now) {
+      throw new InternalError('Something went wrong, please try again');
+    }
+
+    const data: AuthUsersType = (await this.getRepo().getPasswordResetCodeTime(code)) as AuthUsersType;
+    if (!data) {
+      throw new PreconditionFailedError('Invalid password reset code');
+    }
+    const thenTimestamp = (data.password_reset_code_created_at || new Date().toString()) as string;
+    const then = new Date(thenTimestamp);
+
+    const now = new Date(nowData?.rows[0]?.now || new Date().toString());
+
+    return now.getTime() - then.getTime();
+  }
+
+  // NOTE (SECURITY-REVIEW 4.7): `authusers.email` is UNIQUE globally, not per-tenant, and this lookup
+  // is intentionally tenant-agnostic (sign-in has no tenant context yet). Consequence: one email
+  // address belongs to exactly one tenant — a person cannot be a member of two organizations under
+  // the same email. This is the current, intended product constraint; making email per-tenant would
+  // be a schema-level change (drop the global unique, add UNIQUE(tenant_id, email), and thread a
+  // tenant selector through sign-in).
+  private async getUserByEmail(email: string) {
+    const user = (await this.getRepo().getByEmail(email)) as AuthUsersType;
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    return user;
+  }
+
+  // Same lookup as getUserByEmail but returns null instead of throwing, for the pre-auth flows
+  // (sign-in, 2FA) that must not reveal — via a distinct error code or path — whether an email
+  // is registered. Callers equalize behavior for the found/not-found cases themselves.
+  private async getUserByEmailOrNull(email: string): Promise<AuthUsersType | null> {
+    const user = (await this.getRepo().getByEmail(email)) as AuthUsersType | undefined;
+    return user ?? null;
+  }
+
+  private async isNewDeviceOrLocation(userId: string, ipAddress?: string, userAgent?: string): Promise<boolean> {
+    // Fail closed: if the client IP can't be determined, treat it as a new
+    // device so the 2FA challenge is issued rather than silently skipped.
+    if (!ipAddress) return true;
+    const existing = await this.sessions.db
+      .selectFrom('sessions')
+      .select('id')
+      .where('user_id', '=', userId)
+      .where('ip_address', '=', ipAddress)
+      .where('user_agent', '=', userAgent || '')
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    return !existing;
+  }
+
+  private sanitizeUser(record: Record<string, unknown>) {
+    const lastName: string =
+      (record['last_name'] as string | null | undefined) ??
+      (record['profile_last_name'] as string | null | undefined) ??
+      (record['effective_last_name'] as string | null | undefined) ??
+      ((record['profile'] as Record<string, unknown>)?.['last_name'] as string | null | undefined) ??
+      '';
+
+    let notificationPreferences = {
+      mention_in_comment: true,
+      mention_in_comment_in_app: true,
+      task_assigned: true,
+      task_assigned_in_app: true,
+      task_due: true,
+      task_due_in_app: true,
+      person_assigned: true,
+      person_assigned_in_app: true,
+      email_assigned: true,
+      email_assigned_in_app: true,
+      export_ready: true,
+      export_ready_in_app: true,
+      import_summary: true,
+      import_summary_in_app: true,
+    };
+
+    const rawPreferences = (record['profile'] as Record<string, unknown>)?.['preferences'] ?? record['preferences'];
+    const parsedPreferences = parseProfilePreferences(rawPreferences);
+    if (parsedPreferences?.notifications) {
+      notificationPreferences = {
+        ...notificationPreferences,
+        ...parsedPreferences.notifications,
+      };
+    }
+
+    return {
+      id: record['id'] != null ? String(record['id']) : '',
+      email: (record['email'] as string | null | undefined) ?? '',
+      first_name: (record['first_name'] as string | null | undefined) ?? '',
+      last_name: lastName,
+      role: record['role'] != null ? String(record['role']) : null,
+      verified: this.coerceBoolean(record['verified']),
+      email_verified: this.coerceBoolean(record['verified']),
+      two_factor_enabled: this.coerceBoolean(record['two_factor_enabled']),
+      deletion_scheduled_at: this.coerceDate(record['deletion_scheduled_at']),
+      deactivated_at: this.coerceDate(record['deactivated_at']),
+      last_active_at: this.coerceDate(record['last_active_at']),
+      created_at: this.coerceDate(record['created_at']),
+      updated_at: this.coerceDate(record['updated_at']),
+      previous_email: (record['previous_email'] as string | null | undefined) ?? null,
+      previous_role: (record['previous_role'] as string | null | undefined) ?? null,
+      notification_preferences: notificationPreferences,
+    };
+  }
+
+  private async syncProfile(auth: IAuthKeyPayload, authUserId: string, data: UpdateAuthUserType) {
+    const existingProfile = (await this.profiles.getOneByAuthId(authUserId)) as Models['profiles'] | undefined;
+    const profileId = existingProfile?.id != null ? String(existingProfile.id) : authUserId;
+
+    let finalPreferences: Record<string, unknown> | null = existingProfile?.preferences
+      ? ((parseProfilePreferences(existingProfile.preferences) as Record<string, unknown> | null) ?? null)
+      : null;
+
+    if (data.notification_preferences) {
+      finalPreferences = {
+        ...(finalPreferences || {}),
+        notifications: {
+          ...(((finalPreferences || {})['notifications'] as Record<string, unknown>) || {}),
+          ...data.notification_preferences,
+        },
+      };
+    }
+
+    if (existingProfile) {
+      const row: Record<string, unknown> = {
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      };
+      if (data.last_name !== undefined) {
+        row['last_name'] = data.last_name ?? null;
+      }
+      if (finalPreferences !== null) {
+        row['preferences'] = JSON.stringify(finalPreferences);
+      }
+
+      if (data.last_name !== undefined || data.notification_preferences !== undefined) {
+        await this.profiles.update({ tenant_id: auth.tenant_id, id: profileId, row });
+      }
+      return;
+    }
+
+    const insertRow = {
+      id: authUserId,
+      tenant_id: auth.tenant_id,
+      auth_id: authUserId,
+      last_name: data.last_name ?? null,
+      preferences: finalPreferences ? JSON.stringify(finalPreferences) : null,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'profiles', 'insert'>;
+    await this.profiles.add({ row: insertRow });
+  }
+
+  private async updateTenantWithAdmin(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    admin_id: string,
+    createdby_id: string,
+  ) {
+    const row = { admin_id, createdby_id } as OperationDataType<'tenants', 'update'>;
+    const id = tenant_id as GetOperandType<'tenants', 'update', Keys<TablesOperationMap['tenants']['update']>>;
+    await this.tenants.update({ id, tenant_id, row }, trx);
+  }
+
+  private async validateNewPassword(password: string): Promise<void> {
+    if (COMMON_PASSWORDS.has(password.toLowerCase())) {
+      throw new BadRequestError('This password is too common. Please choose a different password.');
+    }
+    const count = await getPwnedCount(password);
+    if (count > 0) {
+      throw new BadRequestError(
+        'This password has appeared in a known data breach. Please choose a different password.',
+      );
+    }
+  }
+
+  private async verifyUserDoesNotExist(email: string) {
+    const exists = await this.getRepo().existsByEmail(email);
+    if (exists) {
+      throw new ConflictError('This email already exists. Did you want to sign in?');
+    }
+  }
+}
+
+const PASSWORD_RESET_CODE_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
+const INVITE_ACTIVATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+// How long a rotated-away refresh token may still be replayed (concurrent tabs sharing one cookie).
+const ROTATION_REUSE_GRACE_MS = 60 * 1000;
+const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
 ````
 
 ## File: apps/backend/src/app/modules/donations/controller.ts
@@ -73774,130 +73926,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 }
 ````
 
-## File: apps/backend/src/app/routes.ts
-````typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { sql } from 'kysely';
-
-import { BaseRepository } from './lib/base.repo';
-import emailsApiRoute from './modules/emails/routes/emails-api.route';
-import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
-import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
-import filesRoute from './modules/files/routes/files.route';
-import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
-import importsDownloadRoute from './modules/imports/routes/imports-download.route';
-import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
-import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
-import eventsPublicRoute from './modules/events/routes/events-public.route';
-import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
-import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
-import unsubscribeRoute from './modules/newsletters/routes/unsubscribe.route';
-import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
-import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
-import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
-import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
-import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
-import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
-
-// A worker heartbeat older than this = the in-process job worker is wedged (the ops watchdog
-// beats every 5 minutes; 20 = 3-4 missed cycles plus slack for retry backoff).
-const WORKER_HEARTBEAT_STALE_MS = 20 * 60 * 1000;
-
-export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
-  // --- Public REST routes (No Auth required) ---
-
-  // Register public web forms submission REST routes
-  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
-
-  // Register public volunteer events REST routes
-  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
-
-  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
-  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
-
-  // Register public RSVP event pages REST routes
-  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
-
-  // Register public volunteer delivery-route pages (token is the credential, §14)
-  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
-
-  // Companion access layer: verify + approve gate for both volunteer companions
-  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
-
-  // Register Stripe billing webhook route
-  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
-
-  // Register Stripe donations webhook route
-  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
-
-  // Register SendGrid newsletters event webhook route
-  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
-
-  // One-click unsubscribe for automation emails (signed token, no session)
-  fastify.register(unsubscribeRoute, { prefix: '/api/unsubscribe' });
-
-  // Register Postmark transactional bounce/spam-complaint webhook route
-  fastify.register(postmarkWebhookRoute, { prefix: '/api/postmark' });
-
-  // Register Zapier inbound action routes (API key auth handled inside route)
-  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
-
-  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
-  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
-
-  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
-  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
-
-  // Register exports download REST route (auth handled inside route via query token)
-  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
-
-  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
-  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
-
-  // Register email attachments REST routes (auth handled inside route via token/query token)
-  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
-
-  // Register files download REST route (auth handled inside route via token/query token)
-  fastify.register(filesRoute, { prefix: '/api/files' });
-
-  // Root health check — cheap liveness ping (process is up); does NOT touch Postgres.
-  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
-
-  // Readiness probe — verifies Postgres is reachable so an orchestrator can gate traffic/restarts.
-  // Returns 503 (not 200) when the DB is down; body is intentionally minimal (no error details).
-  fastify.get('/healthz', async (_req, res) => {
-    try {
-      await sql`select 1`.execute(BaseRepository.dbInstance);
-      return res.send({ status: 'ok' });
-    } catch {
-      return res.code(503).send({ status: 'unavailable' });
-    }
-  });
-
-  // Job-worker dead-man's switch, probed by the external availability test (NOT wired into the
-  // container's readiness probe — a jammed queue must not pull the API from ingress). The ops
-  // watchdog cron updates ops_heartbeats every 5 minutes; a beat older than 20 minutes (3-4
-  // missed cycles plus slack) means the in-process worker is wedged even though HTTP is fine.
-  // Missing row/table (fresh DB, migration not applied yet) also reports stale — the safe
-  // direction, and the reason for the catch.
-  fastify.get('/healthz/worker', async (_req, res) => {
-    try {
-      const row = await BaseRepository.dbInstance
-        .selectFrom('ops_heartbeats')
-        .select('beat_at')
-        .where('name', '=', 'ops_watchdog')
-        .executeTakeFirst();
-      const stale = !row || Date.now() - new Date(row.beat_at).getTime() > WORKER_HEARTBEAT_STALE_MS;
-      return stale ? res.code(503).send({ status: 'stale' }) : res.send({ status: 'ok' });
-    } catch {
-      return res.code(503).send({ status: 'stale' });
-    }
-  });
-
-  done();
-};
-````
-
 ## File: apps/website/src/app/pricing/pricing-page.html
 ````html
 <pc-site-header variant="solid" />
@@ -74145,6 +74173,306 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 </section>
 
 <pc-site-footer />
+````
+
+## File: apps/backend/src/app/routes.ts
+````typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { sql } from 'kysely';
+
+import { BaseRepository } from './lib/base.repo';
+import emailsApiRoute from './modules/emails/routes/emails-api.route';
+import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
+import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
+import filesRoute from './modules/files/routes/files.route';
+import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
+import importsDownloadRoute from './modules/imports/routes/imports-download.route';
+import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
+import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
+import eventsPublicRoute from './modules/events/routes/events-public.route';
+import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
+import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
+import unsubscribeRoute from './modules/newsletters/routes/unsubscribe.route';
+import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
+import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
+import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
+import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
+import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
+import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
+
+// A worker heartbeat older than this = the in-process job worker is wedged (the ops watchdog
+// beats every 5 minutes; 20 = 3-4 missed cycles plus slack for retry backoff).
+const WORKER_HEARTBEAT_STALE_MS = 20 * 60 * 1000;
+
+export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
+  // --- Public REST routes (No Auth required) ---
+
+  // Register public web forms submission REST routes
+  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
+
+  // Register public volunteer events REST routes
+  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
+
+  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
+  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
+
+  // Register public RSVP event pages REST routes
+  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
+
+  // Register public volunteer delivery-route pages (token is the credential, §14)
+  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
+
+  // Companion access layer: verify + approve gate for both volunteer companions
+  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
+
+  // Register Stripe billing webhook route
+  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
+
+  // Register Stripe donations webhook route
+  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
+
+  // Register SendGrid newsletters event webhook route
+  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
+
+  // One-click unsubscribe for automation emails (signed token, no session)
+  fastify.register(unsubscribeRoute, { prefix: '/api/unsubscribe' });
+
+  // Register Postmark transactional bounce/spam-complaint webhook route
+  fastify.register(postmarkWebhookRoute, { prefix: '/api/postmark' });
+
+  // Register Zapier inbound action routes (API key auth handled inside route)
+  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
+
+  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
+  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
+
+  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
+  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
+
+  // Register exports download REST route (auth handled inside route via query token)
+  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
+
+  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
+  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
+
+  // Register email attachments REST routes (auth handled inside route via token/query token)
+  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
+
+  // Register files download REST route (auth handled inside route via token/query token)
+  fastify.register(filesRoute, { prefix: '/api/files' });
+
+  // Root health check — cheap liveness ping (process is up); does NOT touch Postgres.
+  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
+
+  // Readiness probe — verifies Postgres is reachable so an orchestrator can gate traffic/restarts.
+  // Returns 503 (not 200) when the DB is down; body is intentionally minimal (no error details).
+  fastify.get('/healthz', async (_req, res) => {
+    try {
+      await sql`select 1`.execute(BaseRepository.dbInstance);
+      return res.send({ status: 'ok' });
+    } catch {
+      return res.code(503).send({ status: 'unavailable' });
+    }
+  });
+
+  // Job-worker dead-man's switch, probed by the external availability test (NOT wired into the
+  // container's readiness probe — a jammed queue must not pull the API from ingress). The ops
+  // watchdog cron updates ops_heartbeats every 5 minutes; a beat older than 20 minutes (3-4
+  // missed cycles plus slack) means the in-process worker is wedged even though HTTP is fine.
+  // Missing row/table (fresh DB, migration not applied yet) also reports stale — the safe
+  // direction, and the reason for the catch.
+  fastify.get('/healthz/worker', async (_req, res) => {
+    try {
+      const row = await BaseRepository.dbInstance
+        .selectFrom('ops_heartbeats')
+        .select('beat_at')
+        .where('name', '=', 'ops_watchdog')
+        .executeTakeFirst();
+      const stale = !row || Date.now() - new Date(row.beat_at).getTime() > WORKER_HEARTBEAT_STALE_MS;
+      return stale ? res.code(503).send({ status: 'stale' }) : res.send({ status: 'ok' });
+    } catch {
+      return res.code(503).send({ status: 'stale' });
+    }
+  });
+
+  done();
+};
+````
+
+## File: apps/website/src/app/pricing/pricing-page.ts
+````typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import {
+  ANNUAL_MONTHS_FREE,
+  annualPriceForQuantity,
+  bracketIndexForSubscribers,
+  cadenceLabel,
+  FEATURE_MATRIX,
+  GB,
+  PLANS,
+  priceForQuantity,
+} from '@common';
+import type { BillingInterval, FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
+
+import { CurrencyService } from '../ui/currency.service';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SiteIcon } from '../ui/site-icon';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
+const SLIDER_STOPS: readonly number[] = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+];
+
+/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
+const DEFAULT_STOP_INDEX = 1;
+const DEFAULT_STOP = 2_500;
+
+/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
+type MatrixPlanKey = keyof FeatureMatrixRow['values'];
+
+function isMatrixPlanKey(key: string): key is MatrixPlanKey {
+  return key === 'free' || key === 'grassroots' || key === 'movement';
+}
+
+/** A matrix row is "table stakes" when every displayed plan simply has it (all-true checks).
+ * Those rows render as the compact included-everywhere strip, not as table rows. */
+function isAllTrueRow(row: FeatureMatrixRow): boolean {
+  return row.values.free === true && row.values.grassroots === true && row.values.movement === true;
+}
+
+/** One-line "what this tier adds" summary per plan card. Mirrors the GATED_FEATURES split in
+ * plans.ts; if a feature moves between tiers, update this wording too (pplcrm-website-claims). */
+const STEP_UP_LABELS: Readonly<Record<string, string>> = {
+  free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
+  grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
+  movement:
+    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers and priority support.',
+};
+
+@Component({
+  selector: 'pc-pricing-page',
+  imports: [RouterLink, SiteHeader, SiteFooter, SiteIcon],
+  templateUrl: './pricing-page.html',
+})
+export class PricingPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  private readonly currency = inject(CurrencyService);
+  /** Whether prices are being shown in a non-USD currency (gates the billing disclaimer). */
+  protected readonly isConverted = this.currency.isConverted;
+  /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
+  protected readonly currencySymbol = this.currency.priceSymbol;
+
+  /** The priced plan cards (Free / Grassroots / Movement); enterprise is a footnote. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+
+  /** Features every plan includes (all-true matrix rows), shown once as a strip instead of
+   * spending a table row on three identical checkmarks. */
+  protected readonly includedEverywhere: readonly string[] = FEATURE_MATRIX.flatMap((group) =>
+    group.rows.filter(isAllTrueRow).map((row) => row.label),
+  );
+
+  /** The comparison table: only groups and rows where plans actually differ. */
+  protected readonly diffMatrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX.map((group) => ({
+    category: group.category,
+    rows: group.rows.filter((row) => !isAllTrueRow(row)),
+  })).filter((group) => group.rows.length > 0);
+
+  /** Billing interval the cards and comparison table price at. The marketing page defaults to
+   * Annual (the in-app billing page keeps Monthly — see the plans.ts decision log). */
+  protected readonly interval = signal<BillingInterval>('year');
+  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
+
+  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
+  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
+  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
+  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
+
+  protected onSlide(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) {
+      this.stopIndex.set(Number(target.value));
+    }
+  }
+
+  protected setInterval(interval: BillingInterval): void {
+    this.interval.set(interval);
+  }
+
+  /** Live price at the slider's subscriber count, formatted in the active display currency.
+   * On annual, paid tiers show the rounded monthly-equivalent of the annual total (`$24` —
+   * the exact total renders alongside via `annualNote`, with the rounding disclaimer below
+   * the cards); Free keeps its plain `$0` (nothing to bill annually). */
+  protected priceLabel(plan: PlanDef): string {
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return 'Contact us';
+    if (this.interval() === 'year' && plan.purchasable) {
+      return this.currency.formatMonthlyEquivalent(annualPriceForQuantity(plan.key, index));
+    }
+    return this.currency.format(priceForQuantity(plan.key, index));
+  }
+
+  /** The card's cadence line ('per month' / 'per month, billed annually' / 'forever'). */
+  protected cadence(plan: PlanDef): string {
+    return cadenceLabel(plan, this.interval());
+  }
+
+  /** "Billed annually as $290 · 2 months free" under an annual paid-tier price; null whenever
+   * the plain monthly presentation applies (monthly interval, Free, out-of-ladder). */
+  protected annualNote(plan: PlanDef): string | null {
+    if (this.interval() !== 'year' || !plan.purchasable) return null;
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return null;
+    const total = this.currency.format(annualPriceForQuantity(plan.key, index));
+    return `Billed annually as ${total} · ${this.annualBadge}`;
+  }
+
+  /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */
+  protected zeroPrice(): string {
+    return this.currency.format(0);
+  }
+
+  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
+  protected overMax(plan: PlanDef): boolean {
+    return bracketIndexForSubscribers(plan.key, this.subscribers()) === null;
+  }
+
+  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
+  protected maxSubscribersLabel(plan: PlanDef): string {
+    const brackets = plan.pricing?.brackets;
+    const last = brackets?.[brackets.length - 1];
+    return (last?.upTo ?? 0).toLocaleString('en-US');
+  }
+
+  /** One-line caps summary for a plan card, derived from PlanDef so it can never drift
+   * (e.g. "Up to 100,000 subscribers · 5 seats · 10 GB"). */
+  protected capsLine(plan: PlanDef): string {
+    const parts: string[] = [`Up to ${this.maxSubscribersLabel(plan)} subscribers`];
+    if (plan.seats === null && plan.volunteers === null) {
+      parts.push('unlimited seats & volunteers');
+    } else {
+      parts.push(plan.seats === null ? 'unlimited seats' : `${plan.seats} seats`);
+      if (plan.volunteers === null) parts.push('unlimited volunteers');
+      else if (plan.volunteers > 0) parts.push(`${plan.volunteers} volunteers`);
+    }
+    if (plan.storageBytes !== null) parts.push(`${Math.round(plan.storageBytes / GB)} GB`);
+    return parts.join(' · ');
+  }
+
+  /** The card's "what this tier adds" one-liner. */
+  protected stepUpLabel(plan: PlanDef): string {
+    return STEP_UP_LABELS[plan.key] ?? plan.blurb;
+  }
+
+  /** One matrix cell: true = included, false = not included, string = text value. */
+  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
+    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
+  }
+}
 ````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
@@ -77893,6 +78221,336 @@ const renderFormHtml = (
 };
 ````
 
+## File: apps/website/src/app/home/home-page.ts
+````typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { PLANS, startingPriceUsd } from '@common';
+import type { PlanDef } from '@common';
+
+import { AppPreview, type PreviewKind } from '../ui/app-preview';
+import { BrowserFrame } from '../ui/browser-frame';
+import { Constellation } from '../ui/constellation';
+import { CurrencyService } from '../ui/currency.service';
+import { SeoService } from '../ui/seo';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SiteIcon } from '../ui/site-icon';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+import { environment } from '../../environments/environment';
+
+const AUDIENCE_IDS = ['office', 'camp', 'np'] as const;
+type Audience = (typeof AUDIENCE_IDS)[number];
+
+function isAudience(value: unknown): value is Audience {
+  return AUDIENCE_IDS.some((id) => id === value);
+}
+
+interface Hero {
+  readonly h1: string;
+  readonly sub: string;
+  readonly url: string;
+  readonly kind: PreviewKind;
+  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
+  readonly img?: string;
+}
+
+interface AudienceOption {
+  readonly id: Audience;
+  readonly label: string;
+}
+
+interface Step {
+  readonly n: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Feature {
+  readonly icon: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Qa {
+  readonly q: string;
+  readonly a: string;
+}
+
+interface Door {
+  readonly addr: string;
+  readonly who: string;
+  readonly chip: string;
+  readonly chipClass: string;
+}
+
+const HEROES: Record<Audience, Hero> = {
+  office: {
+    h1: 'Every case answered. Every constituent remembered.',
+    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
+    url: 'app.pplcrm.com/inbox',
+    kind: 'inbox',
+    img: 'assets/site-shots/01-shot.png',
+  },
+  camp: {
+    h1: 'Built for the people who knock and win campaigns.',
+    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
+    url: 'app.pplcrm.com/canvassing',
+    kind: 'canvassing',
+    img: 'assets/site-shots/02-shot.png',
+  },
+  np: {
+    h1: 'Donors, volunteers and neighbours. One list.',
+    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
+    url: 'app.pplcrm.com/donations',
+    kind: 'donations',
+    img: 'assets/site-shots/03-shot.png',
+  },
+};
+
+@Component({
+  selector: 'pc-home-page',
+  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
+  templateUrl: './home-page.html',
+})
+export class HomePage {
+  protected readonly signupUrl = SIGNUP_URL;
+
+  private readonly seo = inject(SeoService);
+
+  constructor() {
+    // SoftwareApplication rich-result data for the landing page. The free tier
+    // ($0) is the checkable, drift-safe offer to advertise here.
+    this.seo.setJsonLd('software', {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'pplCRM',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web, iOS, Android',
+      url: environment.siteUrl,
+      description:
+        'A people-first CRM for constituency offices, campaigns and non-profits: one shared list ' +
+        'for constituents, voters, donors and volunteers, with a shared inbox, canvassing, ' +
+        'donations, newsletters and field apps.',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', description: 'Free plan' },
+    });
+  }
+
+  /** The /for/… routes render this page with their audience preselected (see app.routes.ts). */
+  private readonly routeAudience: unknown = inject(ActivatedRoute).snapshot.data['audience'];
+
+  protected readonly aud = signal<Audience>(isAudience(this.routeAudience) ? this.routeAudience : 'office');
+  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
+
+  protected readonly audiences: readonly AudienceOption[] = [
+    { id: 'office', label: 'Constituency office' },
+    { id: 'camp', label: 'Campaign' },
+    { id: 'np', label: 'Non-profit' },
+  ];
+
+  protected readonly steps: readonly Step[] = [
+    {
+      n: '1',
+      title: 'Create your free workspace',
+      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
+    },
+    {
+      n: '2',
+      title: 'Try everything on sample data',
+      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
+    },
+    {
+      n: '3',
+      title: 'Import your list when it clicks',
+      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
+    },
+  ];
+
+  /** The three comparative claims in the "Why pplCRM" band — each one names a real alternative and beats it. */
+  protected readonly whyPillars: readonly Feature[] = [
+    {
+      icon: 'clock',
+      title: 'Built for the long game',
+      body: 'A sales pipeline forgets a deal the day it closes. Your work compounds: this year’s case becomes next year’s volunteer becomes next cycle’s donor. pplCRM keeps that whole story on one record, however long you work the same streets.',
+    },
+    {
+      icon: 'lock-closed',
+      title: 'Your list is yours',
+      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
+    },
+    {
+      icon: 'paper-airplane',
+      title: 'Email that lands',
+      body: 'On big email platforms your newsletter shares a sending reputation with thousands of strangers, including the spammers. Here you send from your own verified domain, so the reputation you build is yours alone. Warm-up limits and abuse guardrails keep spammers off the platform entirely.',
+    },
+  ];
+
+  protected readonly features: readonly Feature[] = [
+    {
+      icon: 'users',
+      title: 'People & households',
+      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
+    },
+    {
+      icon: 'inbox',
+      title: 'A shared inbox & tasks',
+      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
+    },
+    {
+      icon: 'megaphone',
+      title: 'Newsletters that land',
+      body: 'Write once, send to the 1,284 people it’s actually for. An AI deliverability check scores every send before it leaves, so spam-filter surprises get caught while they’re still fixable.',
+    },
+    {
+      icon: 'map-pin',
+      title: 'Doors & the field',
+      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
+    },
+    {
+      icon: 'currency-dollar',
+      title: 'Donations, gratefully',
+      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
+    },
+    {
+      icon: 'arrow-up-tray',
+      title: 'Your spreadsheet, welcomed',
+      body: 'Bring the whole messy spreadsheet; duplicates merge on the way in. If you ever leave, everything leaves with you: plain-CSV export, on every plan.',
+    },
+  ];
+
+  protected readonly growFeatures: readonly Feature[] = [
+    {
+      icon: 'clipboard-document-list',
+      title: 'Web forms & automations',
+      body: 'Publish a signup or pledge page in minutes; every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
+    },
+    {
+      icon: 'calendar',
+      title: 'Events & volunteer shifts',
+      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
+    },
+    {
+      icon: 'credit-card',
+      title: 'Online giving pages',
+      body: 'Share a donation page and gifts land straight on the donor’s record: receipted, thanked and counted. No third spreadsheet to reconcile.',
+    },
+    {
+      icon: 'rectangle-stack',
+      title: 'One list, every campaign',
+      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf; switch context and the whole workspace follows.',
+    },
+  ];
+
+  /** The three claims beside the constellation animation in the network band. */
+  protected readonly networkPoints: readonly Feature[] = [
+    {
+      icon: 'user-group',
+      title: 'See the web, not the spreadsheet',
+      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
+    },
+    {
+      icon: 'route',
+      title: 'Warm paths beat cold lists',
+      body: 'Reach new people through the neighbour who already knows you. An introduction opens doors a cold call never will.',
+    },
+    {
+      icon: 'presentation-chart-line',
+      title: 'Every touch sharpens the map',
+      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
+    },
+  ];
+
+  protected readonly companionFeatures: readonly Feature[] = [
+    {
+      icon: 'map-pin',
+      title: 'Canvass companion',
+      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
+    },
+    {
+      icon: 'ticket',
+      title: 'Yard sign routes',
+      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
+    },
+    {
+      icon: 'house-modern',
+      title: 'Deliveries',
+      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
+    },
+  ];
+
+  private readonly currency = inject(CurrencyService);
+
+  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+
+  /** "Starting at" price for a teaser card, in the active display currency ('$0', 'From €65', …). */
+  protected startingPrice(plan: PlanDef): string {
+    const usd = startingPriceUsd(plan);
+    if (usd === null) return 'Custom';
+    if (usd === 0) return this.currency.format(0);
+    return `From ${this.currency.format(usd)}`;
+  }
+
+  protected readonly faqs: readonly Qa[] = [
+    {
+      q: 'Is the free plan really free?',
+      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
+    },
+    {
+      q: 'What is the demo workspace?',
+      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
+    },
+    {
+      q: 'Can I import my existing list?',
+      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
+    },
+    {
+      q: 'Can I get my data back out?',
+      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
+    },
+    {
+      q: 'Who owns the data?',
+      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
+    },
+    {
+      q: 'Where does my data live?',
+      a: 'In Canada, isolated from every other organization’s workspace.',
+    },
+    {
+      q: 'Will my newsletter land in spam?',
+      a: 'You send from your own verified domain, so inbox providers judge you on your record, not a stranger’s. New senders warm up gradually, and unsubscribes are honored automatically.',
+    },
+    {
+      q: 'How does pricing work?',
+      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month — or pay annually and get 2 months free. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
+    },
+  ];
+
+  protected readonly doors: readonly Door[] = [
+    {
+      addr: '214 Alder St',
+      who: 'Elena & Marco Ramos',
+      chip: 'Supporter',
+      chipClass: 'bg-success/20 text-success-content',
+    },
+    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
+    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
+    {
+      addr: '226 Alder St',
+      who: 'Priya Natarajan',
+      chip: 'Remaining',
+      chipClass: 'bg-base-300/60 text-base-content/60',
+    },
+    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
+  ];
+
+  protected pick(id: Audience): void {
+    this.aud.set(id);
+  }
+}
+````
+
 ## File: apps/website/src/app/legal/eula-content.ts
 ````typescript
 import type { LegalDoc } from './legal-types';
@@ -78406,182 +79064,6 @@ export const PRIVACY_DOC: LegalDoc = {
 };
 ````
 
-## File: apps/website/src/app/pricing/pricing-page.ts
-````typescript
-import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import {
-  ANNUAL_MONTHS_FREE,
-  annualPriceForQuantity,
-  bracketIndexForSubscribers,
-  cadenceLabel,
-  FEATURE_MATRIX,
-  GB,
-  PLANS,
-  priceForQuantity,
-} from '@common';
-import type { BillingInterval, FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
-
-import { CurrencyService } from '../ui/currency.service';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
-const SLIDER_STOPS: readonly number[] = [
-  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
-];
-
-/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
-const DEFAULT_STOP_INDEX = 1;
-const DEFAULT_STOP = 2_500;
-
-/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
-type MatrixPlanKey = keyof FeatureMatrixRow['values'];
-
-function isMatrixPlanKey(key: string): key is MatrixPlanKey {
-  return key === 'free' || key === 'grassroots' || key === 'movement';
-}
-
-/** A matrix row is "table stakes" when every displayed plan simply has it (all-true checks).
- * Those rows render as the compact included-everywhere strip, not as table rows. */
-function isAllTrueRow(row: FeatureMatrixRow): boolean {
-  return row.values.free === true && row.values.grassroots === true && row.values.movement === true;
-}
-
-/** One-line "what this tier adds" summary per plan card. Mirrors the GATED_FEATURES split in
- * plans.ts; if a feature moves between tiers, update this wording too (pplcrm-website-claims). */
-const STEP_UP_LABELS: Readonly<Record<string, string>> = {
-  free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
-  grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
-  movement:
-    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers and priority support.',
-};
-
-@Component({
-  selector: 'pc-pricing-page',
-  imports: [RouterLink, SiteHeader, SiteFooter, SiteIcon],
-  templateUrl: './pricing-page.html',
-})
-export class PricingPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  private readonly currency = inject(CurrencyService);
-  /** Whether prices are being shown in a non-USD currency (gates the billing disclaimer). */
-  protected readonly isConverted = this.currency.isConverted;
-  /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
-  protected readonly currencySymbol = this.currency.priceSymbol;
-
-  /** The priced plan cards (Free / Grassroots / Movement); enterprise is a footnote. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-
-  /** Features every plan includes (all-true matrix rows), shown once as a strip instead of
-   * spending a table row on three identical checkmarks. */
-  protected readonly includedEverywhere: readonly string[] = FEATURE_MATRIX.flatMap((group) =>
-    group.rows.filter(isAllTrueRow).map((row) => row.label),
-  );
-
-  /** The comparison table: only groups and rows where plans actually differ. */
-  protected readonly diffMatrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX.map((group) => ({
-    category: group.category,
-    rows: group.rows.filter((row) => !isAllTrueRow(row)),
-  })).filter((group) => group.rows.length > 0);
-
-  /** Billing interval the cards and comparison table price at. The marketing page defaults to
-   * Annual (the in-app billing page keeps Monthly — see the plans.ts decision log). */
-  protected readonly interval = signal<BillingInterval>('year');
-  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
-
-  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
-  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
-  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
-  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
-
-  protected onSlide(event: Event): void {
-    const target = event.target;
-    if (target instanceof HTMLInputElement) {
-      this.stopIndex.set(Number(target.value));
-    }
-  }
-
-  protected setInterval(interval: BillingInterval): void {
-    this.interval.set(interval);
-  }
-
-  /** Live price at the slider's subscriber count, formatted in the active display currency.
-   * On annual, paid tiers show the rounded monthly-equivalent of the annual total (`$24` —
-   * the exact total renders alongside via `annualNote`, with the rounding disclaimer below
-   * the cards); Free keeps its plain `$0` (nothing to bill annually). */
-  protected priceLabel(plan: PlanDef): string {
-    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
-    if (index === null) return 'Contact us';
-    if (this.interval() === 'year' && plan.purchasable) {
-      return this.currency.formatMonthlyEquivalent(annualPriceForQuantity(plan.key, index));
-    }
-    return this.currency.format(priceForQuantity(plan.key, index));
-  }
-
-  /** The card's cadence line ('per month' / 'per month, billed annually' / 'forever'). */
-  protected cadence(plan: PlanDef): string {
-    return cadenceLabel(plan, this.interval());
-  }
-
-  /** "Billed annually as $290 · 2 months free" under an annual paid-tier price; null whenever
-   * the plain monthly presentation applies (monthly interval, Free, out-of-ladder). */
-  protected annualNote(plan: PlanDef): string | null {
-    if (this.interval() !== 'year' || !plan.purchasable) return null;
-    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
-    if (index === null) return null;
-    const total = this.currency.format(annualPriceForQuantity(plan.key, index));
-    return `Billed annually as ${total} · ${this.annualBadge}`;
-  }
-
-  /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */
-  protected zeroPrice(): string {
-    return this.currency.format(0);
-  }
-
-  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
-  protected overMax(plan: PlanDef): boolean {
-    return bracketIndexForSubscribers(plan.key, this.subscribers()) === null;
-  }
-
-  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
-  protected maxSubscribersLabel(plan: PlanDef): string {
-    const brackets = plan.pricing?.brackets;
-    const last = brackets?.[brackets.length - 1];
-    return (last?.upTo ?? 0).toLocaleString('en-US');
-  }
-
-  /** One-line caps summary for a plan card, derived from PlanDef so it can never drift
-   * (e.g. "Up to 100,000 subscribers · 5 seats · 10 GB"). */
-  protected capsLine(plan: PlanDef): string {
-    const parts: string[] = [`Up to ${this.maxSubscribersLabel(plan)} subscribers`];
-    if (plan.seats === null && plan.volunteers === null) {
-      parts.push('unlimited seats & volunteers');
-    } else {
-      parts.push(plan.seats === null ? 'unlimited seats' : `${plan.seats} seats`);
-      if (plan.volunteers === null) parts.push('unlimited volunteers');
-      else if (plan.volunteers > 0) parts.push(`${plan.volunteers} volunteers`);
-    }
-    if (plan.storageBytes !== null) parts.push(`${Math.round(plan.storageBytes / GB)} GB`);
-    return parts.join(' · ');
-  }
-
-  /** The card's "what this tier adds" one-liner. */
-  protected stepUpLabel(plan: PlanDef): string {
-    return STEP_UP_LABELS[plan.key] ?? plan.blurb;
-  }
-
-  /** One matrix cell: true = included, false = not included, string = text value. */
-  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
-    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
-  }
-}
-````
-
 ## File: apps/backend/src/env.ts
 ````typescript
 import { z } from 'zod';
@@ -78615,6 +79097,9 @@ const envSchema = z.object({
     .transform((val) => val === 'true'),
   API_URL: z.string().url().default('http://localhost:3000'),
   APP_URL: z.string().url().default('http://localhost:4200'),
+  // Public origin of the volunteer companion app (/t and /r links). Prod: https://go.pplcrm.com —
+  // must match the frontend's environment.companionOrigin or emailed links 404.
+  COMPANION_URL: z.string().url().default('http://localhost:4300'),
   SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
   MS_CLIENT_ID: z.string().optional(),
   MS_CLIENT_SECRET: z.string().optional(),
@@ -78757,6 +79242,7 @@ export const env = {
   migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
   apiUrl: parsedEnv.API_URL,
   appUrl: parsedEnv.APP_URL,
+  companionUrl: parsedEnv.COMPANION_URL,
   publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
   trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
   workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
@@ -78800,490 +79286,6 @@ export const env = {
   googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
   webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
   webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
-};
-````
-
-## File: apps/website/src/app/home/home-page.ts
-````typescript
-import { Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { PLANS, startingPriceUsd } from '@common';
-import type { PlanDef } from '@common';
-
-import { AppPreview, type PreviewKind } from '../ui/app-preview';
-import { BrowserFrame } from '../ui/browser-frame';
-import { Constellation } from '../ui/constellation';
-import { CurrencyService } from '../ui/currency.service';
-import { SeoService } from '../ui/seo';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-import { environment } from '../../environments/environment';
-
-const AUDIENCE_IDS = ['office', 'camp', 'np'] as const;
-type Audience = (typeof AUDIENCE_IDS)[number];
-
-function isAudience(value: unknown): value is Audience {
-  return AUDIENCE_IDS.some((id) => id === value);
-}
-
-interface Hero {
-  readonly h1: string;
-  readonly sub: string;
-  readonly url: string;
-  readonly kind: PreviewKind;
-  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
-  readonly img?: string;
-}
-
-interface AudienceOption {
-  readonly id: Audience;
-  readonly label: string;
-}
-
-interface Step {
-  readonly n: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Feature {
-  readonly icon: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Door {
-  readonly addr: string;
-  readonly who: string;
-  readonly chip: string;
-  readonly chipClass: string;
-}
-
-const HEROES: Record<Audience, Hero> = {
-  office: {
-    h1: 'Every case answered. Every constituent remembered.',
-    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
-    url: 'app.pplcrm.com/inbox',
-    kind: 'inbox',
-    img: 'assets/site-shots/01-shot.png',
-  },
-  camp: {
-    h1: 'Built for the people who knock and win campaigns.',
-    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
-    url: 'app.pplcrm.com/canvassing',
-    kind: 'canvassing',
-    img: 'assets/site-shots/02-shot.png',
-  },
-  np: {
-    h1: 'Donors, volunteers and neighbours. One list.',
-    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
-    url: 'app.pplcrm.com/donations',
-    kind: 'donations',
-    img: 'assets/site-shots/03-shot.png',
-  },
-};
-
-@Component({
-  selector: 'pc-home-page',
-  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
-  templateUrl: './home-page.html',
-})
-export class HomePage {
-  protected readonly signupUrl = SIGNUP_URL;
-
-  private readonly seo = inject(SeoService);
-
-  constructor() {
-    // SoftwareApplication rich-result data for the landing page. The free tier
-    // ($0) is the checkable, drift-safe offer to advertise here.
-    this.seo.setJsonLd('software', {
-      '@context': 'https://schema.org',
-      '@type': 'SoftwareApplication',
-      name: 'pplCRM',
-      applicationCategory: 'BusinessApplication',
-      operatingSystem: 'Web, iOS, Android',
-      url: environment.siteUrl,
-      description:
-        'A people-first CRM for constituency offices, campaigns and non-profits: one shared list ' +
-        'for constituents, voters, donors and volunteers, with a shared inbox, canvassing, ' +
-        'donations, newsletters and field apps.',
-      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', description: 'Free plan' },
-    });
-  }
-
-  /** The /for/… routes render this page with their audience preselected (see app.routes.ts). */
-  private readonly routeAudience: unknown = inject(ActivatedRoute).snapshot.data['audience'];
-
-  protected readonly aud = signal<Audience>(isAudience(this.routeAudience) ? this.routeAudience : 'office');
-  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
-
-  protected readonly audiences: readonly AudienceOption[] = [
-    { id: 'office', label: 'Constituency office' },
-    { id: 'camp', label: 'Campaign' },
-    { id: 'np', label: 'Non-profit' },
-  ];
-
-  protected readonly steps: readonly Step[] = [
-    {
-      n: '1',
-      title: 'Create your free workspace',
-      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
-    },
-    {
-      n: '2',
-      title: 'Try everything on sample data',
-      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
-    },
-    {
-      n: '3',
-      title: 'Import your list when it clicks',
-      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
-    },
-  ];
-
-  /** The three comparative claims in the "Why pplCRM" band — each one names a real alternative and beats it. */
-  protected readonly whyPillars: readonly Feature[] = [
-    {
-      icon: 'clock',
-      title: 'Built for the long game',
-      body: 'A sales pipeline forgets a deal the day it closes. Your work compounds: this year’s case becomes next year’s volunteer becomes next cycle’s donor. pplCRM keeps that whole story on one record, however long you work the same streets.',
-    },
-    {
-      icon: 'lock-closed',
-      title: 'Your list is yours',
-      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
-    },
-    {
-      icon: 'paper-airplane',
-      title: 'Email that lands',
-      body: 'On big email platforms your newsletter shares a sending reputation with thousands of strangers, including the spammers. Here you send from your own verified domain, so the reputation you build is yours alone. Warm-up limits and abuse guardrails keep spammers off the platform entirely.',
-    },
-  ];
-
-  protected readonly features: readonly Feature[] = [
-    {
-      icon: 'users',
-      title: 'People & households',
-      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
-    },
-    {
-      icon: 'inbox',
-      title: 'A shared inbox & tasks',
-      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
-    },
-    {
-      icon: 'megaphone',
-      title: 'Newsletters that land',
-      body: 'Write once, send to the 1,284 people it’s actually for. An AI deliverability check scores every send before it leaves, so spam-filter surprises get caught while they’re still fixable.',
-    },
-    {
-      icon: 'map-pin',
-      title: 'Doors & the field',
-      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
-    },
-    {
-      icon: 'currency-dollar',
-      title: 'Donations, gratefully',
-      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
-    },
-    {
-      icon: 'arrow-up-tray',
-      title: 'Your spreadsheet, welcomed',
-      body: 'Bring the whole messy spreadsheet; duplicates merge on the way in. If you ever leave, everything leaves with you: plain-CSV export, on every plan.',
-    },
-  ];
-
-  protected readonly growFeatures: readonly Feature[] = [
-    {
-      icon: 'clipboard-document-list',
-      title: 'Web forms & automations',
-      body: 'Publish a signup or pledge page in minutes; every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
-    },
-    {
-      icon: 'calendar',
-      title: 'Events & volunteer shifts',
-      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
-    },
-    {
-      icon: 'credit-card',
-      title: 'Online giving pages',
-      body: 'Share a donation page and gifts land straight on the donor’s record: receipted, thanked and counted. No third spreadsheet to reconcile.',
-    },
-    {
-      icon: 'rectangle-stack',
-      title: 'One list, every campaign',
-      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf; switch context and the whole workspace follows.',
-    },
-  ];
-
-  /** The three claims beside the constellation animation in the network band. */
-  protected readonly networkPoints: readonly Feature[] = [
-    {
-      icon: 'user-group',
-      title: 'See the web, not the spreadsheet',
-      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
-    },
-    {
-      icon: 'route',
-      title: 'Warm paths beat cold lists',
-      body: 'Reach new people through the neighbour who already knows you. An introduction opens doors a cold call never will.',
-    },
-    {
-      icon: 'presentation-chart-line',
-      title: 'Every touch sharpens the map',
-      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
-    },
-  ];
-
-  protected readonly companionFeatures: readonly Feature[] = [
-    {
-      icon: 'map-pin',
-      title: 'Canvass companion',
-      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
-    },
-    {
-      icon: 'ticket',
-      title: 'Yard sign routes',
-      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
-    },
-    {
-      icon: 'house-modern',
-      title: 'Deliveries',
-      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
-    },
-  ];
-
-  private readonly currency = inject(CurrencyService);
-
-  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-
-  /** "Starting at" price for a teaser card, in the active display currency ('$0', 'From €65', …). */
-  protected startingPrice(plan: PlanDef): string {
-    const usd = startingPriceUsd(plan);
-    if (usd === null) return 'Custom';
-    if (usd === 0) return this.currency.format(0);
-    return `From ${this.currency.format(usd)}`;
-  }
-
-  protected readonly faqs: readonly Qa[] = [
-    {
-      q: 'Is the free plan really free?',
-      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
-    },
-    {
-      q: 'What is the demo workspace?',
-      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
-    },
-    {
-      q: 'Can I import my existing list?',
-      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
-    },
-    {
-      q: 'Can I get my data back out?',
-      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
-    },
-    {
-      q: 'Who owns the data?',
-      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
-    },
-    {
-      q: 'Where does my data live?',
-      a: 'In Canada, isolated from every other organization’s workspace.',
-    },
-    {
-      q: 'Will my newsletter land in spam?',
-      a: 'You send from your own verified domain, so inbox providers judge you on your record, not a stranger’s. New senders warm up gradually, and unsubscribes are honored automatically.',
-    },
-    {
-      q: 'How does pricing work?',
-      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month — or pay annually and get 2 months free. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
-    },
-  ];
-
-  protected readonly doors: readonly Door[] = [
-    {
-      addr: '214 Alder St',
-      who: 'Elena & Marco Ramos',
-      chip: 'Supporter',
-      chipClass: 'bg-success/20 text-success-content',
-    },
-    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
-    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
-    {
-      addr: '226 Alder St',
-      who: 'Priya Natarajan',
-      chip: 'Remaining',
-      chipClass: 'bg-base-300/60 text-base-content/60',
-    },
-    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
-  ];
-
-  protected pick(id: Audience): void {
-    this.aud.set(id);
-  }
-}
-````
-
-## File: apps/website/src/app/legal/security-content.ts
-````typescript
-import type { LegalDoc } from './legal-types';
-
-/**
- * The security page. Every mechanism named here (argon2id, hashed tokens,
- * AES-256-GCM OAuth secrets, signature-verified webhooks, tenant-scoping
- * checks, retention windows) exists in the codebase; if an implementation
- * changes, change this document in the same commit. The honesty section
- * (no certification claims) is deliberate; do not add badges we have not
- * earned.
- */
-export const SECURITY_DOC: LegalDoc = {
-  eyebrow: 'Trust',
-  title: 'Security',
-  intro:
-    'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
-  updated: 'July 21, 2026',
-  blocks: [
-    {
-      kind: 'h2',
-      id: 'approach',
-      text: 'Our approach',
-    },
-    {
-      kind: 'p',
-      text: 'A political or community list is one of the most sensitive databases an organization holds: names, addresses, donations, opinions. We designed for that from the first table. The principles are simple: hold as little as possible, encrypt what must be held, hand out the narrowest slice that does the job, make deletion real, and verify everything that arrives from outside. This page describes the mechanisms, not aspirations.',
-    },
-    {
-      kind: 'h2',
-      id: 'isolation',
-      text: 'Workspace isolation',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Every organization’s workspace is isolated. Every database query in the product is scoped to your workspace, and that rule is enforced by an automated check that runs on every build: code that touches workspace tables without workspace scoping fails and cannot ship.',
-        'The application connects to the database with a least-privilege role, and row-level security in the database provides defense in depth behind the application checks.',
-        'Public identifiers for people are deliberately non-sequential, so records cannot be enumerated by walking IDs.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'accounts',
-      text: 'Account security',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Passwords** are hashed with argon2id (64 MB memory cost), the current best practice, and are never stored or logged in plain text. At signup, passwords are checked against known breach corpora and you are warned before choosing one that has leaked elsewhere.',
-        '**Passkeys** (WebAuthn) are supported for phishing-resistant sign-in.',
-        '**Two-factor authentication** challenges sign-ins from a new device or location with a short-lived one-time code, and workspace admins can require 2FA for everyone in the organization.',
-        '**Sessions** use a short-lived access token plus a refresh token kept in an HttpOnly, secure cookie that page scripts cannot read. Session and refresh tokens are stored server-side only as SHA-256 hashes, so a database leak does not yield usable sessions. Sessions expire after 24 hours, or 30 days with “remember me”, and you can see and revoke your active sessions.',
-        '**Abuse resistance:** sign-in attempts are rate limited per IP, verification codes expire in minutes and allow limited attempts, and sign-in responses are constant-time so attackers cannot discover which emails have accounts.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'encryption',
-      text: 'Encryption',
-    },
-    {
-      kind: 'list',
-      items: [
-        'All traffic is encrypted in transit with TLS, with HSTS enforced. The application sets a strict content security policy and does not allow itself to be framed by other sites.',
-        'Database connections are encrypted, and stored data is encrypted at rest by the hosting platform.',
-        'OAuth tokens for connected mailboxes (Gmail, Microsoft 365) get an extra application-level layer: AES-256-GCM encryption with a key held outside the database.',
-        'Secrets that only need comparison (session tokens, verification codes, reset codes, volunteer device sessions) are stored as one-way hashes, never as plaintext.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'field-access',
-      text: 'Field and volunteer access',
-    },
-    {
-      kind: 'p',
-      text: 'Field tools are where lists usually leak, so companion access is least-privilege by construction. A volunteer link exposes exactly one turf or route, never the list. Volunteers verify with a one-time code sent to the contact your organization has on file (codes expire in 10 minutes, five attempts maximum) and must be approved once by an admin before first use. Device sessions are stored hashed and expire after 30 days; links expire too, and both are revocable at any time. A lost phone is an inconvenience, not a breach of your list.',
-    },
-    {
-      kind: 'h2',
-      id: 'payments',
-      text: 'Payments',
-    },
-    {
-      kind: 'p',
-      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe. We store the donation record; Stripe stores the payment instruments, under its PCI DSS obligations.',
-    },
-    {
-      kind: 'h2',
-      id: 'webhooks-integrations',
-      text: 'Integrations and webhooks',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
-        'Mailbox sync is opt-in per workspace, scoped by OAuth consent, disconnectable at any time, and its tokens are encrypted as described above.',
-        'API keys for integrations are generated per workspace and revocable.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'sending',
-      text: 'Sending protections',
-    },
-    {
-      kind: 'p',
-      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Every newsletter also passes a deliverability check before it sends — a 0–100 score over content best practices plus an AI review that catches phishing-shaped and scam-like content; drafts scoring below 50 cannot send until fixed. The AI review runs on every send, on every plan — it exists to stop a compromised account from blasting phishing before a single message leaves, not just to police new signups. Each plan’s monthly email allowance (2× your subscriber cap on Free, 8× on Grassroots, 12× on Movement) is enforced in the send path, and emails sent by automations count toward the same allowance — send volume is tied to the audience size a workspace actually pays for, so a small plan cannot be used to blast a huge imported list. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself, for newsletters and automation emails alike: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
-    },
-    {
-      kind: 'h2',
-      id: 'infrastructure',
-      text: 'Infrastructure, residency and backups',
-    },
-    {
-      kind: 'list',
-      items: [
-        'The platform runs on Microsoft Azure, with workspaces hosted in Canada; workspace data stays there for processing and backups.',
-        'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
-        'Databases are backed up automatically every day, with backups retained for 7 days in Canada. Deleted data therefore leaves backups within 7 days of leaving the live database.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'monitoring',
-      text: 'Audit trails',
-    },
-    {
-      kind: 'p',
-      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data. Our servers are also monitored around the clock: automated probes check the service from outside every few minutes and page us when it is unreachable, and server errors are reported to an error-tracking service (with credentials and workspace content stripped — see the privacy policy’s subprocessor list) so we usually know about a problem before you do.',
-    },
-    {
-      kind: 'h2',
-      id: 'honesty',
-      text: 'What we do not claim',
-    },
-    {
-      kind: 'p',
-      text: 'We are a small team and we would rather show you exactly what we do than imply an audit we have not had. We do not currently hold SOC 2 or ISO 27001 certification, and we do not display compliance badges we have not earned. What you get instead is specific, checkable engineering: the mechanisms on this page, the retention windows in the [privacy policy](/privacy), and the commitments on the [data ownership page](/data-ownership). If your organization requires a security questionnaire for procurement, write to us and we will answer it honestly.',
-    },
-    {
-      kind: 'h2',
-      id: 'disclosure',
-      text: 'Reporting a vulnerability',
-    },
-    {
-      kind: 'p',
-      text: 'If you believe you have found a security issue, email hello@pplcrm.com with “Security” in the subject line and we will respond within 3 business days. Please give us reasonable time to fix the issue before disclosing it publicly, do not access data that is not yours, and do not degrade the service while testing. We will not take legal action against good-faith research that follows these rules, and we credit reporters who want credit once a fix ships.',
-    },
-  ],
 };
 ````
 
@@ -79452,4 +79454,158 @@ export class FaqPage {
     },
   ];
 }
+````
+
+## File: apps/website/src/app/legal/security-content.ts
+````typescript
+import type { LegalDoc } from './legal-types';
+
+/**
+ * The security page. Every mechanism named here (argon2id, hashed tokens,
+ * AES-256-GCM OAuth secrets, signature-verified webhooks, tenant-scoping
+ * checks, retention windows) exists in the codebase; if an implementation
+ * changes, change this document in the same commit. The honesty section
+ * (no certification claims) is deliberate; do not add badges we have not
+ * earned.
+ */
+export const SECURITY_DOC: LegalDoc = {
+  eyebrow: 'Trust',
+  title: 'Security',
+  intro:
+    'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
+  updated: 'July 21, 2026',
+  blocks: [
+    {
+      kind: 'h2',
+      id: 'approach',
+      text: 'Our approach',
+    },
+    {
+      kind: 'p',
+      text: 'A political or community list is one of the most sensitive databases an organization holds: names, addresses, donations, opinions. We designed for that from the first table. The principles are simple: hold as little as possible, encrypt what must be held, hand out the narrowest slice that does the job, make deletion real, and verify everything that arrives from outside. This page describes the mechanisms, not aspirations.',
+    },
+    {
+      kind: 'h2',
+      id: 'isolation',
+      text: 'Workspace isolation',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Every organization’s workspace is isolated. Every database query in the product is scoped to your workspace, and that rule is enforced by an automated check that runs on every build: code that touches workspace tables without workspace scoping fails and cannot ship.',
+        'The application connects to the database with a least-privilege role, and row-level security in the database provides defense in depth behind the application checks.',
+        'Public identifiers for people are deliberately non-sequential, so records cannot be enumerated by walking IDs.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'accounts',
+      text: 'Account security',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Passwords** are hashed with argon2id (64 MB memory cost), the current best practice, and are never stored or logged in plain text. At signup, passwords are checked against known breach corpora and you are warned before choosing one that has leaked elsewhere.',
+        '**Passkeys** (WebAuthn) are supported for phishing-resistant sign-in.',
+        '**Two-factor authentication** challenges sign-ins from a new device or location with a short-lived one-time code, and workspace admins can require 2FA for everyone in the organization.',
+        '**Sessions** use a short-lived access token plus a refresh token kept in an HttpOnly, secure cookie that page scripts cannot read. Session and refresh tokens are stored server-side only as SHA-256 hashes, so a database leak does not yield usable sessions. Sessions expire after 24 hours, or 30 days with “remember me”, and you can see and revoke your active sessions.',
+        '**Abuse resistance:** sign-in attempts are rate limited per IP, verification codes expire in minutes and allow limited attempts, and sign-in responses are constant-time so attackers cannot discover which emails have accounts.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'encryption',
+      text: 'Encryption',
+    },
+    {
+      kind: 'list',
+      items: [
+        'All traffic is encrypted in transit with TLS, with HSTS enforced. The application sets a strict content security policy and does not allow itself to be framed by other sites.',
+        'Database connections are encrypted, and stored data is encrypted at rest by the hosting platform.',
+        'OAuth tokens for connected mailboxes (Gmail, Microsoft 365) get an extra application-level layer: AES-256-GCM encryption with a key held outside the database.',
+        'Secrets that only need comparison (session tokens, verification codes, reset codes, volunteer device sessions) are stored as one-way hashes, never as plaintext.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'field-access',
+      text: 'Field and volunteer access',
+    },
+    {
+      kind: 'p',
+      text: 'Field tools are where lists usually leak, so companion access is least-privilege by construction. A volunteer link exposes exactly one turf or route, never the list. Volunteers verify with a one-time code sent to the contact your organization has on file (codes expire in 10 minutes, five attempts maximum) and must be approved once by an admin before first use. Device sessions are stored hashed and expire after 30 days; links expire too, and both are revocable at any time. A lost phone is an inconvenience, not a breach of your list.',
+    },
+    {
+      kind: 'h2',
+      id: 'payments',
+      text: 'Payments',
+    },
+    {
+      kind: 'p',
+      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe. We store the donation record; Stripe stores the payment instruments, under its PCI DSS obligations.',
+    },
+    {
+      kind: 'h2',
+      id: 'webhooks-integrations',
+      text: 'Integrations and webhooks',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
+        'Mailbox sync is opt-in per workspace, scoped by OAuth consent, disconnectable at any time, and its tokens are encrypted as described above.',
+        'API keys for integrations are generated per workspace and revocable.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'sending',
+      text: 'Sending protections',
+    },
+    {
+      kind: 'p',
+      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Every newsletter also passes a deliverability check before it sends — a 0–100 score over content best practices plus an AI review that catches phishing-shaped and scam-like content; drafts scoring below 50 cannot send until fixed. The AI review runs on every send, on every plan — it exists to stop a compromised account from blasting phishing before a single message leaves, not just to police new signups. Each plan’s monthly email allowance (2× your subscriber cap on Free, 8× on Grassroots, 12× on Movement) is enforced in the send path, and emails sent by automations count toward the same allowance — send volume is tied to the audience size a workspace actually pays for, so a small plan cannot be used to blast a huge imported list. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself, for newsletters and automation emails alike: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
+    },
+    {
+      kind: 'h2',
+      id: 'infrastructure',
+      text: 'Infrastructure, residency and backups',
+    },
+    {
+      kind: 'list',
+      items: [
+        'The platform runs on Microsoft Azure, with workspaces hosted in Canada; workspace data stays there for processing and backups.',
+        'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
+        'Databases are backed up automatically every day, with backups retained for 7 days in Canada. Deleted data therefore leaves backups within 7 days of leaving the live database.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'monitoring',
+      text: 'Audit trails',
+    },
+    {
+      kind: 'p',
+      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data. Our servers are also monitored around the clock: automated probes check the service from outside every few minutes and page us when it is unreachable, and server errors are reported to an error-tracking service (with credentials and workspace content stripped — see the privacy policy’s subprocessor list) so we usually know about a problem before you do.',
+    },
+    {
+      kind: 'h2',
+      id: 'honesty',
+      text: 'What we do not claim',
+    },
+    {
+      kind: 'p',
+      text: 'We are a small team and we would rather show you exactly what we do than imply an audit we have not had. We do not currently hold SOC 2 or ISO 27001 certification, and we do not display compliance badges we have not earned. What you get instead is specific, checkable engineering: the mechanisms on this page, the retention windows in the [privacy policy](/privacy), and the commitments on the [data ownership page](/data-ownership). If your organization requires a security questionnaire for procurement, write to us and we will answer it honestly.',
+    },
+    {
+      kind: 'h2',
+      id: 'disclosure',
+      text: 'Reporting a vulnerability',
+    },
+    {
+      kind: 'p',
+      text: 'If you believe you have found a security issue, email hello@pplcrm.com with “Security” in the subject line and we will respond within 3 business days. Please give us reasonable time to fix the issue before disclosing it publicly, do not access data that is not yours, and do not degrade the service while testing. We will not take legal action against good-faith research that follows these rules, and we credit reporters who want credit once a fix ships.',
+    },
+  ],
+};
 ````

@@ -19,8 +19,10 @@ import type {
   getAllOptionsType,
 } from '../../../../../../libs/common/src';
 
+import { env } from '../../../env';
 import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
 import { geocodeAddress } from '../../lib/gis/geocode-address';
+import { notifyVolunteerOfLink, type VolunteerLinkSendResult } from '../../lib/mail/volunteer-link-notify';
 import { legMinutes, roadKm, type LatLng } from '../../lib/routing/geo';
 import { planRoutes, type PlanParams, type PlanStopInput } from '../../lib/routing/plan-routes';
 import {
@@ -431,21 +433,78 @@ export class DeliveriesController {
     let status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled' = route.status;
     if (personId && status === 'draft') status = 'assigned';
     if (!personId && status === 'assigned') status = 'draft';
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({ volunteer_person_id: personId, status, updatedby_id: auth.user_id, updated_at: new Date() })
+
+    if (!personId) {
+      await this.routesRepo.db
+        .updateTable('delivery_routes')
+        .set({ volunteer_person_id: null, status, updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .execute();
+      await this.logRouteActivity(
+        undefined,
+        auth,
+        input.route_id,
+        'unassign',
+        'volunteer_unassigned',
+        'Volunteer removed',
+      );
+      return { id: input.route_id, status, sent: { email: false, sms: false } };
+    }
+
+    const person = await this.routesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
       .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', input.route_id)
-      .execute();
-    await this.logRouteActivity(
-      undefined,
-      auth,
-      input.route_id,
-      personId ? 'assign' : 'unassign',
-      personId ? 'volunteer_assigned' : 'volunteer_unassigned',
-      personId ? 'Volunteer assigned' : 'Volunteer removed',
-    );
-    return { id: input.route_id, status };
+      .where('id', '=', personId)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('Pick the volunteer this route belongs to.');
+
+    // The link is personal, so assignment sends it: mint a fresh token (the raw
+    // token is never stored — this is the only moment we can put it in a message)
+    // and enqueue the email/SMS in the same transaction as the assignment. A new
+    // token also retires any link a previously assigned volunteer still holds.
+    const rawToken = randomBytes(32).toString('base64url');
+    const url = `${env.companionUrl}/r/${rawToken}`;
+    const orgName = await this.publicOrgName(auth.tenant_id);
+    let sent: VolunteerLinkSendResult = { email: false, sms: false };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('delivery_routes')
+        .set({
+          volunteer_person_id: personId,
+          status,
+          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
+          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .execute();
+      sent = await notifyVolunteerOfLink(
+        {
+          tenant_id: auth.tenant_id,
+          person,
+          orgName,
+          kindLabel: 'delivery route',
+          itemName: String(route.name ?? 'Delivery route'),
+          url,
+        },
+        trx,
+      );
+      await this.logRouteActivity(
+        trx,
+        auth,
+        input.route_id,
+        'assign',
+        'volunteer_assigned',
+        sent.email || sent.sms
+          ? `Volunteer assigned — link sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`
+          : 'Volunteer assigned — no contact info on file, link not sent',
+      );
+    });
+    return { id: input.route_id, status, sent };
   }
 
   public async setRouteStatus(auth: IAuthKeyPayload, input: SetDeliveryRouteStatusType) {

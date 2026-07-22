@@ -200,6 +200,7 @@ async function mintApprovedSession(db: Db, tenantId: string, personId: string, u
 }
 
 async function cleanup(db: Db, tenantId: string): Promise<void> {
+  await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('companion_ops').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('companion_sessions').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('companion_volunteers').where('tenant_id', '=', tenantId).execute();
@@ -269,12 +270,21 @@ describe('CanvassingController', () => {
     const [turf] = await controller.getTurfs(auth);
     if (!turf) throw new Error('expected a turf');
 
-    const { token } = await controller.assignTurf(auth, {
+    const { token, sent } = await controller.assignTurf(auth, {
       turf_id: turf.id,
       team_id: null,
       volunteer_person_id: s.volunteerPersonId,
     });
     expect(token.length).toBeGreaterThan(10);
+
+    // Assignment sends the personal link — the volunteer has an email on file (no mobile).
+    expect(sent).toEqual({ email: true, sms: false });
+    const jobs = await db.selectFrom('background_jobs').select('payload').where('tenant_id', '=', s.tenantId).execute();
+    const linkMail = jobs
+      .map((j) => (typeof j.payload === 'string' ? JSON.parse(j.payload) : j.payload))
+      .find((p) => p?.type === 'send-transactional-email' && String(p?.to) === 'sam@example.com');
+    expect(linkMail).toBeTruthy();
+    expect(String(linkMail?.text)).toContain(`/t/${token}`);
 
     // No session → the access layer blocks the payload.
     await expect(controller.getCompanionTurf(token, null)).rejects.toThrow();

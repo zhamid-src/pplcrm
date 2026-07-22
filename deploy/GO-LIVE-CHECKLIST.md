@@ -172,7 +172,7 @@ Re-verified against the live Container App: all expected env vars present (incl.
 `OPS_ALERT_EMAIL`), **`ALLOW_MOCK_PAYMENTS` is absent**, `/healthz` 200, `/healthz/worker` 200.
 
 - `NODE_ENV=production`, `MIGRATE_ON_BOOT=false` (migrations run manually, see below).
-- `API_URL=https://api.pplcrm.com`, `APP_URL=https://app.pplcrm.com`, `PUBLIC_BASE_DOMAIN=pplforms.com`.
+- `API_URL=https://api.pplcrm.com`, `APP_URL=https://app.pplcrm.com`, `PUBLIC_BASE_DOMAIN=pplforms.com`, `COMPANION_URL=https://go.pplcrm.com` (set by `deploy.yml`; volunteer link emails/texts point here).
 - **CORS stays locked to `APP_URL`** — do NOT widen it to `*.pplforms.com`. The public surfaces are
   same-origin by design (the Workers proxy `/api`), so CORS never needs to open up. Widening it is a
   security regression.
@@ -196,26 +196,26 @@ update` has no probe flags, so YAML is the only path. Liveness must stay on `GET
       outage; readiness on `GET /healthz` correctly pulls it from ingress instead. For reference
       (probes survive image deploys; this only ever needs re-doing on an app re-create):
 
-        ```bash
-        az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml
-        # edit: under properties.template.containers[0] add
-        #   probes:
-        #   - type: Startup
-        #     httpGet: { path: /, port: 3000 }
-        #     periodSeconds: 5
-        #     failureThreshold: 30
-        #   - type: Liveness
-        #     httpGet: { path: /, port: 3000 }
-        #     periodSeconds: 30
-        #     failureThreshold: 3
-        #   - type: Readiness
-        #     httpGet: { path: /healthz, port: 3000 }
-        #     periodSeconds: 30
-        #     failureThreshold: 3
-        az containerapp update -n pplcrm-api -g pplcrm-cad-prod --yaml /tmp/pplcrm-api.yaml
-        ```
+            ```bash
+            az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml
+            # edit: under properties.template.containers[0] add
+            #   probes:
+            #   - type: Startup
+            #     httpGet: { path: /, port: 3000 }
+            #     periodSeconds: 5
+            #     failureThreshold: 30
+            #   - type: Liveness
+            #     httpGet: { path: /, port: 3000 }
+            #     periodSeconds: 30
+            #     failureThreshold: 3
+            #   - type: Readiness
+            #     httpGet: { path: /healthz, port: 3000 }
+            #     periodSeconds: 30
+            #     failureThreshold: 3
+            az containerapp update -n pplcrm-api -g pplcrm-cad-prod --yaml /tmp/pplcrm-api.yaml
+            ```
 
-        One-time op — later `az containerapp update --image` deploys don't touch probes.
+            One-time op — later `az containerapp update --image` deploys don't touch probes.
 
 - [x] Review backups/retention on Postgres and Blob; confirm they match the retention windows the marketing
       site claims (see `pplcrm-website-claims`). **Verified 2026-07-21:** PG Flexible Server = 7-day

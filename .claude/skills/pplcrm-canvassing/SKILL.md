@@ -146,6 +146,11 @@ resolved `tenant_id` + `turf_id`. The `X-Companion-Session` header proves WHO �
 - `ui/assign-turf-dialog.ts` — assignment is personal: pick the volunteer person
   (search by name; they need an email/mobile on file for verification), mint the
   token, copy `/t/:token`. `AssignTurfObj` requires `volunteer_person_id`.
+  **Assignment also auto-sends the link**: `assignTurf` enqueues an email and/or
+  SMS to the volunteer's contacts inside the same transaction
+  (`lib/mail/volunteer-link-notify.ts`, URL base `env.companionUrl` /
+  `COMPANION_URL`) and returns `{ token, sent: { email, sms } }`; the page's
+  toast reflects the channels, warns when nothing could be sent.
 - `ui/companion-settings-dialog.ts` — "Survey settings" (header button): the
   campaign-scoped issue chips + door script every Companion shows
   (`canvassing.getCompanionSettings`/`updateCompanionSettings`, admin-gated write).

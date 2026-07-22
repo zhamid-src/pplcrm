@@ -120,8 +120,9 @@ Set the backend env on `pplcrm-api` (from `.env.production.example`). Required f
 - [ ] DB: `DB_HOST`, `DB_PORT`, `DB_NAME=pplcrm`, `DB_USER=pplcrm_app`, `DB_PASSWORD`, `DB_SSL=true`.
 - [ ] `DB_MIGRATION_USER=pplcrm_owner`, `DB_MIGRATION_PASSWORD` (used only by the migrate step).
 - [ ] Origins: `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=3000`, `API_URL=https://api.pplcrm.com`,
-      `APP_URL=https://app.pplcrm.com`, `TRUST_PROXY=1`. (`PUBLIC_BASE_DOMAIN=pplforms.com` is now set on
-      `pplcrm-api` by `deploy.yml` via `--set-env-vars` — no separate manual step.)
+      `APP_URL=https://app.pplcrm.com`, `TRUST_PROXY=1`. (`PUBLIC_BASE_DOMAIN=pplforms.com` and
+      `COMPANION_URL=https://go.pplcrm.com` are now set on `pplcrm-api` by `deploy.yml` via
+      `--set-env-vars` — no separate manual step.)
 - [ ] `MIGRATE_ON_BOOT=false`.
 - [ ] Blob: `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER=uploads`.
 - [ ] **Confirm `ALLOW_MOCK_PAYMENTS` is NOT set** anywhere (would accept forged payments).

@@ -79,3 +79,19 @@ export function donationPageUrl(tenantSlug: string | null | undefined, slug: str
 export function companionUrl(path: string): string {
   return `${environment.companionOrigin || window.location.origin}${path}`;
 }
+
+/** Which channels the backend sent a volunteer's personal link through on assignment. */
+export interface VolunteerLinkSent {
+  email: boolean;
+  sms: boolean;
+}
+
+/**
+ * Human phrasing for the assignment toast: 'link sent by email and text', or null when
+ * nothing could be sent (no contacts on file) — callers warn and point at Copy link.
+ */
+export function volunteerLinkSentPhrase(sent: VolunteerLinkSent | null | undefined): string | null {
+  if (!sent || (!sent.email && !sent.sms)) return null;
+  const channels = [sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ');
+  return `link sent by ${channels}`;
+}

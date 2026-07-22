@@ -7647,7 +7647,7 @@ export class CanvassingService extends TRPCService<unknown> {
     return this.api.canvassing.cutTurfs.mutate(input);
   }
 
-  public assign(input: AssignTurfType): Promise<{ token: string }> {
+  public assign(input: AssignTurfType): Promise<{ token: string; sent: { email: boolean; sms: boolean } }> {
     return this.api.canvassing.assign.mutate(input);
   }
 
@@ -7775,8 +7775,8 @@ export class AssignTurfDialog {
   public readonly turfId = input.required<string>();
   public readonly turfName = input.required<string>();
   public readonly cancelled = output<void>();
-  /** Emits the minted token once assigned (page copies the /t/ link). */
-  public readonly assigned = output<string>();
+  /** Emits the minted token + which channels the link was sent through (page copies the /t/ link). */
+  public readonly assigned = output<{ token: string; sent: { email: boolean; sms: boolean } }>();
 
   protected readonly options = signal<PersonOption[]>([]);
   protected readonly query = signal('');
@@ -7828,12 +7828,12 @@ export class AssignTurfDialog {
     if (!person || this.saving()) return;
     this.saving.set(true);
     try {
-      const { token } = await this.svc.assign({
+      const res = await this.svc.assign({
         turf_id: this.turfId(),
         team_id: null,
         volunteer_person_id: person.id,
       });
-      this.assigned.emit(token);
+      this.assigned.emit(res);
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
     } finally {
@@ -29598,196 +29598,6 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.ts
-```typescript
-import { Component, computed, effect, inject, model, output, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
-import { AuthService } from '../../../auth/auth-service';
-import { UserService } from '../../../services/user.service';
-import { ThemePreference, ThemeService } from '../../../layout/theme/theme-service';
-import { PasskeySettingsComponent } from '../security/passkey-settings';
-
-interface NotifRow {
-  emailKey: string;
-  helper: string;
-  inAppKey: string;
-  label: string;
-}
-
-const NOTIF_ROWS: NotifRow[] = [
-  {
-    label: 'Mentioned in comment',
-    helper: 'When someone mentions you in a thread',
-    emailKey: 'mention_in_comment',
-    inAppKey: 'mention_in_comment_in_app',
-  },
-  {
-    label: 'Task assigned',
-    helper: 'When a task is assigned to you',
-    emailKey: 'task_assigned',
-    inAppKey: 'task_assigned_in_app',
-  },
-  {
-    label: 'Task due today / overdue',
-    helper: 'Daily reminder of active tasks due',
-    emailKey: 'task_due',
-    inAppKey: 'task_due_in_app',
-  },
-  {
-    label: 'Person assigned',
-    helper: 'When contact ownership is assigned to you',
-    emailKey: 'person_assigned',
-    inAppKey: 'person_assigned_in_app',
-  },
-  {
-    label: 'Email assigned',
-    helper: 'When an inbox conversation is assigned to you',
-    emailKey: 'email_assigned',
-    inAppKey: 'email_assigned_in_app',
-  },
-  {
-    label: 'Export ready',
-    helper: 'Download link when a CSV export finishes',
-    emailKey: 'export_ready',
-    inAppKey: 'export_ready_in_app',
-  },
-  {
-    label: 'Import summary',
-    helper: 'Completion stats after a spreadsheet import',
-    emailKey: 'import_summary',
-    inAppKey: 'import_summary_in_app',
-  },
-];
-
-/**
- * Personal Settings popup (§5a) — instant apply, no Save/Reset. Everything here is
- * scoped to the signed-in user: notification matrix, appearance (theme + density),
- * and passkeys. Reuses the notification-preferences model and PasskeySettings.
- */
-@Component({
-  selector: 'pc-personal-settings-dialog',
-  imports: [Icon, PasskeySettingsComponent],
-  templateUrl: 'personal-settings-dialog.html',
-})
-export class PersonalSettingsDialog {
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly alerts = inject(AlertService);
-  protected readonly theme = inject(ThemeService);
-
-  protected readonly themeOptions: { label: string; value: ThemePreference }[] = [
-    { label: 'Light', value: 'light' },
-    { label: 'Dark', value: 'dark' },
-    { label: 'System', value: 'system' },
-  ];
-
-  /** Two-way open state, driven by the navbar avatar menu. */
-  public readonly open = model<boolean>(false);
-  public readonly closed = output<void>();
-
-  protected readonly rows = NOTIF_ROWS;
-
-  private readonly user = signal<IAuthUserDetail | null>(null);
-  private loadStarted = false;
-  protected readonly prefs = signal<Record<string, boolean>>({});
-  protected readonly savedJustNow = signal<boolean>(false);
-
-  protected readonly initial = computed<string>(() => {
-    const u = this.user();
-    const src = u?.first_name || u?.email || '?';
-    return src.charAt(0).toUpperCase();
-  });
-
-  constructor() {
-    // Load lazily on first open (the dialog is always mounted in the navbar) and
-    // reset the footer contract to its resting state each time it opens.
-    effect(() => {
-      if (!this.open()) return;
-      this.savedJustNow.set(false);
-      if (!this.loadStarted) {
-        this.loadStarted = true;
-        void this.load();
-      }
-    });
-  }
-
-  protected isOn(key: string): boolean {
-    return this.prefs()[key] ?? true;
-  }
-
-  protected toggle(key: string): void {
-    this.prefs.update((p) => ({ ...p, [key]: !(p[key] ?? true) }));
-    void this.persistNotifications();
-  }
-
-  protected setThemePreference(next: ThemePreference): void {
-    if (this.theme.getPreference() === next) return;
-    this.theme.setPreference(next);
-    this.flashSaved();
-  }
-
-  protected close(): void {
-    this.open.set(false);
-    this.closed.emit();
-  }
-
-  private async load(): Promise<void> {
-    try {
-      const current = await this.auth.getCurrentUser();
-      if (!current) return;
-      const detail = await this.userService.getProfileById(current.id);
-      this.user.set(detail);
-      const p = detail.notification_preferences ?? {};
-      const next: Record<string, boolean> = {};
-      for (const row of NOTIF_ROWS) {
-        next[row.emailKey] = (p as Record<string, boolean | undefined>)[row.emailKey] ?? true;
-        next[row.inAppKey] = (p as Record<string, boolean | undefined>)[row.inAppKey] ?? true;
-      }
-      this.prefs.set(next);
-    } catch (err) {
-      console.error('Failed to load personal settings', err);
-    }
-  }
-
-  private async persistNotifications(): Promise<void> {
-    const user = this.user();
-    if (!user) return;
-    const p = this.prefs();
-    const payload: UpdateAuthUserType = {
-      notification_preferences: {
-        mention_in_comment: p['mention_in_comment'] ?? true,
-        mention_in_comment_in_app: p['mention_in_comment_in_app'] ?? true,
-        task_assigned: p['task_assigned'] ?? true,
-        task_assigned_in_app: p['task_assigned_in_app'] ?? true,
-        task_due: p['task_due'] ?? true,
-        task_due_in_app: p['task_due_in_app'] ?? true,
-        person_assigned: p['person_assigned'] ?? true,
-        person_assigned_in_app: p['person_assigned_in_app'] ?? true,
-        email_assigned: p['email_assigned'] ?? true,
-        email_assigned_in_app: p['email_assigned_in_app'] ?? true,
-        export_ready: p['export_ready'] ?? true,
-        export_ready_in_app: p['export_ready_in_app'] ?? true,
-        import_summary: p['import_summary'] ?? true,
-        import_summary_in_app: p['import_summary_in_app'] ?? true,
-      },
-    };
-    try {
-      await this.userService.updateUserProfile(user.id, payload);
-      this.flashSaved();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not save your preference.');
-    }
-  }
-
-  private flashSaved(): void {
-    this.savedJustNow.set(true);
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.html
 ```html
 <div class="space-y-6">
@@ -43525,6 +43335,85 @@ export default defineConfig({
 }
 ```
 
+## File: apps/website/functions/api/geo-rates.ts
+```typescript
+/**
+ * Cloudflare Pages Function — GET /api/geo-rates
+ *
+ * Serves the marketing site's multi-currency pricing (see the website's ui/currency.service.ts).
+ * Does both region detection and rate lookup at the edge so the browser makes a single
+ * same-origin call — no third-party request from the client, no CORS, no API key shipped to the
+ * browser:
+ *   - `country` comes from Cloudflare's `request.cf.country` (derived from the visitor's IP).
+ *   - `rates` are fetched server-side from a free, no-key FX API (USD base).
+ *
+ * The response is edge-cached ~12h via `Cache-Control: s-maxage`, so most requests never hit the
+ * FX API. This function is intentionally dependency-free (no `@common` import): country→currency
+ * mapping and formatting live on the client, so the edge stays a thin data source.
+ *
+ * Directory-mode Pages Function: it only owns `/api/geo-rates`; static asset serving and the SPA
+ * `_redirects` fallback are untouched.
+ */
+
+/** Display currencies we return rates for. USD is the billing currency (always 1). */
+const RATE_CURRENCIES = ['EUR', 'GBP', 'CAD'] as const;
+type RateCurrency = (typeof RATE_CURRENCIES)[number];
+
+/** Free, no-key, USD-base FX source (ECB-backed). Swap here if it ever changes. */
+const FX_URL = 'https://open.er-api.com/v6/latest/USD';
+
+/** Edge + browser cache lifetime for the response (12 hours, in seconds). */
+const CACHE_SECONDS = 43_200;
+
+/** Minimal shape of the Cloudflare request/context we rely on (avoids a workers-types dep). */
+interface CfRequest extends Request {
+  readonly cf?: { readonly country?: string };
+}
+interface PagesContext {
+  readonly request: CfRequest;
+}
+
+type Rates = { readonly USD: 1 } & Partial<Record<RateCurrency, number>>;
+
+/** Narrow one entry of the FX API's `rates` object to a positive finite number, or undefined. */
+function toRate(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Fetch USD-base rates for our display currencies. Returns `{ USD: 1 }` alone on any failure. */
+async function fetchRates(): Promise<Rates> {
+  const rates: { USD: 1 } & Partial<Record<RateCurrency, number>> = { USD: 1 };
+  try {
+    const res = await fetch(FX_URL, { headers: { accept: 'application/json' } });
+    if (!res.ok) return rates;
+    const body: unknown = await res.json();
+    const table =
+      typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
+    if (typeof table !== 'object' || table === null) return rates;
+    const record = table as Record<string, unknown>;
+    for (const code of RATE_CURRENCIES) {
+      const rate = toRate(record[code]);
+      if (rate !== undefined) rates[code] = rate;
+    }
+  } catch {
+    // Network/parse failure: fall through with USD-only. The client stays in USD.
+  }
+  return rates;
+}
+
+export async function onRequestGet(context: PagesContext): Promise<Response> {
+  const country = context.request.cf?.country ?? null;
+  const rates = await fetchRates();
+  const payload = JSON.stringify({ country, rates });
+  return new Response(payload, {
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': `public, max-age=${CACHE_SECONDS}, s-maxage=${CACHE_SECONDS}`,
+    },
+  });
+}
+```
+
 ## File: apps/website/src/app/docs/docs-article.html
 ```html
 <pc-site-header variant="solid" />
@@ -44541,6 +44430,215 @@ export class Constellation {
       }
     }
   }
+}
+```
+
+## File: apps/website/src/app/ui/currency-switcher.ts
+```typescript
+import { Component, computed, inject, input } from '@angular/core';
+import type { CurrencyCode } from '@common';
+
+import { CurrencyService } from './currency.service';
+
+/**
+ * Currency picker for the site header. Lets a visitor override the auto-detected display currency;
+ * the choice persists (see {@link CurrencyService}). A DaisyUI `dropdown` — platform-first, no
+ * custom widget. Two looks (`onDark` for the navy hero header, solid otherwise) to match
+ * {@link SiteHeader}'s variants.
+ */
+@Component({
+  selector: 'pc-currency-switcher',
+  template: `
+    <div class="dropdown dropdown-end">
+      <button
+        type="button"
+        tabindex="0"
+        [class]="triggerClass()"
+        [attr.aria-label]="'Change currency, currently ' + active().label"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="15"
+          height="15"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" stroke-linecap="round" />
+        </svg>
+        <span class="tabular-nums">{{ active().code }}</span>
+        <svg
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <ul
+        tabindex="0"
+        class="menu dropdown-content z-10 mt-2 w-52 rounded-box border border-line bg-base-100 p-2 shadow-lg"
+      >
+        @for (opt of options; track opt.code) {
+          <li>
+            <button
+              type="button"
+              class="flex items-center justify-between gap-3 text-[13.5px]"
+              [class.text-primary]="opt.code === active().code"
+              [class.font-semibold]="opt.code === active().code"
+              (click)="select(opt.code, $event)"
+            >
+              <span>{{ opt.label }}</span>
+              <span class="tabular-nums text-base-content/50">{{ opt.symbol }} {{ opt.code }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    </div>
+  `,
+})
+export class CurrencySwitcher {
+  public readonly onDark = input<boolean>(false);
+
+  private readonly currency = inject(CurrencyService);
+
+  protected readonly options = this.currency.options;
+  protected readonly active = this.currency.active;
+
+  protected readonly triggerClass = computed<string>(() =>
+    this.onDark()
+      ? 'flex items-center gap-1.5 rounded-field border border-white/30 px-2.5 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/10'
+      : 'flex items-center gap-1.5 rounded-field border border-line px-2.5 py-1.5 text-[13px] font-medium text-base-content hover:border-primary hover:text-primary',
+  );
+
+  protected select(code: CurrencyCode, event: Event): void {
+    this.currency.setCurrency(code);
+    // DaisyUI dropdowns close on blur; drop focus so the menu dismisses after a pick.
+    (event.currentTarget as HTMLElement | null)?.blur();
+  }
+}
+```
+
+## File: apps/website/src/app/ui/site-header.ts
+```typescript
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { AuthHint } from './auth-hint';
+import { CurrencySwitcher } from './currency-switcher';
+import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
+import { SiteLogo } from './site-logo';
+
+type HeaderVariant = 'over-hero' | 'solid';
+
+/**
+ * Site header. Two looks from one component:
+ *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
+ *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
+ * Below `md` the nav collapses behind a hamburger toggle.
+ */
+@Component({
+  selector: 'pc-site-header',
+  imports: [RouterLink, SiteLogo, CurrencySwitcher],
+  template: `
+    <header [class]="barClass()">
+      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
+        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
+          <pc-site-logo [onDark]="onDark()" />
+        </a>
+
+        <!-- Desktop nav -->
+        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
+          }
+          <pc-currency-switcher [onDark]="onDark()" />
+          @if (signedIn()) {
+            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+          } @else {
+            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
+            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+          }
+        </nav>
+
+        <!-- Mobile toggle -->
+        <button
+          type="button"
+          class="btn btn-square btn-ghost btn-sm lg:hidden"
+          [class.text-white]="onDark()"
+          [attr.aria-expanded]="open()"
+          aria-label="Toggle menu"
+          (click)="open.set(!open())"
+        >
+          @if (open()) {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+            </svg>
+          } @else {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+            </svg>
+          }
+        </button>
+      </div>
+
+      <!-- Mobile menu -->
+      @if (open()) {
+        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
+              link.label
+            }}</a>
+          }
+          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+            <div class="pb-1">
+              <pc-currency-switcher />
+            </div>
+            @if (signedIn()) {
+              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+            } @else {
+              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
+              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+            }
+          </div>
+        </nav>
+      }
+    </header>
+  `,
+})
+export class SiteHeader {
+  public readonly variant = input<HeaderVariant>('solid');
+
+  private readonly auth = inject(AuthHint);
+
+  protected readonly nav = PRIMARY_NAV;
+  protected readonly loginUrl = LOGIN_URL;
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly dashboardUrl = DASHBOARD_URL;
+  protected readonly signedIn = this.auth.signedIn;
+  protected readonly open = signal(false);
+
+  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
+
+  protected readonly barClass = computed<string>(() =>
+    this.onDark() ? 'sticky top-0 z-50 bg-navy' : 'sticky top-0 z-50 border-b border-line bg-base-100',
+  );
+
+  protected readonly linkClass = computed<string>(() =>
+    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
+  );
+
+  protected readonly loginBtnClass = computed<string>(() =>
+    this.onDark()
+      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
+      : 'btn btn-outline btn-sm rounded-field',
+  );
 }
 ```
 
@@ -46760,7 +46858,7 @@ import {
   type InFieldToday,
   type TurfListItem,
 } from '../services/canvassing-service';
-import { companionUrl } from '../../../shared/public-pages';
+import { companionUrl, volunteerLinkSentPhrase } from '../../../shared/public-pages';
 import { AssignTurfDialog } from './assign-turf-dialog';
 import { CompanionSettingsDialog } from './companion-settings-dialog';
 import { CutTurfsDialog } from './cut-turfs-dialog';
@@ -47009,17 +47107,21 @@ export class CanvassingPage implements OnInit {
     this.assign(t);
   }
 
-  protected async onAssigned(token: string): Promise<void> {
+  protected async onAssigned(res: { token: string; sent: { email: boolean; sms: boolean } }): Promise<void> {
     this.assignTarget.set(null);
-    await this.copyCompanionLink(token);
+    const phrase = volunteerLinkSentPhrase(res.sent);
+    await this.copyCompanionLink(res.token, phrase ? `Volunteer assigned — ${phrase}. Link also copied.` : undefined);
+    if (!phrase) {
+      this.alerts.showWarn('They have no email or mobile on file — paste them the copied link yourself');
+    }
     await this.loadTurfs();
   }
 
-  private async copyCompanionLink(token: string): Promise<void> {
+  private async copyCompanionLink(token: string, successMessage?: string): Promise<void> {
     const url = companionUrl(`/t/${encodeURIComponent(token)}`);
     try {
       await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Personal link copied. Only the assigned volunteer can open it.');
+      this.alerts.showSuccess(successMessage ?? 'Personal link copied. Only the assigned volunteer can open it.');
     } catch {
       this.alerts.showSuccess(`Companion link: ${url}`);
     }
@@ -47435,7 +47537,7 @@ import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { companionUrl } from '../../../shared/public-pages';
+import { companionUrl, volunteerLinkSentPhrase } from '../../../shared/public-pages';
 import { DELIVERY_SKIP_REASONS } from '@common';
 import type { DeliverySkipReason } from '@common';
 import { Icon } from '@icons/icon';
@@ -47569,8 +47671,14 @@ export class DeliveriesRouteDetail {
 
   protected async onVolunteerSelected(person: PersonSearchResult | null): Promise<void> {
     try {
-      await this.svc.assignVolunteer(this.id(), person?.id ?? null);
-      this.alerts.showSuccess(person ? 'Volunteer assigned' : 'Volunteer removed');
+      const res = await this.svc.assignVolunteer(this.id(), person?.id ?? null);
+      if (!person) {
+        this.alerts.showSuccess('Volunteer removed');
+      } else {
+        const phrase = volunteerLinkSentPhrase(res.sent);
+        if (phrase) this.alerts.showSuccess(`Volunteer assigned — ${phrase}`);
+        else this.alerts.showWarn('Volunteer assigned, but they have no email or mobile on file — use "Copy volunteer link" to share it');
+      }
       await this.load();
     } catch (err) {
       this.alerts.showError(err instanceof Error ? err.message : 'Could not update the volunteer');
@@ -47875,7 +47983,7 @@ import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { companionUrl } from '../../../shared/public-pages';
+import { companionUrl, volunteerLinkSentPhrase } from '../../../shared/public-pages';
 import { AssignVolunteerDialog } from './assign-volunteer-dialog';
 import { DeliveriesNav } from './deliveries-nav';
 
@@ -47953,8 +48061,14 @@ export class DeliveriesRoutes implements OnInit {
     const routeId = this.assigningRouteId();
     if (!routeId) return;
     try {
-      await this.svc.assignVolunteer(routeId, person?.id ?? null);
-      this.alerts.showSuccess(person ? 'Volunteer assigned' : 'Volunteer removed');
+      const res = await this.svc.assignVolunteer(routeId, person?.id ?? null);
+      if (!person) {
+        this.alerts.showSuccess('Volunteer removed');
+      } else {
+        const phrase = volunteerLinkSentPhrase(res.sent);
+        if (phrase) this.alerts.showSuccess(`Volunteer assigned — ${phrase}`);
+        else this.alerts.showWarn('Volunteer assigned, but they have no email or mobile on file — use "Copy volunteer link" to share it');
+      }
       await this.reload();
     } catch (err) {
       this.alerts.showError(err instanceof Error ? err.message : 'Could not update the volunteer');
@@ -55435,6 +55549,196 @@ function eventValue(event: Event): string {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.ts
+```typescript
+import { Component, computed, effect, inject, model, output, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
+import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { ThemePreference, ThemeService } from '../../../layout/theme/theme-service';
+import { PasskeySettingsComponent } from '../security/passkey-settings';
+
+interface NotifRow {
+  emailKey: string;
+  helper: string;
+  inAppKey: string;
+  label: string;
+}
+
+const NOTIF_ROWS: NotifRow[] = [
+  {
+    label: 'Mentioned in comment',
+    helper: 'When someone mentions you in a thread',
+    emailKey: 'mention_in_comment',
+    inAppKey: 'mention_in_comment_in_app',
+  },
+  {
+    label: 'Task assigned',
+    helper: 'When a task is assigned to you',
+    emailKey: 'task_assigned',
+    inAppKey: 'task_assigned_in_app',
+  },
+  {
+    label: 'Task due today / overdue',
+    helper: 'Daily reminder of active tasks due',
+    emailKey: 'task_due',
+    inAppKey: 'task_due_in_app',
+  },
+  {
+    label: 'Person assigned',
+    helper: 'When contact ownership is assigned to you',
+    emailKey: 'person_assigned',
+    inAppKey: 'person_assigned_in_app',
+  },
+  {
+    label: 'Email assigned',
+    helper: 'When an inbox conversation is assigned to you',
+    emailKey: 'email_assigned',
+    inAppKey: 'email_assigned_in_app',
+  },
+  {
+    label: 'Export ready',
+    helper: 'Download link when a CSV export finishes',
+    emailKey: 'export_ready',
+    inAppKey: 'export_ready_in_app',
+  },
+  {
+    label: 'Import summary',
+    helper: 'Completion stats after a spreadsheet import',
+    emailKey: 'import_summary',
+    inAppKey: 'import_summary_in_app',
+  },
+];
+
+/**
+ * Personal Settings popup (§5a) — instant apply, no Save/Reset. Everything here is
+ * scoped to the signed-in user: notification matrix, appearance (theme + density),
+ * and passkeys. Reuses the notification-preferences model and PasskeySettings.
+ */
+@Component({
+  selector: 'pc-personal-settings-dialog',
+  imports: [Icon, PasskeySettingsComponent],
+  templateUrl: 'personal-settings-dialog.html',
+})
+export class PersonalSettingsDialog {
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly alerts = inject(AlertService);
+  protected readonly theme = inject(ThemeService);
+
+  protected readonly themeOptions: { label: string; value: ThemePreference }[] = [
+    { label: 'Light', value: 'light' },
+    { label: 'Dark', value: 'dark' },
+    { label: 'System', value: 'system' },
+  ];
+
+  /** Two-way open state, driven by the navbar avatar menu. */
+  public readonly open = model<boolean>(false);
+  public readonly closed = output<void>();
+
+  protected readonly rows = NOTIF_ROWS;
+
+  private readonly user = signal<IAuthUserDetail | null>(null);
+  private loadStarted = false;
+  protected readonly prefs = signal<Record<string, boolean>>({});
+  protected readonly savedJustNow = signal<boolean>(false);
+
+  protected readonly initial = computed<string>(() => {
+    const u = this.user();
+    const src = u?.first_name || u?.email || '?';
+    return src.charAt(0).toUpperCase();
+  });
+
+  constructor() {
+    // Load lazily on first open (the dialog is always mounted in the navbar) and
+    // reset the footer contract to its resting state each time it opens.
+    effect(() => {
+      if (!this.open()) return;
+      this.savedJustNow.set(false);
+      if (!this.loadStarted) {
+        this.loadStarted = true;
+        void this.load();
+      }
+    });
+  }
+
+  protected isOn(key: string): boolean {
+    return this.prefs()[key] ?? true;
+  }
+
+  protected toggle(key: string): void {
+    this.prefs.update((p) => ({ ...p, [key]: !(p[key] ?? true) }));
+    void this.persistNotifications();
+  }
+
+  protected setThemePreference(next: ThemePreference): void {
+    if (this.theme.getPreference() === next) return;
+    this.theme.setPreference(next);
+    this.flashSaved();
+  }
+
+  protected close(): void {
+    this.open.set(false);
+    this.closed.emit();
+  }
+
+  private async load(): Promise<void> {
+    try {
+      const current = await this.auth.getCurrentUser();
+      if (!current) return;
+      const detail = await this.userService.getProfileById(current.id);
+      this.user.set(detail);
+      const p = detail.notification_preferences ?? {};
+      const next: Record<string, boolean> = {};
+      for (const row of NOTIF_ROWS) {
+        next[row.emailKey] = (p as Record<string, boolean | undefined>)[row.emailKey] ?? true;
+        next[row.inAppKey] = (p as Record<string, boolean | undefined>)[row.inAppKey] ?? true;
+      }
+      this.prefs.set(next);
+    } catch (err) {
+      console.error('Failed to load personal settings', err);
+    }
+  }
+
+  private async persistNotifications(): Promise<void> {
+    const user = this.user();
+    if (!user) return;
+    const p = this.prefs();
+    const payload: UpdateAuthUserType = {
+      notification_preferences: {
+        mention_in_comment: p['mention_in_comment'] ?? true,
+        mention_in_comment_in_app: p['mention_in_comment_in_app'] ?? true,
+        task_assigned: p['task_assigned'] ?? true,
+        task_assigned_in_app: p['task_assigned_in_app'] ?? true,
+        task_due: p['task_due'] ?? true,
+        task_due_in_app: p['task_due_in_app'] ?? true,
+        person_assigned: p['person_assigned'] ?? true,
+        person_assigned_in_app: p['person_assigned_in_app'] ?? true,
+        email_assigned: p['email_assigned'] ?? true,
+        email_assigned_in_app: p['email_assigned_in_app'] ?? true,
+        export_ready: p['export_ready'] ?? true,
+        export_ready_in_app: p['export_ready_in_app'] ?? true,
+        import_summary: p['import_summary'] ?? true,
+        import_summary_in_app: p['import_summary_in_app'] ?? true,
+      },
+    };
+    try {
+      await this.userService.updateUserProfile(user.id, payload);
+      this.flashSaved();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not save your preference.');
+    }
+  }
+
+  private flashSaved(): void {
+    this.savedJustNow.set(true);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
 ```typescript
 import { signal, Service } from '@angular/core';
@@ -55635,375 +55939,6 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
   </div>
   }
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/settings/settings.config.ts
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export type SettingsFieldType =
-  | 'text'
-  | 'textarea'
-  | 'email'
-  | 'tel'
-  | 'number'
-  | 'select'
-  | 'toggle'
-  | 'password'
-  | 'url'
-  | 'date'
-  | 'day-toggles';
-
-export interface SettingsOptionConfig {
-  label: string;
-  value: string;
-}
-
-export interface SettingsFieldConfig {
-  key: string;
-  label: string;
-  type: SettingsFieldType;
-  placeholder?: string;
-  helper?: string;
-  options?: SettingsOptionConfig[];
-  defaultValue?: unknown;
-}
-
-export interface SettingsSectionConfig {
-  id: string;
-  title: string;
-  description: string;
-  icon: PcIconNameType;
-  fields: SettingsFieldConfig[];
-}
-
-export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
-  {
-    id: 'organization',
-    title: 'Organization',
-    description: 'Tenant branding, contact details, and campaign defaults.',
-    icon: 'cog-6-tooth',
-    fields: [
-      {
-        key: 'organization.name',
-        label: 'Organization name',
-        type: 'text',
-        placeholder: 'pplCRM',
-        defaultValue: '',
-      },
-      {
-        key: 'organization.contact_email',
-        label: 'Primary contact email',
-        type: 'email',
-        placeholder: 'hello@example.com',
-        defaultValue: '',
-      },
-      {
-        key: 'organization.phone',
-        label: 'Contact phone',
-        type: 'tel',
-        placeholder: '(555) 555-1234',
-        defaultValue: '',
-      },
-      {
-        key: 'organization.address',
-        label: 'Mailing address',
-        type: 'textarea',
-        placeholder: '123 Main St, Springfield, USA',
-        defaultValue: '',
-      },
-    ],
-  },
-  {
-    id: 'app',
-    title: 'App',
-    description: 'How the volunteer-facing apps and shared links behave for your organization.',
-    icon: 'wrench-screwdriver',
-    fields: [
-      {
-        key: 'app.volunteer_links_expire',
-        label: 'Volunteer route links expire after 30 days',
-        type: 'toggle',
-        defaultValue: true,
-        helper:
-          'Links expire for security: if a route link is forwarded on or turns up on a lost phone months later, it no longer works, and volunteers aren’t confused by stale routes reappearing. Anyone opening a link still verifies a one-time code and needs your one-time approval, so turning expiry off is safe if your deliveries run longer than 30 days and you’re tired of re-sending links. Existing links follow whatever this is set to right now, and you can always revoke a single route’s link from its ⋯ menu.',
-      },
-    ],
-  },
-  {
-    id: 'communications',
-    title: 'Communications',
-    description: 'Email delivery, inbox routing, and compliance copy.',
-    icon: 'envelope',
-    fields: [
-      {
-        key: 'communications.default_from_name',
-        label: 'Default from name',
-        type: 'text',
-        placeholder: 'pplCRM Team',
-        defaultValue: '',
-      },
-      {
-        key: 'communications.default_from_email',
-        label: 'Default from email',
-        type: 'select',
-        defaultValue: '',
-        options: [],
-      },
-      {
-        key: 'communications.reply_to',
-        label: 'Reply-to email',
-        type: 'select',
-        defaultValue: '',
-        options: [],
-      },
-      {
-        key: 'communications.footer_disclaimer',
-        label: 'Email footer disclaimer',
-        type: 'textarea',
-        placeholder: 'Paid for by pplCRM Campaign…',
-        defaultValue: '',
-        helper: 'Appended to the bottom of every newsletter, above the unsubscribe link.',
-      },
-      {
-        key: 'communications.double_opt_in',
-        label: 'Require double opt-in',
-        type: 'toggle',
-        defaultValue: false,
-        helper: 'Require new web-form subscribers to confirm via email before they receive newsletters.',
-      },
-    ],
-  },
-  {
-    id: 'notifications',
-    title: 'Notifications',
-    description: 'Tenant-wide notification defaults and escalation.',
-    icon: 'bell',
-    fields: [
-      {
-        key: 'notifications.mention_in_comment',
-        label: 'Mentioned in comment',
-        type: 'toggle',
-        helper: 'Alerts when someone mentions you in a thread',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.mention_in_comment_in_app',
-        label: 'Mentioned in comment (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_assigned',
-        label: 'Task assigned',
-        type: 'toggle',
-        helper: 'Alerts when a task is assigned to you',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_assigned_in_app',
-        label: 'Task assigned (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_due',
-        label: 'Task due today / overdue',
-        type: 'toggle',
-        helper: 'Daily reminder check of active tasks due',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_due_in_app',
-        label: 'Task due today / overdue (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.person_assigned',
-        label: 'Person assigned',
-        type: 'toggle',
-        helper: 'Alerts when a contact ownership is assigned to you',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.person_assigned_in_app',
-        label: 'Person assigned (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.email_assigned',
-        label: 'Email assigned',
-        type: 'toggle',
-        helper: 'Alerts when an inbox conversation is assigned to you',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.email_assigned_in_app',
-        label: 'Email assigned (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.export_ready',
-        label: 'Export ready',
-        type: 'toggle',
-        helper: 'Receive download link when CSV export finishes',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.export_ready_in_app',
-        label: 'Export ready (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.import_summary',
-        label: 'Import summary',
-        type: 'toggle',
-        helper: 'Spreadsheet import completion stats report',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.import_summary_in_app',
-        label: 'Import summary (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-    ],
-  },
-  {
-    id: 'access',
-    title: 'Teams & access',
-    description: 'Default role for new invites and tenant-wide MFA enforcement.',
-    icon: 'user-group',
-    fields: [
-      {
-        key: 'access.default_role',
-        label: 'Default invite role',
-        type: 'select',
-        defaultValue: 'editor',
-        options: [
-          { label: 'Viewer', value: 'viewer' },
-          { label: 'Editor', value: 'editor' },
-          { label: 'Admin', value: 'admin' },
-        ],
-      },
-      {
-        key: 'access.mfa_required',
-        label: 'Require MFA for all users',
-        type: 'toggle',
-        defaultValue: false,
-        helper: 'Force email verification codes for every user signing in from a new device or location.',
-      },
-    ],
-  },
-
-  {
-    id: 'sla',
-    title: 'Service levels',
-    description:
-      'Configure Service Level Agreements (SLAs) for tasks and emails, including working days, business hours, and status warning/critical thresholds.',
-    icon: 'clock',
-    fields: [
-      {
-        key: 'sla.tasks_hours',
-        label: 'Task SLA target (working hours)',
-        type: 'number',
-        defaultValue: 24,
-        helper: 'Maximum working hours allowed to resolve or close a task before it is considered an SLA breach.',
-      },
-      {
-        key: 'sla.emails_hours',
-        label: 'Email SLA target (working hours)',
-        type: 'number',
-        defaultValue: 24,
-        helper:
-          'Maximum working hours allowed to reply to an incoming inbox email before it is considered an SLA breach.',
-      },
-      {
-        key: 'sla.email_warning_threshold',
-        label: 'Email SLA warning threshold (breaches)',
-        type: 'number',
-        defaultValue: 1,
-        helper: 'Number of active open email breaches that triggers a "Warning" (yellow) status on the dashboard.',
-      },
-      {
-        key: 'sla.email_critical_threshold',
-        label: 'Email SLA critical threshold (breaches)',
-        type: 'number',
-        defaultValue: 4,
-        helper: 'Number of active open email breaches that triggers a "Critical" (red) status on the dashboard.',
-      },
-      {
-        key: 'sla.task_warning_threshold',
-        label: 'Task SLA warning threshold (breaches)',
-        type: 'number',
-        defaultValue: 1,
-        helper: 'Number of active open task breaches that triggers a "Warning" (yellow) status on the dashboard.',
-      },
-      {
-        key: 'sla.task_critical_threshold',
-        label: 'Task SLA critical threshold (breaches)',
-        type: 'number',
-        defaultValue: 4,
-        helper: 'Number of active open task breaches that triggers a "Critical" (red) status on the dashboard.',
-      },
-      {
-        key: 'sla.working_days',
-        label: 'Working days',
-        type: 'day-toggles',
-        defaultValue: '1,2,3,4,5',
-        helper: 'Days of the week counted towards the SLA response and resolution calculations.',
-      },
-      {
-        key: 'sla.working_hours_start',
-        label: 'Working hours start (HH:MM)',
-        type: 'text',
-        defaultValue: '09:00',
-        helper: 'Beginning of the business day for working time tracking.',
-      },
-      {
-        key: 'sla.working_hours_end',
-        label: 'Working hours end (HH:MM)',
-        type: 'text',
-        defaultValue: '17:00',
-        helper: 'End of the business day for working time tracking.',
-      },
-    ],
-  },
-  {
-    id: 'appearance',
-    title: 'Appearance',
-    description: 'Global UI defaults that users can override locally.',
-    icon: 'sun',
-    fields: [
-      {
-        key: 'appearance.theme',
-        label: 'Default theme',
-        type: 'select',
-        defaultValue: 'system',
-        options: [
-          { label: 'System', value: 'system' },
-          { label: 'Light', value: 'light' },
-          { label: 'Dark', value: 'dark' },
-        ],
-      },
-      {
-        key: 'appearance.date_format',
-        label: 'Date format',
-        type: 'select',
-        defaultValue: 'MMMM d, yyyy',
-        options: [
-          { label: 'January 10, 2025', value: 'MMMM d, yyyy' },
-          { label: '01/10/2025', value: 'MM/dd/yyyy' },
-          { label: '10/01/2025', value: 'dd/MM/yyyy' },
-        ],
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/demo-mode-card.ts
@@ -64616,85 +64551,6 @@ export default defineConfig(() => ({
 }));
 ```
 
-## File: apps/website/functions/api/geo-rates.ts
-```typescript
-/**
- * Cloudflare Pages Function — GET /api/geo-rates
- *
- * Serves the marketing site's multi-currency pricing (see the website's ui/currency.service.ts).
- * Does both region detection and rate lookup at the edge so the browser makes a single
- * same-origin call — no third-party request from the client, no CORS, no API key shipped to the
- * browser:
- *   - `country` comes from Cloudflare's `request.cf.country` (derived from the visitor's IP).
- *   - `rates` are fetched server-side from a free, no-key FX API (USD base).
- *
- * The response is edge-cached ~12h via `Cache-Control: s-maxage`, so most requests never hit the
- * FX API. This function is intentionally dependency-free (no `@common` import): country→currency
- * mapping and formatting live on the client, so the edge stays a thin data source.
- *
- * Directory-mode Pages Function: it only owns `/api/geo-rates`; static asset serving and the SPA
- * `_redirects` fallback are untouched.
- */
-
-/** Display currencies we return rates for. USD is the billing currency (always 1). */
-const RATE_CURRENCIES = ['EUR', 'GBP', 'CAD'] as const;
-type RateCurrency = (typeof RATE_CURRENCIES)[number];
-
-/** Free, no-key, USD-base FX source (ECB-backed). Swap here if it ever changes. */
-const FX_URL = 'https://open.er-api.com/v6/latest/USD';
-
-/** Edge + browser cache lifetime for the response (12 hours, in seconds). */
-const CACHE_SECONDS = 43_200;
-
-/** Minimal shape of the Cloudflare request/context we rely on (avoids a workers-types dep). */
-interface CfRequest extends Request {
-  readonly cf?: { readonly country?: string };
-}
-interface PagesContext {
-  readonly request: CfRequest;
-}
-
-type Rates = { readonly USD: 1 } & Partial<Record<RateCurrency, number>>;
-
-/** Narrow one entry of the FX API's `rates` object to a positive finite number, or undefined. */
-function toRate(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
-}
-
-/** Fetch USD-base rates for our display currencies. Returns `{ USD: 1 }` alone on any failure. */
-async function fetchRates(): Promise<Rates> {
-  const rates: { USD: 1 } & Partial<Record<RateCurrency, number>> = { USD: 1 };
-  try {
-    const res = await fetch(FX_URL, { headers: { accept: 'application/json' } });
-    if (!res.ok) return rates;
-    const body: unknown = await res.json();
-    const table =
-      typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
-    if (typeof table !== 'object' || table === null) return rates;
-    const record = table as Record<string, unknown>;
-    for (const code of RATE_CURRENCIES) {
-      const rate = toRate(record[code]);
-      if (rate !== undefined) rates[code] = rate;
-    }
-  } catch {
-    // Network/parse failure: fall through with USD-only. The client stays in USD.
-  }
-  return rates;
-}
-
-export async function onRequestGet(context: PagesContext): Promise<Response> {
-  const country = context.request.cf?.country ?? null;
-  const rates = await fetchRates();
-  const payload = JSON.stringify({ country, rates });
-  return new Response(payload, {
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': `public, max-age=${CACHE_SECONDS}, s-maxage=${CACHE_SECONDS}`,
-    },
-  });
-}
-```
-
 ## File: apps/website/src/app/coming-soon/coming-soon-page.ts
 ```typescript
 import { Component, input } from '@angular/core';
@@ -65456,98 +65312,6 @@ export class SecurityPage {
 }
 ```
 
-## File: apps/website/src/app/ui/currency-switcher.ts
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-import type { CurrencyCode } from '@common';
-
-import { CurrencyService } from './currency.service';
-
-/**
- * Currency picker for the site header. Lets a visitor override the auto-detected display currency;
- * the choice persists (see {@link CurrencyService}). A DaisyUI `dropdown` — platform-first, no
- * custom widget. Two looks (`onDark` for the navy hero header, solid otherwise) to match
- * {@link SiteHeader}'s variants.
- */
-@Component({
-  selector: 'pc-currency-switcher',
-  template: `
-    <div class="dropdown dropdown-end">
-      <button
-        type="button"
-        tabindex="0"
-        [class]="triggerClass()"
-        [attr.aria-label]="'Change currency, currently ' + active().label"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          width="15"
-          height="15"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="9" />
-          <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" stroke-linecap="round" />
-        </svg>
-        <span class="tabular-nums">{{ active().code }}</span>
-        <svg
-          viewBox="0 0 24 24"
-          width="14"
-          height="14"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          aria-hidden="true"
-        >
-          <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
-      <ul
-        tabindex="0"
-        class="menu dropdown-content z-10 mt-2 w-52 rounded-box border border-line bg-base-100 p-2 shadow-lg"
-      >
-        @for (opt of options; track opt.code) {
-          <li>
-            <button
-              type="button"
-              class="flex items-center justify-between gap-3 text-[13.5px]"
-              [class.text-primary]="opt.code === active().code"
-              [class.font-semibold]="opt.code === active().code"
-              (click)="select(opt.code, $event)"
-            >
-              <span>{{ opt.label }}</span>
-              <span class="tabular-nums text-base-content/50">{{ opt.symbol }} {{ opt.code }}</span>
-            </button>
-          </li>
-        }
-      </ul>
-    </div>
-  `,
-})
-export class CurrencySwitcher {
-  public readonly onDark = input<boolean>(false);
-
-  private readonly currency = inject(CurrencyService);
-
-  protected readonly options = this.currency.options;
-  protected readonly active = this.currency.active;
-
-  protected readonly triggerClass = computed<string>(() =>
-    this.onDark()
-      ? 'flex items-center gap-1.5 rounded-field border border-white/30 px-2.5 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/10'
-      : 'flex items-center gap-1.5 rounded-field border border-line px-2.5 py-1.5 text-[13px] font-medium text-base-content hover:border-primary hover:text-primary',
-  );
-
-  protected select(code: CurrencyCode, event: Event): void {
-    this.currency.setCurrency(code);
-    // DaisyUI dropdowns close on blur; drop focus so the menu dismisses after a pick.
-    (event.currentTarget as HTMLElement | null)?.blur();
-  }
-}
-```
-
 ## File: apps/website/src/app/ui/seo.ts
 ```typescript
 import { DOCUMENT, Injectable, inject } from '@angular/core';
@@ -65664,123 +65428,6 @@ export class SeoTitleStrategy extends TitleStrategy {
 
     this.seo.applyRoute({ title, description, path: snapshot.url });
   }
-}
-```
-
-## File: apps/website/src/app/ui/site-header.ts
-```typescript
-import { Component, computed, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { AuthHint } from './auth-hint';
-import { CurrencySwitcher } from './currency-switcher';
-import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
-import { SiteLogo } from './site-logo';
-
-type HeaderVariant = 'over-hero' | 'solid';
-
-/**
- * Site header. Two looks from one component:
- *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
- *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
- * Below `md` the nav collapses behind a hamburger toggle.
- */
-@Component({
-  selector: 'pc-site-header',
-  imports: [RouterLink, SiteLogo, CurrencySwitcher],
-  template: `
-    <header [class]="barClass()">
-      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
-        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
-          <pc-site-logo [onDark]="onDark()" />
-        </a>
-
-        <!-- Desktop nav -->
-        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
-          }
-          <pc-currency-switcher [onDark]="onDark()" />
-          @if (signedIn()) {
-            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-          } @else {
-            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
-            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-          }
-        </nav>
-
-        <!-- Mobile toggle -->
-        <button
-          type="button"
-          class="btn btn-square btn-ghost btn-sm lg:hidden"
-          [class.text-white]="onDark()"
-          [attr.aria-expanded]="open()"
-          aria-label="Toggle menu"
-          (click)="open.set(!open())"
-        >
-          @if (open()) {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
-            </svg>
-          } @else {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
-            </svg>
-          }
-        </button>
-      </div>
-
-      <!-- Mobile menu -->
-      @if (open()) {
-        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
-              link.label
-            }}</a>
-          }
-          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
-            <div class="pb-1">
-              <pc-currency-switcher />
-            </div>
-            @if (signedIn()) {
-              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-            } @else {
-              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
-              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-            }
-          </div>
-        </nav>
-      }
-    </header>
-  `,
-})
-export class SiteHeader {
-  public readonly variant = input<HeaderVariant>('solid');
-
-  private readonly auth = inject(AuthHint);
-
-  protected readonly nav = PRIMARY_NAV;
-  protected readonly loginUrl = LOGIN_URL;
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly dashboardUrl = DASHBOARD_URL;
-  protected readonly signedIn = this.auth.signedIn;
-  protected readonly open = signal(false);
-
-  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
-
-  protected readonly barClass = computed<string>(() =>
-    this.onDark() ? 'sticky top-0 z-50 bg-navy' : 'sticky top-0 z-50 border-b border-line bg-base-100',
-  );
-
-  protected readonly linkClass = computed<string>(() =>
-    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
-  );
-
-  protected readonly loginBtnClass = computed<string>(() =>
-    this.onDark()
-      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
-      : 'btn btn-outline btn-sm rounded-field',
-  );
 }
 ```
 
@@ -68157,6 +67804,375 @@ export class DomainSettingsComponent implements OnInit {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/settings/settings.config.ts
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
+
+export type SettingsFieldType =
+  | 'text'
+  | 'textarea'
+  | 'email'
+  | 'tel'
+  | 'number'
+  | 'select'
+  | 'toggle'
+  | 'password'
+  | 'url'
+  | 'date'
+  | 'day-toggles';
+
+export interface SettingsOptionConfig {
+  label: string;
+  value: string;
+}
+
+export interface SettingsFieldConfig {
+  key: string;
+  label: string;
+  type: SettingsFieldType;
+  placeholder?: string;
+  helper?: string;
+  options?: SettingsOptionConfig[];
+  defaultValue?: unknown;
+}
+
+export interface SettingsSectionConfig {
+  id: string;
+  title: string;
+  description: string;
+  icon: PcIconNameType;
+  fields: SettingsFieldConfig[];
+}
+
+export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
+  {
+    id: 'organization',
+    title: 'Organization',
+    description: 'Tenant branding, contact details, and campaign defaults.',
+    icon: 'cog-6-tooth',
+    fields: [
+      {
+        key: 'organization.name',
+        label: 'Organization name',
+        type: 'text',
+        placeholder: 'pplCRM',
+        defaultValue: '',
+      },
+      {
+        key: 'organization.contact_email',
+        label: 'Primary contact email',
+        type: 'email',
+        placeholder: 'hello@example.com',
+        defaultValue: '',
+      },
+      {
+        key: 'organization.phone',
+        label: 'Contact phone',
+        type: 'tel',
+        placeholder: '(555) 555-1234',
+        defaultValue: '',
+      },
+      {
+        key: 'organization.address',
+        label: 'Mailing address',
+        type: 'textarea',
+        placeholder: '123 Main St, Springfield, USA',
+        defaultValue: '',
+      },
+    ],
+  },
+  {
+    id: 'app',
+    title: 'App',
+    description: 'How the volunteer-facing apps and shared links behave for your organization.',
+    icon: 'wrench-screwdriver',
+    fields: [
+      {
+        key: 'app.volunteer_links_expire',
+        label: 'Volunteer route links expire after 30 days',
+        type: 'toggle',
+        defaultValue: true,
+        helper:
+          'Links expire for security: if a route link is forwarded on or turns up on a lost phone months later, it no longer works, and volunteers aren’t confused by stale routes reappearing. Anyone opening a link still verifies a one-time code and needs your one-time approval, so turning expiry off is safe if your deliveries run longer than 30 days and you’re tired of re-sending links. Existing links follow whatever this is set to right now, and you can always revoke a single route’s link from its ⋯ menu.',
+      },
+    ],
+  },
+  {
+    id: 'communications',
+    title: 'Communications',
+    description: 'Email delivery, inbox routing, and compliance copy.',
+    icon: 'envelope',
+    fields: [
+      {
+        key: 'communications.default_from_name',
+        label: 'Default from name',
+        type: 'text',
+        placeholder: 'pplCRM Team',
+        defaultValue: '',
+      },
+      {
+        key: 'communications.default_from_email',
+        label: 'Default from email',
+        type: 'select',
+        defaultValue: '',
+        options: [],
+      },
+      {
+        key: 'communications.reply_to',
+        label: 'Reply-to email',
+        type: 'select',
+        defaultValue: '',
+        options: [],
+      },
+      {
+        key: 'communications.footer_disclaimer',
+        label: 'Email footer disclaimer',
+        type: 'textarea',
+        placeholder: 'Paid for by pplCRM Campaign…',
+        defaultValue: '',
+        helper: 'Appended to the bottom of every newsletter, above the unsubscribe link.',
+      },
+      {
+        key: 'communications.double_opt_in',
+        label: 'Require double opt-in',
+        type: 'toggle',
+        defaultValue: false,
+        helper: 'Require new web-form subscribers to confirm via email before they receive newsletters.',
+      },
+    ],
+  },
+  {
+    id: 'notifications',
+    title: 'Notifications',
+    description: 'Tenant-wide notification defaults and escalation.',
+    icon: 'bell',
+    fields: [
+      {
+        key: 'notifications.mention_in_comment',
+        label: 'Mentioned in comment',
+        type: 'toggle',
+        helper: 'Alerts when someone mentions you in a thread',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.mention_in_comment_in_app',
+        label: 'Mentioned in comment (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_assigned',
+        label: 'Task assigned',
+        type: 'toggle',
+        helper: 'Alerts when a task is assigned to you',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_assigned_in_app',
+        label: 'Task assigned (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_due',
+        label: 'Task due today / overdue',
+        type: 'toggle',
+        helper: 'Daily reminder check of active tasks due',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_due_in_app',
+        label: 'Task due today / overdue (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.person_assigned',
+        label: 'Person assigned',
+        type: 'toggle',
+        helper: 'Alerts when a contact ownership is assigned to you',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.person_assigned_in_app',
+        label: 'Person assigned (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.email_assigned',
+        label: 'Email assigned',
+        type: 'toggle',
+        helper: 'Alerts when an inbox conversation is assigned to you',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.email_assigned_in_app',
+        label: 'Email assigned (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.export_ready',
+        label: 'Export ready',
+        type: 'toggle',
+        helper: 'Receive download link when CSV export finishes',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.export_ready_in_app',
+        label: 'Export ready (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.import_summary',
+        label: 'Import summary',
+        type: 'toggle',
+        helper: 'Spreadsheet import completion stats report',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.import_summary_in_app',
+        label: 'Import summary (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+    ],
+  },
+  {
+    id: 'access',
+    title: 'Teams & access',
+    description: 'Default role for new invites and tenant-wide MFA enforcement.',
+    icon: 'user-group',
+    fields: [
+      {
+        key: 'access.default_role',
+        label: 'Default invite role',
+        type: 'select',
+        defaultValue: 'editor',
+        options: [
+          { label: 'Viewer', value: 'viewer' },
+          { label: 'Editor', value: 'editor' },
+          { label: 'Admin', value: 'admin' },
+        ],
+      },
+      {
+        key: 'access.mfa_required',
+        label: 'Require MFA for all users',
+        type: 'toggle',
+        defaultValue: false,
+        helper: 'Force email verification codes for every user signing in from a new device or location.',
+      },
+    ],
+  },
+
+  {
+    id: 'sla',
+    title: 'Service levels',
+    description:
+      'Configure Service Level Agreements (SLAs) for tasks and emails, including working days, business hours, and status warning/critical thresholds.',
+    icon: 'clock',
+    fields: [
+      {
+        key: 'sla.tasks_hours',
+        label: 'Task SLA target (working hours)',
+        type: 'number',
+        defaultValue: 24,
+        helper: 'Maximum working hours allowed to resolve or close a task before it is considered an SLA breach.',
+      },
+      {
+        key: 'sla.emails_hours',
+        label: 'Email SLA target (working hours)',
+        type: 'number',
+        defaultValue: 24,
+        helper:
+          'Maximum working hours allowed to reply to an incoming inbox email before it is considered an SLA breach.',
+      },
+      {
+        key: 'sla.email_warning_threshold',
+        label: 'Email SLA warning threshold (breaches)',
+        type: 'number',
+        defaultValue: 1,
+        helper: 'Number of active open email breaches that triggers a "Warning" (yellow) status on the dashboard.',
+      },
+      {
+        key: 'sla.email_critical_threshold',
+        label: 'Email SLA critical threshold (breaches)',
+        type: 'number',
+        defaultValue: 4,
+        helper: 'Number of active open email breaches that triggers a "Critical" (red) status on the dashboard.',
+      },
+      {
+        key: 'sla.task_warning_threshold',
+        label: 'Task SLA warning threshold (breaches)',
+        type: 'number',
+        defaultValue: 1,
+        helper: 'Number of active open task breaches that triggers a "Warning" (yellow) status on the dashboard.',
+      },
+      {
+        key: 'sla.task_critical_threshold',
+        label: 'Task SLA critical threshold (breaches)',
+        type: 'number',
+        defaultValue: 4,
+        helper: 'Number of active open task breaches that triggers a "Critical" (red) status on the dashboard.',
+      },
+      {
+        key: 'sla.working_days',
+        label: 'Working days',
+        type: 'day-toggles',
+        defaultValue: '1,2,3,4,5',
+        helper: 'Days of the week counted towards the SLA response and resolution calculations.',
+      },
+      {
+        key: 'sla.working_hours_start',
+        label: 'Working hours start (HH:MM)',
+        type: 'text',
+        defaultValue: '09:00',
+        helper: 'Beginning of the business day for working time tracking.',
+      },
+      {
+        key: 'sla.working_hours_end',
+        label: 'Working hours end (HH:MM)',
+        type: 'text',
+        defaultValue: '17:00',
+        helper: 'End of the business day for working time tracking.',
+      },
+    ],
+  },
+  {
+    id: 'appearance',
+    title: 'Appearance',
+    description: 'Global UI defaults that users can override locally.',
+    icon: 'sun',
+    fields: [
+      {
+        key: 'appearance.theme',
+        label: 'Default theme',
+        type: 'select',
+        defaultValue: 'system',
+        options: [
+          { label: 'System', value: 'system' },
+          { label: 'Light', value: 'light' },
+          { label: 'Dark', value: 'dark' },
+        ],
+      },
+      {
+        key: 'appearance.date_format',
+        label: 'Date format',
+        type: 'select',
+        defaultValue: 'MMMM d, yyyy',
+        options: [
+          { label: 'January 10, 2025', value: 'MMMM d, yyyy' },
+          { label: '01/10/2025', value: 'MM/dd/yyyy' },
+          { label: '10/01/2025', value: 'dd/MM/yyyy' },
+        ],
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.html
@@ -71836,6 +71852,214 @@ export class ComparePage {
 <pc-site-footer />
 ```
 
+## File: apps/website/src/app/ui/currency.service.ts
+```typescript
+import { afterNextRender, computed, Injectable, signal } from '@angular/core';
+import {
+  currencyForCountry,
+  currencyPriceSymbol,
+  formatCurrency,
+  isCurrencyCode,
+  SUPPORTED_CURRENCIES,
+  type CurrencyCode,
+  type CurrencyDef,
+  type ExchangeRates,
+} from '@common';
+
+/** localStorage key for the visitor's manual currency choice (overrides geo detection). */
+const STORAGE_CURRENCY = 'pc_currency';
+/** localStorage key for the cached FX rates + fetch timestamp. */
+const STORAGE_FX = 'pc_fx';
+/** How long cached rates stay fresh before we refetch (12 hours), matching the edge cache. */
+const FX_TTL_MS = 12 * 60 * 60 * 1000;
+/** Same-origin Cloudflare Pages Function that returns `{ country, rates }`. */
+const GEO_ENDPOINT = '/api/geo-rates';
+/** Public CORS-enabled FX source used only as a fallback when the edge endpoint is unavailable
+ * (local dev, or before the Pages Function is wired). USD base, no key. */
+const FX_DIRECT_URL = 'https://open.er-api.com/v6/latest/USD';
+
+interface CachedFx {
+  readonly rates: ExchangeRates;
+  readonly ts: number;
+}
+
+/**
+ * Picks which currency the marketing site displays prices in, and converts USD prices to it at
+ * live exchange rates. Billing is always USD — surfaces show a disclaimer via {@link isConverted}.
+ *
+ * Browser-only work (reading storage, detecting region, fetching rates) runs in `afterNextRender`,
+ * exactly like {@link AuthHint}: the prerendered (SSG) markup is always USD and the client
+ * re-prices after hydration, so there's no server/client mismatch. Everything degrades safely —
+ * if the geo/rate call fails we fall back to the browser locale, and with no rates we stay in USD.
+ */
+@Injectable({ providedIn: 'root' })
+export class CurrencyService {
+  /** The active display currency (USD until detection/override resolves after hydration). */
+  public readonly currency = signal<CurrencyCode>('USD');
+  /** USD-base rates; USD is always 1, other codes appear once loaded. */
+  public readonly rates = signal<ExchangeRates>({ USD: 1 });
+
+  /** The currencies offered in the switcher. */
+  public readonly options: readonly CurrencyDef[] = Object.values(SUPPORTED_CURRENCIES);
+  /** The active currency's display metadata (for the switcher trigger). */
+  public readonly active = computed<CurrencyDef>(() => SUPPORTED_CURRENCIES[this.currency()]);
+  /** The active currency's price symbol (e.g. `C$`), for inline copy like the disclaimer. */
+  public readonly priceSymbol = computed<string>(() => currencyPriceSymbol(this.currency()));
+
+  /** True only when we're actually converting away from USD (a rate for the currency is loaded).
+   * Gates the "billed in USD" disclaimer so it never shows while prices are still really USD. */
+  public readonly isConverted = computed<boolean>(() => {
+    const code = this.currency();
+    return code !== 'USD' && this.rates()[code] != null;
+  });
+
+  constructor() {
+    afterNextRender(() => this.init());
+  }
+
+  /** Set and persist the visitor's manual currency choice. */
+  public setCurrency(code: CurrencyCode): void {
+    this.currency.set(code);
+    try {
+      localStorage.setItem(STORAGE_CURRENCY, code);
+    } catch {
+      // Storage unavailable (private mode): the choice still applies for this session.
+    }
+  }
+
+  /** Format a whole-dollar USD price in the active currency; falls back to USD when no rate. */
+  public format(usd: number): string {
+    const code = this.currency();
+    const rate = code === 'USD' ? 1 : this.rates()[code];
+    if (rate == null) return formatCurrency(usd, 'USD');
+    return formatCurrency(Math.round(usd * rate), code);
+  }
+
+  /** Rounded monthly-equivalent of an annual USD total, in the active currency (`$24`). The
+   * annual total is converted to whole units first, then divided by 12 and rounded — surfaces
+   * showing it must keep the exact annual total alongside plus the rounding disclaimer, since
+   * equivalent × 12 ≠ the billed total. */
+  public formatMonthlyEquivalent(annualUsd: number): string {
+    const code = this.currency();
+    const rate = code === 'USD' ? 1 : this.rates()[code];
+    if (rate == null) return formatCurrency(Math.round(annualUsd / 12), 'USD');
+    return formatCurrency(Math.round(Math.round(annualUsd * rate) / 12), code);
+  }
+
+  private init(): void {
+    const override = this.readOverride();
+    if (override) this.currency.set(override);
+
+    const cached = this.readCachedRates();
+    if (cached) this.rates.set(cached);
+
+    void this.refresh(override != null);
+  }
+
+  /** Fetch fresh geo + rates; set the currency from geo only when there's no manual override. */
+  private async refresh(hasOverride: boolean): Promise<void> {
+    try {
+      const res = await fetch(GEO_ENDPOINT, { headers: { accept: 'application/json' } });
+      if (!res.ok) throw new Error(`geo-rates ${res.status}`);
+      const { country, rates } = this.parsePayload(await res.json());
+      this.rates.set(rates);
+      this.writeCachedRates(rates);
+      if (!hasOverride) this.applyDetected(currencyForCountry(country), rates);
+    } catch {
+      // Edge endpoint unavailable (local dev, or not wired yet): fetch rates directly from the
+      // public FX API and detect the region from the browser locale instead of the visitor's IP.
+      const rates = await this.fetchRatesDirect();
+      if (rates) {
+        this.rates.set(rates);
+        this.writeCachedRates(rates);
+      }
+      // Only switch if we actually have a rate for the detected currency, else stay in USD.
+      if (!hasOverride) this.applyDetected(currencyForCountry(this.regionFromLocale()), this.rates());
+    }
+  }
+
+  /** Fallback rate source when the edge endpoint fails. Queries a public CORS FX API straight from
+   * the browser; returns null on any failure so we simply stay in USD. */
+  private async fetchRatesDirect(): Promise<ExchangeRates | null> {
+    try {
+      const res = await fetch(FX_DIRECT_URL, { headers: { accept: 'application/json' } });
+      if (!res.ok) return null;
+      const body: unknown = await res.json();
+      const table =
+        typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
+      return this.sanitizeRates(table);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Adopt a geo/locale-detected currency only when a rate for it is available. */
+  private applyDetected(code: CurrencyCode, rates: ExchangeRates): void {
+    if (code === 'USD' || rates[code] != null) this.currency.set(code);
+  }
+
+  private readOverride(): CurrencyCode | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_CURRENCY);
+      return raw && isCurrencyCode(raw) ? raw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private readCachedRates(): ExchangeRates | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_FX);
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null) return null;
+      const { rates, ts } = parsed as Partial<CachedFx>;
+      if (typeof ts !== 'number' || Date.now() - ts > FX_TTL_MS) return null;
+      return this.sanitizeRates(rates);
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCachedRates(rates: ExchangeRates): void {
+    try {
+      const entry: CachedFx = { rates, ts: Date.now() };
+      localStorage.setItem(STORAGE_FX, JSON.stringify(entry));
+    } catch {
+      // Non-fatal: we just refetch next visit.
+    }
+  }
+
+  /** Validate the Pages Function response into a country + sanitized rates. */
+  private parsePayload(body: unknown): { country: string | null; rates: ExchangeRates } {
+    if (typeof body !== 'object' || body === null) return { country: null, rates: { USD: 1 } };
+    const record = body as { country?: unknown; rates?: unknown };
+    const country = typeof record.country === 'string' ? record.country : null;
+    return { country, rates: this.sanitizeRates(record.rates) };
+  }
+
+  /** Keep only positive numeric rates for known currency codes; USD is always 1. */
+  private sanitizeRates(raw: unknown): ExchangeRates {
+    const clean: ExchangeRates = { USD: 1 };
+    if (typeof raw !== 'object' || raw === null) return clean;
+    const record = raw as Record<string, unknown>;
+    for (const def of this.options) {
+      if (def.code === 'USD') continue;
+      const value = record[def.code];
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) clean[def.code] = value;
+    }
+    return clean;
+  }
+
+  /** Region subtag from the browser locale (e.g. "en-GB" → "GB"), or null. */
+  private regionFromLocale(): string | null {
+    const locale = typeof navigator !== 'undefined' ? navigator.language : '';
+    const region = locale.split('-')[1];
+    return region ? region.toUpperCase() : null;
+  }
+}
+```
+
 ## File: apps/website/src/index.html
 ```html
 <!doctype html>
@@ -72841,785 +73065,6 @@ function toNum(n: unknown): number | undefined {
   </div>
   }
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/settings/settings-page.ts
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
-import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-
-import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { HouseholdsService } from '../households/services/households-service';
-import { AccountSettingsComponent } from './account/account-settings';
-import { ApiKeysSettingsComponent } from './api-keys/api-keys-settings';
-import { BillingSettingsComponent } from './billing/billing-settings';
-import { DomainSettingsComponent } from './domains/domains-settings';
-import { DonationsSettingsComponent } from './donations/donations-settings';
-import { GoogleSyncSettings } from './google-sync/google-sync-settings';
-import { MsSyncSettings } from './ms-sync/ms-sync-settings';
-import { PasskeySettingsComponent } from './security/passkey-settings';
-import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
-import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
-import { StorageSettingsComponent } from './storage/storage-settings';
-
-interface SectionFieldState {
-  config: SettingsFieldConfig;
-  controlName: string;
-}
-
-/** Mirror of settings.getPhoneVerificationStatus — phones arrive masked from the backend. */
-interface PhoneVerificationStatus {
-  verified: boolean;
-  verifiedAt: Date | string | null;
-  phone: string | null;
-  pendingPhone: string | null;
-  required: boolean;
-}
-
-interface SectionState {
-  config: SettingsSectionConfig;
-  fields: SectionFieldState[];
-  form: any;
-  payload: WritableSignal<Record<string, any>>;
-}
-
-/** Self-saving sections rendered outside the config-driven form flow. One entry
- *  drives both the sidebar nav button and the content shell, so the two can
- *  never drift apart again. */
-interface CustomSectionConfig {
-  description: string;
-  icon: PcIconNameType;
-  id: string;
-  mode: 'settings' | 'workspace';
-  title: string;
-}
-
-const CUSTOM_SECTIONS: CustomSectionConfig[] = [
-  {
-    id: 'passkeys',
-    mode: 'settings',
-    icon: 'lock-closed',
-    title: 'Passkeys',
-    description: 'Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.',
-  },
-  {
-    id: 'email-sync',
-    mode: 'workspace',
-    icon: 'envelope',
-    title: 'Email sync',
-    description:
-      'Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.',
-  },
-  {
-    id: 'domains',
-    mode: 'workspace',
-    icon: 'globe-americas',
-    title: 'Domain verification',
-    description: 'Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.',
-  },
-  {
-    id: 'donations',
-    mode: 'workspace',
-    icon: 'currency-dollar',
-    title: 'Donations',
-    description:
-      'Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe account.',
-  },
-  {
-    id: 'storage',
-    mode: 'workspace',
-    icon: 'archive-box',
-    title: 'Storage',
-    description: 'Plan quota, usage, and the files taking up the most space.',
-  },
-  {
-    id: 'billing',
-    mode: 'workspace',
-    icon: 'credit-card',
-    title: 'Billing',
-    description: 'Manage your subscription plans, view invoice details, and update payment methods.',
-  },
-  {
-    id: 'account',
-    mode: 'workspace',
-    icon: 'user-circle',
-    title: 'Account',
-    description: 'Manage your organization account: pause billing or permanently delete all data.',
-  },
-  {
-    id: 'api-keys',
-    mode: 'workspace',
-    icon: 'lock-closed',
-    title: 'API keys',
-    description: 'One key for server-side integrations: submit forms, RSVPs, and signups, or connect Zapier.',
-  },
-];
-
-@Component({
-  selector: 'pc-settings-page',
-  imports: [
-    FormField,
-    Icon,
-    MsSyncSettings,
-    GoogleSyncSettings,
-    BillingSettingsComponent,
-    DomainSettingsComponent,
-    DonationsSettingsComponent,
-    AccountSettingsComponent,
-    ApiKeysSettingsComponent,
-    PasskeySettingsComponent,
-    StorageSettingsComponent,
-    DatePipe,
-    EmptyState,
-  ],
-  templateUrl: './settings-page.html',
-})
-export class SettingsPage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-
-  protected readonly currentMode: 'settings' | 'workspace';
-  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
-  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
-  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
-  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
-    const lastTime = this.lastFingerprintRecomputeTime();
-    if (!lastTime) return null;
-    const nextAvailable = new Date(lastTime.getTime());
-    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
-    return nextAvailable;
-  });
-  protected readonly hasLoaded = signal(false);
-  protected readonly householdsSvc = inject(HouseholdsService);
-  protected readonly isFingerprintRecomputeCooldown = computed(() => {
-    const nextAvailable = this.fingerprintRecomputeNextAvailable();
-    if (!nextAvailable) return false;
-    return Date.now() < nextAvailable.getTime();
-  });
-  protected readonly lastRequestedEmail = signal<string | null>(null);
-  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
-  protected readonly recomputingFingerprints = signal(false);
-  protected readonly savingSectionId = signal<string | null>(null);
-  protected readonly sectionStates: SectionState[];
-  protected readonly sections = SETTINGS_SECTIONS;
-  protected readonly selectedSectionId = signal<string>('');
-  // The config-driven section currently shown, so the header Save/Cancel act on it.
-  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
-  protected readonly headerSection = computed<SectionState | null>(() => {
-    const id = this.selectedSectionId();
-    return this.visibleSections.find((s) => s.config.id === id) ?? null;
-  });
-  protected readonly senderEmailInput = signal('');
-  // Sending-phone verification (anti-abuse gate for Free-plan newsletter sends).
-  protected readonly phoneStatus = signal<PhoneVerificationStatus | null>(null);
-  protected readonly phoneInput = signal('');
-  protected readonly phoneCodeInput = signal('');
-  protected readonly phoneBusy = signal(false);
-  protected readonly phoneCodeSentTo = signal<string | null>(null);
-  protected readonly settingsSvc = inject(SettingsService);
-  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
-  protected readonly verifiedEmailsList = computed<string[]>(() => {
-    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-  });
-  protected readonly verifyingEmail = signal<string | null>(null);
-
-  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
-  protected trackSection = (_: number, section: SectionState) => section.config.id;
-
-  /** The custom (self-saving) sections visible in the current mode. */
-  protected get visibleCustomSections(): CustomSectionConfig[] {
-    return CUSTOM_SECTIONS.filter((s) => s.mode === this.currentMode);
-  }
-
-  /** Nav-button classes shared by config-driven and custom section buttons. */
-  protected navClass(id: string): string {
-    return this.isSelected(id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60';
-  }
-
-  public readonly section = input<string>();
-
-  constructor() {
-    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
-    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
-
-    // Navbar crumb ("Settings"/"Workspace") comes from the route's `data.breadcrumb`
-    // via BreadcrumbDefaultsService — no manual publish needed here anymore.
-
-    effect(() => {
-      const s = this.section();
-      if (s) {
-        this.selectedSectionId.set(s);
-      } else {
-        if (this.currentMode === 'settings') {
-          this.selectedSectionId.set('notifications');
-        } else if (this.currentMode === 'workspace') {
-          this.selectedSectionId.set('organization');
-        }
-      }
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      this.applySnapshot(snapshot, false);
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
-
-      const commsSection = this.sections.find((s) => s.id === 'communications');
-      if (commsSection) {
-        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
-        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
-
-        const options = [
-          { label: 'Select a verified email', value: '' },
-          ...verifiedEmails.map((email) => ({ label: email, value: email })),
-        ];
-
-        if (fromEmailField) {
-          fromEmailField.options = options;
-        }
-        if (replyToField) {
-          replyToField.options = options;
-        }
-      }
-    });
-  }
-
-  protected get visibleSections(): SectionState[] {
-    if (this.currentMode === 'settings') {
-      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
-    }
-    if (this.currentMode === 'workspace') {
-      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
-    }
-    return [];
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.settingsSvc.load();
-    this.hasLoaded.set(true);
-    this.applySnapshot(this.settingsSvc.snapshot(), true);
-    await this.loadUserPrefs();
-    await this.loadLastFingerprintRecomputeTime();
-    if (this.currentMode === 'workspace') {
-      await this.loadPhoneStatus();
-    }
-  }
-
-  private async loadPhoneStatus(): Promise<void> {
-    try {
-      this.phoneStatus.set(await this.settingsSvc.getPhoneVerificationStatus());
-    } catch {
-      // Non-blocking: the communications section still renders without the phone card state.
-    }
-  }
-
-  protected async requestPhoneCode(): Promise<void> {
-    const phone = this.phoneInput().trim();
-    if (!phone) return;
-    this.phoneBusy.set(true);
-    try {
-      const result = await this.settingsSvc.requestPhoneVerification(phone);
-      this.phoneCodeSentTo.set(result.phone);
-      this.phoneCodeInput.set('');
-      this.alerts.showSuccess(`We texted a verification code to ${result.phone}.`);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not send the code.');
-    } finally {
-      this.phoneBusy.set(false);
-    }
-  }
-
-  protected async confirmPhoneCode(): Promise<void> {
-    const code = this.phoneCodeInput().trim();
-    if (!code) return;
-    this.phoneBusy.set(true);
-    try {
-      const result = await this.settingsSvc.confirmPhoneVerification(code);
-      this.alerts.showSuccess(`Phone ${result.phone} is verified — you're clear to send newsletters.`);
-      this.phoneCodeSentTo.set(null);
-      this.phoneInput.set('');
-      this.phoneCodeInput.set('');
-      await this.loadPhoneStatus();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not verify the code.');
-    } finally {
-      this.phoneBusy.set(false);
-    }
-  }
-
-  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
-  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
-    { value: 1, label: 'Mon' },
-    { value: 2, label: 'Tue' },
-    { value: 3, label: 'Wed' },
-    { value: 4, label: 'Thu' },
-    { value: 5, label: 'Fri' },
-    { value: 6, label: 'Sat' },
-    { value: 0, label: 'Sun' },
-  ];
-
-  private parseDays(raw: unknown): Set<number> {
-    return new Set(
-      String(raw ?? '')
-        .split(',')
-        .map((s) => Number(s.trim()))
-        .filter((n) => !Number.isNaN(n)),
-    );
-  }
-
-  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
-    return this.parseDays(section.payload()[controlName]).has(day);
-  }
-
-  protected toggleDay(section: SectionState, controlName: string, day: number): void {
-    const days = this.parseDays(section.payload()[controlName]);
-    if (days.has(day)) days.delete(day);
-    else days.add(day);
-    const ordered = this.dayChips
-      .map((c) => c.value)
-      .filter((d) => days.has(d))
-      .join(',');
-    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
-    section.form[controlName]().markAsDirty();
-  }
-
-  protected getNotificationGroups(section: SectionState) {
-    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
-    const fields = section.fields;
-
-    for (const field of fields) {
-      if (field.config.key.endsWith('_in_app')) continue;
-
-      const inAppControlName = `${field.controlName}_in_app`;
-      const inAppField = fields.find((f) => f.controlName === inAppControlName);
-
-      groups.push({
-        label: field.config.label,
-        helper: field.config.helper || '',
-        emailField: field,
-        inAppField: inAppField,
-      });
-    }
-    return groups;
-  }
-
-  protected isEmailVerified(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-    return verified.includes(email.toLowerCase().trim());
-  }
-
-  protected isSaving(section: SectionState) {
-    return this.savingSectionId() === section.config.id;
-  }
-
-  protected isSectionDirty(section: SectionState) {
-    return section.form().dirty();
-  }
-
-  protected isSectionInvalid(section: SectionState) {
-    return section.form().invalid();
-  }
-
-  protected isSelected(sectionId: string) {
-    return this.selectedSectionId() === sectionId;
-  }
-
-  protected isVerifyCooldown(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
-    if (!lastTime) return false;
-    return Date.now() - lastTime < 60000;
-  }
-
-  protected async loadLastFingerprintRecomputeTime() {
-    try {
-      const res = await this.householdsSvc.getLastFingerprintRecomputation();
-      if (res && res.lastRunAt) {
-        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
-      } else {
-        this.lastFingerprintRecomputeTime.set(null);
-      }
-    } catch (err) {
-      console.error('Failed to load last fingerprint recompute time', err);
-    }
-  }
-
-  protected async loadUserPrefs() {
-    try {
-      const currentUser = await this.auth.getCurrentUser();
-      if (currentUser) {
-        const user = await this.userService.getProfileById(currentUser.id);
-        this.currentUserDetail.set(user);
-        const prefs = user.notification_preferences || {
-          mention_in_comment: true,
-          mention_in_comment_in_app: true,
-          task_assigned: true,
-          task_assigned_in_app: true,
-          task_due: true,
-          task_due_in_app: true,
-          person_assigned: true,
-          person_assigned_in_app: true,
-          email_assigned: true,
-          email_assigned_in_app: true,
-          export_ready: true,
-          export_ready_in_app: true,
-          import_summary: true,
-          import_summary_in_app: true,
-        };
-        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
-        if (notifState) {
-          notifState.payload.update((p) => ({
-            ...p,
-            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
-            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
-            notifications_task_assigned: prefs.task_assigned ?? true,
-            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
-            notifications_task_due: prefs.task_due ?? true,
-            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
-            notifications_person_assigned: prefs.person_assigned ?? true,
-            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
-            notifications_email_assigned: prefs.email_assigned ?? true,
-            notifications_email_assigned_in_app: prefs.email_assigned_in_app ?? true,
-            notifications_export_ready: prefs.export_ready ?? true,
-            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
-            notifications_import_summary: prefs.import_summary ?? true,
-            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
-          }));
-          notifState.form().reset();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load user preferences in settings page', err);
-    }
-  }
-
-  protected async recomputeAddressFingerprints() {
-    if (this.isFingerprintRecomputeCooldown()) {
-      this.alerts.showError('Fingerprints can only be recomputed once a month.');
-      return;
-    }
-
-    this.recomputingFingerprints.set(true);
-    try {
-      await this.householdsSvc.recomputeAddressFingerprints();
-      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
-      await this.loadLastFingerprintRecomputeTime();
-    } catch (err) {
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
-      );
-    } finally {
-      this.recomputingFingerprints.set(false);
-    }
-  }
-
-  protected resetSection(section: SectionState) {
-    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
-    if (section.config.id === 'notifications') {
-      void this.loadUserPrefs();
-    }
-  }
-
-  protected async saveSection(section: SectionState) {
-    if (!section.form().dirty()) return;
-
-    const entries: SettingsEntryType[] = [];
-    for (const field of section.fields) {
-      const fieldSignal = (section.form as any)[field.controlName]();
-      if (!fieldSignal.dirty()) continue;
-
-      // Skip user notification preferences from tenant settings upsert
-      if (section.config.id === 'notifications') {
-        continue;
-      }
-
-      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
-      entries.push({ key: field.config.key, value });
-    }
-
-    this.savingSectionId.set(section.config.id);
-    try {
-      if (entries.length > 0) {
-        const snapshot = await this.settingsSvc.upsert(entries);
-        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
-      }
-
-      if (section.config.id === 'notifications') {
-        const user = this.currentUserDetail();
-        if (user) {
-          const raw = section.payload();
-          const parseBool = (val: any) => val === true || val === 'true';
-          const payload: UpdateAuthUserType = {
-            notification_preferences: {
-              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
-              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
-              task_assigned: parseBool(raw['notifications_task_assigned']),
-              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
-              task_due: parseBool(raw['notifications_task_due']),
-              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
-              person_assigned: parseBool(raw['notifications_person_assigned']),
-              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
-              email_assigned: parseBool(raw['notifications_email_assigned']),
-              email_assigned_in_app: parseBool(raw['notifications_email_assigned_in_app']),
-              export_ready: parseBool(raw['notifications_export_ready']),
-              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
-              import_summary: parseBool(raw['notifications_import_summary']),
-              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
-            },
-          };
-          await this.userService.updateUserProfile(user.id, payload);
-          await this.loadUserPrefs();
-        }
-      }
-      this.alerts.showSuccess('Settings updated successfully');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to save settings';
-      this.alerts.showError(message);
-    } finally {
-      this.savingSectionId.set(null);
-    }
-  }
-
-  protected selectSection(sectionId: string) {
-    void this.router.navigate(['/', this.currentMode, sectionId]);
-  }
-
-  protected async verifySenderEmail(email: string | null | undefined) {
-    if (!email) return;
-    const normalized = email.toLowerCase().trim();
-
-    if (this.isVerifyCooldown(normalized)) {
-      this.alerts.showError('Please wait at least one minute before requesting verification again.');
-      return;
-    }
-
-    this.verifyingEmail.set(normalized);
-
-    try {
-      await this.settingsSvc.requestEmailVerification(normalized);
-      this.lastVerificationTimes.update((prev) => ({
-        ...prev,
-        [normalized]: Date.now(),
-      }));
-      this.startEmailCooldown(normalized);
-      this.lastRequestedEmail.set(normalized);
-      // Clear only after success — on failure the user keeps their input to retry.
-      this.senderEmailInput.set('');
-      this.alerts.showSuccess(
-        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
-      );
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
-    } finally {
-      this.verifyingEmail.set(null);
-    }
-  }
-
-  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
-    const sections = target ? [target] : this.sectionStates;
-
-    for (const state of sections) {
-      const nextPayload = { ...state.payload() };
-      let changed = false;
-
-      for (const field of state.fields) {
-        const fieldSignal = (state.form as any)[field.controlName]();
-        if (!resetDirty && fieldSignal.dirty()) continue;
-
-        // Skip user notification preferences from tenant settings snapshot update
-        if (state.config.id === 'notifications') {
-          continue;
-        }
-
-        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
-        if (nextPayload[field.controlName] !== incoming) {
-          nextPayload[field.controlName] = incoming;
-          changed = true;
-        }
-      }
-
-      if (changed) {
-        state.payload.set(nextPayload);
-      }
-
-      if (resetDirty) {
-        state.form().reset();
-      }
-    }
-  }
-
-  private buildSectionState(section: SettingsSectionConfig): SectionState {
-    const initialPayload: Record<string, any> = {};
-    const fieldStates: SectionFieldState[] = [];
-
-    for (const field of section.fields) {
-      const controlName = this.controlNameFor(field.key);
-      initialPayload[controlName] = this.normalizeIncomingValue(
-        field,
-        this.settingsSvc.getValue(field.key, field.defaultValue),
-      );
-      fieldStates.push({ config: field, controlName });
-    }
-
-    const payload = signal(initialPayload);
-    const formSignal = form(payload, (p) => {
-      for (const field of section.fields) {
-        const controlName = this.controlNameFor(field.key);
-        if (field.type === 'email') {
-          email(p[controlName]);
-        }
-        if (field.type === 'url') {
-          pattern(p[controlName], /^https?:\/\//i);
-        }
-        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
-          validate(p[controlName], (ctx) => {
-            const val = ((ctx.value() as string) || '').toLowerCase().trim();
-            if (!val) return null;
-            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-            if (!verified.includes(val)) {
-              return { kind: 'not-verified', message: 'Email address must be verified.' };
-            }
-            return null;
-          });
-        }
-      }
-    });
-
-    return { config: section, payload, form: formSignal, fields: fieldStates };
-  }
-
-  private controlNameFor(key: string) {
-    return key.replace(/[^a-zA-Z0-9]+/g, '_');
-  }
-
-  private defaultForField(field: SettingsFieldConfig) {
-    switch (field.type) {
-      case 'toggle':
-        return false;
-      case 'number':
-        return null;
-      case 'select':
-        return field.options?.[0]?.value ?? '';
-      default:
-        return '';
-    }
-  }
-
-  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
-    const fallback = field.defaultValue ?? this.defaultForField(field);
-
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(raw ?? fallback ?? false);
-      case 'number': {
-        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
-        const numeric = typeof raw === 'number' ? raw : Number(raw);
-        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
-      }
-      case 'select': {
-        const options = field.options ?? [];
-        const candidate = raw === undefined || raw === null ? fallback : String(raw);
-        const match = options.find((option) => option.value === candidate);
-        if (match) return match.value;
-        return (fallback ?? options[0]?.value ?? '') as string;
-      }
-      case 'date':
-        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
-      case 'day-toggles':
-        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-      case 'text':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'textarea':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      default:
-        return raw ?? fallback ?? '';
-    }
-  }
-
-  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(value);
-      case 'number': {
-        if (value === '' || value === null || value === undefined) return null;
-        const numeric = typeof value === 'number' ? value : Number(value);
-        return Number.isFinite(numeric) ? numeric : null;
-      }
-      case 'select': {
-        const candidate = value === null || value === undefined ? '' : String(value);
-        const options = field.options ?? [];
-        const match = options.find((option) => option.value === candidate);
-        return match ? match.value : this.defaultForField(field);
-      }
-      case 'date':
-        return typeof value === 'string' ? value : value ? String(value) : '';
-      case 'day-toggles':
-        return value === null || value === undefined ? '' : String(value);
-      case 'textarea':
-      case 'text':
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-        return value === null || value === undefined ? '' : String(value);
-      default:
-        return value ?? '';
-    }
-  }
-
-  private startEmailCooldown(email: string) {
-    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
-    const interval = setInterval(() => {
-      const current = this.emailCooldownSeconds()[email] || 0;
-      if (current <= 1) {
-        clearInterval(interval);
-        this.emailCooldownSeconds.update((prev) => {
-          const next = { ...prev };
-          delete next[email];
-          return next;
-        });
-      } else {
-        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
-      }
-    }, 1000);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 ```
 
 ## File: apps/frontend/src/app/services/api/donations-service.ts
@@ -74843,6 +74288,22 @@ export function donationPageUrl(tenantSlug: string | null | undefined, slug: str
 export function companionUrl(path: string): string {
   return `${environment.companionOrigin || window.location.origin}${path}`;
 }
+
+/** Which channels the backend sent a volunteer's personal link through on assignment. */
+export interface VolunteerLinkSent {
+  email: boolean;
+  sms: boolean;
+}
+
+/**
+ * Human phrasing for the assignment toast: 'link sent by email and text', or null when
+ * nothing could be sent (no contacts on file) — callers warn and point at Copy link.
+ */
+export function volunteerLinkSentPhrase(sent: VolunteerLinkSent | null | undefined): string | null {
+  if (!sent || (!sent.email && !sent.sms)) return null;
+  const channels = [sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ');
+  return `link sent by ${channels}`;
+}
 ```
 
 ## File: apps/frontend/project.json
@@ -74956,214 +74417,6 @@ export function companionUrl(path: string): string {
         "lintFilePatterns": ["apps/frontend/**/*.ts", "apps/frontend/**/*.html"]
       }
     }
-  }
-}
-```
-
-## File: apps/website/src/app/ui/currency.service.ts
-```typescript
-import { afterNextRender, computed, Injectable, signal } from '@angular/core';
-import {
-  currencyForCountry,
-  currencyPriceSymbol,
-  formatCurrency,
-  isCurrencyCode,
-  SUPPORTED_CURRENCIES,
-  type CurrencyCode,
-  type CurrencyDef,
-  type ExchangeRates,
-} from '@common';
-
-/** localStorage key for the visitor's manual currency choice (overrides geo detection). */
-const STORAGE_CURRENCY = 'pc_currency';
-/** localStorage key for the cached FX rates + fetch timestamp. */
-const STORAGE_FX = 'pc_fx';
-/** How long cached rates stay fresh before we refetch (12 hours), matching the edge cache. */
-const FX_TTL_MS = 12 * 60 * 60 * 1000;
-/** Same-origin Cloudflare Pages Function that returns `{ country, rates }`. */
-const GEO_ENDPOINT = '/api/geo-rates';
-/** Public CORS-enabled FX source used only as a fallback when the edge endpoint is unavailable
- * (local dev, or before the Pages Function is wired). USD base, no key. */
-const FX_DIRECT_URL = 'https://open.er-api.com/v6/latest/USD';
-
-interface CachedFx {
-  readonly rates: ExchangeRates;
-  readonly ts: number;
-}
-
-/**
- * Picks which currency the marketing site displays prices in, and converts USD prices to it at
- * live exchange rates. Billing is always USD — surfaces show a disclaimer via {@link isConverted}.
- *
- * Browser-only work (reading storage, detecting region, fetching rates) runs in `afterNextRender`,
- * exactly like {@link AuthHint}: the prerendered (SSG) markup is always USD and the client
- * re-prices after hydration, so there's no server/client mismatch. Everything degrades safely —
- * if the geo/rate call fails we fall back to the browser locale, and with no rates we stay in USD.
- */
-@Injectable({ providedIn: 'root' })
-export class CurrencyService {
-  /** The active display currency (USD until detection/override resolves after hydration). */
-  public readonly currency = signal<CurrencyCode>('USD');
-  /** USD-base rates; USD is always 1, other codes appear once loaded. */
-  public readonly rates = signal<ExchangeRates>({ USD: 1 });
-
-  /** The currencies offered in the switcher. */
-  public readonly options: readonly CurrencyDef[] = Object.values(SUPPORTED_CURRENCIES);
-  /** The active currency's display metadata (for the switcher trigger). */
-  public readonly active = computed<CurrencyDef>(() => SUPPORTED_CURRENCIES[this.currency()]);
-  /** The active currency's price symbol (e.g. `C$`), for inline copy like the disclaimer. */
-  public readonly priceSymbol = computed<string>(() => currencyPriceSymbol(this.currency()));
-
-  /** True only when we're actually converting away from USD (a rate for the currency is loaded).
-   * Gates the "billed in USD" disclaimer so it never shows while prices are still really USD. */
-  public readonly isConverted = computed<boolean>(() => {
-    const code = this.currency();
-    return code !== 'USD' && this.rates()[code] != null;
-  });
-
-  constructor() {
-    afterNextRender(() => this.init());
-  }
-
-  /** Set and persist the visitor's manual currency choice. */
-  public setCurrency(code: CurrencyCode): void {
-    this.currency.set(code);
-    try {
-      localStorage.setItem(STORAGE_CURRENCY, code);
-    } catch {
-      // Storage unavailable (private mode): the choice still applies for this session.
-    }
-  }
-
-  /** Format a whole-dollar USD price in the active currency; falls back to USD when no rate. */
-  public format(usd: number): string {
-    const code = this.currency();
-    const rate = code === 'USD' ? 1 : this.rates()[code];
-    if (rate == null) return formatCurrency(usd, 'USD');
-    return formatCurrency(Math.round(usd * rate), code);
-  }
-
-  /** Rounded monthly-equivalent of an annual USD total, in the active currency (`$24`). The
-   * annual total is converted to whole units first, then divided by 12 and rounded — surfaces
-   * showing it must keep the exact annual total alongside plus the rounding disclaimer, since
-   * equivalent × 12 ≠ the billed total. */
-  public formatMonthlyEquivalent(annualUsd: number): string {
-    const code = this.currency();
-    const rate = code === 'USD' ? 1 : this.rates()[code];
-    if (rate == null) return formatCurrency(Math.round(annualUsd / 12), 'USD');
-    return formatCurrency(Math.round(Math.round(annualUsd * rate) / 12), code);
-  }
-
-  private init(): void {
-    const override = this.readOverride();
-    if (override) this.currency.set(override);
-
-    const cached = this.readCachedRates();
-    if (cached) this.rates.set(cached);
-
-    void this.refresh(override != null);
-  }
-
-  /** Fetch fresh geo + rates; set the currency from geo only when there's no manual override. */
-  private async refresh(hasOverride: boolean): Promise<void> {
-    try {
-      const res = await fetch(GEO_ENDPOINT, { headers: { accept: 'application/json' } });
-      if (!res.ok) throw new Error(`geo-rates ${res.status}`);
-      const { country, rates } = this.parsePayload(await res.json());
-      this.rates.set(rates);
-      this.writeCachedRates(rates);
-      if (!hasOverride) this.applyDetected(currencyForCountry(country), rates);
-    } catch {
-      // Edge endpoint unavailable (local dev, or not wired yet): fetch rates directly from the
-      // public FX API and detect the region from the browser locale instead of the visitor's IP.
-      const rates = await this.fetchRatesDirect();
-      if (rates) {
-        this.rates.set(rates);
-        this.writeCachedRates(rates);
-      }
-      // Only switch if we actually have a rate for the detected currency, else stay in USD.
-      if (!hasOverride) this.applyDetected(currencyForCountry(this.regionFromLocale()), this.rates());
-    }
-  }
-
-  /** Fallback rate source when the edge endpoint fails. Queries a public CORS FX API straight from
-   * the browser; returns null on any failure so we simply stay in USD. */
-  private async fetchRatesDirect(): Promise<ExchangeRates | null> {
-    try {
-      const res = await fetch(FX_DIRECT_URL, { headers: { accept: 'application/json' } });
-      if (!res.ok) return null;
-      const body: unknown = await res.json();
-      const table =
-        typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
-      return this.sanitizeRates(table);
-    } catch {
-      return null;
-    }
-  }
-
-  /** Adopt a geo/locale-detected currency only when a rate for it is available. */
-  private applyDetected(code: CurrencyCode, rates: ExchangeRates): void {
-    if (code === 'USD' || rates[code] != null) this.currency.set(code);
-  }
-
-  private readOverride(): CurrencyCode | null {
-    try {
-      const raw = localStorage.getItem(STORAGE_CURRENCY);
-      return raw && isCurrencyCode(raw) ? raw : null;
-    } catch {
-      return null;
-    }
-  }
-
-  private readCachedRates(): ExchangeRates | null {
-    try {
-      const raw = localStorage.getItem(STORAGE_FX);
-      if (!raw) return null;
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed !== 'object' || parsed === null) return null;
-      const { rates, ts } = parsed as Partial<CachedFx>;
-      if (typeof ts !== 'number' || Date.now() - ts > FX_TTL_MS) return null;
-      return this.sanitizeRates(rates);
-    } catch {
-      return null;
-    }
-  }
-
-  private writeCachedRates(rates: ExchangeRates): void {
-    try {
-      const entry: CachedFx = { rates, ts: Date.now() };
-      localStorage.setItem(STORAGE_FX, JSON.stringify(entry));
-    } catch {
-      // Non-fatal: we just refetch next visit.
-    }
-  }
-
-  /** Validate the Pages Function response into a country + sanitized rates. */
-  private parsePayload(body: unknown): { country: string | null; rates: ExchangeRates } {
-    if (typeof body !== 'object' || body === null) return { country: null, rates: { USD: 1 } };
-    const record = body as { country?: unknown; rates?: unknown };
-    const country = typeof record.country === 'string' ? record.country : null;
-    return { country, rates: this.sanitizeRates(record.rates) };
-  }
-
-  /** Keep only positive numeric rates for known currency codes; USD is always 1. */
-  private sanitizeRates(raw: unknown): ExchangeRates {
-    const clean: ExchangeRates = { USD: 1 };
-    if (typeof raw !== 'object' || raw === null) return clean;
-    const record = raw as Record<string, unknown>;
-    for (const def of this.options) {
-      if (def.code === 'USD') continue;
-      const value = record[def.code];
-      if (typeof value === 'number' && Number.isFinite(value) && value > 0) clean[def.code] = value;
-    }
-    return clean;
-  }
-
-  /** Region subtag from the browser locale (e.g. "en-GB" → "GB"), or null. */
-  private regionFromLocale(): string | null {
-    const locale = typeof navigator !== 'undefined' ? navigator.language : '';
-    const region = locale.split('-')[1];
-    return region ? region.toUpperCase() : null;
   }
 }
 ```
@@ -78577,6 +77830,785 @@ export class DonationsSettingsComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/settings/settings-page.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+
+import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { HouseholdsService } from '../households/services/households-service';
+import { AccountSettingsComponent } from './account/account-settings';
+import { ApiKeysSettingsComponent } from './api-keys/api-keys-settings';
+import { BillingSettingsComponent } from './billing/billing-settings';
+import { DomainSettingsComponent } from './domains/domains-settings';
+import { DonationsSettingsComponent } from './donations/donations-settings';
+import { GoogleSyncSettings } from './google-sync/google-sync-settings';
+import { MsSyncSettings } from './ms-sync/ms-sync-settings';
+import { PasskeySettingsComponent } from './security/passkey-settings';
+import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
+import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
+import { StorageSettingsComponent } from './storage/storage-settings';
+
+interface SectionFieldState {
+  config: SettingsFieldConfig;
+  controlName: string;
+}
+
+/** Mirror of settings.getPhoneVerificationStatus — phones arrive masked from the backend. */
+interface PhoneVerificationStatus {
+  verified: boolean;
+  verifiedAt: Date | string | null;
+  phone: string | null;
+  pendingPhone: string | null;
+  required: boolean;
+}
+
+interface SectionState {
+  config: SettingsSectionConfig;
+  fields: SectionFieldState[];
+  form: any;
+  payload: WritableSignal<Record<string, any>>;
+}
+
+/** Self-saving sections rendered outside the config-driven form flow. One entry
+ *  drives both the sidebar nav button and the content shell, so the two can
+ *  never drift apart again. */
+interface CustomSectionConfig {
+  description: string;
+  icon: PcIconNameType;
+  id: string;
+  mode: 'settings' | 'workspace';
+  title: string;
+}
+
+const CUSTOM_SECTIONS: CustomSectionConfig[] = [
+  {
+    id: 'passkeys',
+    mode: 'settings',
+    icon: 'lock-closed',
+    title: 'Passkeys',
+    description: 'Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.',
+  },
+  {
+    id: 'email-sync',
+    mode: 'workspace',
+    icon: 'envelope',
+    title: 'Email sync',
+    description:
+      'Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.',
+  },
+  {
+    id: 'domains',
+    mode: 'workspace',
+    icon: 'globe-americas',
+    title: 'Domain verification',
+    description: 'Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.',
+  },
+  {
+    id: 'donations',
+    mode: 'workspace',
+    icon: 'currency-dollar',
+    title: 'Donations',
+    description:
+      'Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe account.',
+  },
+  {
+    id: 'storage',
+    mode: 'workspace',
+    icon: 'archive-box',
+    title: 'Storage',
+    description: 'Plan quota, usage, and the files taking up the most space.',
+  },
+  {
+    id: 'billing',
+    mode: 'workspace',
+    icon: 'credit-card',
+    title: 'Billing',
+    description: 'Manage your subscription plans, view invoice details, and update payment methods.',
+  },
+  {
+    id: 'account',
+    mode: 'workspace',
+    icon: 'user-circle',
+    title: 'Account',
+    description: 'Manage your organization account: pause billing or permanently delete all data.',
+  },
+  {
+    id: 'api-keys',
+    mode: 'workspace',
+    icon: 'lock-closed',
+    title: 'API keys',
+    description: 'One key for server-side integrations: submit forms, RSVPs, and signups, or connect Zapier.',
+  },
+];
+
+@Component({
+  selector: 'pc-settings-page',
+  imports: [
+    FormField,
+    Icon,
+    MsSyncSettings,
+    GoogleSyncSettings,
+    BillingSettingsComponent,
+    DomainSettingsComponent,
+    DonationsSettingsComponent,
+    AccountSettingsComponent,
+    ApiKeysSettingsComponent,
+    PasskeySettingsComponent,
+    StorageSettingsComponent,
+    DatePipe,
+    EmptyState,
+  ],
+  templateUrl: './settings-page.html',
+})
+export class SettingsPage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+
+  protected readonly currentMode: 'settings' | 'workspace';
+  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
+  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
+  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
+  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
+    const lastTime = this.lastFingerprintRecomputeTime();
+    if (!lastTime) return null;
+    const nextAvailable = new Date(lastTime.getTime());
+    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
+    return nextAvailable;
+  });
+  protected readonly hasLoaded = signal(false);
+  protected readonly householdsSvc = inject(HouseholdsService);
+  protected readonly isFingerprintRecomputeCooldown = computed(() => {
+    const nextAvailable = this.fingerprintRecomputeNextAvailable();
+    if (!nextAvailable) return false;
+    return Date.now() < nextAvailable.getTime();
+  });
+  protected readonly lastRequestedEmail = signal<string | null>(null);
+  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
+  protected readonly recomputingFingerprints = signal(false);
+  protected readonly savingSectionId = signal<string | null>(null);
+  protected readonly sectionStates: SectionState[];
+  protected readonly sections = SETTINGS_SECTIONS;
+  protected readonly selectedSectionId = signal<string>('');
+  // The config-driven section currently shown, so the header Save/Cancel act on it.
+  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
+  protected readonly headerSection = computed<SectionState | null>(() => {
+    const id = this.selectedSectionId();
+    return this.visibleSections.find((s) => s.config.id === id) ?? null;
+  });
+  protected readonly senderEmailInput = signal('');
+  // Sending-phone verification (anti-abuse gate for Free-plan newsletter sends).
+  protected readonly phoneStatus = signal<PhoneVerificationStatus | null>(null);
+  protected readonly phoneInput = signal('');
+  protected readonly phoneCodeInput = signal('');
+  protected readonly phoneBusy = signal(false);
+  protected readonly phoneCodeSentTo = signal<string | null>(null);
+  protected readonly settingsSvc = inject(SettingsService);
+  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
+  protected readonly verifiedEmailsList = computed<string[]>(() => {
+    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+  });
+  protected readonly verifyingEmail = signal<string | null>(null);
+
+  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
+  protected trackSection = (_: number, section: SectionState) => section.config.id;
+
+  /** The custom (self-saving) sections visible in the current mode. */
+  protected get visibleCustomSections(): CustomSectionConfig[] {
+    return CUSTOM_SECTIONS.filter((s) => s.mode === this.currentMode);
+  }
+
+  /** Nav-button classes shared by config-driven and custom section buttons. */
+  protected navClass(id: string): string {
+    return this.isSelected(id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60';
+  }
+
+  public readonly section = input<string>();
+
+  constructor() {
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
+    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+
+    // Navbar crumb ("Settings"/"Workspace") comes from the route's `data.breadcrumb`
+    // via BreadcrumbDefaultsService — no manual publish needed here anymore.
+
+    effect(() => {
+      const s = this.section();
+      if (s) {
+        this.selectedSectionId.set(s);
+      } else {
+        if (this.currentMode === 'settings') {
+          this.selectedSectionId.set('notifications');
+        } else if (this.currentMode === 'workspace') {
+          this.selectedSectionId.set('organization');
+        }
+      }
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      this.applySnapshot(snapshot, false);
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
+
+      const commsSection = this.sections.find((s) => s.id === 'communications');
+      if (commsSection) {
+        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
+        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
+
+        const options = [
+          { label: 'Select a verified email', value: '' },
+          ...verifiedEmails.map((email) => ({ label: email, value: email })),
+        ];
+
+        if (fromEmailField) {
+          fromEmailField.options = options;
+        }
+        if (replyToField) {
+          replyToField.options = options;
+        }
+      }
+    });
+  }
+
+  protected get visibleSections(): SectionState[] {
+    if (this.currentMode === 'settings') {
+      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
+    }
+    if (this.currentMode === 'workspace') {
+      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
+    }
+    return [];
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.settingsSvc.load();
+    this.hasLoaded.set(true);
+    this.applySnapshot(this.settingsSvc.snapshot(), true);
+    await this.loadUserPrefs();
+    await this.loadLastFingerprintRecomputeTime();
+    if (this.currentMode === 'workspace') {
+      await this.loadPhoneStatus();
+    }
+  }
+
+  private async loadPhoneStatus(): Promise<void> {
+    try {
+      this.phoneStatus.set(await this.settingsSvc.getPhoneVerificationStatus());
+    } catch {
+      // Non-blocking: the communications section still renders without the phone card state.
+    }
+  }
+
+  protected async requestPhoneCode(): Promise<void> {
+    const phone = this.phoneInput().trim();
+    if (!phone) return;
+    this.phoneBusy.set(true);
+    try {
+      const result = await this.settingsSvc.requestPhoneVerification(phone);
+      this.phoneCodeSentTo.set(result.phone);
+      this.phoneCodeInput.set('');
+      this.alerts.showSuccess(`We texted a verification code to ${result.phone}.`);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not send the code.');
+    } finally {
+      this.phoneBusy.set(false);
+    }
+  }
+
+  protected async confirmPhoneCode(): Promise<void> {
+    const code = this.phoneCodeInput().trim();
+    if (!code) return;
+    this.phoneBusy.set(true);
+    try {
+      const result = await this.settingsSvc.confirmPhoneVerification(code);
+      this.alerts.showSuccess(`Phone ${result.phone} is verified — you're clear to send newsletters.`);
+      this.phoneCodeSentTo.set(null);
+      this.phoneInput.set('');
+      this.phoneCodeInput.set('');
+      await this.loadPhoneStatus();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not verify the code.');
+    } finally {
+      this.phoneBusy.set(false);
+    }
+  }
+
+  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
+  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
+    { value: 1, label: 'Mon' },
+    { value: 2, label: 'Tue' },
+    { value: 3, label: 'Wed' },
+    { value: 4, label: 'Thu' },
+    { value: 5, label: 'Fri' },
+    { value: 6, label: 'Sat' },
+    { value: 0, label: 'Sun' },
+  ];
+
+  private parseDays(raw: unknown): Set<number> {
+    return new Set(
+      String(raw ?? '')
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !Number.isNaN(n)),
+    );
+  }
+
+  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
+    return this.parseDays(section.payload()[controlName]).has(day);
+  }
+
+  protected toggleDay(section: SectionState, controlName: string, day: number): void {
+    const days = this.parseDays(section.payload()[controlName]);
+    if (days.has(day)) days.delete(day);
+    else days.add(day);
+    const ordered = this.dayChips
+      .map((c) => c.value)
+      .filter((d) => days.has(d))
+      .join(',');
+    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
+    section.form[controlName]().markAsDirty();
+  }
+
+  protected getNotificationGroups(section: SectionState) {
+    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
+    const fields = section.fields;
+
+    for (const field of fields) {
+      if (field.config.key.endsWith('_in_app')) continue;
+
+      const inAppControlName = `${field.controlName}_in_app`;
+      const inAppField = fields.find((f) => f.controlName === inAppControlName);
+
+      groups.push({
+        label: field.config.label,
+        helper: field.config.helper || '',
+        emailField: field,
+        inAppField: inAppField,
+      });
+    }
+    return groups;
+  }
+
+  protected isEmailVerified(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+    return verified.includes(email.toLowerCase().trim());
+  }
+
+  protected isSaving(section: SectionState) {
+    return this.savingSectionId() === section.config.id;
+  }
+
+  protected isSectionDirty(section: SectionState) {
+    return section.form().dirty();
+  }
+
+  protected isSectionInvalid(section: SectionState) {
+    return section.form().invalid();
+  }
+
+  protected isSelected(sectionId: string) {
+    return this.selectedSectionId() === sectionId;
+  }
+
+  protected isVerifyCooldown(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  protected async loadLastFingerprintRecomputeTime() {
+    try {
+      const res = await this.householdsSvc.getLastFingerprintRecomputation();
+      if (res && res.lastRunAt) {
+        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
+      } else {
+        this.lastFingerprintRecomputeTime.set(null);
+      }
+    } catch (err) {
+      console.error('Failed to load last fingerprint recompute time', err);
+    }
+  }
+
+  protected async loadUserPrefs() {
+    try {
+      const currentUser = await this.auth.getCurrentUser();
+      if (currentUser) {
+        const user = await this.userService.getProfileById(currentUser.id);
+        this.currentUserDetail.set(user);
+        const prefs = user.notification_preferences || {
+          mention_in_comment: true,
+          mention_in_comment_in_app: true,
+          task_assigned: true,
+          task_assigned_in_app: true,
+          task_due: true,
+          task_due_in_app: true,
+          person_assigned: true,
+          person_assigned_in_app: true,
+          email_assigned: true,
+          email_assigned_in_app: true,
+          export_ready: true,
+          export_ready_in_app: true,
+          import_summary: true,
+          import_summary_in_app: true,
+        };
+        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
+        if (notifState) {
+          notifState.payload.update((p) => ({
+            ...p,
+            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
+            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
+            notifications_task_assigned: prefs.task_assigned ?? true,
+            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
+            notifications_task_due: prefs.task_due ?? true,
+            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
+            notifications_person_assigned: prefs.person_assigned ?? true,
+            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            notifications_email_assigned: prefs.email_assigned ?? true,
+            notifications_email_assigned_in_app: prefs.email_assigned_in_app ?? true,
+            notifications_export_ready: prefs.export_ready ?? true,
+            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
+            notifications_import_summary: prefs.import_summary ?? true,
+            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
+          }));
+          notifState.form().reset();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load user preferences in settings page', err);
+    }
+  }
+
+  protected async recomputeAddressFingerprints() {
+    if (this.isFingerprintRecomputeCooldown()) {
+      this.alerts.showError('Fingerprints can only be recomputed once a month.');
+      return;
+    }
+
+    this.recomputingFingerprints.set(true);
+    try {
+      await this.householdsSvc.recomputeAddressFingerprints();
+      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
+      await this.loadLastFingerprintRecomputeTime();
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
+      );
+    } finally {
+      this.recomputingFingerprints.set(false);
+    }
+  }
+
+  protected resetSection(section: SectionState) {
+    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
+    if (section.config.id === 'notifications') {
+      void this.loadUserPrefs();
+    }
+  }
+
+  protected async saveSection(section: SectionState) {
+    if (!section.form().dirty()) return;
+
+    const entries: SettingsEntryType[] = [];
+    for (const field of section.fields) {
+      const fieldSignal = (section.form as any)[field.controlName]();
+      if (!fieldSignal.dirty()) continue;
+
+      // Skip user notification preferences from tenant settings upsert
+      if (section.config.id === 'notifications') {
+        continue;
+      }
+
+      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
+      entries.push({ key: field.config.key, value });
+    }
+
+    this.savingSectionId.set(section.config.id);
+    try {
+      if (entries.length > 0) {
+        const snapshot = await this.settingsSvc.upsert(entries);
+        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
+      }
+
+      if (section.config.id === 'notifications') {
+        const user = this.currentUserDetail();
+        if (user) {
+          const raw = section.payload();
+          const parseBool = (val: any) => val === true || val === 'true';
+          const payload: UpdateAuthUserType = {
+            notification_preferences: {
+              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
+              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
+              task_assigned: parseBool(raw['notifications_task_assigned']),
+              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
+              task_due: parseBool(raw['notifications_task_due']),
+              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
+              person_assigned: parseBool(raw['notifications_person_assigned']),
+              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
+              email_assigned: parseBool(raw['notifications_email_assigned']),
+              email_assigned_in_app: parseBool(raw['notifications_email_assigned_in_app']),
+              export_ready: parseBool(raw['notifications_export_ready']),
+              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
+              import_summary: parseBool(raw['notifications_import_summary']),
+              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
+            },
+          };
+          await this.userService.updateUserProfile(user.id, payload);
+          await this.loadUserPrefs();
+        }
+      }
+      this.alerts.showSuccess('Settings updated successfully');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to save settings';
+      this.alerts.showError(message);
+    } finally {
+      this.savingSectionId.set(null);
+    }
+  }
+
+  protected selectSection(sectionId: string) {
+    void this.router.navigate(['/', this.currentMode, sectionId]);
+  }
+
+  protected async verifySenderEmail(email: string | null | undefined) {
+    if (!email) return;
+    const normalized = email.toLowerCase().trim();
+
+    if (this.isVerifyCooldown(normalized)) {
+      this.alerts.showError('Please wait at least one minute before requesting verification again.');
+      return;
+    }
+
+    this.verifyingEmail.set(normalized);
+
+    try {
+      await this.settingsSvc.requestEmailVerification(normalized);
+      this.lastVerificationTimes.update((prev) => ({
+        ...prev,
+        [normalized]: Date.now(),
+      }));
+      this.startEmailCooldown(normalized);
+      this.lastRequestedEmail.set(normalized);
+      // Clear only after success — on failure the user keeps their input to retry.
+      this.senderEmailInput.set('');
+      this.alerts.showSuccess(
+        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
+      );
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
+    } finally {
+      this.verifyingEmail.set(null);
+    }
+  }
+
+  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
+    const sections = target ? [target] : this.sectionStates;
+
+    for (const state of sections) {
+      const nextPayload = { ...state.payload() };
+      let changed = false;
+
+      for (const field of state.fields) {
+        const fieldSignal = (state.form as any)[field.controlName]();
+        if (!resetDirty && fieldSignal.dirty()) continue;
+
+        // Skip user notification preferences from tenant settings snapshot update
+        if (state.config.id === 'notifications') {
+          continue;
+        }
+
+        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
+        if (nextPayload[field.controlName] !== incoming) {
+          nextPayload[field.controlName] = incoming;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        state.payload.set(nextPayload);
+      }
+
+      if (resetDirty) {
+        state.form().reset();
+      }
+    }
+  }
+
+  private buildSectionState(section: SettingsSectionConfig): SectionState {
+    const initialPayload: Record<string, any> = {};
+    const fieldStates: SectionFieldState[] = [];
+
+    for (const field of section.fields) {
+      const controlName = this.controlNameFor(field.key);
+      initialPayload[controlName] = this.normalizeIncomingValue(
+        field,
+        this.settingsSvc.getValue(field.key, field.defaultValue),
+      );
+      fieldStates.push({ config: field, controlName });
+    }
+
+    const payload = signal(initialPayload);
+    const formSignal = form(payload, (p) => {
+      for (const field of section.fields) {
+        const controlName = this.controlNameFor(field.key);
+        if (field.type === 'email') {
+          email(p[controlName]);
+        }
+        if (field.type === 'url') {
+          pattern(p[controlName], /^https?:\/\//i);
+        }
+        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
+          validate(p[controlName], (ctx) => {
+            const val = ((ctx.value() as string) || '').toLowerCase().trim();
+            if (!val) return null;
+            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+            if (!verified.includes(val)) {
+              return { kind: 'not-verified', message: 'Email address must be verified.' };
+            }
+            return null;
+          });
+        }
+      }
+    });
+
+    return { config: section, payload, form: formSignal, fields: fieldStates };
+  }
+
+  private controlNameFor(key: string) {
+    return key.replace(/[^a-zA-Z0-9]+/g, '_');
+  }
+
+  private defaultForField(field: SettingsFieldConfig) {
+    switch (field.type) {
+      case 'toggle':
+        return false;
+      case 'number':
+        return null;
+      case 'select':
+        return field.options?.[0]?.value ?? '';
+      default:
+        return '';
+    }
+  }
+
+  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
+    const fallback = field.defaultValue ?? this.defaultForField(field);
+
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(raw ?? fallback ?? false);
+      case 'number': {
+        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
+        const numeric = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
+      }
+      case 'select': {
+        const options = field.options ?? [];
+        const candidate = raw === undefined || raw === null ? fallback : String(raw);
+        const match = options.find((option) => option.value === candidate);
+        if (match) return match.value;
+        return (fallback ?? options[0]?.value ?? '') as string;
+      }
+      case 'date':
+        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
+      case 'day-toggles':
+        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+      case 'text':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'textarea':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      default:
+        return raw ?? fallback ?? '';
+    }
+  }
+
+  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(value);
+      case 'number': {
+        if (value === '' || value === null || value === undefined) return null;
+        const numeric = typeof value === 'number' ? value : Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+      }
+      case 'select': {
+        const candidate = value === null || value === undefined ? '' : String(value);
+        const options = field.options ?? [];
+        const match = options.find((option) => option.value === candidate);
+        return match ? match.value : this.defaultForField(field);
+      }
+      case 'date':
+        return typeof value === 'string' ? value : value ? String(value) : '';
+      case 'day-toggles':
+        return value === null || value === undefined ? '' : String(value);
+      case 'textarea':
+      case 'text':
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+        return value === null || value === undefined ? '' : String(value);
+      default:
+        return value ?? '';
+    }
+  }
+
+  private startEmailCooldown(email: string) {
+    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.emailCooldownSeconds()[email] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.emailCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[email];
+          return next;
+        });
+      } else {
+        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
+      }
+    }, 1000);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
 ```typescript
 import type { PcIconNameType } from '@icons/icons.index';
@@ -78823,6 +78855,255 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
 ];
+```
+
+## File: apps/website/src/app/pricing/pricing-page.html
+```html
+<pc-site-header variant="solid" />
+
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">Pricing</div>
+    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">Fair, simple pricing.</h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      Unlimited contacts and households on every plan, including Free. You pay only for features and email subscribers,
+      never for the size of your list.
+    </p>
+  </div>
+</section>
+
+<!-- Slider + plan cards: the one input that re-prices the three cards below. -->
+<section class="px-5 pt-12 sm:px-8">
+  <div class="site-wrap rounded-xl border border-line bg-base-100 px-6 py-5">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+      <label for="subscriber-slider" class="text-[14.5px] font-semibold">
+        How many email subscribers do you have?
+      </label>
+      <div class="text-[15px] font-bold tabular-nums text-primary">{{ subscribersLabel() }} subscribers</div>
+    </div>
+    <input
+      id="subscriber-slider"
+      type="range"
+      min="0"
+      [max]="maxStopIndex"
+      step="1"
+      class="range range-primary range-sm mt-4 w-full"
+      [value]="stopIndex()"
+      (input)="onSlide($event)"
+    />
+    <div class="mt-1.5 flex justify-between text-[11px] tabular-nums text-base-content/40">
+      <span>1,000</span>
+      <span>200,000</span>
+    </div>
+
+    <!-- Monthly / Annual billing toggle -->
+    <div class="mt-4 flex flex-col items-center gap-2 border-t border-line pt-4">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        <button role="tab" class="tab" [class.tab-active]="interval() === 'month'" (click)="setInterval('month')">
+          Monthly
+        </button>
+        <button role="tab" class="tab" [class.tab-active]="interval() === 'year'" (click)="setInterval('year')">
+          Annual
+        </button>
+      </div>
+      <span class="rounded-full bg-success/12 px-2.5 py-1 text-[11px] font-semibold text-success">
+        Annual billing: {{ annualBadge }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Plan cards -->
+  <div class="site-wrap mt-4 grid gap-4 sm:grid-cols-3">
+    @for (tier of tiers; track tier.key) {
+    <div
+      class="flex flex-col rounded-xl bg-base-100 p-6"
+      [class]="tier.featured ? 'border-2 border-primary' : 'border border-line'"
+    >
+      <div class="flex h-6 items-center justify-between">
+        <div class="text-[16px] font-semibold">{{ tier.name }}</div>
+        @if (tier.featured) {
+        <span class="rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary"> Best value </span>
+        }
+      </div>
+      <div class="mt-3 min-h-[52px]">
+        @if (!overMax(tier)) {
+        <div class="text-[30px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
+        <div class="mt-1.5 text-[12px] text-base-content/50">
+          {{ cadence(tier) }} · at {{ subscribersLabel() }} subscribers
+        </div>
+        @if (annualNote(tier); as note) {
+        <div class="mt-1 text-[12px] font-medium text-success">{{ note }}</div>
+        } } @else if (tier.key === 'free') {
+        <div class="text-[30px] font-bold tabular-nums leading-none text-base-content/35">{{ zeroPrice() }}</div>
+        <div class="mt-1.5 text-[12px] text-base-content/50">Covers up to 1,000 subscribers</div>
+        } @else {
+        <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
+        <div class="mt-2 text-[12px] text-base-content/50">
+          For more than {{ maxSubscribersLabel(tier) }} subscribers
+        </div>
+        }
+      </div>
+      <p class="mt-3 text-[13.5px] leading-relaxed text-base-content/70">{{ stepUpLabel(tier) }}</p>
+      <p class="mt-2 text-[12px] leading-relaxed text-base-content/50">{{ capsLine(tier) }}</p>
+      <div class="mt-auto pt-5">
+        <a
+          [href]="signupUrl"
+          class="btn w-full rounded-field text-[13.5px] font-semibold"
+          [class]="tier.featured ? 'btn-primary' : 'btn-outline btn-primary'"
+          >Start free</a
+        >
+      </div>
+    </div>
+    }
+  </div>
+
+  @if (interval() === 'year') {
+  <p class="site-wrap mt-3 text-center text-[12px] text-base-content/50">
+    Per-month prices on annual billing are rounded to the nearest dollar. You're billed once a year, at the exact annual
+    total shown on each card.
+  </p>
+  }
+
+  <!-- Included in every plan -->
+  <div class="site-wrap mt-4 rounded-xl border border-line bg-base-50 p-6">
+    <div class="eyebrow">Included in every plan, including Free</div>
+    <ul class="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+      @for (item of includedEverywhere; track item) {
+      <li class="flex items-center gap-2 text-[13px] text-base-content/70">
+        <pc-site-icon name="check-circle" [size]="15" class="flex-none text-primary" />
+        <span>{{ item }}</span>
+      </li>
+      }
+    </ul>
+  </div>
+</section>
+
+<!-- What differs between plans -->
+<section class="px-5 py-12 sm:px-8">
+  <div class="site-wrap">
+    <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em]">What changes as you step up.</h2>
+    <p class="mt-2 max-w-[620px] text-[13.5px] text-base-content/60">
+      The grid below only lists what differs between plans; everything above is in all of them.
+    </p>
+  </div>
+
+  <div class="site-wrap mt-5 overflow-x-auto rounded-xl border border-line bg-base-100">
+    <table class="w-full min-w-[640px] border-separate border-spacing-0">
+      <thead>
+        <tr>
+          <th class="sticky left-0 z-[2] w-[240px] border-b border-line bg-base-100 px-5 py-4 text-left align-bottom">
+            <div class="text-[12.5px] font-normal text-base-content/50">
+              Prices shown at {{ subscribersLabel() }} subscribers
+            </div>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <th
+            class="min-w-[150px] border-b border-line px-4 py-4 text-center"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            <div class="text-[15px] font-semibold">{{ tier.name }}</div>
+            <div class="mt-0.5 text-[12.5px] font-normal tabular-nums text-base-content/60">
+              @if (!overMax(tier)) { {{ priceLabel(tier) }} {{ cadence(tier) }} } @else if (tier.key === 'free') { Up to
+              1,000 subscribers } @else { Contact us }
+            </div>
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (group of diffMatrix; track group.category; let groupLast = $last) {
+        <tr>
+          <th class="sticky left-0 z-[1] bg-base-100 px-5 pb-2 pt-6 text-left">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
+              {{ group.category }}
+            </span>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <td class="pb-2 pt-6" [class]="tier.featured ? 'bg-primary/5' : ''"></td>
+          }
+        </tr>
+        @for (row of group.rows; track row.label; let rowLast = $last) {
+        <tr>
+          <th
+            class="sticky left-0 z-[1] border-line bg-base-100 px-5 py-3 text-left text-[13.5px] font-normal text-base-content/80"
+            [class.border-b]="!(groupLast && rowLast)"
+          >
+            {{ row.label }}
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <!-- `relative` contains the absolute sr-only spans, so they can't widen the page
+               past the overflow-x wrapper on small screens. -->
+          <td
+            class="relative border-line px-4 py-3 text-center text-[13px] text-base-content/70"
+            [class.border-b]="!(groupLast && rowLast)"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            @let value = matrixValue(row, tier); @if (value === true) {
+            <svg class="mx-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span class="sr-only">Included</span>
+            } @else if (value === false) {
+            <span class="text-base-content/30" aria-hidden="true">—</span>
+            <span class="sr-only">Not included</span>
+            } @else { {{ value }} }
+          </td>
+          }
+        </tr>
+        } }
+      </tbody>
+    </table>
+  </div>
+
+  @if (isConverted()) {
+  <p
+    class="site-wrap mt-4 rounded-xl border border-line bg-base-200/60 px-5 py-3 text-center text-[13px] text-base-content/70"
+  >
+    Prices shown in {{ currencySymbol() }} are estimates at today's exchange rate. You'll be billed in US dollars.
+  </p>
+  }
+
+  <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
+    Need more than 200,000 subscribers, SSO or custom contracts?
+    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Talk to us</a>.
+  </p>
+
+  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
+    Donations processed through Stripe carry a 1% platform fee plus Stripe’s own processing fees. Subscriptions have no
+    hidden fees.
+  </p>
+
+  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
+    Volunteers join the companion apps by invite and never take a staff seat. Questions about a plan?
+    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Write to us</a> or
+    <a class="font-semibold text-primary hover:text-secondary" routerLink="/faq">read the FAQ</a>.
+  </p>
+</section>
+
+<!-- CTA band -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    Every plan starts on sample data.
+  </h2>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+    <a
+      [href]="mailto"
+      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
+    >
+      Book a 15-minute walkthrough
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
@@ -80920,253 +81201,510 @@ export class FormsPageComponent implements OnInit {
 </div>
 ```
 
-## File: apps/website/src/app/pricing/pricing-page.html
-```html
-<pc-site-header variant="solid" />
+## File: apps/website/src/app/pricing/pricing-page.ts
+```typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import {
+  ANNUAL_MONTHS_FREE,
+  annualPriceForQuantity,
+  bracketIndexForSubscribers,
+  cadenceLabel,
+  FEATURE_MATRIX,
+  GB,
+  PLANS,
+  priceForQuantity,
+} from '@common';
+import type { BillingInterval, FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
 
-<!-- Hero -->
-<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
-  <div class="mx-auto max-w-[760px] text-center">
-    <div class="eyebrow">Pricing</div>
-    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">Fair, simple pricing.</h1>
-    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
-      Unlimited contacts and households on every plan, including Free. You pay only for features and email subscribers,
-      never for the size of your list.
-    </p>
-  </div>
-</section>
+import { CurrencyService } from '../ui/currency.service';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SiteIcon } from '../ui/site-icon';
+import { SIGNUP_URL } from '../ui/site-nav';
 
-<!-- Slider + plan cards: the one input that re-prices the three cards below. -->
-<section class="px-5 pt-12 sm:px-8">
-  <div class="site-wrap rounded-xl border border-line bg-base-100 px-6 py-5">
-    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-      <label for="subscriber-slider" class="text-[14.5px] font-semibold">
-        How many email subscribers do you have?
-      </label>
-      <div class="text-[15px] font-bold tabular-nums text-primary">{{ subscribersLabel() }} subscribers</div>
-    </div>
-    <input
-      id="subscriber-slider"
-      type="range"
-      min="0"
-      [max]="maxStopIndex"
-      step="1"
-      class="range range-primary range-sm mt-4 w-full"
-      [value]="stopIndex()"
-      (input)="onSlide($event)"
-    />
-    <div class="mt-1.5 flex justify-between text-[11px] tabular-nums text-base-content/40">
-      <span>1,000</span>
-      <span>200,000</span>
-    </div>
+/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
+const SLIDER_STOPS: readonly number[] = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+];
 
-    <!-- Monthly / Annual billing toggle -->
-    <div class="mt-4 flex flex-col items-center gap-2 border-t border-line pt-4">
-      <div role="tablist" class="tabs tabs-boxed tabs-sm">
-        <button role="tab" class="tab" [class.tab-active]="interval() === 'month'" (click)="setInterval('month')">
-          Monthly
-        </button>
-        <button role="tab" class="tab" [class.tab-active]="interval() === 'year'" (click)="setInterval('year')">
-          Annual
-        </button>
-      </div>
-      <span class="rounded-full bg-success/12 px-2.5 py-1 text-[11px] font-semibold text-success">
-        Annual billing: {{ annualBadge }}
-      </span>
-    </div>
-  </div>
+/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
+const DEFAULT_STOP_INDEX = 1;
+const DEFAULT_STOP = 2_500;
 
-  <!-- Plan cards -->
-  <div class="site-wrap mt-4 grid gap-4 sm:grid-cols-3">
-    @for (tier of tiers; track tier.key) {
-    <div
-      class="flex flex-col rounded-xl bg-base-100 p-6"
-      [class]="tier.featured ? 'border-2 border-primary' : 'border border-line'"
-    >
-      <div class="flex h-6 items-center justify-between">
-        <div class="text-[16px] font-semibold">{{ tier.name }}</div>
-        @if (tier.featured) {
-        <span class="rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary"> Best value </span>
-        }
-      </div>
-      <div class="mt-3 min-h-[52px]">
-        @if (!overMax(tier)) {
-        <div class="text-[30px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
-        <div class="mt-1.5 text-[12px] text-base-content/50">
-          {{ cadence(tier) }} · at {{ subscribersLabel() }} subscribers
-        </div>
-        @if (annualNote(tier); as note) {
-        <div class="mt-1 text-[12px] font-medium text-success">{{ note }}</div>
-        } } @else if (tier.key === 'free') {
-        <div class="text-[30px] font-bold tabular-nums leading-none text-base-content/35">{{ zeroPrice() }}</div>
-        <div class="mt-1.5 text-[12px] text-base-content/50">Covers up to 1,000 subscribers</div>
-        } @else {
-        <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
-        <div class="mt-2 text-[12px] text-base-content/50">
-          For more than {{ maxSubscribersLabel(tier) }} subscribers
-        </div>
-        }
-      </div>
-      <p class="mt-3 text-[13.5px] leading-relaxed text-base-content/70">{{ stepUpLabel(tier) }}</p>
-      <p class="mt-2 text-[12px] leading-relaxed text-base-content/50">{{ capsLine(tier) }}</p>
-      <div class="mt-auto pt-5">
-        <a
-          [href]="signupUrl"
-          class="btn w-full rounded-field text-[13.5px] font-semibold"
-          [class]="tier.featured ? 'btn-primary' : 'btn-outline btn-primary'"
-          >Start free</a
-        >
-      </div>
-    </div>
+/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
+type MatrixPlanKey = keyof FeatureMatrixRow['values'];
+
+function isMatrixPlanKey(key: string): key is MatrixPlanKey {
+  return key === 'free' || key === 'grassroots' || key === 'movement';
+}
+
+/** A matrix row is "table stakes" when every displayed plan simply has it (all-true checks).
+ * Those rows render as the compact included-everywhere strip, not as table rows. */
+function isAllTrueRow(row: FeatureMatrixRow): boolean {
+  return row.values.free === true && row.values.grassroots === true && row.values.movement === true;
+}
+
+/** One-line "what this tier adds" summary per plan card. Mirrors the GATED_FEATURES split in
+ * plans.ts; if a feature moves between tiers, update this wording too (pplcrm-website-claims). */
+const STEP_UP_LABELS: Readonly<Record<string, string>> = {
+  free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
+  grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
+  movement:
+    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers and priority support.',
+};
+
+@Component({
+  selector: 'pc-pricing-page',
+  imports: [RouterLink, SiteHeader, SiteFooter, SiteIcon],
+  templateUrl: './pricing-page.html',
+})
+export class PricingPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  private readonly currency = inject(CurrencyService);
+  /** Whether prices are being shown in a non-USD currency (gates the billing disclaimer). */
+  protected readonly isConverted = this.currency.isConverted;
+  /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
+  protected readonly currencySymbol = this.currency.priceSymbol;
+
+  /** The priced plan cards (Free / Grassroots / Movement); enterprise is a footnote. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+
+  /** Features every plan includes (all-true matrix rows), shown once as a strip instead of
+   * spending a table row on three identical checkmarks. */
+  protected readonly includedEverywhere: readonly string[] = FEATURE_MATRIX.flatMap((group) =>
+    group.rows.filter(isAllTrueRow).map((row) => row.label),
+  );
+
+  /** The comparison table: only groups and rows where plans actually differ. */
+  protected readonly diffMatrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX.map((group) => ({
+    category: group.category,
+    rows: group.rows.filter((row) => !isAllTrueRow(row)),
+  })).filter((group) => group.rows.length > 0);
+
+  /** Billing interval the cards and comparison table price at. The marketing page defaults to
+   * Annual (the in-app billing page keeps Monthly — see the plans.ts decision log). */
+  protected readonly interval = signal<BillingInterval>('year');
+  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
+
+  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
+  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
+  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
+  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
+
+  protected onSlide(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) {
+      this.stopIndex.set(Number(target.value));
     }
-  </div>
-
-  @if (interval() === 'year') {
-  <p class="site-wrap mt-3 text-center text-[12px] text-base-content/50">
-    Per-month prices on annual billing are rounded to the nearest dollar. You're billed once a year, at the exact annual
-    total shown on each card.
-  </p>
   }
 
-  <!-- Included in every plan -->
-  <div class="site-wrap mt-4 rounded-xl border border-line bg-base-50 p-6">
-    <div class="eyebrow">Included in every plan, including Free</div>
-    <ul class="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-      @for (item of includedEverywhere; track item) {
-      <li class="flex items-center gap-2 text-[13px] text-base-content/70">
-        <pc-site-icon name="check-circle" [size]="15" class="flex-none text-primary" />
-        <span>{{ item }}</span>
-      </li>
-      }
-    </ul>
-  </div>
-</section>
-
-<!-- What differs between plans -->
-<section class="px-5 py-12 sm:px-8">
-  <div class="site-wrap">
-    <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em]">What changes as you step up.</h2>
-    <p class="mt-2 max-w-[620px] text-[13.5px] text-base-content/60">
-      The grid below only lists what differs between plans; everything above is in all of them.
-    </p>
-  </div>
-
-  <div class="site-wrap mt-5 overflow-x-auto rounded-xl border border-line bg-base-100">
-    <table class="w-full min-w-[640px] border-separate border-spacing-0">
-      <thead>
-        <tr>
-          <th class="sticky left-0 z-[2] w-[240px] border-b border-line bg-base-100 px-5 py-4 text-left align-bottom">
-            <div class="text-[12.5px] font-normal text-base-content/50">
-              Prices shown at {{ subscribersLabel() }} subscribers
-            </div>
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <th
-            class="min-w-[150px] border-b border-line px-4 py-4 text-center"
-            [class]="tier.featured ? 'bg-primary/5' : ''"
-          >
-            <div class="text-[15px] font-semibold">{{ tier.name }}</div>
-            <div class="mt-0.5 text-[12.5px] font-normal tabular-nums text-base-content/60">
-              @if (!overMax(tier)) { {{ priceLabel(tier) }} {{ cadence(tier) }} } @else if (tier.key === 'free') { Up to
-              1,000 subscribers } @else { Contact us }
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody>
-        @for (group of diffMatrix; track group.category; let groupLast = $last) {
-        <tr>
-          <th class="sticky left-0 z-[1] bg-base-100 px-5 pb-2 pt-6 text-left">
-            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
-              {{ group.category }}
-            </span>
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <td class="pb-2 pt-6" [class]="tier.featured ? 'bg-primary/5' : ''"></td>
-          }
-        </tr>
-        @for (row of group.rows; track row.label; let rowLast = $last) {
-        <tr>
-          <th
-            class="sticky left-0 z-[1] border-line bg-base-100 px-5 py-3 text-left text-[13.5px] font-normal text-base-content/80"
-            [class.border-b]="!(groupLast && rowLast)"
-          >
-            {{ row.label }}
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <!-- `relative` contains the absolute sr-only spans, so they can't widen the page
-               past the overflow-x wrapper on small screens. -->
-          <td
-            class="relative border-line px-4 py-3 text-center text-[13px] text-base-content/70"
-            [class.border-b]="!(groupLast && rowLast)"
-            [class]="tier.featured ? 'bg-primary/5' : ''"
-          >
-            @let value = matrixValue(row, tier); @if (value === true) {
-            <svg class="mx-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            <span class="sr-only">Included</span>
-            } @else if (value === false) {
-            <span class="text-base-content/30" aria-hidden="true">—</span>
-            <span class="sr-only">Not included</span>
-            } @else { {{ value }} }
-          </td>
-          }
-        </tr>
-        } }
-      </tbody>
-    </table>
-  </div>
-
-  @if (isConverted()) {
-  <p
-    class="site-wrap mt-4 rounded-xl border border-line bg-base-200/60 px-5 py-3 text-center text-[13px] text-base-content/70"
-  >
-    Prices shown in {{ currencySymbol() }} are estimates at today's exchange rate. You'll be billed in US dollars.
-  </p>
+  protected setInterval(interval: BillingInterval): void {
+    this.interval.set(interval);
   }
 
-  <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
-    Need more than 200,000 subscribers, SSO or custom contracts?
-    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Talk to us</a>.
-  </p>
+  /** Live price at the slider's subscriber count, formatted in the active display currency.
+   * On annual, paid tiers show the rounded monthly-equivalent of the annual total (`$24` —
+   * the exact total renders alongside via `annualNote`, with the rounding disclaimer below
+   * the cards); Free keeps its plain `$0` (nothing to bill annually). */
+  protected priceLabel(plan: PlanDef): string {
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return 'Contact us';
+    if (this.interval() === 'year' && plan.purchasable) {
+      return this.currency.formatMonthlyEquivalent(annualPriceForQuantity(plan.key, index));
+    }
+    return this.currency.format(priceForQuantity(plan.key, index));
+  }
 
-  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
-    Donations processed through Stripe carry a 1% platform fee plus Stripe’s own processing fees. Subscriptions have no
-    hidden fees.
-  </p>
+  /** The card's cadence line ('per month' / 'per month, billed annually' / 'forever'). */
+  protected cadence(plan: PlanDef): string {
+    return cadenceLabel(plan, this.interval());
+  }
 
-  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
-    Volunteers join the companion apps by invite and never take a staff seat. Questions about a plan?
-    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Write to us</a> or
-    <a class="font-semibold text-primary hover:text-secondary" routerLink="/faq">read the FAQ</a>.
-  </p>
-</section>
+  /** "Billed annually as $290 · 2 months free" under an annual paid-tier price; null whenever
+   * the plain monthly presentation applies (monthly interval, Free, out-of-ladder). */
+  protected annualNote(plan: PlanDef): string | null {
+    if (this.interval() !== 'year' || !plan.purchasable) return null;
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return null;
+    const total = this.currency.format(annualPriceForQuantity(plan.key, index));
+    return `Billed annually as ${total} · ${this.annualBadge}`;
+  }
 
-<!-- CTA band -->
-<section class="bg-navy px-5 py-14 text-center sm:px-8">
-  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
-    Every plan starts on sample data.
-  </h2>
-  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
-    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
-      Start free with sample data
-    </a>
-    <a
-      [href]="mailto"
-      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
-    >
-      Book a 15-minute walkthrough
-    </a>
-  </div>
-</section>
+  /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */
+  protected zeroPrice(): string {
+    return this.currency.format(0);
+  }
 
-<pc-site-footer />
+  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
+  protected overMax(plan: PlanDef): boolean {
+    return bracketIndexForSubscribers(plan.key, this.subscribers()) === null;
+  }
+
+  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
+  protected maxSubscribersLabel(plan: PlanDef): string {
+    const brackets = plan.pricing?.brackets;
+    const last = brackets?.[brackets.length - 1];
+    return (last?.upTo ?? 0).toLocaleString('en-US');
+  }
+
+  /** One-line caps summary for a plan card, derived from PlanDef so it can never drift
+   * (e.g. "Up to 100,000 subscribers · 5 seats · 10 GB"). */
+  protected capsLine(plan: PlanDef): string {
+    const parts: string[] = [`Up to ${this.maxSubscribersLabel(plan)} subscribers`];
+    if (plan.seats === null && plan.volunteers === null) {
+      parts.push('unlimited seats & volunteers');
+    } else {
+      parts.push(plan.seats === null ? 'unlimited seats' : `${plan.seats} seats`);
+      if (plan.volunteers === null) parts.push('unlimited volunteers');
+      else if (plan.volunteers > 0) parts.push(`${plan.volunteers} volunteers`);
+    }
+    if (plan.storageBytes !== null) parts.push(`${Math.round(plan.storageBytes / GB)} GB`);
+    return parts.join(' · ');
+  }
+
+  /** The card's "what this tier adds" one-liner. */
+  protected stepUpLabel(plan: PlanDef): string {
+    return STEP_UP_LABELS[plan.key] ?? plan.blurb;
+  }
+
+  /** One matrix cell: true = included, false = not included, string = text value. */
+  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
+    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
+  }
+}
+```
+
+## File: apps/website/src/app/home/home-page.ts
+```typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { PLANS, startingPriceUsd } from '@common';
+import type { PlanDef } from '@common';
+
+import { AppPreview, type PreviewKind } from '../ui/app-preview';
+import { BrowserFrame } from '../ui/browser-frame';
+import { Constellation } from '../ui/constellation';
+import { CurrencyService } from '../ui/currency.service';
+import { SeoService } from '../ui/seo';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SiteIcon } from '../ui/site-icon';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+import { environment } from '../../environments/environment';
+
+const AUDIENCE_IDS = ['office', 'camp', 'np'] as const;
+type Audience = (typeof AUDIENCE_IDS)[number];
+
+function isAudience(value: unknown): value is Audience {
+  return AUDIENCE_IDS.some((id) => id === value);
+}
+
+interface Hero {
+  readonly h1: string;
+  readonly sub: string;
+  readonly url: string;
+  readonly kind: PreviewKind;
+  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
+  readonly img?: string;
+}
+
+interface AudienceOption {
+  readonly id: Audience;
+  readonly label: string;
+}
+
+interface Step {
+  readonly n: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Feature {
+  readonly icon: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Qa {
+  readonly q: string;
+  readonly a: string;
+}
+
+interface Door {
+  readonly addr: string;
+  readonly who: string;
+  readonly chip: string;
+  readonly chipClass: string;
+}
+
+const HEROES: Record<Audience, Hero> = {
+  office: {
+    h1: 'Every case answered. Every constituent remembered.',
+    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
+    url: 'app.pplcrm.com/inbox',
+    kind: 'inbox',
+    img: 'assets/site-shots/01-shot.png',
+  },
+  camp: {
+    h1: 'Built for the people who knock and win campaigns.',
+    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
+    url: 'app.pplcrm.com/canvassing',
+    kind: 'canvassing',
+    img: 'assets/site-shots/02-shot.png',
+  },
+  np: {
+    h1: 'Donors, volunteers and neighbours. One list.',
+    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
+    url: 'app.pplcrm.com/donations',
+    kind: 'donations',
+    img: 'assets/site-shots/03-shot.png',
+  },
+};
+
+@Component({
+  selector: 'pc-home-page',
+  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
+  templateUrl: './home-page.html',
+})
+export class HomePage {
+  protected readonly signupUrl = SIGNUP_URL;
+
+  private readonly seo = inject(SeoService);
+
+  constructor() {
+    // SoftwareApplication rich-result data for the landing page. The free tier
+    // ($0) is the checkable, drift-safe offer to advertise here.
+    this.seo.setJsonLd('software', {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'pplCRM',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web, iOS, Android',
+      url: environment.siteUrl,
+      description:
+        'A people-first CRM for constituency offices, campaigns and non-profits: one shared list ' +
+        'for constituents, voters, donors and volunteers, with a shared inbox, canvassing, ' +
+        'donations, newsletters and field apps.',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', description: 'Free plan' },
+    });
+  }
+
+  /** The /for/… routes render this page with their audience preselected (see app.routes.ts). */
+  private readonly routeAudience: unknown = inject(ActivatedRoute).snapshot.data['audience'];
+
+  protected readonly aud = signal<Audience>(isAudience(this.routeAudience) ? this.routeAudience : 'office');
+  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
+
+  protected readonly audiences: readonly AudienceOption[] = [
+    { id: 'office', label: 'Constituency office' },
+    { id: 'camp', label: 'Campaign' },
+    { id: 'np', label: 'Non-profit' },
+  ];
+
+  protected readonly steps: readonly Step[] = [
+    {
+      n: '1',
+      title: 'Create your free workspace',
+      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
+    },
+    {
+      n: '2',
+      title: 'Try everything on sample data',
+      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
+    },
+    {
+      n: '3',
+      title: 'Import your list when it clicks',
+      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
+    },
+  ];
+
+  /** The three comparative claims in the "Why pplCRM" band — each one names a real alternative and beats it. */
+  protected readonly whyPillars: readonly Feature[] = [
+    {
+      icon: 'clock',
+      title: 'Built for the long game',
+      body: 'A sales pipeline forgets a deal the day it closes. Your work compounds: this year’s case becomes next year’s volunteer becomes next cycle’s donor. pplCRM keeps that whole story on one record, however long you work the same streets.',
+    },
+    {
+      icon: 'lock-closed',
+      title: 'Your list is yours',
+      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
+    },
+    {
+      icon: 'paper-airplane',
+      title: 'Email that lands',
+      body: 'On big email platforms your newsletter shares a sending reputation with thousands of strangers, including the spammers. Here you send from your own verified domain, so the reputation you build is yours alone. Warm-up limits and abuse guardrails keep spammers off the platform entirely.',
+    },
+  ];
+
+  protected readonly features: readonly Feature[] = [
+    {
+      icon: 'users',
+      title: 'People & households',
+      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
+    },
+    {
+      icon: 'inbox',
+      title: 'A shared inbox & tasks',
+      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
+    },
+    {
+      icon: 'megaphone',
+      title: 'Newsletters that land',
+      body: 'Write once, send to the 1,284 people it’s actually for. An AI deliverability check scores every send before it leaves, so spam-filter surprises get caught while they’re still fixable.',
+    },
+    {
+      icon: 'map-pin',
+      title: 'Doors & the field',
+      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
+    },
+    {
+      icon: 'currency-dollar',
+      title: 'Donations, gratefully',
+      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
+    },
+    {
+      icon: 'arrow-up-tray',
+      title: 'Your spreadsheet, welcomed',
+      body: 'Bring the whole messy spreadsheet; duplicates merge on the way in. If you ever leave, everything leaves with you: plain-CSV export, on every plan.',
+    },
+  ];
+
+  protected readonly growFeatures: readonly Feature[] = [
+    {
+      icon: 'clipboard-document-list',
+      title: 'Web forms & automations',
+      body: 'Publish a signup or pledge page in minutes; every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
+    },
+    {
+      icon: 'calendar',
+      title: 'Events & volunteer shifts',
+      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
+    },
+    {
+      icon: 'credit-card',
+      title: 'Online giving pages',
+      body: 'Share a donation page and gifts land straight on the donor’s record: receipted, thanked and counted. No third spreadsheet to reconcile.',
+    },
+    {
+      icon: 'rectangle-stack',
+      title: 'One list, every campaign',
+      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf; switch context and the whole workspace follows.',
+    },
+  ];
+
+  /** The three claims beside the constellation animation in the network band. */
+  protected readonly networkPoints: readonly Feature[] = [
+    {
+      icon: 'user-group',
+      title: 'See the web, not the spreadsheet',
+      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
+    },
+    {
+      icon: 'route',
+      title: 'Warm paths beat cold lists',
+      body: 'Reach new people through the neighbour who already knows you. An introduction opens doors a cold call never will.',
+    },
+    {
+      icon: 'presentation-chart-line',
+      title: 'Every touch sharpens the map',
+      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
+    },
+  ];
+
+  protected readonly companionFeatures: readonly Feature[] = [
+    {
+      icon: 'map-pin',
+      title: 'Canvass companion',
+      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
+    },
+    {
+      icon: 'ticket',
+      title: 'Yard sign routes',
+      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
+    },
+    {
+      icon: 'house-modern',
+      title: 'Deliveries',
+      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
+    },
+  ];
+
+  private readonly currency = inject(CurrencyService);
+
+  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+
+  /** "Starting at" price for a teaser card, in the active display currency ('$0', 'From €65', …). */
+  protected startingPrice(plan: PlanDef): string {
+    const usd = startingPriceUsd(plan);
+    if (usd === null) return 'Custom';
+    if (usd === 0) return this.currency.format(0);
+    return `From ${this.currency.format(usd)}`;
+  }
+
+  protected readonly faqs: readonly Qa[] = [
+    {
+      q: 'Is the free plan really free?',
+      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
+    },
+    {
+      q: 'What is the demo workspace?',
+      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
+    },
+    {
+      q: 'Can I import my existing list?',
+      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
+    },
+    {
+      q: 'Can I get my data back out?',
+      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
+    },
+    {
+      q: 'Who owns the data?',
+      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
+    },
+    {
+      q: 'Where does my data live?',
+      a: 'In Canada, isolated from every other organization’s workspace.',
+    },
+    {
+      q: 'Will my newsletter land in spam?',
+      a: 'You send from your own verified domain, so inbox providers judge you on your record, not a stranger’s. New senders warm up gradually, and unsubscribes are honored automatically.',
+    },
+    {
+      q: 'How does pricing work?',
+      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month — or pay annually and get 2 months free. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
+    },
+  ];
+
+  protected readonly doors: readonly Door[] = [
+    {
+      addr: '214 Alder St',
+      who: 'Elena & Marco Ramos',
+      chip: 'Supporter',
+      chipClass: 'bg-success/20 text-success-content',
+    },
+    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
+    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
+    {
+      addr: '226 Alder St',
+      who: 'Priya Natarajan',
+      chip: 'Remaining',
+      chipClass: 'bg-base-300/60 text-base-content/60',
+    },
+    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
+  ];
+
+  protected pick(id: Audience): void {
+    this.aud.set(id);
+  }
+}
 ```
 
 ## File: apps/website/src/app/legal/eula-content.ts
@@ -81682,666 +82220,6 @@ export const PRIVACY_DOC: LegalDoc = {
 };
 ```
 
-## File: apps/website/src/app/pricing/pricing-page.ts
-```typescript
-import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import {
-  ANNUAL_MONTHS_FREE,
-  annualPriceForQuantity,
-  bracketIndexForSubscribers,
-  cadenceLabel,
-  FEATURE_MATRIX,
-  GB,
-  PLANS,
-  priceForQuantity,
-} from '@common';
-import type { BillingInterval, FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
-
-import { CurrencyService } from '../ui/currency.service';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
-const SLIDER_STOPS: readonly number[] = [
-  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
-];
-
-/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
-const DEFAULT_STOP_INDEX = 1;
-const DEFAULT_STOP = 2_500;
-
-/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
-type MatrixPlanKey = keyof FeatureMatrixRow['values'];
-
-function isMatrixPlanKey(key: string): key is MatrixPlanKey {
-  return key === 'free' || key === 'grassroots' || key === 'movement';
-}
-
-/** A matrix row is "table stakes" when every displayed plan simply has it (all-true checks).
- * Those rows render as the compact included-everywhere strip, not as table rows. */
-function isAllTrueRow(row: FeatureMatrixRow): boolean {
-  return row.values.free === true && row.values.grassroots === true && row.values.movement === true;
-}
-
-/** One-line "what this tier adds" summary per plan card. Mirrors the GATED_FEATURES split in
- * plans.ts; if a feature moves between tiers, update this wording too (pplcrm-website-claims). */
-const STEP_UP_LABELS: Readonly<Record<string, string>> = {
-  free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
-  grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
-  movement:
-    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers and priority support.',
-};
-
-@Component({
-  selector: 'pc-pricing-page',
-  imports: [RouterLink, SiteHeader, SiteFooter, SiteIcon],
-  templateUrl: './pricing-page.html',
-})
-export class PricingPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  private readonly currency = inject(CurrencyService);
-  /** Whether prices are being shown in a non-USD currency (gates the billing disclaimer). */
-  protected readonly isConverted = this.currency.isConverted;
-  /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
-  protected readonly currencySymbol = this.currency.priceSymbol;
-
-  /** The priced plan cards (Free / Grassroots / Movement); enterprise is a footnote. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-
-  /** Features every plan includes (all-true matrix rows), shown once as a strip instead of
-   * spending a table row on three identical checkmarks. */
-  protected readonly includedEverywhere: readonly string[] = FEATURE_MATRIX.flatMap((group) =>
-    group.rows.filter(isAllTrueRow).map((row) => row.label),
-  );
-
-  /** The comparison table: only groups and rows where plans actually differ. */
-  protected readonly diffMatrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX.map((group) => ({
-    category: group.category,
-    rows: group.rows.filter((row) => !isAllTrueRow(row)),
-  })).filter((group) => group.rows.length > 0);
-
-  /** Billing interval the cards and comparison table price at. The marketing page defaults to
-   * Annual (the in-app billing page keeps Monthly — see the plans.ts decision log). */
-  protected readonly interval = signal<BillingInterval>('year');
-  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
-
-  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
-  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
-  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
-  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
-
-  protected onSlide(event: Event): void {
-    const target = event.target;
-    if (target instanceof HTMLInputElement) {
-      this.stopIndex.set(Number(target.value));
-    }
-  }
-
-  protected setInterval(interval: BillingInterval): void {
-    this.interval.set(interval);
-  }
-
-  /** Live price at the slider's subscriber count, formatted in the active display currency.
-   * On annual, paid tiers show the rounded monthly-equivalent of the annual total (`$24` —
-   * the exact total renders alongside via `annualNote`, with the rounding disclaimer below
-   * the cards); Free keeps its plain `$0` (nothing to bill annually). */
-  protected priceLabel(plan: PlanDef): string {
-    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
-    if (index === null) return 'Contact us';
-    if (this.interval() === 'year' && plan.purchasable) {
-      return this.currency.formatMonthlyEquivalent(annualPriceForQuantity(plan.key, index));
-    }
-    return this.currency.format(priceForQuantity(plan.key, index));
-  }
-
-  /** The card's cadence line ('per month' / 'per month, billed annually' / 'forever'). */
-  protected cadence(plan: PlanDef): string {
-    return cadenceLabel(plan, this.interval());
-  }
-
-  /** "Billed annually as $290 · 2 months free" under an annual paid-tier price; null whenever
-   * the plain monthly presentation applies (monthly interval, Free, out-of-ladder). */
-  protected annualNote(plan: PlanDef): string | null {
-    if (this.interval() !== 'year' || !plan.purchasable) return null;
-    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
-    if (index === null) return null;
-    const total = this.currency.format(annualPriceForQuantity(plan.key, index));
-    return `Billed annually as ${total} · ${this.annualBadge}`;
-  }
-
-  /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */
-  protected zeroPrice(): string {
-    return this.currency.format(0);
-  }
-
-  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
-  protected overMax(plan: PlanDef): boolean {
-    return bracketIndexForSubscribers(plan.key, this.subscribers()) === null;
-  }
-
-  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
-  protected maxSubscribersLabel(plan: PlanDef): string {
-    const brackets = plan.pricing?.brackets;
-    const last = brackets?.[brackets.length - 1];
-    return (last?.upTo ?? 0).toLocaleString('en-US');
-  }
-
-  /** One-line caps summary for a plan card, derived from PlanDef so it can never drift
-   * (e.g. "Up to 100,000 subscribers · 5 seats · 10 GB"). */
-  protected capsLine(plan: PlanDef): string {
-    const parts: string[] = [`Up to ${this.maxSubscribersLabel(plan)} subscribers`];
-    if (plan.seats === null && plan.volunteers === null) {
-      parts.push('unlimited seats & volunteers');
-    } else {
-      parts.push(plan.seats === null ? 'unlimited seats' : `${plan.seats} seats`);
-      if (plan.volunteers === null) parts.push('unlimited volunteers');
-      else if (plan.volunteers > 0) parts.push(`${plan.volunteers} volunteers`);
-    }
-    if (plan.storageBytes !== null) parts.push(`${Math.round(plan.storageBytes / GB)} GB`);
-    return parts.join(' · ');
-  }
-
-  /** The card's "what this tier adds" one-liner. */
-  protected stepUpLabel(plan: PlanDef): string {
-    return STEP_UP_LABELS[plan.key] ?? plan.blurb;
-  }
-
-  /** One matrix cell: true = included, false = not included, string = text value. */
-  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
-    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
-  }
-}
-```
-
-## File: apps/website/src/app/home/home-page.ts
-```typescript
-import { Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { PLANS, startingPriceUsd } from '@common';
-import type { PlanDef } from '@common';
-
-import { AppPreview, type PreviewKind } from '../ui/app-preview';
-import { BrowserFrame } from '../ui/browser-frame';
-import { Constellation } from '../ui/constellation';
-import { CurrencyService } from '../ui/currency.service';
-import { SeoService } from '../ui/seo';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-import { environment } from '../../environments/environment';
-
-const AUDIENCE_IDS = ['office', 'camp', 'np'] as const;
-type Audience = (typeof AUDIENCE_IDS)[number];
-
-function isAudience(value: unknown): value is Audience {
-  return AUDIENCE_IDS.some((id) => id === value);
-}
-
-interface Hero {
-  readonly h1: string;
-  readonly sub: string;
-  readonly url: string;
-  readonly kind: PreviewKind;
-  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
-  readonly img?: string;
-}
-
-interface AudienceOption {
-  readonly id: Audience;
-  readonly label: string;
-}
-
-interface Step {
-  readonly n: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Feature {
-  readonly icon: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Door {
-  readonly addr: string;
-  readonly who: string;
-  readonly chip: string;
-  readonly chipClass: string;
-}
-
-const HEROES: Record<Audience, Hero> = {
-  office: {
-    h1: 'Every case answered. Every constituent remembered.',
-    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
-    url: 'app.pplcrm.com/inbox',
-    kind: 'inbox',
-    img: 'assets/site-shots/01-shot.png',
-  },
-  camp: {
-    h1: 'Built for the people who knock and win campaigns.',
-    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
-    url: 'app.pplcrm.com/canvassing',
-    kind: 'canvassing',
-    img: 'assets/site-shots/02-shot.png',
-  },
-  np: {
-    h1: 'Donors, volunteers and neighbours. One list.',
-    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
-    url: 'app.pplcrm.com/donations',
-    kind: 'donations',
-    img: 'assets/site-shots/03-shot.png',
-  },
-};
-
-@Component({
-  selector: 'pc-home-page',
-  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
-  templateUrl: './home-page.html',
-})
-export class HomePage {
-  protected readonly signupUrl = SIGNUP_URL;
-
-  private readonly seo = inject(SeoService);
-
-  constructor() {
-    // SoftwareApplication rich-result data for the landing page. The free tier
-    // ($0) is the checkable, drift-safe offer to advertise here.
-    this.seo.setJsonLd('software', {
-      '@context': 'https://schema.org',
-      '@type': 'SoftwareApplication',
-      name: 'pplCRM',
-      applicationCategory: 'BusinessApplication',
-      operatingSystem: 'Web, iOS, Android',
-      url: environment.siteUrl,
-      description:
-        'A people-first CRM for constituency offices, campaigns and non-profits: one shared list ' +
-        'for constituents, voters, donors and volunteers, with a shared inbox, canvassing, ' +
-        'donations, newsletters and field apps.',
-      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', description: 'Free plan' },
-    });
-  }
-
-  /** The /for/… routes render this page with their audience preselected (see app.routes.ts). */
-  private readonly routeAudience: unknown = inject(ActivatedRoute).snapshot.data['audience'];
-
-  protected readonly aud = signal<Audience>(isAudience(this.routeAudience) ? this.routeAudience : 'office');
-  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
-
-  protected readonly audiences: readonly AudienceOption[] = [
-    { id: 'office', label: 'Constituency office' },
-    { id: 'camp', label: 'Campaign' },
-    { id: 'np', label: 'Non-profit' },
-  ];
-
-  protected readonly steps: readonly Step[] = [
-    {
-      n: '1',
-      title: 'Create your free workspace',
-      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
-    },
-    {
-      n: '2',
-      title: 'Try everything on sample data',
-      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
-    },
-    {
-      n: '3',
-      title: 'Import your list when it clicks',
-      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
-    },
-  ];
-
-  /** The three comparative claims in the "Why pplCRM" band — each one names a real alternative and beats it. */
-  protected readonly whyPillars: readonly Feature[] = [
-    {
-      icon: 'clock',
-      title: 'Built for the long game',
-      body: 'A sales pipeline forgets a deal the day it closes. Your work compounds: this year’s case becomes next year’s volunteer becomes next cycle’s donor. pplCRM keeps that whole story on one record, however long you work the same streets.',
-    },
-    {
-      icon: 'lock-closed',
-      title: 'Your list is yours',
-      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
-    },
-    {
-      icon: 'paper-airplane',
-      title: 'Email that lands',
-      body: 'On big email platforms your newsletter shares a sending reputation with thousands of strangers, including the spammers. Here you send from your own verified domain, so the reputation you build is yours alone. Warm-up limits and abuse guardrails keep spammers off the platform entirely.',
-    },
-  ];
-
-  protected readonly features: readonly Feature[] = [
-    {
-      icon: 'users',
-      title: 'People & households',
-      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
-    },
-    {
-      icon: 'inbox',
-      title: 'A shared inbox & tasks',
-      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
-    },
-    {
-      icon: 'megaphone',
-      title: 'Newsletters that land',
-      body: 'Write once, send to the 1,284 people it’s actually for. An AI deliverability check scores every send before it leaves, so spam-filter surprises get caught while they’re still fixable.',
-    },
-    {
-      icon: 'map-pin',
-      title: 'Doors & the field',
-      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
-    },
-    {
-      icon: 'currency-dollar',
-      title: 'Donations, gratefully',
-      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
-    },
-    {
-      icon: 'arrow-up-tray',
-      title: 'Your spreadsheet, welcomed',
-      body: 'Bring the whole messy spreadsheet; duplicates merge on the way in. If you ever leave, everything leaves with you: plain-CSV export, on every plan.',
-    },
-  ];
-
-  protected readonly growFeatures: readonly Feature[] = [
-    {
-      icon: 'clipboard-document-list',
-      title: 'Web forms & automations',
-      body: 'Publish a signup or pledge page in minutes; every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
-    },
-    {
-      icon: 'calendar',
-      title: 'Events & volunteer shifts',
-      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
-    },
-    {
-      icon: 'credit-card',
-      title: 'Online giving pages',
-      body: 'Share a donation page and gifts land straight on the donor’s record: receipted, thanked and counted. No third spreadsheet to reconcile.',
-    },
-    {
-      icon: 'rectangle-stack',
-      title: 'One list, every campaign',
-      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf; switch context and the whole workspace follows.',
-    },
-  ];
-
-  /** The three claims beside the constellation animation in the network band. */
-  protected readonly networkPoints: readonly Feature[] = [
-    {
-      icon: 'user-group',
-      title: 'See the web, not the spreadsheet',
-      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
-    },
-    {
-      icon: 'route',
-      title: 'Warm paths beat cold lists',
-      body: 'Reach new people through the neighbour who already knows you. An introduction opens doors a cold call never will.',
-    },
-    {
-      icon: 'presentation-chart-line',
-      title: 'Every touch sharpens the map',
-      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
-    },
-  ];
-
-  protected readonly companionFeatures: readonly Feature[] = [
-    {
-      icon: 'map-pin',
-      title: 'Canvass companion',
-      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
-    },
-    {
-      icon: 'ticket',
-      title: 'Yard sign routes',
-      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
-    },
-    {
-      icon: 'house-modern',
-      title: 'Deliveries',
-      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
-    },
-  ];
-
-  private readonly currency = inject(CurrencyService);
-
-  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-
-  /** "Starting at" price for a teaser card, in the active display currency ('$0', 'From €65', …). */
-  protected startingPrice(plan: PlanDef): string {
-    const usd = startingPriceUsd(plan);
-    if (usd === null) return 'Custom';
-    if (usd === 0) return this.currency.format(0);
-    return `From ${this.currency.format(usd)}`;
-  }
-
-  protected readonly faqs: readonly Qa[] = [
-    {
-      q: 'Is the free plan really free?',
-      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
-    },
-    {
-      q: 'What is the demo workspace?',
-      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
-    },
-    {
-      q: 'Can I import my existing list?',
-      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
-    },
-    {
-      q: 'Can I get my data back out?',
-      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
-    },
-    {
-      q: 'Who owns the data?',
-      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
-    },
-    {
-      q: 'Where does my data live?',
-      a: 'In Canada, isolated from every other organization’s workspace.',
-    },
-    {
-      q: 'Will my newsletter land in spam?',
-      a: 'You send from your own verified domain, so inbox providers judge you on your record, not a stranger’s. New senders warm up gradually, and unsubscribes are honored automatically.',
-    },
-    {
-      q: 'How does pricing work?',
-      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month — or pay annually and get 2 months free. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
-    },
-  ];
-
-  protected readonly doors: readonly Door[] = [
-    {
-      addr: '214 Alder St',
-      who: 'Elena & Marco Ramos',
-      chip: 'Supporter',
-      chipClass: 'bg-success/20 text-success-content',
-    },
-    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
-    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
-    {
-      addr: '226 Alder St',
-      who: 'Priya Natarajan',
-      chip: 'Remaining',
-      chipClass: 'bg-base-300/60 text-base-content/60',
-    },
-    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
-  ];
-
-  protected pick(id: Audience): void {
-    this.aud.set(id);
-  }
-}
-```
-
-## File: apps/website/src/app/legal/security-content.ts
-```typescript
-import type { LegalDoc } from './legal-types';
-
-/**
- * The security page. Every mechanism named here (argon2id, hashed tokens,
- * AES-256-GCM OAuth secrets, signature-verified webhooks, tenant-scoping
- * checks, retention windows) exists in the codebase; if an implementation
- * changes, change this document in the same commit. The honesty section
- * (no certification claims) is deliberate; do not add badges we have not
- * earned.
- */
-export const SECURITY_DOC: LegalDoc = {
-  eyebrow: 'Trust',
-  title: 'Security',
-  intro:
-    'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
-  updated: 'July 21, 2026',
-  blocks: [
-    {
-      kind: 'h2',
-      id: 'approach',
-      text: 'Our approach',
-    },
-    {
-      kind: 'p',
-      text: 'A political or community list is one of the most sensitive databases an organization holds: names, addresses, donations, opinions. We designed for that from the first table. The principles are simple: hold as little as possible, encrypt what must be held, hand out the narrowest slice that does the job, make deletion real, and verify everything that arrives from outside. This page describes the mechanisms, not aspirations.',
-    },
-    {
-      kind: 'h2',
-      id: 'isolation',
-      text: 'Workspace isolation',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Every organization’s workspace is isolated. Every database query in the product is scoped to your workspace, and that rule is enforced by an automated check that runs on every build: code that touches workspace tables without workspace scoping fails and cannot ship.',
-        'The application connects to the database with a least-privilege role, and row-level security in the database provides defense in depth behind the application checks.',
-        'Public identifiers for people are deliberately non-sequential, so records cannot be enumerated by walking IDs.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'accounts',
-      text: 'Account security',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Passwords** are hashed with argon2id (64 MB memory cost), the current best practice, and are never stored or logged in plain text. At signup, passwords are checked against known breach corpora and you are warned before choosing one that has leaked elsewhere.',
-        '**Passkeys** (WebAuthn) are supported for phishing-resistant sign-in.',
-        '**Two-factor authentication** challenges sign-ins from a new device or location with a short-lived one-time code, and workspace admins can require 2FA for everyone in the organization.',
-        '**Sessions** use a short-lived access token plus a refresh token kept in an HttpOnly, secure cookie that page scripts cannot read. Session and refresh tokens are stored server-side only as SHA-256 hashes, so a database leak does not yield usable sessions. Sessions expire after 24 hours, or 30 days with “remember me”, and you can see and revoke your active sessions.',
-        '**Abuse resistance:** sign-in attempts are rate limited per IP, verification codes expire in minutes and allow limited attempts, and sign-in responses are constant-time so attackers cannot discover which emails have accounts.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'encryption',
-      text: 'Encryption',
-    },
-    {
-      kind: 'list',
-      items: [
-        'All traffic is encrypted in transit with TLS, with HSTS enforced. The application sets a strict content security policy and does not allow itself to be framed by other sites.',
-        'Database connections are encrypted, and stored data is encrypted at rest by the hosting platform.',
-        'OAuth tokens for connected mailboxes (Gmail, Microsoft 365) get an extra application-level layer: AES-256-GCM encryption with a key held outside the database.',
-        'Secrets that only need comparison (session tokens, verification codes, reset codes, volunteer device sessions) are stored as one-way hashes, never as plaintext.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'field-access',
-      text: 'Field and volunteer access',
-    },
-    {
-      kind: 'p',
-      text: 'Field tools are where lists usually leak, so companion access is least-privilege by construction. A volunteer link exposes exactly one turf or route, never the list. Volunteers verify with a one-time code sent to the contact your organization has on file (codes expire in 10 minutes, five attempts maximum) and must be approved once by an admin before first use. Device sessions are stored hashed and expire after 30 days; links expire too, and both are revocable at any time. A lost phone is an inconvenience, not a breach of your list.',
-    },
-    {
-      kind: 'h2',
-      id: 'payments',
-      text: 'Payments',
-    },
-    {
-      kind: 'p',
-      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe. We store the donation record; Stripe stores the payment instruments, under its PCI DSS obligations.',
-    },
-    {
-      kind: 'h2',
-      id: 'webhooks-integrations',
-      text: 'Integrations and webhooks',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
-        'Mailbox sync is opt-in per workspace, scoped by OAuth consent, disconnectable at any time, and its tokens are encrypted as described above.',
-        'API keys for integrations are generated per workspace and revocable.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'sending',
-      text: 'Sending protections',
-    },
-    {
-      kind: 'p',
-      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Every newsletter also passes a deliverability check before it sends — a 0–100 score over content best practices plus an AI review that catches phishing-shaped and scam-like content; drafts scoring below 50 cannot send until fixed. The AI review runs on every send, on every plan — it exists to stop a compromised account from blasting phishing before a single message leaves, not just to police new signups. Each plan’s monthly email allowance (2× your subscriber cap on Free, 8× on Grassroots, 12× on Movement) is enforced in the send path, and emails sent by automations count toward the same allowance — send volume is tied to the audience size a workspace actually pays for, so a small plan cannot be used to blast a huge imported list. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself, for newsletters and automation emails alike: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
-    },
-    {
-      kind: 'h2',
-      id: 'infrastructure',
-      text: 'Infrastructure, residency and backups',
-    },
-    {
-      kind: 'list',
-      items: [
-        'The platform runs on Microsoft Azure, with workspaces hosted in Canada; workspace data stays there for processing and backups.',
-        'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
-        'Databases are backed up automatically every day, with backups retained for 7 days in Canada. Deleted data therefore leaves backups within 7 days of leaving the live database.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'monitoring',
-      text: 'Audit trails',
-    },
-    {
-      kind: 'p',
-      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data. Our servers are also monitored around the clock: automated probes check the service from outside every few minutes and page us when it is unreachable, and server errors are reported to an error-tracking service (with credentials and workspace content stripped — see the privacy policy’s subprocessor list) so we usually know about a problem before you do.',
-    },
-    {
-      kind: 'h2',
-      id: 'honesty',
-      text: 'What we do not claim',
-    },
-    {
-      kind: 'p',
-      text: 'We are a small team and we would rather show you exactly what we do than imply an audit we have not had. We do not currently hold SOC 2 or ISO 27001 certification, and we do not display compliance badges we have not earned. What you get instead is specific, checkable engineering: the mechanisms on this page, the retention windows in the [privacy policy](/privacy), and the commitments on the [data ownership page](/data-ownership). If your organization requires a security questionnaire for procurement, write to us and we will answer it honestly.',
-    },
-    {
-      kind: 'h2',
-      id: 'disclosure',
-      text: 'Reporting a vulnerability',
-    },
-    {
-      kind: 'p',
-      text: 'If you believe you have found a security issue, email hello@pplcrm.com with “Security” in the subject line and we will respond within 3 business days. Please give us reasonable time to fix the issue before disclosing it publicly, do not access data that is not yours, and do not degrade the service while testing. We will not take legal action against good-faith research that follows these rules, and we credit reporters who want credit once a fix ships.',
-    },
-  ],
-};
-```
-
 ## File: apps/website/src/app/faq/faq-page.ts
 ```typescript
 import { Component, inject } from '@angular/core';
@@ -82507,4 +82385,158 @@ export class FaqPage {
     },
   ];
 }
+```
+
+## File: apps/website/src/app/legal/security-content.ts
+```typescript
+import type { LegalDoc } from './legal-types';
+
+/**
+ * The security page. Every mechanism named here (argon2id, hashed tokens,
+ * AES-256-GCM OAuth secrets, signature-verified webhooks, tenant-scoping
+ * checks, retention windows) exists in the codebase; if an implementation
+ * changes, change this document in the same commit. The honesty section
+ * (no certification claims) is deliberate; do not add badges we have not
+ * earned.
+ */
+export const SECURITY_DOC: LegalDoc = {
+  eyebrow: 'Trust',
+  title: 'Security',
+  intro:
+    'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
+  updated: 'July 21, 2026',
+  blocks: [
+    {
+      kind: 'h2',
+      id: 'approach',
+      text: 'Our approach',
+    },
+    {
+      kind: 'p',
+      text: 'A political or community list is one of the most sensitive databases an organization holds: names, addresses, donations, opinions. We designed for that from the first table. The principles are simple: hold as little as possible, encrypt what must be held, hand out the narrowest slice that does the job, make deletion real, and verify everything that arrives from outside. This page describes the mechanisms, not aspirations.',
+    },
+    {
+      kind: 'h2',
+      id: 'isolation',
+      text: 'Workspace isolation',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Every organization’s workspace is isolated. Every database query in the product is scoped to your workspace, and that rule is enforced by an automated check that runs on every build: code that touches workspace tables without workspace scoping fails and cannot ship.',
+        'The application connects to the database with a least-privilege role, and row-level security in the database provides defense in depth behind the application checks.',
+        'Public identifiers for people are deliberately non-sequential, so records cannot be enumerated by walking IDs.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'accounts',
+      text: 'Account security',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Passwords** are hashed with argon2id (64 MB memory cost), the current best practice, and are never stored or logged in plain text. At signup, passwords are checked against known breach corpora and you are warned before choosing one that has leaked elsewhere.',
+        '**Passkeys** (WebAuthn) are supported for phishing-resistant sign-in.',
+        '**Two-factor authentication** challenges sign-ins from a new device or location with a short-lived one-time code, and workspace admins can require 2FA for everyone in the organization.',
+        '**Sessions** use a short-lived access token plus a refresh token kept in an HttpOnly, secure cookie that page scripts cannot read. Session and refresh tokens are stored server-side only as SHA-256 hashes, so a database leak does not yield usable sessions. Sessions expire after 24 hours, or 30 days with “remember me”, and you can see and revoke your active sessions.',
+        '**Abuse resistance:** sign-in attempts are rate limited per IP, verification codes expire in minutes and allow limited attempts, and sign-in responses are constant-time so attackers cannot discover which emails have accounts.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'encryption',
+      text: 'Encryption',
+    },
+    {
+      kind: 'list',
+      items: [
+        'All traffic is encrypted in transit with TLS, with HSTS enforced. The application sets a strict content security policy and does not allow itself to be framed by other sites.',
+        'Database connections are encrypted, and stored data is encrypted at rest by the hosting platform.',
+        'OAuth tokens for connected mailboxes (Gmail, Microsoft 365) get an extra application-level layer: AES-256-GCM encryption with a key held outside the database.',
+        'Secrets that only need comparison (session tokens, verification codes, reset codes, volunteer device sessions) are stored as one-way hashes, never as plaintext.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'field-access',
+      text: 'Field and volunteer access',
+    },
+    {
+      kind: 'p',
+      text: 'Field tools are where lists usually leak, so companion access is least-privilege by construction. A volunteer link exposes exactly one turf or route, never the list. Volunteers verify with a one-time code sent to the contact your organization has on file (codes expire in 10 minutes, five attempts maximum) and must be approved once by an admin before first use. Device sessions are stored hashed and expire after 30 days; links expire too, and both are revocable at any time. A lost phone is an inconvenience, not a breach of your list.',
+    },
+    {
+      kind: 'h2',
+      id: 'payments',
+      text: 'Payments',
+    },
+    {
+      kind: 'p',
+      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe. We store the donation record; Stripe stores the payment instruments, under its PCI DSS obligations.',
+    },
+    {
+      kind: 'h2',
+      id: 'webhooks-integrations',
+      text: 'Integrations and webhooks',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
+        'Mailbox sync is opt-in per workspace, scoped by OAuth consent, disconnectable at any time, and its tokens are encrypted as described above.',
+        'API keys for integrations are generated per workspace and revocable.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'sending',
+      text: 'Sending protections',
+    },
+    {
+      kind: 'p',
+      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Every newsletter also passes a deliverability check before it sends — a 0–100 score over content best practices plus an AI review that catches phishing-shaped and scam-like content; drafts scoring below 50 cannot send until fixed. The AI review runs on every send, on every plan — it exists to stop a compromised account from blasting phishing before a single message leaves, not just to police new signups. Each plan’s monthly email allowance (2× your subscriber cap on Free, 8× on Grassroots, 12× on Movement) is enforced in the send path, and emails sent by automations count toward the same allowance — send volume is tied to the audience size a workspace actually pays for, so a small plan cannot be used to blast a huge imported list. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself, for newsletters and automation emails alike: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
+    },
+    {
+      kind: 'h2',
+      id: 'infrastructure',
+      text: 'Infrastructure, residency and backups',
+    },
+    {
+      kind: 'list',
+      items: [
+        'The platform runs on Microsoft Azure, with workspaces hosted in Canada; workspace data stays there for processing and backups.',
+        'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
+        'Databases are backed up automatically every day, with backups retained for 7 days in Canada. Deleted data therefore leaves backups within 7 days of leaving the live database.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'monitoring',
+      text: 'Audit trails',
+    },
+    {
+      kind: 'p',
+      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data. Our servers are also monitored around the clock: automated probes check the service from outside every few minutes and page us when it is unreachable, and server errors are reported to an error-tracking service (with credentials and workspace content stripped — see the privacy policy’s subprocessor list) so we usually know about a problem before you do.',
+    },
+    {
+      kind: 'h2',
+      id: 'honesty',
+      text: 'What we do not claim',
+    },
+    {
+      kind: 'p',
+      text: 'We are a small team and we would rather show you exactly what we do than imply an audit we have not had. We do not currently hold SOC 2 or ISO 27001 certification, and we do not display compliance badges we have not earned. What you get instead is specific, checkable engineering: the mechanisms on this page, the retention windows in the [privacy policy](/privacy), and the commitments on the [data ownership page](/data-ownership). If your organization requires a security questionnaire for procurement, write to us and we will answer it honestly.',
+    },
+    {
+      kind: 'h2',
+      id: 'disclosure',
+      text: 'Reporting a vulnerability',
+    },
+    {
+      kind: 'p',
+      text: 'If you believe you have found a security issue, email hello@pplcrm.com with “Security” in the subject line and we will respond within 3 business days. Please give us reasonable time to fix the issue before disclosing it publicly, do not access data that is not yours, and do not degrade the service while testing. We will not take legal action against good-faith research that follows these rules, and we credit reporters who want credit once a fix ships.',
+    },
+  ],
+};
 ```

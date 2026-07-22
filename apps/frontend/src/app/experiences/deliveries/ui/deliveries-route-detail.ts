@@ -20,7 +20,7 @@ import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { companionUrl } from '../../../shared/public-pages';
+import { companionUrl, volunteerLinkSentPhrase } from '../../../shared/public-pages';
 import { DELIVERY_SKIP_REASONS } from '@common';
 import type { DeliverySkipReason } from '@common';
 import { Icon } from '@icons/icon';
@@ -154,8 +154,17 @@ export class DeliveriesRouteDetail {
 
   protected async onVolunteerSelected(person: PersonSearchResult | null): Promise<void> {
     try {
-      await this.svc.assignVolunteer(this.id(), person?.id ?? null);
-      this.alerts.showSuccess(person ? 'Volunteer assigned' : 'Volunteer removed');
+      const res = await this.svc.assignVolunteer(this.id(), person?.id ?? null);
+      if (!person) {
+        this.alerts.showSuccess('Volunteer removed');
+      } else {
+        const phrase = volunteerLinkSentPhrase(res.sent);
+        if (phrase) this.alerts.showSuccess(`Volunteer assigned — ${phrase}`);
+        else
+          this.alerts.showWarn(
+            'Volunteer assigned, but they have no email or mobile on file — use "Copy volunteer link" to share it',
+          );
+      }
       await this.load();
     } catch (err) {
       this.alerts.showError(err instanceof Error ? err.message : 'Could not update the volunteer');

@@ -19,8 +19,11 @@ import type {
   VotingStatus,
 } from '../../../../../../libs/common/src';
 
+import { env } from '../../../env';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
+import { notifyVolunteerOfLink, type VolunteerLinkSendResult } from '../../lib/mail/volunteer-link-notify';
+import { publicOrgName } from '../../lib/public-tenant';
 import { CampaignPersonFactsRepo } from '../campaigns/repositories/campaign-person-facts.repo';
 import { CampaignSubscriptionsRepo } from '../campaigns/repositories/campaign-subscriptions.repo';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
@@ -373,7 +376,10 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
 
   // -------------------------------------------------------- assignment ------
 
-  public async assignTurf(auth: IAuthKeyPayload, input: AssignTurfType): Promise<{ token: string }> {
+  public async assignTurf(
+    auth: IAuthKeyPayload,
+    input: AssignTurfType,
+  ): Promise<{ token: string; sent: VolunteerLinkSendResult }> {
     const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: input.turf_id });
     if (!turf) throw new NotFoundError('Turf not found');
     const teamId = input.team_id != null ? String(input.team_id) : null;
@@ -384,7 +390,7 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
     // email or mobile on file — the gate explains it if they don't).
     const person = await this.knocks.db
       .selectFrom('persons')
-      .select(['id'])
+      .select(['first_name', 'email', 'mobile'])
       .where('tenant_id', '=', auth.tenant_id)
       .where('id', '=', volunteerPersonId)
       .executeTakeFirst();
@@ -392,6 +398,8 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
 
     const token = generateTurfToken();
     const expiresAt = await this.assignmentExpiry(auth.tenant_id, String(turf.campaign_id ?? ''));
+    const orgName = await publicOrgName(auth.tenant_id);
+    let sent: VolunteerLinkSendResult = { email: false, sms: false };
 
     await this.turfsRepo()
       .transaction()
@@ -420,6 +428,18 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
           },
           trx,
         );
+        // Assignment sends the personal link — same transaction, so a rollback sends nothing.
+        sent = await notifyVolunteerOfLink(
+          {
+            tenant_id: auth.tenant_id,
+            person,
+            orgName,
+            kindLabel: 'canvassing turf',
+            itemName: turf.name,
+            url: `${env.companionUrl}/t/${encodeURIComponent(token)}`,
+          },
+          trx,
+        );
       });
 
     await this.userActivity.log({
@@ -428,10 +448,14 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
       activity: 'assign',
       entity: 'turf',
       entity_id: input.turf_id,
-      metadata: { volunteer_person_id: volunteerPersonId, ...(teamId ? { team_id: teamId } : { link: 'tokenised' }) },
+      metadata: {
+        volunteer_person_id: volunteerPersonId,
+        link_sent: sent,
+        ...(teamId ? { team_id: teamId } : { link: 'tokenised' }),
+      },
     });
 
-    return { token };
+    return { token, sent };
   }
 
   /**

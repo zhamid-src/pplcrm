@@ -211,6 +211,7 @@ async function setLinkExpiryPolicy(db: Db, tenantId: string, userId: string, exp
 }
 
 async function cleanup(db: Db, tenantId: string): Promise<void> {
+  await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('settings').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('companion_ops').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('companion_sessions').where('tenant_id', '=', tenantId).execute();
@@ -240,6 +241,37 @@ describe('DeliveriesController — public volunteer path', () => {
 
   afterEach(async () => {
     await cleanup(db, s.tenantId);
+  });
+
+  it('assigning a volunteer mints a fresh personal link and sends it by email and text', async () => {
+    const res = await controller.assignVolunteer(staffAuth, { route_id: s.routeId, person_id: s.volunteerPersonId });
+    expect(res.sent).toEqual({ email: true, sms: true });
+
+    // Both channels went through the outbox, carrying the same freshly minted token.
+    const jobs = (
+      await db.selectFrom('background_jobs').select('payload').where('tenant_id', '=', s.tenantId).execute()
+    ).map((j) => (typeof j.payload === 'string' ? JSON.parse(j.payload) : j.payload));
+    const mail = jobs.find((p) => p?.type === 'send-transactional-email' && String(p?.to) === 'jordan@example.com');
+    const sms = jobs.find((p) => p?.type === 'send-sms');
+    expect(mail).toBeTruthy();
+    expect(sms).toBeTruthy();
+    const tokenFromMail = String(mail?.text).match(/\/r\/([A-Za-z0-9_-]+)/)?.[1];
+    expect(tokenFromMail).toBeTruthy();
+    expect(String(sms?.body)).toContain(`/r/${tokenFromMail}`);
+    expect(String(sms?.to)).toBe('+16135550142');
+
+    // The emailed token is the live one — its hash replaced the seed link on the route.
+    const row = await db
+      .selectFrom('delivery_routes')
+      .select(['share_token_hash'])
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', s.routeId)
+      .executeTakeFirst();
+    expect(row?.share_token_hash).toBe(hashToken(String(tokenFromMail)));
+
+    // Unassigning sends nothing.
+    const cleared = await controller.assignVolunteer(staffAuth, { route_id: s.routeId, person_id: null });
+    expect(cleared.sent).toEqual({ email: false, sms: false });
   });
 
   it('getPublicRoute requires an approved companion session and then returns the minimized payload', async () => {

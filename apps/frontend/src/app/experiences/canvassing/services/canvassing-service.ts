@@ -53,7 +53,7 @@ export class CanvassingService extends TRPCService<unknown> {
     return this.api.canvassing.cutTurfs.mutate(input);
   }
 
-  public assign(input: AssignTurfType): Promise<{ token: string }> {
+  public assign(input: AssignTurfType): Promise<{ token: string; sent: { email: boolean; sms: boolean } }> {
     return this.api.canvassing.assign.mutate(input);
   }
 
