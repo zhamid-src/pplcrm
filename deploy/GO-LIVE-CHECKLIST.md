@@ -63,7 +63,8 @@ there is no live env var to flip).
 
 ## 2. Payments — Stripe (test → live)
 
-Currently on **test** keys (`sk_test_...`), so upgrades run against Stripe test mode.
+Currently on **test** keys (`sk_test_...`), so upgrades run against Stripe test mode. (Re-verified
+2026-07-21: `stripe-secret-key` is still `sk_test_…`.)
 
 - [ ] Swap to **live** secrets: `stripe-secret-key` → `sk_live_...`, and the **live** price IDs
       `stripe-plan-grassroots-price-id` / `stripe-plan-movement-price-id` (the live IDs are noted in
@@ -83,11 +84,13 @@ Currently on **test** keys (`sk_test_...`), so upgrades run against Stripe test 
 Currently the Postmark account is **pending approval** → it can ONLY send to `@pplcrm.com` recipients.
 This is why signup verification email to a gmail address failed in the smoke test (not a bug).
 
-- [ ] **Request Postmark account approval** (Postmark dashboard banner). Reviewed ~1 business day.
-- [ ] **Verify the `pplcrm.com` sender signature / domain** — add DKIM + Return-Path (custom `pm-bounces`)
-      DNS records in Cloudflare. Without this, deliverability is poor even after approval.
+- [x] **Request Postmark account approval** — **approved 2026-07-21.**
+- [x] **Verify the `pplcrm.com` sender signature / domain** — **done 2026-07-21.** Return-Path CNAME +
+      DKIM live; proven end-to-end by a live API send to an external gmail address (ErrorCode 0,
+      MessageID `71935ffd-bbdd-4782-8a7d-c721e1c5491e`).
 - [ ] Register the bounce/complaint webhook (§7).
-- [ ] Re-test: sign up a real external address → verification email arrives.
+- [ ] Re-test: sign up a real external address → verification email arrives. _(External delivery via the
+      Postmark API already verified 2026-07-21; the full signup-flow test is part of §11.)_
 
 > During testing we manually set `authusers.verified = true` for the test owner (user id 1) to bypass the
 > email gate. Real users self-verify once Postmark works — don't ship that manual step.
@@ -97,7 +100,8 @@ This is why signup verification email to a gmail address failed in the smoke tes
 Key is present but the feature was **deferred** (mock mode).
 
 - [ ] Confirm `sendgrid-api-key` is a **live** key with the right scopes.
-- [ ] Complete **domain authentication** (sender identity) for `pplcrm.com` in SendGrid (DNS records).
+- [x] Complete **domain authentication** (sender identity) for `pplcrm.com` in SendGrid — **confirmed
+      Verified in the dashboard 2026-07-21** (DKIM CNAMEs `s1`/`s2._domainkey` live in DNS).
 - [ ] Set up the **free-tier subuser** if using it to isolate free-plan sending reputation
       (`sendgrid-free-tier-subuser` is currently empty).
 - [ ] Register the newsletter signed-event webhook (§7).
@@ -109,9 +113,11 @@ Key is present but the feature was **deferred** (mock mode).
 Creds present but **deferred** (mock). The companion access flow (SMS verify code) won't send real texts
 until this is live.
 
-- [ ] Confirm `twilio-account-sid` / `twilio-auth-token` are live and the account is funded.
-- [ ] `twilio-from-number` must be a **real, SMS-capable** number you own (A2P 10DLC registration may be
-      required for US traffic). The current value looks like a placeholder — verify.
+- [x] Confirm `twilio-account-sid` / `twilio-auth-token` are live and the account is funded — **verified
+      2026-07-21** (creds authenticate against the Twilio API).
+- [x] `twilio-from-number` is a real, SMS-capable number — **verified owned via the Twilio API
+      2026-07-21**, and the secret was fixed to E.164 (`2892789936` → `+12892789936`, revision
+      restarted; local `.env.production` synced).
 - [ ] Test the companion `/t/:token` or `/r/:token` verify flow end-to-end (see `pplcrm-companion-access`).
 
 ## 6. Google & Microsoft
@@ -152,13 +158,18 @@ Verify each is registered in the respective **live** dashboard and its signing s
 - [ ] Decide whether to **wipe test data**. There's a test owner (user id 1, tenant 1, `hello@pplcrm.com`,
       manually verified) plus any test forms/donations/jobs created during the smoke test. The DB has no
       real users yet, so a clean reset is cheap and avoids test artifacts in production.
-- [ ] Clear failed `background_jobs` rows if any are lingering (the outbox already gives up after
-      `max_attempts`, so this is cosmetic).
+      _Snapshot 2026-07-21: 2 tenants, 8 authusers, 121 persons, 20 form_submissions, 30 donations._
+- [x] Clear failed `background_jobs` rows — **done 2026-07-21** (38 exhausted test-period rows deleted;
+      remaining rows are `completed` + future-`run_at` scheduled work, not stuck). Other test data kept
+      for now per owner decision — the wipe question above stays open until real launch.
 - [ ] **Migrations become forward-only once there's real data.** The current baseline was pre-ship
       re-squashed; after go-live, never delete/regenerate applied migrations — new change = new dated file
       (see `pplcrm-migrations`).
 
-## 9. Runtime env sanity (should already be correct — verify)
+## 9. Runtime env sanity (verified correct 2026-07-21 ✓)
+
+Re-verified against the live Container App: all expected env vars present (incl. `SENTRY_DSN`,
+`OPS_ALERT_EMAIL`), **`ALLOW_MOCK_PAYMENTS` is absent**, `/healthz` 200, `/healthz/worker` 200.
 
 - `NODE_ENV=production`, `MIGRATE_ON_BOOT=false` (migrations run manually, see below).
 - `API_URL=https://api.pplcrm.com`, `APP_URL=https://app.pplcrm.com`, `PUBLIC_BASE_DOMAIN=pplforms.com`.
@@ -180,34 +191,37 @@ Verify each is registered in the respective **live** dashboard and its signing s
       double-scheduling before going wide.
 - [x] Add HTTP **health probes** via a YAML patch — **applied 2026-07-21** (revision
       `pplcrm-api--0000029`). Container Apps ignores the Docker HEALTHCHECK and `az containerapp
-  update` has no probe flags, so YAML is the only path. Liveness must stay on `GET /`
+update` has no probe flags, so YAML is the only path. Liveness must stay on `GET /`
       (process-only) — pointing liveness at `/healthz` would restart-loop the app during a DB
       outage; readiness on `GET /healthz` correctly pulls it from ingress instead. For reference
       (probes survive image deploys; this only ever needs re-doing on an app re-create):
 
-      ```bash
-      az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml
-      # edit: under properties.template.containers[0] add
-      #   probes:
-      #   - type: Startup
-      #     httpGet: { path: /, port: 3000 }
-      #     periodSeconds: 5
-      #     failureThreshold: 30
-      #   - type: Liveness
-      #     httpGet: { path: /, port: 3000 }
-      #     periodSeconds: 30
-      #     failureThreshold: 3
-      #   - type: Readiness
-      #     httpGet: { path: /healthz, port: 3000 }
-      #     periodSeconds: 30
-      #     failureThreshold: 3
-      az containerapp update -n pplcrm-api -g pplcrm-cad-prod --yaml /tmp/pplcrm-api.yaml
-      ```
+        ```bash
+        az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml
+        # edit: under properties.template.containers[0] add
+        #   probes:
+        #   - type: Startup
+        #     httpGet: { path: /, port: 3000 }
+        #     periodSeconds: 5
+        #     failureThreshold: 30
+        #   - type: Liveness
+        #     httpGet: { path: /, port: 3000 }
+        #     periodSeconds: 30
+        #     failureThreshold: 3
+        #   - type: Readiness
+        #     httpGet: { path: /healthz, port: 3000 }
+        #     periodSeconds: 30
+        #     failureThreshold: 3
+        az containerapp update -n pplcrm-api -g pplcrm-cad-prod --yaml /tmp/pplcrm-api.yaml
+        ```
 
-      One-time op — later `az containerapp update --image` deploys don't touch probes.
+        One-time op — later `az containerapp update --image` deploys don't touch probes.
 
-- [ ] Review backups/retention on Postgres and Blob; confirm they match the retention windows the marketing
-      site claims (see `pplcrm-website-claims`).
+- [x] Review backups/retention on Postgres and Blob; confirm they match the retention windows the marketing
+      site claims (see `pplcrm-website-claims`). **Verified 2026-07-21:** PG Flexible Server = 7-day
+      retention, Canada Central, geo-redundant backup disabled — matches the site's "retained for 7 days
+      in Canada" claim exactly. Blob soft-delete is **off** (site makes no blob-backup claim; deleted
+      blobs vanish immediately, which is consistent with — stronger than — the deletion promise).
 - [ ] Consider putting `api.pplcrm.com` behind the Cloudflare proxy (currently DNS-only/grey for the managed
       cert). Optional.
 
