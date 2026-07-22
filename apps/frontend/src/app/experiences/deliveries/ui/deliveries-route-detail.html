@@ -82,7 +82,9 @@
           tabindex="0"
           class="menu dropdown-content z-10 w-64 rounded-box border border-base-300 bg-base-100 p-2 shadow"
         >
-          @if (d.link_active) {
+          @if (d.volunteer_person_id && canResend()) {
+          <li><button type="button" (click)="resendLink()">Resend link to volunteer</button></li>
+          } @if (d.link_active) {
           <li>
             <button type="button" (click)="copyLink(true)">
               Regenerate link <span class="text-xs text-base-content/50">(old one stops working)</span>

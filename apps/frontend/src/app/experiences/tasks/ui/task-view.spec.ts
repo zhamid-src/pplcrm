@@ -7,6 +7,7 @@ import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TeamsService } from '../../teams/services/teams-service';
+import { ActivityService } from '@experiences/activity/services/activity.service';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -85,6 +86,9 @@ describe('TaskView', () => {
         { provide: ConfirmDialogService, useValue: mockDialogs },
         { provide: AlertService, useValue: mockAlert },
         { provide: ActivatedRoute, useValue: mockRoute },
+        // The mounted <pc-record-activities> child fires a real tRPC call without this stub,
+        // which intermittently escapes as an unhandled rejection and fails the whole run.
+        { provide: ActivityService, useValue: { getActivities: vi.fn().mockResolvedValue({ rows: [] }) } },
       ],
     }).compileComponents();
 

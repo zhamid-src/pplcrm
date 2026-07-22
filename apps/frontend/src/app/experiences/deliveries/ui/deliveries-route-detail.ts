@@ -203,6 +203,24 @@ export class DeliveriesRouteDetail {
     }
   }
 
+  /** Re-sending only makes sense while the route is still live. */
+  protected canResend(): boolean {
+    const status = this.detail()?.status;
+    return status !== 'canceled' && status !== 'completed';
+  }
+
+  /** Mint a fresh link and send it to the volunteer's contacts (replaces the previously sent link). */
+  protected async resendLink(): Promise<void> {
+    try {
+      const res = await this.svc.resendVolunteerLink(this.id());
+      const phrase = volunteerLinkSentPhrase(res.sent);
+      this.alerts.showSuccess(phrase ? `Fresh ${phrase}` : 'Link sent');
+      await this.load();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not send the link');
+    }
+  }
+
   protected async revokeLink(): Promise<void> {
     const ok = await this.confirm.confirm({
       title: 'Revoke volunteer link?',

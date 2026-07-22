@@ -129,7 +129,7 @@ because otherwise the routes list is only reachable by opening a single route fr
 grid's Route column. The **routes list rows** carry the same inline affordances as the route detail:
 an inline dashed **Assign** button in the Volunteer cell when unassigned, and a trailing `⋯`
 overflow (assign/change volunteer via the shared `assign-volunteer-dialog.ts`, copy volunteer link,
-cancel route, delete route) — mirrors the canvassing turf table. "Open in Google Maps" builds a
+resend link to volunteer, cancel route, delete route) — mirrors the canvassing turf table. "Open in Google Maps" builds a
 `maps/dir/?api=1&origin=…&waypoints=…&destination=…` URL from stop coords (route detail only — the
 list row has no stop coords). Sidebar: **Deliveries** in FIELD (`sidebar-items.ts`, icon `map-pin`) with a live
 ready-count badge wired in `sidebar.ts` (`deliveries.getReadyCount`, mirrors the Tasks/Duplicates
@@ -168,6 +168,10 @@ never a bare disabled select. Picking a status with no request calls `addRequest
   frontend toast reflects the channels and warns when the person has no contacts. Re-assigning (even
   the same person) regenerates the token, retiring any previously sent link — as does the manual
   **Copy volunteer link** regenerate flow, which therefore invalidates the emailed link too.
+  **Resend link to volunteer** (`resendVolunteerLink`, in the `⋯` menu on both the routes list and
+  the route detail, live routes only) re-runs the same mint+notify inside one transaction; if the
+  volunteer has no usable contact it throws and the transaction rolls back, so the existing link
+  survives a resend that reaches nobody.
 - Deferred (not yet built): web-form `yard_sign` intake branch, and a grid-level "Add request"
   household-picker dialog. Manual entry per household DOES exist — the `pc-yard-sign-standing`
   control on the household/person pages calls `addRequest`.

@@ -274,6 +274,56 @@ describe('DeliveriesController — public volunteer path', () => {
     expect(cleared.sent).toEqual({ email: false, sms: false });
   });
 
+  it('resendVolunteerLink mints a fresh link, sends it, and retires the old one', async () => {
+    const res = await controller.resendVolunteerLink(staffAuth, s.routeId);
+    expect(res.sent).toEqual({ email: true, sms: true });
+
+    // The message carries the fresh token — its hash replaced the seed link on the route.
+    const jobs = (
+      await db.selectFrom('background_jobs').select('payload').where('tenant_id', '=', s.tenantId).execute()
+    ).map((j) => (typeof j.payload === 'string' ? JSON.parse(j.payload) : j.payload));
+    const mail = jobs.find((p) => p?.type === 'send-transactional-email');
+    const sms = jobs.find((p) => p?.type === 'send-sms');
+    expect(mail).toBeTruthy();
+    expect(sms).toBeTruthy();
+    const tokenFromMail = String(mail?.text).match(/\/r\/([A-Za-z0-9_-]+)/)?.[1];
+    expect(tokenFromMail).toBeTruthy();
+    expect(String(sms?.body)).toContain(`/r/${tokenFromMail}`);
+    const row = await db
+      .selectFrom('delivery_routes')
+      .select(['share_token_hash'])
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', s.routeId)
+      .executeTakeFirst();
+    expect(row?.share_token_hash).toBe(hashToken(String(tokenFromMail)));
+    expect(row?.share_token_hash).not.toBe(hashToken(s.routeToken));
+
+    // No volunteer behind the route → nothing to send to.
+    await controller.assignVolunteer(staffAuth, { route_id: s.routeId, person_id: null });
+    await expect(controller.resendVolunteerLink(staffAuth, s.routeId)).rejects.toThrow(/assign a volunteer/i);
+  });
+
+  it('resendVolunteerLink keeps the existing link when the volunteer has no contacts', async () => {
+    await db
+      .updateTable('persons')
+      .set({ email: null, mobile: null })
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', s.volunteerPersonId)
+      .execute();
+    await expect(controller.resendVolunteerLink(staffAuth, s.routeId)).rejects.toThrow(/no email or mobile/i);
+
+    // The failed resend rolled back — the seed link still works and nothing was enqueued.
+    const row = await db
+      .selectFrom('delivery_routes')
+      .select(['share_token_hash'])
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', s.routeId)
+      .executeTakeFirst();
+    expect(row?.share_token_hash).toBe(hashToken(s.routeToken));
+    const jobs = await db.selectFrom('background_jobs').select('id').where('tenant_id', '=', s.tenantId).execute();
+    expect(jobs).toHaveLength(0);
+  });
+
   it('getPublicRoute requires an approved companion session and then returns the minimized payload', async () => {
     // A bare capability link is no longer enough — the stranger with a forwarded URL gets the wall.
     await expect(controller.getPublicRoute(s.routeToken, null)).rejects.toThrow(/verification/i);
