@@ -80,6 +80,11 @@ export class DeliveriesRoutes implements OnInit {
     return status === 'draft' || status === 'assigned';
   }
 
+  /** Re-sending only makes sense while the route is still live (same statuses as cancel). */
+  protected canResend(status: string): boolean {
+    return this.canCancel(status);
+  }
+
   protected openAssign(row: DeliveryRouteRow): void {
     this.assigningRouteId.set(row.id);
     this.assignDlg().open(row.volunteer_person_id != null);
@@ -134,6 +139,17 @@ export class DeliveriesRoutes implements OnInit {
       );
     } catch (err) {
       this.alerts.showError(err instanceof Error ? err.message : 'Could not create the link');
+    }
+  }
+
+  /** Mint a fresh link and send it to the volunteer's contacts (replaces the previously sent link). */
+  protected async resendLink(row: DeliveryRouteRow): Promise<void> {
+    try {
+      const res = await this.svc.resendVolunteerLink(row.id);
+      const phrase = volunteerLinkSentPhrase(res.sent);
+      this.alerts.showSuccess(phrase ? `Fresh ${phrase}` : 'Link sent');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not send the link');
     }
   }
 

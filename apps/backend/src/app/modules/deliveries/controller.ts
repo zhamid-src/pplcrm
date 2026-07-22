@@ -507,6 +507,73 @@ export class DeliveriesController {
     return { id: input.route_id, status, sent };
   }
 
+  /**
+   * Re-send the assigned volunteer their personal link (lost email, new phone…).
+   * The raw token is never stored, so re-sending means minting a fresh link — the
+   * previously sent one stops working, same rule as re-assignment and regenerate.
+   */
+  public async resendVolunteerLink(auth: IAuthKeyPayload, routeId: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
+    if (!route) throw new NotFoundError('Route not found');
+    if (route.volunteer_person_id == null) {
+      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
+    }
+    if (route.status === 'canceled' || route.status === 'completed') {
+      throw new BadRequestError('This route is over — there is nothing for the volunteer to open.');
+    }
+    const person = await this.routesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', String(route.volunteer_person_id))
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('The assigned volunteer no longer exists. Assign another volunteer.');
+
+    const rawToken = randomBytes(32).toString('base64url');
+    const url = `${env.companionUrl}/r/${rawToken}`;
+    const orgName = await this.publicOrgName(auth.tenant_id);
+    let sent: VolunteerLinkSendResult = { email: false, sms: false };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('delivery_routes')
+        .set({
+          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
+          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .execute();
+      sent = await notifyVolunteerOfLink(
+        {
+          tenant_id: auth.tenant_id,
+          person,
+          orgName,
+          kindLabel: 'delivery route',
+          itemName: String(route.name ?? 'Delivery route'),
+          url,
+        },
+        trx,
+      );
+      if (!sent.email && !sent.sms) {
+        // Rolls back the mint: a resend that reaches nobody must not retire the link they already have.
+        throw new BadRequestError(
+          'This volunteer has no email or mobile on file — add one to their record, or use "Copy volunteer link" to share it yourself.',
+        );
+      }
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'update',
+        'link_resent',
+        `Volunteer link re-sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`,
+      );
+    });
+    return { id: routeId, sent };
+  }
+
   public async setRouteStatus(auth: IAuthKeyPayload, input: SetDeliveryRouteStatusType) {
     const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
     if (!route) throw new NotFoundError('Route not found');

@@ -36,6 +36,11 @@ export class DeliveriesRoutesService extends AbstractAPIService<'delivery_routes
     return this.api.deliveries.assignVolunteer.mutate({ route_id, person_id });
   }
 
+  /** Mints a fresh personal link and emails/texts it to the assigned volunteer (retires the old link). */
+  public resendVolunteerLink(route_id: string) {
+    return this.api.deliveries.resendVolunteerLink.mutate({ route_id });
+  }
+
   public setStatus(route_id: string, status: 'in_progress' | 'completed' | 'canceled') {
     return this.api.deliveries.setRouteStatus.mutate({ route_id, status });
   }

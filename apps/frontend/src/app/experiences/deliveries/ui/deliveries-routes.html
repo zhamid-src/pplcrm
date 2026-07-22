@@ -66,7 +66,9 @@
           @if (row.volunteer_person_id) {
           <li><button type="button" (click)="openAssign(row)">Change volunteer</button></li>
           <li><button type="button" (click)="copyLink(row)">Copy volunteer link</button></li>
-          } @else {
+          @if (canResend(row.status)) {
+          <li><button type="button" (click)="resendLink(row)">Resend link to volunteer</button></li>
+          } } @else {
           <li><button type="button" (click)="openAssign(row)">Assign volunteer</button></li>
           } @if (canCancel(row.status)) {
           <li><button type="button" class="text-error" (click)="cancelRoute(row)">Cancel route…</button></li>

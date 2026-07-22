@@ -68,6 +68,9 @@ export const DeliveriesRouter = router({
   assignVolunteer: authProcedure
     .input(AssignVolunteerObj)
     .mutation(({ ctx, input }) => controller.assignVolunteer(ctx.auth, input)),
+  resendVolunteerLink: authProcedure
+    .input(RouteIdObj)
+    .mutation(({ ctx, input }) => controller.resendVolunteerLink(ctx.auth, input.route_id)),
   setRouteStatus: authProcedure
     .input(SetDeliveryRouteStatusObj)
     .mutation(({ ctx, input }) => controller.setRouteStatus(ctx.auth, input)),
