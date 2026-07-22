@@ -19,7 +19,7 @@ import {
   type InFieldToday,
   type TurfListItem,
 } from '../services/canvassing-service';
-import { companionUrl } from '../../../shared/public-pages';
+import { companionUrl, volunteerLinkSentPhrase } from '../../../shared/public-pages';
 import { AssignTurfDialog } from './assign-turf-dialog';
 import { CompanionSettingsDialog } from './companion-settings-dialog';
 import { CutTurfsDialog } from './cut-turfs-dialog';
@@ -268,17 +268,21 @@ export class CanvassingPage implements OnInit {
     this.assign(t);
   }
 
-  protected async onAssigned(token: string): Promise<void> {
+  protected async onAssigned(res: { token: string; sent: { email: boolean; sms: boolean } }): Promise<void> {
     this.assignTarget.set(null);
-    await this.copyCompanionLink(token);
+    const phrase = volunteerLinkSentPhrase(res.sent);
+    await this.copyCompanionLink(res.token, phrase ? `Volunteer assigned — ${phrase}. Link also copied.` : undefined);
+    if (!phrase) {
+      this.alerts.showWarn('They have no email or mobile on file — paste them the copied link yourself');
+    }
     await this.loadTurfs();
   }
 
-  private async copyCompanionLink(token: string): Promise<void> {
+  private async copyCompanionLink(token: string, successMessage?: string): Promise<void> {
     const url = companionUrl(`/t/${encodeURIComponent(token)}`);
     try {
       await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Personal link copied. Only the assigned volunteer can open it.');
+      this.alerts.showSuccess(successMessage ?? 'Personal link copied. Only the assigned volunteer can open it.');
     } catch {
       this.alerts.showSuccess(`Companion link: ${url}`);
     }

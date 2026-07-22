@@ -26,6 +26,13 @@ Assignments carry the volunteer identity: `turf_assignments.volunteer_person_id`
 (+ `expires_at`) and `delivery_routes.volunteer_person_id`. An assignment without a
 person yields the gate's `unassigned` state — staff must (re)assign.
 
+**Assignment auto-sends the link**: both `assignTurf` (canvassing) and
+`assignVolunteer` (deliveries) enqueue the volunteer's personal `/t/` / `/r/` URL
+by email and/or SMS via `lib/mail/volunteer-link-notify.ts` inside the assignment
+transaction (URL base `env.companionUrl` / `COMPANION_URL`; prod
+`https://go.pplcrm.com`), returning `sent: { email, sms }` so the UI can warn when
+the person has no contacts on file.
+
 ## Backend (`apps/backend/src/app/modules/companion-access/`)
 
 Public REST at `/api/companion` (`routes/companion-public.route.ts`, per-IP limited):

@@ -160,6 +160,14 @@ never a bare disabled select. Picking a status with no request calls `addRequest
   emits the picked person (or `null` for **Remove volunteer**); the page calls `svc.assignVolunteer`
   and reloads. When unassigned, the primary action is "Assign a volunteer to share" (opens the picker)
   instead of "Copy volunteer link", since `mintShareLink` refuses without a volunteer.
+- **Assignment auto-sends the link**: `assignVolunteer` (controller) mints a fresh share token
+  (raw token exists only at that moment — the only chance to put it in a message) and enqueues an
+  email and/or SMS to the volunteer's person contacts inside the same transaction
+  (`lib/mail/volunteer-link-notify.ts`, URL base `env.companionUrl` / `COMPANION_URL`, prod
+  `https://go.pplcrm.com` set by deploy.yml). Returns `{ id, status, sent: { email, sms } }`; the
+  frontend toast reflects the channels and warns when the person has no contacts. Re-assigning (even
+  the same person) regenerates the token, retiring any previously sent link — as does the manual
+  **Copy volunteer link** regenerate flow, which therefore invalidates the emailed link too.
 - Deferred (not yet built): web-form `yard_sign` intake branch, and a grid-level "Add request"
   household-picker dialog. Manual entry per household DOES exist — the `pc-yard-sign-standing`
   control on the household/person pages calls `addRequest`.

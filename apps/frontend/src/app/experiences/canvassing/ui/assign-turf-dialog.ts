@@ -94,8 +94,8 @@ export class AssignTurfDialog {
   public readonly turfId = input.required<string>();
   public readonly turfName = input.required<string>();
   public readonly cancelled = output<void>();
-  /** Emits the minted token once assigned (page copies the /t/ link). */
-  public readonly assigned = output<string>();
+  /** Emits the minted token + which channels the link was sent through (page copies the /t/ link). */
+  public readonly assigned = output<{ token: string; sent: { email: boolean; sms: boolean } }>();
 
   protected readonly options = signal<PersonOption[]>([]);
   protected readonly query = signal('');
@@ -147,12 +147,12 @@ export class AssignTurfDialog {
     if (!person || this.saving()) return;
     this.saving.set(true);
     try {
-      const { token } = await this.svc.assign({
+      const res = await this.svc.assign({
         turf_id: this.turfId(),
         team_id: null,
         volunteer_person_id: person.id,
       });
-      this.assigned.emit(token);
+      this.assigned.emit(res);
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
     } finally {

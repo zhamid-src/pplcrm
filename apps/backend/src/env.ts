@@ -29,6 +29,9 @@ const envSchema = z.object({
     .transform((val) => val === 'true'),
   API_URL: z.string().url().default('http://localhost:3000'),
   APP_URL: z.string().url().default('http://localhost:4200'),
+  // Public origin of the volunteer companion app (/t and /r links). Prod: https://go.pplcrm.com —
+  // must match the frontend's environment.companionOrigin or emailed links 404.
+  COMPANION_URL: z.string().url().default('http://localhost:4300'),
   SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
   MS_CLIENT_ID: z.string().optional(),
   MS_CLIENT_SECRET: z.string().optional(),
@@ -171,6 +174,7 @@ export const env = {
   migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
   apiUrl: parsedEnv.API_URL,
   appUrl: parsedEnv.APP_URL,
+  companionUrl: parsedEnv.COMPANION_URL,
   publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
   trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
   workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
