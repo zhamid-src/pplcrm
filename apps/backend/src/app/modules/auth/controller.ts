@@ -2259,6 +2259,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       task_due_in_app: true,
       person_assigned: true,
       person_assigned_in_app: true,
+      email_assigned: true,
+      email_assigned_in_app: true,
       export_ready: true,
       export_ready_in_app: true,
       import_summary: true,

@@ -17,6 +17,8 @@ export const NotificationPreferencesObj = z.object({
   task_due_in_app: z.boolean().default(true),
   person_assigned: z.boolean().default(true),
   person_assigned_in_app: z.boolean().default(true),
+  email_assigned: z.boolean().default(true),
+  email_assigned_in_app: z.boolean().default(true),
   export_ready: z.boolean().default(true),
   export_ready_in_app: z.boolean().default(true),
   import_summary: z.boolean().default(true),

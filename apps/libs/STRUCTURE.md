@@ -35,7 +35,7 @@ The content is organized as follows:
 - Files are sorted by Git change count (files with more changes are at the bottom)
 
 # Directory Structure
-```
+````
 libs/
   common/
     src/
@@ -218,7 +218,7 @@ libs/
     tsconfig.lib.json
     tsconfig.spec.json
     vite.config.mts
-```
+````
 
 # Files
 
@@ -1311,6 +1311,8 @@ export const NotificationPreferencesObj = z.object({
   task_due_in_app: z.boolean().default(true),
   person_assigned: z.boolean().default(true),
   person_assigned_in_app: z.boolean().default(true),
+  email_assigned: z.boolean().default(true),
+  email_assigned_in_app: z.boolean().default(true),
   export_ready: z.boolean().default(true),
   export_ready_in_app: z.boolean().default(true),
   import_summary: z.boolean().default(true),
@@ -1851,6 +1853,228 @@ export interface CompanionVolunteerRow {
   approved_by_name: string | null;
   created_at: string;
 }
+````
+
+## File: libs/common/src/lib/schemas/core.schema.ts
+````typescript
+import { z } from 'zod';
+
+export const sortModelItem = z.object({
+  colId: z.string(),
+  sort: z.enum(['asc', 'desc']),
+});
+
+export interface QueryBuilderRuleNode {
+  kind: 'rule';
+  id: string;
+  field: string;
+  op: string;
+  value?: any;
+}
+
+export interface QueryBuilderGroupNode {
+  kind: 'group';
+  id: string;
+  conjunction: 'AND' | 'OR';
+  rules: QueryBuilderNode[];
+}
+
+export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
+
+export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
+  if (node.kind === 'rule') {
+    return { ...node };
+  } else {
+    return {
+      ...node,
+      rules: node.rules.map(cloneQueryBuilderNode),
+    };
+  }
+}
+
+export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
+  z.discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('rule'),
+      id: z.string(),
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown().optional(),
+    }),
+    z.object({
+      kind: z.literal('group'),
+      id: z.string(),
+      conjunction: z.enum(['AND', 'OR']),
+      rules: z.array(queryBuilderNodeSchema),
+    }),
+  ]),
+);
+
+export const oldAdvancedFilterModelSchema = z.object({
+  conjunction: z.enum(['AND', 'OR']),
+  rules: z.array(
+    z.object({
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown(),
+    }),
+  ),
+});
+
+export const getAllOptions = z
+  .object({
+    searchStr: z.string().optional(),
+    startRow: z.number().optional(),
+    endRow: z.number().optional(),
+    sortModel: z.array(sortModelItem).optional(),
+    filterModel: z.record(z.string(), z.unknown()).optional(),
+    includeArchived: z.boolean().optional(),
+    columns: z.array(z.string()).optional(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+    orderBy: z.array(z.string()).optional(),
+    groupBy: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
+    issues: z.array(z.string()).optional(),
+    type: z.enum(['tag', 'issue']).optional(),
+    userId: z.string().optional(),
+    entity: z.string().optional(),
+    activity: z.string().optional(),
+    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
+    listId: z.string().optional(),
+    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
+    campaignId: z.string().optional(),
+    /**
+     * Volunteer/staff status filters (§15) — first-class replacements for the
+     * old `tags: ['volunteer']` filter. Plain string arrays here to avoid a
+     * circular import with persons.schema; the enum is validated at the column.
+     */
+    volunteerStatus: z.array(z.string()).optional(),
+    staffStatus: z.array(z.string()).optional(),
+  })
+  .optional();
+
+export const exportCsvInput = z
+  .object({
+    options: getAllOptions,
+    columns: z.array(z.string()).optional(),
+    fileName: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvResponse = z.union([
+  z.object({
+    status: z.literal('processing'),
+  }),
+  z.object({
+    csv: z.string(),
+    fileName: z.string(),
+    columns: z.array(z.string()),
+    rowCount: z.number(),
+    status: z.literal('completed').optional(),
+  }),
+]);
+
+export const exportEntitySchema = z.enum([
+  'persons',
+  'households',
+  'companies',
+  'tags',
+  'issues',
+  'tasks',
+  'lists',
+  'newsletters',
+  'teams',
+  'users',
+  'volunteer',
+  'forms',
+  'workflows',
+]);
+
+export const queueExportInput = z.object({
+  entity: exportEntitySchema,
+  options: getAllOptions,
+  columns: z.array(z.string()).optional(),
+  fileName: z.string().optional(),
+});
+
+/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
+ * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
+ * so the resulting record is not re-downloadable. */
+export const logInstantExportInput = z.object({
+  entity: exportEntitySchema,
+  fileName: z.string(),
+  rowCount: z.number().int().nonnegative(),
+});
+
+export const dataExportRecord = z.object({
+  id: z.string(),
+  entity: z.string(),
+  file_name: z.string(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed']),
+  row_count: z.number().nullable(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  downloadable: z.boolean(),
+  createdBy: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      email: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
+export const uuidSchema = z.string().uuid('Invalid UUID format');
+export const idSchema = dbIdSchema;
+
+export const addressSchema = z.object({
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
+  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
+  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
+  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
+  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
+  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
+  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
+  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
+  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
+  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
+  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
+});
+
+/**
+ * One column's server-side filter as the datagrid posts it inside `filterModel`:
+ * an optional comparison `op` (contains/equals/startsWith/isEmpty/…) and the
+ * `value` to match. Consumed by BaseRepository.applyColumnFilter /
+ * applyCastColumnFilter. `value` is `unknown` because the grid sends strings,
+ * numbers, and booleans — coerce with String(...) at the point of use. Matches
+ * the wire shape validated by getAllOptions' `filterModel: z.record(z.unknown())`.
+ */
+export interface GridColumnFilter {
+  op?: string;
+  value?: unknown;
+}
+
+/** The datagrid's per-column filter bag: column id → its filter. */
+export type GridFilterModel = Record<string, GridColumnFilter>;
+
+export const nameSchema = (fieldName: string, maxLen = 100) =>
+  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
+
+export const descriptionSchema = (maxLen = 1000) =>
+  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
+
+export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
+
+export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
+export const phoneSchema = (fieldName: string) =>
+  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
+
+export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
 ````
 
 ## File: libs/common/src/lib/schemas/emails.schema.ts
@@ -6378,65 +6602,6 @@ export class TabPanel {
 }
 ````
 
-## File: libs/uxcommon/src/components/tags/tagitem.css
-````css
-:host {
-  display: inline-block;
-  max-width: 100%;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-  padding-top: 0.25rem;
-  padding-bottom: 0.25rem;
-  min-height: 1.5rem;
-  height: auto;
-  line-height: 1.2;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.tag-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  line-height: 1.2;
-}
-
-.tag-remove {
-  align-self: flex-start;
-  margin-top: 0.125rem;
-}
-
-.badge-compact {
-  font-size: 0.7rem !important;
-  font-weight: 500 !important;
-  min-height: 1.25rem !important;
-  height: auto !important;
-  align-items: center !important;
-  padding-top: 0.125rem !important;
-  padding-bottom: 0.125rem !important;
-  padding-left: 0.375rem !important;
-  padding-right: 0.375rem !important;
-}
-
-.badge-compact .tag-label {
-  font-size: 0.7rem !important;
-  line-height: 1.15 !important;
-  padding-right: 0 !important;
-}
-
-.badge-compact .tag-remove {
-  margin-top: 0 !important;
-  align-self: center !important;
-}
-````
-
 ## File: libs/uxcommon/src/components/tags/tagitem.ts
 ````typescript
 import { Component, Signal, computed, input, output, signal } from '@angular/core';
@@ -8478,228 +8643,6 @@ export const AddConnectionObj = z.object({
 export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 ````
 
-## File: libs/common/src/lib/schemas/core.schema.ts
-````typescript
-import { z } from 'zod';
-
-export const sortModelItem = z.object({
-  colId: z.string(),
-  sort: z.enum(['asc', 'desc']),
-});
-
-export interface QueryBuilderRuleNode {
-  kind: 'rule';
-  id: string;
-  field: string;
-  op: string;
-  value?: any;
-}
-
-export interface QueryBuilderGroupNode {
-  kind: 'group';
-  id: string;
-  conjunction: 'AND' | 'OR';
-  rules: QueryBuilderNode[];
-}
-
-export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
-
-export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
-  if (node.kind === 'rule') {
-    return { ...node };
-  } else {
-    return {
-      ...node,
-      rules: node.rules.map(cloneQueryBuilderNode),
-    };
-  }
-}
-
-export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('rule'),
-      id: z.string(),
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown().optional(),
-    }),
-    z.object({
-      kind: z.literal('group'),
-      id: z.string(),
-      conjunction: z.enum(['AND', 'OR']),
-      rules: z.array(queryBuilderNodeSchema),
-    }),
-  ]),
-);
-
-export const oldAdvancedFilterModelSchema = z.object({
-  conjunction: z.enum(['AND', 'OR']),
-  rules: z.array(
-    z.object({
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown(),
-    }),
-  ),
-});
-
-export const getAllOptions = z
-  .object({
-    searchStr: z.string().optional(),
-    startRow: z.number().optional(),
-    endRow: z.number().optional(),
-    sortModel: z.array(sortModelItem).optional(),
-    filterModel: z.record(z.string(), z.unknown()).optional(),
-    includeArchived: z.boolean().optional(),
-    columns: z.array(z.string()).optional(),
-    limit: z.number().optional(),
-    offset: z.number().optional(),
-    orderBy: z.array(z.string()).optional(),
-    groupBy: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    issues: z.array(z.string()).optional(),
-    type: z.enum(['tag', 'issue']).optional(),
-    userId: z.string().optional(),
-    entity: z.string().optional(),
-    activity: z.string().optional(),
-    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
-    listId: z.string().optional(),
-    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
-    campaignId: z.string().optional(),
-    /**
-     * Volunteer/staff status filters (§15) — first-class replacements for the
-     * old `tags: ['volunteer']` filter. Plain string arrays here to avoid a
-     * circular import with persons.schema; the enum is validated at the column.
-     */
-    volunteerStatus: z.array(z.string()).optional(),
-    staffStatus: z.array(z.string()).optional(),
-  })
-  .optional();
-
-export const exportCsvInput = z
-  .object({
-    options: getAllOptions,
-    columns: z.array(z.string()).optional(),
-    fileName: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvResponse = z.union([
-  z.object({
-    status: z.literal('processing'),
-  }),
-  z.object({
-    csv: z.string(),
-    fileName: z.string(),
-    columns: z.array(z.string()),
-    rowCount: z.number(),
-    status: z.literal('completed').optional(),
-  }),
-]);
-
-export const exportEntitySchema = z.enum([
-  'persons',
-  'households',
-  'companies',
-  'tags',
-  'issues',
-  'tasks',
-  'lists',
-  'newsletters',
-  'teams',
-  'users',
-  'volunteer',
-  'forms',
-  'workflows',
-]);
-
-export const queueExportInput = z.object({
-  entity: exportEntitySchema,
-  options: getAllOptions,
-  columns: z.array(z.string()).optional(),
-  fileName: z.string().optional(),
-});
-
-/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
- * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
- * so the resulting record is not re-downloadable. */
-export const logInstantExportInput = z.object({
-  entity: exportEntitySchema,
-  fileName: z.string(),
-  rowCount: z.number().int().nonnegative(),
-});
-
-export const dataExportRecord = z.object({
-  id: z.string(),
-  entity: z.string(),
-  file_name: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  row_count: z.number().nullable(),
-  error: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  downloadable: z.boolean(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
-});
-
-export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
-export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const idSchema = dbIdSchema;
-
-export const addressSchema = z.object({
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
-  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
-  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
-  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
-  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
-  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
-  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
-  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
-  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
-  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
-});
-
-/**
- * One column's server-side filter as the datagrid posts it inside `filterModel`:
- * an optional comparison `op` (contains/equals/startsWith/isEmpty/…) and the
- * `value` to match. Consumed by BaseRepository.applyColumnFilter /
- * applyCastColumnFilter. `value` is `unknown` because the grid sends strings,
- * numbers, and booleans — coerce with String(...) at the point of use. Matches
- * the wire shape validated by getAllOptions' `filterModel: z.record(z.unknown())`.
- */
-export interface GridColumnFilter {
-  op?: string;
-  value?: unknown;
-}
-
-/** The datagrid's per-column filter bag: column id → its filter. */
-export type GridFilterModel = Record<string, GridColumnFilter>;
-
-export const nameSchema = (fieldName: string, maxLen = 100) =>
-  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
-
-export const descriptionSchema = (maxLen = 1000) =>
-  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
-
-export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
-
-export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) =>
-  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
-
-export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
-````
-
 ## File: libs/common/src/lib/schemas/deliveries.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -10534,6 +10477,65 @@ export class RowActions {
 }
 ````
 
+## File: libs/uxcommon/src/components/tags/tagitem.css
+````css
+:host {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  min-height: 1.5rem;
+  height: auto;
+  line-height: 1.2;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.tag-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+
+.tag-remove {
+  align-self: flex-start;
+  margin-top: 0.125rem;
+}
+
+.badge-compact {
+  font-size: 0.7rem !important;
+  font-weight: 500 !important;
+  min-height: 1.25rem !important;
+  height: auto !important;
+  align-items: center !important;
+  padding-top: 0.125rem !important;
+  padding-bottom: 0.125rem !important;
+  padding-left: 0.375rem !important;
+  padding-right: 0.375rem !important;
+}
+
+.badge-compact .tag-label {
+  font-size: 0.7rem !important;
+  line-height: 1.15 !important;
+  padding-right: 0 !important;
+}
+
+.badge-compact .tag-remove {
+  margin-top: 0 !important;
+  align-self: center !important;
+}
+````
+
 ## File: libs/uxcommon/src/index.ts
 ````typescript
 export * from './loading-gate';
@@ -11692,380 +11694,6 @@ export function formatCurrency(amount: number, code: CurrencyCode): string {
 }
 ````
 
-## File: libs/common/src/lib/help/articles/engagement.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-      'stripe',
-      'processor',
-      'residency',
-      'paused',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
-      },
-      {
-        kind: 'p',
-        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
-      },
-      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
-      {
-        kind: 'p',
-        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
-      },
-      {
-        kind: 'p',
-        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
-      },
-      {
-        kind: 'p',
-        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Donations are paused until you confirm residency',
-        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page: your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Add ticket tiers and set their order',
-            detail:
-              'On the event’s edit page, add ticket types under **Ticket types** (leave it empty for a free RSVP). Drag a ticket by its handle to set the order; the order you set is the order attendees see on the public page.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Drag a field by its handle to reorder it; the order you set is the order people see on the public form. Changes apply to the live form instantly. There is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
-      {
-        kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
-      },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
-      {
-        kind: 'list',
-        items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Donation forms show here too',
-        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
-      },
-    ],
-  },
-  {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
-    summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
-      },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
-          },
-          {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
-          },
-          {
-            title: 'Confirm',
-            detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
-      {
-        kind: 'p',
-        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Before you assign',
-        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      {
-        kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
-      },
-      {
-        kind: 'p',
-        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
-      },
-      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
-      {
-        kind: 'p',
-        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
-      },
-      {
-        kind: 'p',
-        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
-      },
-    ],
-  },
-];
-````
-
 ## File: libs/common/src/lib/help/articles/administration.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -12201,6 +11829,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
           '**Teams & access**: default role for invitations and the MFA requirement.',
           '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
           '**Appearance**: default theme and date format for the workspace.',
+          '**API keys**: the workspace API key for server-side integrations — submitting forms, RSVPs, and volunteer signups from your own backend, or connecting Zapier. Shown once at generation; regenerating invalidates the old key.',
           '**Billing**: your plan, live usage, and payment details.',
         ],
       },
@@ -12391,6 +12020,399 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
 ];
 ````
 
+## File: libs/common/src/lib/help/articles/engagement.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+      'stripe',
+      'processor',
+      'residency',
+      'paused',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
+      },
+      {
+        kind: 'p',
+        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
+      },
+      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
+      {
+        kind: 'p',
+        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
+      },
+      {
+        kind: 'p',
+        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
+      },
+      {
+        kind: 'p',
+        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Donations are paused until you confirm residency',
+        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page: your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Add ticket tiers and set their order',
+            detail:
+              'On the event’s edit page, add ticket types under **Ticket types** (leave it empty for a free RSVP). Drag a ticket by its handle to set the order; the order you set is the order attendees see on the public page.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+      'api',
+      'api key',
+      'zapier',
+      'integration',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Drag a field by its handle to reorder it; the order you set is the order people see on the public form. Changes apply to the live form instantly. There is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      { kind: 'h2', id: 'api', text: 'Bring your own form (API)' },
+      {
+        kind: 'p',
+        text: 'Already have a form that matches your website’s design? Keep it. Point its submit action at your form’s public endpoint — `POST /api/forms/submit/<slug>?t=<workspace>` on the API domain (the same URL the raw-HTML embed uses) — with your enabled field names, and every submission still becomes a person, applies your tags and lists, and respects double opt-in. Include the hidden `_hp` field and leave it empty; it’s the spam trap.',
+      },
+      {
+        kind: 'p',
+        text: 'Submitting from your own server or backend instead? Generate a **workspace API key** (Workspace settings → **API keys**) and send it as an `Authorization: Bearer` header. The key identifies your workspace on its own — no `?t=` needed — and lifts the anonymous per-visitor rate limit in favor of a per-workspace one built for batch traffic. The same key authenticates Zapier and the event RSVP and volunteer signup endpoints.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Never put the API key in a public page',
+        text: 'The key is a secret — anyone who has it can write into your workspace. Browser-side forms don’t need it (the public endpoint works keyless); the key belongs only in server-side code. If it ever leaks, regenerate it in Workspace settings → API keys, which invalidates the old key instantly.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Donation forms show here too',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip, and selecting one previews it right beside the list like any other form. Because they collect card payments through your connected Stripe account, they aren’t edited in the live editor. **Edit donation form** opens the [Donations](/donations) fundraising builder, where the amount and payment settings live, and their responses arrive as gifts in the Donations ledger rather than a form responses tab.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
+      {
+        kind: 'p',
+        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
+      },
+      {
+        kind: 'p',
+        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/kysely.models.ts
 ````typescript
 // tsco:ignore
@@ -12449,6 +12471,7 @@ export interface Models {
   sessions: Sessions;
   tags: Tags;
   tenants: Tenants;
+  workspace_api_keys: WorkspaceApiKeys;
   settings: Settings;
   donations: Donations;
   donation_periods: DonationPeriods;
@@ -12487,6 +12510,7 @@ export interface Models {
   form_submissions: FormSubmissions;
   background_jobs: BackgroundJobs;
   webhook_events: WebhookEvents;
+  ops_heartbeats: OpsHeartbeats;
   data_exports: DataExports;
   potential_duplicates: PotentialDuplicates;
   dismissed_duplicate_groups: DismissedDuplicateGroups;
@@ -13128,6 +13152,15 @@ interface Tenants extends Omit<RecordType, 'createdby_id'>, AddressType {
   phone_verification_attempts: Generated<number>;
 }
 
+interface WorkspaceApiKeys {
+  id: Generated<string>;
+  tenant_id: string;
+  key_hash: string;
+  key_preview: string;
+  created_at: Generated<Timestamp>;
+  last_used_at: Timestamp | null;
+}
+
 interface Emails extends RecordType {
   /** The campaign context this email was synced into (§15). */
   campaign_id: string;
@@ -13421,6 +13454,17 @@ export interface BackgroundJobs {
   locked_by: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+/**
+ * Global (non-tenant) liveness markers for the in-process background worker. The `ops_watchdog`
+ * cron job updates `beat_at` every cycle; `GET /healthz/worker` reports 503 when it goes stale
+ * (dead-man's switch for the external availability probe).
+ */
+export interface OpsHeartbeats {
+  name: string;
+  beat_at: Generated<Timestamp>;
+  details: Json | null;
 }
 
 export interface WebhookEvents {
@@ -13749,922 +13793,6 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
   persons_count: number;
   tags: string[] | null;
 };
-````
-
-## File: libs/common/src/lib/help/articles/outreach.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const OUTREACH_ARTICLES: HelpArticle[] = [
-  {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
-    summary:
-      'Template to audience to send: the full path, plus scheduling, resending to non-openers, the compliance footer, and how sending progress is shown.',
-    keywords: [
-      'newsletter',
-      'campaign',
-      'email blast',
-      'send',
-      'schedule',
-      'resend',
-      'template',
-      'saved templates',
-      'save as template',
-      'audience',
-      'unsubscribe',
-      'deliverability',
-      'score',
-    ],
-    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections', 'deliverability'],
-    blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail:
-              'Start from a template or a blank canvas. Every template card shows a live preview of the design, so you can see what you are picking before you pick it.',
-          },
-          {
-            title: 'Design in the visual editor',
-            detail:
-              'Drag blocks from the Blocks panel onto the canvas, or click one to add it. Rearrange blocks by their drag handle, and use the plus button between blocks to insert one exactly where you want it. What you see is what subscribers get.',
-          },
-          {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Personalize with merge fields',
-        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
-      },
-      { kind: 'h2', id: 'templates', text: 'Save and reuse your own templates' },
-      {
-        kind: 'p',
-        text: 'When a design is worth keeping, click **Save as template** on the Content step and give it a name. It joins the **Your templates** section of the Template step, live preview included, and is shared with everyone in your workspace; selecting it starts the next newsletter from that design. Delete a template from its card when it has outlived its usefulness. Newsletters already created from it keep their content. A workspace can hold up to 50 saved templates.',
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
-      {
-        kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
-      },
-      { kind: 'h2', id: 'send', text: 'Send now or schedule for later' },
-      {
-        kind: 'p',
-        text: 'Send now, or pick **Schedule for later** with a date and time; a scheduled newsletter goes out within a few minutes of that time. Until then it shows as **Scheduled** on the [Newsletters](/newsletters) list, where **Cancel schedule** moves it back to drafts; opening it also offers **Send now**. If something blocks a scheduled send when its time comes (a failed deliverability check, a sending pause), it returns to drafts and you are notified with the reason. A finished draft can also go out straight from the list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Newsletter or automation?',
-        text: 'Newsletters are calendar-driven: you pick the time, and everyone in the audience gets the same issue. To email each supporter when *they* do something (join, donate, volunteer), use an [Automation](/help/automations) instead.',
-      },
-      { kind: 'h2', id: 'resend', text: 'Resend to non-openers' },
-      {
-        kind: 'p',
-        text: 'A sent newsletter’s page offers **Resend to non-openers**: one follow-up, only to the people who received it but never opened or clicked it, with a new subject line (required; a fresh angle beats a tweak). Wait two to three days after the original so slow readers have had their chance, and know that each newsletter can be resent only once. Anyone who engages with the original before the resend goes out is dropped automatically. One caveat: Apple Mail marks many emails as opened on its own, so some quiet readers look like openers and will not receive the resend.',
-      },
-      {
-        kind: 'p',
-        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'preflight', text: 'The deliverability check' },
-      {
-        kind: 'p',
-        text: 'The **Review & send** step scores your email **0–100** for deliverability. **80 or higher** means you are good to go; **50–79** lists items worth fixing before you send; **below 50, sending is disabled** until the flagged items are fixed. Every finding shows the points it costs and how to fix it. A quick check runs as you edit; **Run full check** (also next to *Send test email* on the Content step) adds a spam-filter score and an AI review of the copy. See [Get your newsletters delivered](/help/deliverability) for what the checks look for and why.',
-      },
-      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
-      {
-        kind: 'p',
-        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
-      },
-      {
-        kind: 'p',
-        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
-      },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
-      {
-        kind: 'list',
-        items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
-      },
-      {
-        kind: 'p',
-        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
-      },
-    ],
-  },
-  {
-    id: 'sending-protections',
-    category: 'outreach',
-    title: 'Sending protections and verification',
-    summary:
-      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
-    keywords: [
-      'verify domain',
-      'verify phone',
-      'sms code',
-      'sending paused',
-      'suspended',
-      'bounce rate',
-      'spam complaint',
-      'warm-up',
-      'daily limit',
-      'deliverability',
-      'anti-spam',
-    ],
-    related: ['newsletters', 'settings', 'forms', 'deliverability'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
-      },
-      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Verify your sending domain',
-            detail:
-              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
-          },
-          {
-            title: 'Verify a mobile number (Free plan)',
-            detail:
-              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
-      {
-        kind: 'p',
-        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
-      },
-      { kind: 'h2', id: 'monthly-allowance', text: 'The monthly email allowance' },
-      {
-        kind: 'p',
-        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. Emails sent by [automations](/help/automations) count toward the same allowance and limits. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
-      },
-      { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
-      {
-        kind: 'p',
-        text: 'Every send must also clear the **deliverability check**: a 0–100 score built from content best practices, an optional spam-filter score, and an AI review that catches scam-like patterns and content outside the acceptable-use policy. pplCRM sending is for community, political and nonprofit updates — fundraising appeals, auctions and event promotion included; unrelated commercial product blasts are not. Scores **below 50 block the send** on every plan; 50–79 sends with a warning. The AI review runs on every check — the ones you run while drafting and the automatic check on every send. It reads only the newsletter content itself and is processed by Anthropic (listed with our other service providers in the privacy policy). See [Get your newsletters delivered](/help/deliverability).',
-      },
-      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
-      {
-        kind: 'list',
-        items: [
-          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
-          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'How to never hit these',
-        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
-      },
-      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
-      {
-        kind: 'p',
-        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
-      },
-    ],
-  },
-  {
-    id: 'deliverability',
-    category: 'outreach',
-    title: 'Get your newsletters delivered',
-    summary:
-      'What actually decides inbox versus spam — sender reputation, list quality, engagement — and the content habits the deliverability check scores.',
-    keywords: [
-      'spam',
-      'junk',
-      'inbox',
-      'deliverability',
-      'images',
-      'subject line',
-      'dmarc',
-      'postmaster',
-      'score',
-      'preflight',
-      'open rate',
-    ],
-    related: ['newsletters', 'sending-protections', 'forms', 'lists'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Whether an email lands in the inbox is decided mostly by **your sending reputation and how recipients engage** — opens, clicks, replies, deletes and spam reports — not by magic keywords. The content checks below matter, but the foundation is sending mail people asked for, from a domain that vouches for you.',
-      },
-      { kind: 'h2', id: 'foundation', text: 'The foundation: identity and reputation' },
-      {
-        kind: 'list',
-        items: [
-          '**Send from your verified domain.** pplCRM requires this before any broadcast — it is what lets Gmail and Outlook trust the mail is really yours.',
-          '**Add a DMARC record.** It is optional for verification but Gmail, Yahoo and Microsoft require it of bulk senders; even a monitor-only policy (`p=none`) counts. Your DNS checklist under **Workspace → Domains** shows the record.',
-          '**Keep your identity steady.** Same from-name and address every send, a regular cadence, and no sudden jumps in volume.',
-          '**Watch your reputation where the inboxes do.** Enroll your domain in [Google Postmaster Tools](https://postmaster.google.com) — keep the spam-rate graph under 0.1% and never past 0.3%.',
-        ],
-      },
-      { kind: 'h2', id: 'list-quality', text: 'List quality beats everything' },
-      {
-        kind: 'list',
-        items: [
-          'Only email people who **opted in** through your [forms](/help/forms), events or sign-ups. Purchased and scraped lists bounce hard, get reported, and trip the automatic pauses.',
-          'Unsubscribes and bounces are honored automatically — never re-import around them.',
-          'Consider **double opt-in** on public forms, and rest people who have not opened anything in months; mailing the unengaged drags down delivery for everyone else on your list.',
-        ],
-      },
-      { kind: 'h2', id: 'content', text: 'Content habits the check scores' },
-      {
-        kind: 'list',
-        items: [
-          '**Subject:** sentence case, under ~70 characters, no stacked exclamation marks or currency symbols, and never a fake “Re:”.',
-          '**Body:** keep the HTML under ~100KB (Gmail clips beyond that and hides your footer), and keep a healthy balance of real text to images. A plain-text version is generated automatically for every send.',
-          '**Images:** host them on regular `https://` URLs, keep each roughly 600px wide and comfortably under 200KB, and give every image alt text — that is what people see while images load or stay blocked.',
-          '**Links:** link real destinations on domains you control — no URL shorteners, no bare IP addresses, and make the visible text match where the link goes.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Test before the big send',
-        text: 'Use **Check deliverability** and **Send test email** on the Content step, and read the test in Gmail and Outlook. Small copy fixes before a send are worth more than any amount of analysis after it.',
-      },
-      { kind: 'h2', id: 'the-check', text: 'How the deliverability check scores you' },
-      {
-        kind: 'p',
-        text: 'The check starts at 100 and subtracts points per finding, each shown with its cost and fix. **80+** is ready to send, **50–79** is worth fixing first, and **below 50 sending is disabled**. The full check adds a spam-filter (SpamAssassin) score and an AI read of the copy that flags deceptive patterns — manufactured urgency, misleading claims, look-alike links — and content outside the acceptable-use policy. Fundraising appeals, donation asks, auctions and event promotion are all normal newsletter content here; unrelated commercial product blasts and anything phishing-shaped are not.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'A good score is not a delivery guarantee',
-        text: 'The score covers what can be checked before sending. Reputation and engagement — built over many sends to a clean list — remain the larger factors, which is why the [sending protections](/help/sending-protections) watch bounces and complaints after every send.',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The Inbox belongs to your active campaign',
-        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
-      },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
-      {
-        kind: 'list',
-        items: [
-          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
-          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
-          'Watch your own queue. The **Inbox** entry in the sidebar carries a badge with the open conversations assigned to you — the same count as the **Mine** triage folder.',
-          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
-      },
-    ],
-  },
-  {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
-    summary:
-      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went. For one update that goes to everyone at a time you pick, use a [newsletter](/help/newsletters) instead; automations are for per-person journeys.',
-      },
-      { kind: 'h2', id: 'recipes', text: 'Start from a recipe' },
-      {
-        kind: 'p',
-        text: 'New automation offers four ready-made recipes with starter copy: **Welcome new supporters** (three emails over two weeks, ending early if they donate), **Thank every donor** (a same-day thank-you plus a personal-note task), **Follow up after a shift** (thanks, then the next invitation), and **Re-engage quiet supporters** (a gentle win-back where the second email only goes to people who didn’t open the first, and any engagement ends the sequence). A recipe lands as a draft; review every email, adjust the waits, then activate. Or start from scratch with a bare trigger.',
-      },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
-      {
-        kind: 'list',
-        items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching its SLA (the person the task is linked to enrolls), a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
-          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
-          '**Email conditions**: from the second email on, a Send email step can be gated on what the person did with the previous email in the sequence, for example **Only if they didn’t open the previous email**. Put a Wait before a conditioned email so people have time to engage; a skipped step shows as a neutral **Skipped** with the reason.',
-          '**End early when** sets sequence goals on the right rail: end the sequence the moment they donate, open any email in it, or click any email in it. Someone who converts stops getting the rest of the asks.',
-          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
-          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Clicks beat opens',
-        text: 'Apple Mail opens many emails automatically for privacy, so "opened" over-counts and "didn’t open" reaches fewer people than truly went quiet. When a click is a realistic ask, prefer click-based conditions and goals; they are the reliable signal.',
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a recipe, or a trigger from the cards. That’s the event that enrolls people.',
-          },
-          {
-            title: 'Build the sequence',
-            detail:
-              'Use the + between steps to add a wait, an email, a tag, a task, or a team notification. Drag a step by its handle to reorder it; steps run top to bottom.',
-          },
-          {
-            title: 'Name it and set it Active',
-            detail:
-              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'consent', text: 'Consent and sending limits' },
-      {
-        kind: 'p',
-        text: 'Automation emails follow the same rules as newsletters. People who unsubscribed, bounced, or are marked do-not-contact are skipped automatically (the run shows a neutral **Skipped** with the reason, not a failure). Every automation email carries an unsubscribe link and counts toward your plan’s monthly email allowance and sending limits; if your workspace’s sending is paused, the step waits and retries instead of losing the email.',
-      },
-      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
-      {
-        kind: 'p',
-        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Every run is logged',
-        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
-      },
-    ],
-  },
-];
-````
-
-## File: libs/common/src/index.ts
-````typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
-
-export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
-
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  AddCampaignType,
-  UpdateCampaignType,
-  UpsertCampaignPersonFactType,
-  SetCampaignSubscriptionType,
-  CarryOverCampaignType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  NewsletterReportType,
-  NewsletterReportBounceType,
-  NewsletterReportEngagedType,
-  NewsletterReportLinkType,
-  NewsletterReportPreviousSendType,
-  CreateClickersListResultType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  ProfilePreferencesType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  LogInstantExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  CreateFormType,
-  UpdateFormType,
-  FormSubmissionType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  ReorderTicketTypesType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-  AddTurfType,
-  UpdateTurfType,
-  CutTurfsType,
-  AssignTurfType,
-  FieldReportRangeType,
-  LogKnockType,
-} from './lib/models';
-
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  TASK_STATUSES,
-  TASK_BOARD_STATUSES,
-  TASK_OPEN_STATUSES,
-  TASK_STATUS_LABELS,
-  isTaskStatus,
-  isTaskBoardStatus,
-  AddTeamObj,
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  SUBSCRIPTION_STATUSES,
-  CONSENT_SOURCES,
-  CAMPAIGN_KINDS,
-  CAMPAIGN_STATUSES,
-  SUPPORT_LEVELS,
-  SUPPORT_LEVEL_LABELS,
-  VOTING_STATUSES,
-  VOTING_STATUS_LABELS,
-  FACT_SOURCES,
-  DNC_CHANNELS,
-  VOLUNTEER_STATUSES,
-  VOLUNTEER_STATUS_LABELS,
-  STAFF_STATUSES,
-  STAFF_STATUS_LABELS,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ReorderTasksObj,
-  ReorderSubtasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  ProfilePreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  folderIdSchema,
-  regularFolderIdSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  FormFieldObj,
-  FormTypeEnum,
-  FORM_TYPES,
-  FORM_STATUSES,
-  FORM_TEMPLATES,
-  FORM_STANDARD_CATALOG,
-  FORM_EMAIL_FIELD,
-  normForm,
-  fieldsForTemplate,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  WorkflowRunObj,
-  WorkflowStepConfigObj,
-  WORKFLOW_TRIGGER_TYPES,
-  WORKFLOW_STEP_KINDS,
-  CompanyInputObj,
-  CompanyEnrichmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  ReorderTicketTypesObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  TURF_STATUSES,
-  KNOCK_OUTCOMES,
-  KNOCK_RESPONSES,
-  KNOCK_RESPONSE_LABELS,
-  DOORS_PER_TURF_PRESETS,
-  turfStatusSchema,
-  knockOutcomeSchema,
-  knockResponseSchema,
-  isTurfStatus,
-  isKnockOutcome,
-  CompanionSurveyObj,
-  CompanionPersonResultObj,
-  CompanionDoorOutcomeObj,
-  CompanionClearOutcomeObj,
-  CompanionPersonCreateObj,
-  CompanionOpObj,
-  CompanionResultsObj,
-  UpdateCompanionSettingsObj,
-  AddDeliveryRequestObj,
-  UpdateDeliveryRequestObj,
-  SetDeliveryRequestStatusObj,
-  PlanDeliveriesObj,
-  CommitDeliveriesObj,
-  UpdateDeliveryRouteObj,
-  AssignVolunteerObj,
-  SetDeliveryRouteStatusObj,
-  ReorderStopObj,
-  ReorderStopsObj,
-  StopActionObj,
-  RouteIdObj,
-  MintShareLinkObj,
-  PublicStopActionObj,
-  GetSignStatusObj,
-  DELIVERY_REQUEST_STATUSES,
-  DELIVERY_REQUEST_STATUS_LABELS,
-  DELIVERY_ROUTE_STATUSES,
-  DELIVERY_STOP_STATUSES,
-  DELIVERY_SOURCES,
-  DELIVERY_SKIP_REASONS,
-  DONATION_METHODS,
-  DONATION_METHOD_LABELS,
-  donationMethodSchema,
-  RecordDonationObj,
-  INTERACTION_TYPES,
-  INTERACTION_TYPE_LABELS,
-  interactionTypeSchema,
-  LogInteractionObj,
-  CompanionAccessQueryObj,
-  CompanionVerifyStartObj,
-  CompanionVerifyConfirmObj,
-  COMPANION_LINK_KINDS,
-  COMPANION_VERIFY_CHANNELS,
-  COMPANION_VOLUNTEER_STATUSES,
-  COMPANION_ACCESS_STATES,
-} from './lib/schema';
-
-export type {
-  CompanionLinkKind,
-  CompanionVerifyChannel,
-  CompanionVolunteerStatus,
-  CompanionAccessState,
-  CompanionContact,
-  CompanionAccessPayload,
-  CompanionVerifyConfirmResult,
-  CompanionVolunteerRow,
-} from './lib/schemas/companion-access.schema';
-
-export type {
-  CampaignKind,
-  CampaignStatus,
-  SupportLevel,
-  VotingStatus,
-  FactSource,
-  SubscriptionStatus,
-  ConsentSource,
-} from './lib/schemas/campaigns.schema';
-export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
-export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
-
-export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
-
-export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
-export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
-
-export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-export type { TaskStatus, TaskBoardStatus, ReorderTasksType, ReorderSubtasksType } from './lib/schemas/tasks.schema';
-export type {
-  WorkflowTriggerType,
-  WorkflowStepKind,
-  WorkflowStepConfigType,
-  WorkflowRunType,
-  WorkflowSendCondition,
-  WorkflowExitCondition,
-} from './lib/schemas/workflows.schema';
-export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
-export type {
-  TurfStatus,
-  KnockOutcome,
-  KnockResponse,
-  CompanionSurveyType,
-  CompanionOpType,
-  CompanionResultsType,
-  CompanionOpAck,
-  CompanionSurveyPrefill,
-  CompanionPersonResult,
-  CompanionPerson,
-  CompanionDoorOutcome,
-  CompanionHousehold,
-  CompanionTurfPayload,
-  UpdateCompanionSettingsType,
-} from './lib/schemas/canvassing.schema';
-export type {
-  AddDeliveryRequestType,
-  UpdateDeliveryRequestType,
-  SetDeliveryRequestStatusType,
-  PlanDeliveriesType,
-  CommitDeliveriesType,
-  UpdateDeliveryRouteType,
-  AssignVolunteerType,
-  SetDeliveryRouteStatusType,
-  ReorderStopType,
-  ReorderStopsType,
-  StopActionType,
-  MintShareLinkType,
-  PublicStopActionType,
-  GetSignStatusType,
-  DeliveryRequestStatus,
-  DeliveryRouteStatus,
-  DeliveryStopStatus,
-  DeliverySource,
-  DeliverySkipReason,
-} from './lib/schemas/deliveries.schema';
-
-export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
-export {
-  CROCKFORD_ALPHABET,
-  PUBLIC_ID_LENGTH,
-  encodeCrockford,
-  normalizeCrockford,
-  extractPublicIdFromSlug,
-  buildPersonSlug,
-} from './lib/public-id';
-export { calculateWorkingTimeMs } from './lib/sla';
-
-export {
-  AddNewsletterTemplateObj,
-  NewsletterTemplateObj,
-  UpdateNewsletterTemplateObj,
-} from './lib/schemas/newsletter-templates.schema';
-export type {
-  AddNewsletterTemplateType,
-  NewsletterTemplateType,
-  UpdateNewsletterTemplateType,
-} from './lib/schemas/newsletter-templates.schema';
-
-export {
-  AI_CONTENT_TYPES,
-  AI_REVIEW_STATUSES,
-  AiPreflightVerdictObj,
-  PREFLIGHT_BANDS,
-  PREFLIGHT_BLOCK,
-  PREFLIGHT_GOOD,
-  PREFLIGHT_SEVERITIES,
-  PreflightFindingObj,
-  PreflightResultObj,
-  RunPreflightObj,
-  preflightBand,
-} from './lib/schemas/content-check.schema';
-export type {
-  AiContentType,
-  AiPreflightVerdict,
-  AiReviewStatus,
-  PreflightBand,
-  PreflightFinding,
-  PreflightResult,
-  PreflightSeverity,
-  RunPreflightType,
-} from './lib/schemas/content-check.schema';
-export {
-  buildAiFindings,
-  buildSpamAssassinFinding,
-  computeScore,
-  lintNewsletterContent,
-  preflightHashInput,
-} from './lib/preflight-lint';
-export type { PreflightInput } from './lib/preflight-lint';
-
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
-
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
-
-export {
-  GB,
-  PLANS,
-  PLANS_BY_KEY,
-  PURCHASABLE_PLAN_KEYS,
-  LEGACY_PLAN_ALIASES,
-  FEATURE_MATRIX,
-  getPlanDef,
-  planDisplayName,
-  bracketIndexForSubscribers,
-  maxQuantity,
-  bracketForQuantity,
-  subscriberCapForQuantity,
-  emailCapForQuantity,
-  priceForQuantity,
-  annualPriceForQuantity,
-  monthlyEquivalentUsd,
-  startingPriceLabel,
-  startingPriceUsd,
-  priceLabelAt,
-  cadenceLabel,
-  BILLING_INTERVALS,
-  ANNUAL_MONTHS_FREE,
-  ANNUAL_PRICE_MULTIPLIER,
-  GATED_FEATURES,
-  planAllowsFeature,
-  GEOCODING_MIN_PLAN,
-  planAllowsGeocoding,
-} from './lib/billing/plans';
-export type {
-  PlanKey,
-  GatedFeature,
-  PurchasablePlanKey,
-  BillingInterval,
-  PlanDef,
-  PriceBracket,
-  TierPricing,
-  FeatureMatrixRow,
-  FeatureMatrixGroup,
-} from './lib/billing/plans';
-export {
-  CURRENCY_CODES,
-  SUPPORTED_CURRENCIES,
-  COUNTRY_TO_CURRENCY,
-  isCurrencyCode,
-  currencyForCountry,
-  convertFromUsd,
-  formatCurrency,
-  currencyPriceSymbol,
-} from './lib/billing/currency';
-export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
-
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
-
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
-
-export type {
-  HelpArticle,
-  HelpBlock,
-  HelpCategory,
-  HelpCategoryId,
-  HelpStep,
-  HelpKeyRow,
-  HelpInlineSegment,
-} from './lib/help/help-types';
-export {
-  parseHelpInline,
-  stripHelpInline,
-  blockToPlainText,
-  articleToPlainText,
-  readingMinutes,
-} from './lib/help/help-types';
-
-export {
-  HELP_CATEGORIES,
-  HELP_ARTICLES,
-  POPULAR_ARTICLE_IDS,
-  getHelpArticle,
-  getHelpCategory,
-  articlesInCategory,
-  relatedArticles,
-  categoryNeighbors,
-} from './lib/help/help-content';
-
-export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
-export { searchHelp, highlightTerms } from './lib/help/help-search';
-
-export type { HelpRouteTarget } from './lib/help/help-links';
-export { classifyHelpRoute } from './lib/help/help-links';
-
-export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
 ````
 
 ## File: libs/common/src/lib/billing/plans.ts
@@ -15251,6 +14379,922 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       {
         label: 'Support',
         values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/index.ts
+````typescript
+export type {
+  IAuthKeyPayload,
+  IAuthUser,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  IUserStatsSnapshot,
+  IToken,
+  signInInputType,
+  signUpInputType,
+} from './lib/auth';
+
+export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
+
+export type {
+  INow,
+  AddTagType,
+  AddListType,
+  AddMarketingEmailType,
+  AddTaskType,
+  AddTeamType,
+  AddCampaignType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  SetCampaignSubscriptionType,
+  CarryOverCampaignType,
+  InviteAuthUserType,
+  Verify2FAType,
+  PERSONINHOUSEHOLDTYPE,
+  PersonsType,
+  MarketingEmailType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportPreviousSendType,
+  CreateClickersListResultType,
+  TasksType,
+  ListsType,
+  SettingsType,
+  SettingsEntryType,
+  UpsertSettingsInputType,
+  SortModelType,
+  UpdateHouseholdsType,
+  UpdatePersonsType,
+  UpdateTagType,
+  UpdateListType,
+  UpdateTeamType,
+  UpdateAuthUserType,
+  ProfilePreferencesType,
+  UpdateMarketingEmailType,
+  UpdateTaskType,
+  getAllOptionsType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  QueueExportInputType,
+  LogInstantExportInputType,
+  DataExportRecordType,
+  ImportListItem,
+  AddVolunteerEventType,
+  VolunteerEventsType,
+  UpdateVolunteerEventType,
+  AddVolunteerShiftType,
+  VolunteerShiftsType,
+  UpdateVolunteerShiftType,
+  AddWebFormType,
+  UpdateWebFormType,
+  WebFormsType,
+  CreateFormType,
+  UpdateFormType,
+  FormSubmissionType,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowsType,
+  AddWorkflowType,
+  UpdateWorkflowType,
+  WorkflowStepsType,
+  AddWorkflowStepType,
+  UpdateWorkflowStepType,
+  WorkflowEnrollmentsType,
+  AddEventType,
+  EventType,
+  UpdateEventType,
+  AddTicketTypeType,
+  TicketTypeType,
+  UpdateTicketTypeType,
+  ReorderTicketTypesType,
+  AddRegistrationType,
+  RegistrationType,
+  UpdateRegistrationType,
+  AddConnectionType,
+  AddTurfType,
+  UpdateTurfType,
+  CutTurfsType,
+  AssignTurfType,
+  FieldReportRangeType,
+  LogKnockType,
+} from './lib/models';
+
+export {
+  cloneQueryBuilderNode,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  TASK_STATUSES,
+  TASK_BOARD_STATUSES,
+  TASK_OPEN_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskStatus,
+  isTaskBoardStatus,
+  AddTeamObj,
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  SUBSCRIPTION_STATUSES,
+  CONSENT_SOURCES,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STATUSES,
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  FACT_SOURCES,
+  DNC_CHANNELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
+  InviteAuthUserObj,
+  Verify2FAObj,
+  PersonsObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  TasksObj,
+  ReorderTasksObj,
+  ReorderSubtasksObj,
+  ListsObj,
+  SettingsObj,
+  SettingsEntryObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  UpdateListObj,
+  UpdateTeamObj,
+  UpdateAuthUserObj,
+  NotificationPreferencesObj,
+  ProfilePreferencesObj,
+  UpdateMarketingEmailObj,
+  UpdateTaskObj,
+  sortModelItem,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  ImportListItemObj,
+  dbIdSchema,
+  uuidSchema,
+  addressSchema,
+  idSchema,
+  folderIdSchema,
+  regularFolderIdSchema,
+  nameSchema,
+  descriptionSchema,
+  emailSchema,
+  phoneSchema,
+  notesSchema,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  FormFieldObj,
+  FormTypeEnum,
+  FORM_TYPES,
+  FORM_STATUSES,
+  FORM_TEMPLATES,
+  FORM_STANDARD_CATALOG,
+  FORM_EMAIL_FIELD,
+  normForm,
+  fieldsForTemplate,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  WorkflowRunObj,
+  WorkflowStepConfigObj,
+  WORKFLOW_TRIGGER_TYPES,
+  WORKFLOW_STEP_KINDS,
+  CompanyInputObj,
+  CompanyEnrichmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+  RELATION_TYPES,
+  RELATION_TYPE_LABELS,
+  relationTypeSchema,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  TURF_STATUSES,
+  KNOCK_OUTCOMES,
+  KNOCK_RESPONSES,
+  KNOCK_RESPONSE_LABELS,
+  DOORS_PER_TURF_PRESETS,
+  turfStatusSchema,
+  knockOutcomeSchema,
+  knockResponseSchema,
+  isTurfStatus,
+  isKnockOutcome,
+  CompanionSurveyObj,
+  CompanionPersonResultObj,
+  CompanionDoorOutcomeObj,
+  CompanionClearOutcomeObj,
+  CompanionPersonCreateObj,
+  CompanionOpObj,
+  CompanionResultsObj,
+  UpdateCompanionSettingsObj,
+  AddDeliveryRequestObj,
+  UpdateDeliveryRequestObj,
+  SetDeliveryRequestStatusObj,
+  PlanDeliveriesObj,
+  CommitDeliveriesObj,
+  UpdateDeliveryRouteObj,
+  AssignVolunteerObj,
+  SetDeliveryRouteStatusObj,
+  ReorderStopObj,
+  ReorderStopsObj,
+  StopActionObj,
+  RouteIdObj,
+  MintShareLinkObj,
+  PublicStopActionObj,
+  GetSignStatusObj,
+  DELIVERY_REQUEST_STATUSES,
+  DELIVERY_REQUEST_STATUS_LABELS,
+  DELIVERY_ROUTE_STATUSES,
+  DELIVERY_STOP_STATUSES,
+  DELIVERY_SOURCES,
+  DELIVERY_SKIP_REASONS,
+  DONATION_METHODS,
+  DONATION_METHOD_LABELS,
+  donationMethodSchema,
+  RecordDonationObj,
+  INTERACTION_TYPES,
+  INTERACTION_TYPE_LABELS,
+  interactionTypeSchema,
+  LogInteractionObj,
+  CompanionAccessQueryObj,
+  CompanionVerifyStartObj,
+  CompanionVerifyConfirmObj,
+  COMPANION_LINK_KINDS,
+  COMPANION_VERIFY_CHANNELS,
+  COMPANION_VOLUNTEER_STATUSES,
+  COMPANION_ACCESS_STATES,
+} from './lib/schema';
+
+export type {
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVolunteerStatus,
+  CompanionAccessState,
+  CompanionContact,
+  CompanionAccessPayload,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+} from './lib/schemas/companion-access.schema';
+
+export type {
+  CampaignKind,
+  CampaignStatus,
+  SupportLevel,
+  VotingStatus,
+  FactSource,
+  SubscriptionStatus,
+  ConsentSource,
+} from './lib/schemas/campaigns.schema';
+export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
+export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
+
+export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
+
+export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
+export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
+
+export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
+export type { TaskStatus, TaskBoardStatus, ReorderTasksType, ReorderSubtasksType } from './lib/schemas/tasks.schema';
+export type {
+  WorkflowTriggerType,
+  WorkflowStepKind,
+  WorkflowStepConfigType,
+  WorkflowRunType,
+  WorkflowSendCondition,
+  WorkflowExitCondition,
+} from './lib/schemas/workflows.schema';
+export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
+export type {
+  TurfStatus,
+  KnockOutcome,
+  KnockResponse,
+  CompanionSurveyType,
+  CompanionOpType,
+  CompanionResultsType,
+  CompanionOpAck,
+  CompanionSurveyPrefill,
+  CompanionPersonResult,
+  CompanionPerson,
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionTurfPayload,
+  UpdateCompanionSettingsType,
+} from './lib/schemas/canvassing.schema';
+export type {
+  AddDeliveryRequestType,
+  UpdateDeliveryRequestType,
+  SetDeliveryRequestStatusType,
+  PlanDeliveriesType,
+  CommitDeliveriesType,
+  UpdateDeliveryRouteType,
+  AssignVolunteerType,
+  SetDeliveryRouteStatusType,
+  ReorderStopType,
+  ReorderStopsType,
+  StopActionType,
+  MintShareLinkType,
+  PublicStopActionType,
+  GetSignStatusType,
+  DeliveryRequestStatus,
+  DeliveryRouteStatus,
+  DeliveryStopStatus,
+  DeliverySource,
+  DeliverySkipReason,
+} from './lib/schemas/deliveries.schema';
+
+export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
+export {
+  CROCKFORD_ALPHABET,
+  PUBLIC_ID_LENGTH,
+  encodeCrockford,
+  normalizeCrockford,
+  extractPublicIdFromSlug,
+  buildPersonSlug,
+} from './lib/public-id';
+export { calculateWorkingTimeMs } from './lib/sla';
+
+export {
+  AddNewsletterTemplateObj,
+  NewsletterTemplateObj,
+  UpdateNewsletterTemplateObj,
+} from './lib/schemas/newsletter-templates.schema';
+export type {
+  AddNewsletterTemplateType,
+  NewsletterTemplateType,
+  UpdateNewsletterTemplateType,
+} from './lib/schemas/newsletter-templates.schema';
+
+export {
+  AI_CONTENT_TYPES,
+  AI_REVIEW_STATUSES,
+  AiPreflightVerdictObj,
+  PREFLIGHT_BANDS,
+  PREFLIGHT_BLOCK,
+  PREFLIGHT_GOOD,
+  PREFLIGHT_SEVERITIES,
+  PreflightFindingObj,
+  PreflightResultObj,
+  RunPreflightObj,
+  preflightBand,
+} from './lib/schemas/content-check.schema';
+export type {
+  AiContentType,
+  AiPreflightVerdict,
+  AiReviewStatus,
+  PreflightBand,
+  PreflightFinding,
+  PreflightResult,
+  PreflightSeverity,
+  RunPreflightType,
+} from './lib/schemas/content-check.schema';
+export {
+  buildAiFindings,
+  buildSpamAssassinFinding,
+  computeScore,
+  lintNewsletterContent,
+  preflightHashInput,
+} from './lib/preflight-lint';
+export type { PreflightInput } from './lib/preflight-lint';
+
+export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
+
+export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+
+export {
+  GB,
+  PLANS,
+  PLANS_BY_KEY,
+  PURCHASABLE_PLAN_KEYS,
+  LEGACY_PLAN_ALIASES,
+  FEATURE_MATRIX,
+  getPlanDef,
+  planDisplayName,
+  bracketIndexForSubscribers,
+  maxQuantity,
+  bracketForQuantity,
+  subscriberCapForQuantity,
+  emailCapForQuantity,
+  priceForQuantity,
+  annualPriceForQuantity,
+  monthlyEquivalentUsd,
+  startingPriceLabel,
+  startingPriceUsd,
+  priceLabelAt,
+  cadenceLabel,
+  BILLING_INTERVALS,
+  ANNUAL_MONTHS_FREE,
+  ANNUAL_PRICE_MULTIPLIER,
+  GATED_FEATURES,
+  planAllowsFeature,
+  GEOCODING_MIN_PLAN,
+  planAllowsGeocoding,
+} from './lib/billing/plans';
+export type {
+  PlanKey,
+  GatedFeature,
+  PurchasablePlanKey,
+  BillingInterval,
+  PlanDef,
+  PriceBracket,
+  TierPricing,
+  FeatureMatrixRow,
+  FeatureMatrixGroup,
+} from './lib/billing/plans';
+export {
+  CURRENCY_CODES,
+  SUPPORTED_CURRENCIES,
+  COUNTRY_TO_CURRENCY,
+  isCurrencyCode,
+  currencyForCountry,
+  convertFromUsd,
+  formatCurrency,
+  currencyPriceSymbol,
+} from './lib/billing/currency';
+export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
+
+export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
+
+export type {
+  JSend,
+  JSendSuccessInterface as JSendSuccess,
+  JSendFailInterface as JSendFail,
+  JSendStatus,
+  JSendErrorInterface as JSendError,
+} from './lib/jsend';
+
+export type {
+  HelpArticle,
+  HelpBlock,
+  HelpCategory,
+  HelpCategoryId,
+  HelpStep,
+  HelpKeyRow,
+  HelpInlineSegment,
+} from './lib/help/help-types';
+export {
+  parseHelpInline,
+  stripHelpInline,
+  blockToPlainText,
+  articleToPlainText,
+  readingMinutes,
+} from './lib/help/help-types';
+
+export {
+  HELP_CATEGORIES,
+  HELP_ARTICLES,
+  POPULAR_ARTICLE_IDS,
+  getHelpArticle,
+  getHelpCategory,
+  articlesInCategory,
+  relatedArticles,
+  categoryNeighbors,
+} from './lib/help/help-content';
+
+export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
+export { searchHelp, highlightTerms } from './lib/help/help-search';
+
+export type { HelpRouteTarget } from './lib/help/help-links';
+export { classifyHelpRoute } from './lib/help/help-links';
+
+export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
+````
+
+## File: libs/common/src/lib/help/articles/outreach.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const OUTREACH_ARTICLES: HelpArticle[] = [
+  {
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, resending to non-openers, the compliance footer, and how sending progress is shown.',
+    keywords: [
+      'newsletter',
+      'campaign',
+      'email blast',
+      'send',
+      'schedule',
+      'resend',
+      'template',
+      'saved templates',
+      'save as template',
+      'audience',
+      'unsubscribe',
+      'deliverability',
+      'score',
+    ],
+    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections', 'deliverability'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail:
+              'Start from a template or a blank canvas. Every template card shows a live preview of the design, so you can see what you are picking before you pick it.',
+          },
+          {
+            title: 'Design in the visual editor',
+            detail:
+              'Drag blocks from the Blocks panel onto the canvas, or click one to add it. Rearrange blocks by their drag handle, and use the plus button between blocks to insert one exactly where you want it. What you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'templates', text: 'Save and reuse your own templates' },
+      {
+        kind: 'p',
+        text: 'When a design is worth keeping, click **Save as template** on the Content step and give it a name. It joins the **Your templates** section of the Template step, live preview included, and is shared with everyone in your workspace; selecting it starts the next newsletter from that design. Delete a template from its card when it has outlived its usefulness. Newsletters already created from it keep their content. A workspace can hold up to 50 saved templates.',
+      },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      {
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send now or schedule for later' },
+      {
+        kind: 'p',
+        text: 'Send now, or pick **Schedule for later** with a date and time; a scheduled newsletter goes out within a few minutes of that time. Until then it shows as **Scheduled** on the [Newsletters](/newsletters) list, where **Cancel schedule** moves it back to drafts; opening it also offers **Send now**. If something blocks a scheduled send when its time comes (a failed deliverability check, a sending pause), it returns to drafts and you are notified with the reason. A finished draft can also go out straight from the list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Newsletter or automation?',
+        text: 'Newsletters are calendar-driven: you pick the time, and everyone in the audience gets the same issue. To email each supporter when *they* do something (join, donate, volunteer), use an [Automation](/help/automations) instead.',
+      },
+      { kind: 'h2', id: 'resend', text: 'Resend to non-openers' },
+      {
+        kind: 'p',
+        text: 'A sent newsletter’s page offers **Resend to non-openers**: one follow-up, only to the people who received it but never opened or clicked it, with a new subject line (required; a fresh angle beats a tweak). Wait two to three days after the original so slow readers have had their chance, and know that each newsletter can be resent only once. Anyone who engages with the original before the resend goes out is dropped automatically. One caveat: Apple Mail marks many emails as opened on its own, so some quiet readers look like openers and will not receive the resend.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'preflight', text: 'The deliverability check' },
+      {
+        kind: 'p',
+        text: 'The **Review & send** step scores your email **0–100** for deliverability. **80 or higher** means you are good to go; **50–79** lists items worth fixing before you send; **below 50, sending is disabled** until the flagged items are fixed. Every finding shows the points it costs and how to fix it. A quick check runs as you edit; **Run full check** (also next to *Send test email* on the Content step) adds a spam-filter score and an AI review of the copy. See [Get your newsletters delivered](/help/deliverability) for what the checks look for and why.',
+      },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+      },
+      {
+        kind: 'p',
+        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
+      },
+    ],
+  },
+  {
+    id: 'sending-protections',
+    category: 'outreach',
+    title: 'Sending protections and verification',
+    summary:
+      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+    keywords: [
+      'verify domain',
+      'verify phone',
+      'sms code',
+      'sending paused',
+      'suspended',
+      'bounce rate',
+      'spam complaint',
+      'warm-up',
+      'daily limit',
+      'deliverability',
+      'anti-spam',
+    ],
+    related: ['newsletters', 'settings', 'forms', 'deliverability'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
+      },
+      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Verify your sending domain',
+            detail:
+              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+          },
+          {
+            title: 'Verify a mobile number (Free plan)',
+            detail:
+              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
+      {
+        kind: 'p',
+        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
+      },
+      { kind: 'h2', id: 'monthly-allowance', text: 'The monthly email allowance' },
+      {
+        kind: 'p',
+        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. Emails sent by [automations](/help/automations) count toward the same allowance and limits. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
+      },
+      { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
+      {
+        kind: 'p',
+        text: 'Every send must also clear the **deliverability check**: a 0–100 score built from content best practices, an optional spam-filter score, and an AI review that catches scam-like patterns and content outside the acceptable-use policy. pplCRM sending is for community, political and nonprofit updates — fundraising appeals, auctions and event promotion included; unrelated commercial product blasts are not. Scores **below 50 block the send** on every plan; 50–79 sends with a warning. The AI review runs on every check — the ones you run while drafting and the automatic check on every send. It reads only the newsletter content itself and is processed by Anthropic (listed with our other service providers in the privacy policy). See [Get your newsletters delivered](/help/deliverability).',
+      },
+      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
+      {
+        kind: 'list',
+        items: [
+          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
+          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'How to never hit these',
+        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
+      },
+      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
+      {
+        kind: 'p',
+        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
+      },
+    ],
+  },
+  {
+    id: 'deliverability',
+    category: 'outreach',
+    title: 'Get your newsletters delivered',
+    summary:
+      'What actually decides inbox versus spam — sender reputation, list quality, engagement — and the content habits the deliverability check scores.',
+    keywords: [
+      'spam',
+      'junk',
+      'inbox',
+      'deliverability',
+      'images',
+      'subject line',
+      'dmarc',
+      'postmaster',
+      'score',
+      'preflight',
+      'open rate',
+    ],
+    related: ['newsletters', 'sending-protections', 'forms', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Whether an email lands in the inbox is decided mostly by **your sending reputation and how recipients engage** — opens, clicks, replies, deletes and spam reports — not by magic keywords. The content checks below matter, but the foundation is sending mail people asked for, from a domain that vouches for you.',
+      },
+      { kind: 'h2', id: 'foundation', text: 'The foundation: identity and reputation' },
+      {
+        kind: 'list',
+        items: [
+          '**Send from your verified domain.** pplCRM requires this before any broadcast — it is what lets Gmail and Outlook trust the mail is really yours.',
+          '**Add a DMARC record.** It is optional for verification but Gmail, Yahoo and Microsoft require it of bulk senders; even a monitor-only policy (`p=none`) counts. Your DNS checklist under **Workspace → Domains** shows the record.',
+          '**Keep your identity steady.** Same from-name and address every send, a regular cadence, and no sudden jumps in volume.',
+          '**Watch your reputation where the inboxes do.** Enroll your domain in [Google Postmaster Tools](https://postmaster.google.com) — keep the spam-rate graph under 0.1% and never past 0.3%.',
+        ],
+      },
+      { kind: 'h2', id: 'list-quality', text: 'List quality beats everything' },
+      {
+        kind: 'list',
+        items: [
+          'Only email people who **opted in** through your [forms](/help/forms), events or sign-ups. Purchased and scraped lists bounce hard, get reported, and trip the automatic pauses.',
+          'Unsubscribes and bounces are honored automatically — never re-import around them.',
+          'Consider **double opt-in** on public forms, and rest people who have not opened anything in months; mailing the unengaged drags down delivery for everyone else on your list.',
+        ],
+      },
+      { kind: 'h2', id: 'content', text: 'Content habits the check scores' },
+      {
+        kind: 'list',
+        items: [
+          '**Subject:** sentence case, under ~70 characters, no stacked exclamation marks or currency symbols, and never a fake “Re:”.',
+          '**Body:** keep the HTML under ~100KB (Gmail clips beyond that and hides your footer), and keep a healthy balance of real text to images. A plain-text version is generated automatically for every send.',
+          '**Images:** host them on regular `https://` URLs, keep each roughly 600px wide and comfortably under 200KB, and give every image alt text — that is what people see while images load or stay blocked.',
+          '**Links:** link real destinations on domains you control — no URL shorteners, no bare IP addresses, and make the visible text match where the link goes.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test before the big send',
+        text: 'Use **Check deliverability** and **Send test email** on the Content step, and read the test in Gmail and Outlook. Small copy fixes before a send are worth more than any amount of analysis after it.',
+      },
+      { kind: 'h2', id: 'the-check', text: 'How the deliverability check scores you' },
+      {
+        kind: 'p',
+        text: 'The check starts at 100 and subtracts points per finding, each shown with its cost and fix. **80+** is ready to send, **50–79** is worth fixing first, and **below 50 sending is disabled**. The full check adds a spam-filter (SpamAssassin) score and an AI read of the copy that flags deceptive patterns — manufactured urgency, misleading claims, look-alike links — and content outside the acceptable-use policy. Fundraising appeals, donation asks, auctions and event promotion are all normal newsletter content here; unrelated commercial product blasts and anything phishing-shaped are not.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'A good score is not a delivery guarantee',
+        text: 'The score covers what can be checked before sending. Reputation and engagement — built over many sends to a clean list — remain the larger factors, which is why the [sending protections](/help/sending-protections) watch bounces and complaints after every send.',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
+          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**. Assigning a conversation to a teammate notifies them in-app and by email (each tunable in their personal notification settings); assigning to yourself stays silent.',
+          'Watch your own queue. The **Inbox** entry in the sidebar carries a badge with the open conversations assigned to you — the same count as the **Mine** triage folder.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
+      },
+    ],
+  },
+  {
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
+    summary:
+      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went. For one update that goes to everyone at a time you pick, use a [newsletter](/help/newsletters) instead; automations are for per-person journeys.',
+      },
+      { kind: 'h2', id: 'recipes', text: 'Start from a recipe' },
+      {
+        kind: 'p',
+        text: 'New automation offers four ready-made recipes with starter copy: **Welcome new supporters** (three emails over two weeks, ending early if they donate), **Thank every donor** (a same-day thank-you plus a personal-note task), **Follow up after a shift** (thanks, then the next invitation), and **Re-engage quiet supporters** (a gentle win-back where the second email only goes to people who didn’t open the first, and any engagement ends the sequence). A recipe lands as a draft; review every email, adjust the waits, then activate. Or start from scratch with a bare trigger.',
+      },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching its SLA (the person the task is linked to enrolls), a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Email conditions**: from the second email on, a Send email step can be gated on what the person did with the previous email in the sequence, for example **Only if they didn’t open the previous email**. Put a Wait before a conditioned email so people have time to engage; a skipped step shows as a neutral **Skipped** with the reason.',
+          '**End early when** sets sequence goals on the right rail: end the sequence the moment they donate, open any email in it, or click any email in it. Someone who converts stops getting the rest of the asks.',
+          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Clicks beat opens',
+        text: 'Apple Mail opens many emails automatically for privacy, so "opened" over-counts and "didn’t open" reaches fewer people than truly went quiet. When a click is a realistic ask, prefer click-based conditions and goals; they are the reliable signal.',
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a recipe, or a trigger from the cards. That’s the event that enrolls people.',
+          },
+          {
+            title: 'Build the sequence',
+            detail:
+              'Use the + between steps to add a wait, an email, a tag, a task, or a team notification. Drag a step by its handle to reorder it; steps run top to bottom.',
+          },
+          {
+            title: 'Name it and set it Active',
+            detail:
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'consent', text: 'Consent and sending limits' },
+      {
+        kind: 'p',
+        text: 'Automation emails follow the same rules as newsletters. People who unsubscribed, bounced, or are marked do-not-contact are skipped automatically (the run shows a neutral **Skipped** with the reason, not a failure). Every automation email carries an unsubscribe link and counts toward your plan’s monthly email allowance and sending limits; if your workspace’s sending is paused, the step waits and retries instead of losing the email.',
+      },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'p',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
       },
     ],
   },

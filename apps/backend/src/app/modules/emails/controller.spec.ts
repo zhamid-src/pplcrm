@@ -133,8 +133,94 @@ describe('EmailsController Integration', () => {
     await db.deleteFrom('email_headers').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('emails').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('notifications').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('profiles').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
+  });
+
+  async function seedAssignee(preferences?: object): Promise<string> {
+    const assigneeId = rand();
+    await db
+      .insertInto('authusers')
+      .values({
+        id: assigneeId,
+        tenant_id: tenantId,
+        email: `assignee-${assigneeId}@example.com`,
+        password: 'password',
+        first_name: 'Vol',
+        last_name: 'Unteer',
+        verified: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    if (preferences) {
+      await db
+        .insertInto('profiles')
+        .values({
+          id: rand(),
+          tenant_id: tenantId,
+          auth_id: assigneeId,
+          preferences: JSON.stringify(preferences),
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+    return assigneeId;
+  }
+
+  it('assigning an email notifies the assignee in-app and by email', async () => {
+    const assigneeId = await seedAssignee();
+    const sendSpy = vi.spyOn((controller as any).mailService, 'sendMail').mockResolvedValue(undefined);
+
+    await controller.assignEmail(tenantId, emailId, assigneeId, userId, 'Vol Unteer');
+
+    const bell = await db
+      .selectFrom('notifications')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', assigneeId)
+      .execute();
+    expect(bell).toHaveLength(1);
+    expect(bell[0]?.message).toContain('Test Email');
+    expect(bell[0]?.link).toBe(`/inbox?email=${emailId}`);
+
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    const mail = sendSpy.mock.calls[0][0] as { to: string; subject: string };
+    expect(mail.to).toBe(`assignee-${assigneeId}@example.com`);
+    expect(mail.subject).toContain('Test Email');
+    sendSpy.mockRestore();
+  });
+
+  it('stays silent on self-assignment and honors turned-off preferences', async () => {
+    const sendSpy = vi.spyOn((controller as any).mailService, 'sendMail').mockResolvedValue(undefined);
+
+    // Self-assignment: no bell, no email.
+    await controller.assignEmail(tenantId, emailId, userId, userId, 'Test User');
+    const selfBell = await db
+      .selectFrom('notifications')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .execute();
+    expect(selfBell).toHaveLength(0);
+    expect(sendSpy).not.toHaveBeenCalled();
+
+    // Email preference off, in-app on: bell only.
+    const assigneeId = await seedAssignee({ notifications: { email_assigned: false } });
+    await controller.assignEmail(tenantId, emailId, assigneeId, userId, 'Vol Unteer');
+    const bell = await db
+      .selectFrom('notifications')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', assigneeId)
+      .execute();
+    expect(bell).toHaveLength(1);
+    expect(sendSpy).not.toHaveBeenCalled();
+    sendSpy.mockRestore();
   });
 
   it('should successfully toggle email read status', async () => {
