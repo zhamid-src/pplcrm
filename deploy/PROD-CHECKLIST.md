@@ -1,5 +1,11 @@
 # pplCRM Production Go-Live Checklist
 
+> **STATUS 2026-07-21: initial bring-up is COMPLETE.** Everything below was executed and the stack is
+> live in test/pipeline mode (topology table in [`GO-LIVE-CHECKLIST.md`](./GO-LIVE-CHECKLIST.md) §0).
+> Unchecked boxes below are historical — they were done but not ticked during the deploy sprint. All
+> _remaining_ work (test→live keys, provider approvals, data wipe, scaling) is tracked in
+> `GO-LIVE-CHECKLIST.md`; work from that file, not this one.
+
 Target stack: **Azure** (Container Apps API + Postgres + Blob, Canada Central) + **Cloudflare** (DNS, TLS,
 Pages for the marketing site + `app.`, Workers for `go.` and `*.pplforms.com`). No edge VM; `api.pplcrm.com`
 (the `pplcrm-api` Container App) is the only Azure compute.
