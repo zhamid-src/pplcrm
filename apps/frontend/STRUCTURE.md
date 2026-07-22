@@ -4159,94 +4159,6 @@ export default defineConfig(() => ({
 }));
 ```
 
-## File: apps/frontend/archive/old-tailwind.config.ts
-```typescript
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import daisyui from 'daisyui';
-import { createGlobPatternsForDependencies } from '@nx/angular/tailwind';
-import themes from 'daisyui/src/theming/themes/index.js'; // 👈 critical: add `.js`
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-export default {
-  content: [join(__dirname, 'src/**/!(*.stories|*.spec).{html,ts}'), ...createGlobPatternsForDependencies(__dirname)],
-  plugins: [daisyui],
-  daisyui: {
-    themes: [
-      {
-        light: {
-          ...themes.light,
-          'primary-content': '#ffffff',
-          primary: '#0ea5e9',
-          secondary: '#14e8a6',
-          accent: '#0c506e',
-          neutral: '#cbd5e1',
-          'neutral-content': '#1f2937',
-          'base-100': '#ffffff',
-          'base-300': '#f0f0f0',
-          info: '#38bdf8',
-          success: '#2dd4bf',
-          warning: '#e5c963',
-          error: '#f37373',
-        },
-      },
-      {
-        dark: {
-          ...themes.dark,
-          primary: '#00b5ff',
-          secondary: '#00dfff',
-          accent: '#0c506e',
-          neutral: '#040404',
-          'base-100': '#12232E',
-          'base-300': '#334f61',
-          info: '#38bdf8',
-          success: '#2dd4bf',
-          warning: '#e5c963',
-          error: '#ef4444',
-        },
-      },
-    ],
-  },
-  theme: {
-    extend: {
-      animation: {
-        down: 'down 0.2s ease-in-out',
-        up: 'up 0.2s ease-in-out',
-        right: 'right 0.2s ease-in-out',
-        flash: 'flash 0.3s ease-in-out',
-        drop: 'drop 0.4s ease-in-out',
-      },
-      keyframes: {
-        down: {
-          '0%': { transform: 'translateY(-100%)' },
-          '100%': { transform: 'translateY(0%)' },
-        },
-        up: {
-          '0%': { transform: 'translateY(100%)' },
-          '100%': { transform: 'translateY(0)' },
-        },
-        right: {
-          '0%': { transform: 'translateX(-100%)' },
-          '100%': { transform: 'translateX(0)' },
-        },
-        flash: {
-          '0%': { backgroundColor: '#afcea8' },
-          '25%': { backgroundColor: '#bcd6b7' },
-          '50%': { backgroundColor: '#c9dec5' },
-          '75%': { backgroundColor: '#d7e6d4' },
-          '100%': { backgroundColor: '#f2f7f1' },
-        },
-        drop: {
-          '0%': { transform: 'translateY(-50%)', opacity: 0 },
-          '100%': { transform: 'translateY(0)', opacity: 1 },
-        },
-      },
-    },
-  },
-};
-```
-
 ## File: apps/frontend/src/__mocks__/environment.mock.ts
 ```typescript
 export const environment = {
@@ -5949,38 +5861,6 @@ export class VerifySenderEmailPage implements OnInit {
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/auth/auth-guard.ts
-```typescript
-import { inject } from '@angular/core';
-import type { CanActivateFn } from '@angular/router';
-import { Router } from '@angular/router';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-export const authGuard: CanActivateFn = () => {
-  const auth = inject(AuthService);
-  const router = inject(Router);
-  const user = auth.getUser();
-
-  if (!user) return router.navigateByUrl('/signin');
-
-  if (!user.email_verified) {
-    return router.navigateByUrl(`/signin?verificationPending=true&email=${encodeURIComponent(user.email)}`);
-  }
-
-  // /cancel-deletion and /resume-account are public, so these won't loop
-  if (user.tenant_deletion_scheduled_at) {
-    return router.navigateByUrl('/cancel-deletion');
-  }
-
-  if (user.tenant_paused_at) {
-    return router.navigateByUrl('/resume-account');
-  }
-
-  return true;
-};
 ```
 
 ## File: apps/frontend/src/app/auth/auth-layout.ts
@@ -11541,60 +11421,6 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/duplicates/duplicate-selection.ts
-```typescript
-import { Component, inject, OnInit, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-interface DuplicateCounts {
-  people: number;
-  households: number;
-  companies: number;
-}
-
-@Component({
-  selector: 'pc-duplicate-selection',
-  imports: [RouterLink, Icon],
-  templateUrl: './duplicate-selection.html',
-  styles: [
-    `
-      :host {
-        display: block;
-        min-height: 100%;
-      }
-    `,
-  ],
-})
-export class DuplicateSelectionComponent implements OnInit {
-  private personsSvc = inject(PersonsService);
-
-  private readonly _loading = createLoadingGate();
-  public readonly isLoading = this._loading.visible;
-  public counts = signal<DuplicateCounts>({ people: 0, households: 0, companies: 0 });
-
-  ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    const end = this._loading.begin();
-
-    try {
-      const countsRes = await this.personsSvc.getDuplicateCounts();
-      this.counts.set(countsRes);
-    } catch (error) {
-      console.error('Failed to load duplicate counts', error);
-      // In case of error, we default to 0 (already set), but you could also show an error badge state
-    } finally {
-      end();
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-companies.html
 ```html
 <pc-duplicate-page-shell
@@ -12402,178 +12228,6 @@ export class MergeSummaryComponent {
   sourceName = input<string>('');
   mergeDescription = input.required<string>();
   merge = output<void>();
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/services/store/email-cache.store.ts
-```typescript
-import { computed, inject, Service } from '@angular/core';
-import { injectQuery, QueryClient } from '@tanstack/angular-query-experimental';
-
-import { EmailsService } from '../emails-service';
-import { type EmailId, EmailStateStore } from './email-state.store';
-
-@Service()
-export class EmailCacheStore {
-  private readonly svc = inject(EmailsService);
-  private readonly state = inject(EmailStateStore);
-  private readonly queryClient = inject(QueryClient);
-
-  private readonly emailQuery = injectQuery(() => ({
-    queryKey: ['email', this.state.currentSelectedEmailId()],
-    queryFn: async () => {
-      const id = this.state.currentSelectedEmailId();
-      if (!id) return { body: '', header: null };
-      const res = (await this.svc.getEmailWithHeaders(id)) as unknown as {
-        body?: { body_html?: string } | null;
-        header?: any;
-      };
-      return {
-        body: res?.body?.body_html ?? '',
-        header: res?.header ?? null,
-      };
-    },
-    enabled: !!this.state.currentSelectedEmailId(),
-    staleTime: 1000 * 60 * 5, // 5 minutes cache TTL
-  }));
-
-  private readonly activitiesQuery = injectQuery(() => ({
-    queryKey: ['email-activities', this.state.currentSelectedEmailId()],
-    queryFn: async () => {
-      const id = this.state.currentSelectedEmailId();
-      if (!id) return [];
-      const rows = await this.svc.getActivities(id);
-      return rows ?? [];
-    },
-    enabled: !!this.state.currentSelectedEmailId(),
-    staleTime: 1000 * 60 * 5,
-  }));
-
-  public getEmailBodyById = (emailId: EmailId | null) =>
-    computed(() => {
-      const key = emailId ? String(emailId) : null;
-      if (!key) return undefined;
-
-      if (key === this.state.currentSelectedEmailId()) {
-        return this.emailQuery.data()?.body;
-      }
-
-      const cached = this.queryClient.getQueryData<{ body: string; header: any }>(['email', key]);
-      return cached?.body;
-    });
-
-  public getEmailHeaderById = (emailId: EmailId | null) =>
-    computed(() => {
-      const key = emailId ? String(emailId) : null;
-      if (!key) return undefined;
-
-      if (key === this.state.currentSelectedEmailId()) {
-        return this.emailQuery.data()?.header;
-      }
-
-      const cached = this.queryClient.getQueryData<{ body: string; header: any }>(['email', key]);
-      return cached?.header;
-    });
-
-  public getEmailActivitiesById = (emailId: EmailId | null) =>
-    computed(() => {
-      const key = emailId ? String(emailId) : null;
-      if (!key) return undefined;
-
-      if (key === this.state.currentSelectedEmailId()) {
-        return this.activitiesQuery.data();
-      }
-
-      return this.queryClient.getQueryData<any[]>(['email-activities', key]);
-    });
-
-  public appendCommentToHeader(emailId: EmailId, createdComment: any): void {
-    const key = String(emailId);
-    this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {
-      if (!old) return old;
-      const existingHeader = old.header;
-      const nextHeader = existingHeader
-        ? { ...existingHeader, comments: [...(existingHeader.comments ?? []), createdComment] }
-        : { comments: [createdComment] };
-      return { ...old, header: nextHeader };
-    });
-  }
-
-  public async loadEmailBody(emailId: EmailId): Promise<string> {
-    const key = String(emailId);
-    const data = await this.queryClient.fetchQuery({
-      queryKey: ['email', key],
-      queryFn: async () => {
-        const res = (await this.svc.getEmailWithHeaders(key)) as unknown as {
-          body?: { body_html?: string } | null;
-          header?: any;
-        };
-        return {
-          body: res?.body?.body_html ?? '',
-          header: res?.header ?? null,
-        };
-      },
-      staleTime: 1000 * 60 * 5,
-    });
-    return data.body;
-  }
-
-  public async loadEmailWithHeaders(emailId: EmailId): Promise<{ body: string; header: any }> {
-    const key = String(emailId);
-    return this.queryClient.fetchQuery({
-      queryKey: ['email', key],
-      queryFn: async () => {
-        const res = (await this.svc.getEmailWithHeaders(key)) as unknown as {
-          body?: { body_html?: string } | null;
-          header?: any;
-        };
-        return {
-          body: res?.body?.body_html ?? '',
-          header: res?.header ?? null,
-        };
-      },
-      staleTime: 1000 * 60 * 5,
-    });
-  }
-
-  public async loadEmailActivities(emailId: EmailId): Promise<any[]> {
-    const key = String(emailId);
-    return this.queryClient.fetchQuery({
-      queryKey: ['email-activities', key],
-      queryFn: async () => {
-        const rows = await this.svc.getActivities(key);
-        return rows ?? [];
-      },
-      staleTime: 1000 * 60 * 5,
-    });
-  }
-
-  public removeCommentFromHeader(emailId: EmailId, commentId: string | number): void {
-    const key = String(emailId);
-    this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {
-      if (!old) return old;
-      const existingHeader = old.header;
-      if (!existingHeader) return old;
-      const nextHeader = {
-        ...existingHeader,
-        comments: ((existingHeader as any).comments ?? []).filter((c: any) => String(c.id) !== String(commentId)),
-      };
-      return { ...old, header: nextHeader };
-    });
-  }
-
-  public refreshEmailHeader(emailId: EmailId): void {
-    const key = String(emailId);
-    void this.queryClient.invalidateQueries({ queryKey: ['email', key] });
-  }
-
-  public replaceHeader(emailId: EmailId, header: any): void {
-    const key = String(emailId);
-    this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {
-      if (!old) return { body: '', header };
-      return { ...old, header };
-    });
-  }
 }
 ```
 
@@ -29989,6 +29643,12 @@ const NOTIF_ROWS: NotifRow[] = [
     inAppKey: 'person_assigned_in_app',
   },
   {
+    label: 'Email assigned',
+    helper: 'When an inbox conversation is assigned to you',
+    emailKey: 'email_assigned',
+    inAppKey: 'email_assigned_in_app',
+  },
+  {
     label: 'Export ready',
     helper: 'Download link when a CSV export finishes',
     emailKey: 'export_ready',
@@ -30106,6 +29766,8 @@ export class PersonalSettingsDialog {
         task_due_in_app: p['task_due_in_app'] ?? true,
         person_assigned: p['person_assigned'] ?? true,
         person_assigned_in_app: p['person_assigned_in_app'] ?? true,
+        email_assigned: p['email_assigned'] ?? true,
+        email_assigned_in_app: p['email_assigned_in_app'] ?? true,
         export_ready: p['export_ready'] ?? true,
         export_ready_in_app: p['export_ready_in_app'] ?? true,
         import_summary: p['import_summary'] ?? true,
@@ -33657,80 +33319,6 @@ export class TaskAddComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/services/teams-service.ts
-```typescript
-import { Service } from '@angular/core';
-import {
-  AddTeamType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateTeamType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterOutputs } from '../../../services/api/trpc-types';
-
-export type TeamListItem = RouterOutputs['teams']['getAll']['rows'][number];
-export type TeamDetail = RouterOutputs['teams']['getById'];
-export type TeamAssignmentInfo = RouterOutputs['teams']['getForVolunteer'][number];
-
-@Service()
-export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
-  protected override readonly endpointName = 'teams';
-
-  public add(row: AddTeamType): Promise<TeamDetail> {
-    return this.api.teams.add.mutate(row);
-  }
-
-  public addMany(_rows: AddTeamType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.teams.getAll
-      .query({ startRow: 0, endRow: 1 })
-      .then((res: RouterOutputs['teams']['getAll']) => res.count ?? 0);
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public getAll(options?: getAllOptionsType): Promise<RouterOutputs['teams']['getAll']> {
-    return this.api.teams.getAll.query(options, { signal: this.ac.signal });
-  }
-
-  public getTeamsForVolunteer(personId: string): Promise<RouterOutputs['teams']['getForVolunteer']> {
-    return this.api.teams.getForVolunteer.query(personId, { signal: this.ac.signal });
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(id: string): Promise<TeamDetail> {
-    return this.api.teams.getById.query(id);
-  }
-
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-
-  public update(id: string, data: UpdateTeamType): Promise<TeamDetail> {
-    return this.api.teams.update.mutate({ id, data });
-  }
-
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.reject(new Error('Team export is not available'));
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
 ```html
 @if (error() && !detail() && !isNew()) {
@@ -35118,6 +34706,132 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
     </button>
   </div>
 </pc-modal-shell>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/invite-user-dialog.ts
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, viewChild } from '@angular/core';
+import { email, form, required } from '@angular/forms/signals';
+import { planDisplayName } from '@common';
+
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { UserAdminService } from '../services/useradmin-service';
+
+export interface SeatUsage {
+  plan: string;
+  seatLimit: number;
+  seatsUsed: number;
+}
+
+const DEFAULT_ROLE = 'user';
+
+/**
+ * "Invite a user" dialog — the only way to add a staff login. Collects email, first and last
+ * name, and a role, narrates seat usage honestly (an invitation holds a seat immediately), and
+ * sends the invitation email on submit.
+ */
+@Component({
+  selector: 'pc-invite-user-dialog',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon, PcInput, PcSelect, ModalShell],
+  templateUrl: './invite-user-dialog.html',
+})
+export class InviteUserDialog {
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly settings = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+
+  private readonly dlgRef = viewChild.required<ModalShell>('dlg');
+
+  public readonly seatUsage = input<SeatUsage | null>(null);
+  public readonly saved = output<void>();
+
+  protected readonly submitting = signal(false);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
+
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: DEFAULT_ROLE,
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    required(p.last_name);
+  });
+
+  protected readonly seatsRemaining = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
+  });
+
+  protected readonly planLabel = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? planDisplayName(usage.plan) : '';
+  });
+
+  public open(): void {
+    this.payload.set({ email: '', first_name: '', last_name: '', role: DEFAULT_ROLE });
+    this.form().reset();
+    void this.prefillDefaultRole();
+    this.dlgRef().show();
+  }
+
+  public close(): void {
+    this.dlgRef().close();
+  }
+
+  protected async submit(event: Event): Promise<void> {
+    event.preventDefault();
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    this.submitting.set(true);
+    try {
+      const raw = this.payload();
+      await this.users.add({
+        email: raw.email.trim(),
+        first_name: raw.first_name.trim(),
+        last_name: raw.last_name.trim(),
+        role: raw.role || null,
+      });
+      this.alerts.showSuccess(`Invitation sent to ${raw.email.trim()}`);
+      this.saved.emit();
+      this.close();
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'Unable to send the invitation';
+      this.alerts.showError(message);
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  /** Prefill the role with the tenant's configured default invite role (best-effort). */
+  private async prefillDefaultRole(): Promise<void> {
+    try {
+      await this.settings.load();
+      const defaultRole = this.settings.getValue<string>('access.default_role');
+      if (defaultRole) {
+        this.payload.update((p) => ({ ...p, role: defaultRole }));
+      }
+    } catch {
+      // Ignore — keep the built-in default role.
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/users/ui/user-view.html
@@ -37703,72 +37417,6 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
-}
-```
-
-## File: apps/frontend/src/app/services/api/volunteer-service.ts
-```typescript
-import { Service } from '@angular/core';
-import { TRPCService } from './trpc-service';
-
-@Service()
-export class VolunteerService extends TRPCService<'volunteer_events'> {
-  public getAll(options?: any) {
-    return this.api.volunteer.getAll.query(options);
-  }
-
-  public getById(id: string) {
-    return this.api.volunteer.getById.query(id);
-  }
-
-  public add(row: any) {
-    return this.api.volunteer.add.mutate(row);
-  }
-
-  public update(id: string, data: any) {
-    return this.api.volunteer.update.mutate({ id, data });
-  }
-
-  public delete(id: string) {
-    return this.api.volunteer.delete.mutate(id);
-  }
-
-  public getShiftsForEvent(eventId: string) {
-    return this.api.volunteer.getShiftsForEvent.query(eventId);
-  }
-
-  public signupVolunteer(payload: {
-    event_id: string;
-    person_id: string;
-    status?: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
-    hours_worked?: number | null;
-    notes?: string | null;
-  }) {
-    return this.api.volunteer.signupVolunteer.mutate(payload);
-  }
-
-  public updateShift(
-    id: string,
-    data: {
-      status?: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
-      hours_worked?: number | null;
-      notes?: string | null;
-    },
-  ) {
-    return this.api.volunteer.updateShift.mutate({ id, data });
-  }
-
-  public deleteShift(id: string) {
-    return this.api.volunteer.deleteShift.mutate(id);
-  }
-
-  public getHistoryForPerson(personId: string) {
-    return this.api.volunteer.getHistoryForPerson.query(personId);
-  }
-
-  public getVolunteerStats(personId: string) {
-    return this.api.volunteer.getVolunteerStats.query(personId);
-  }
 }
 ```
 
@@ -43638,13 +43286,6 @@ export const dashboardRoutes: Routes = [
 ];
 ```
 
-## File: apps/frontend/src/app/environment-token.ts
-```typescript
-import { InjectionToken } from '@angular/core';
-import { environment } from '../environments/environment';
-export const ENVIRONMENT = new InjectionToken<typeof environment>('ENVIRONMENT', { factory: () => environment });
-```
-
 ## File: apps/frontend/src/assets/.gitkeep
 ```
 
@@ -43667,26 +43308,6 @@ declare module '*.svg?raw' {
   const content: string;
   export default content;
 }
-```
-
-## File: apps/frontend/src/test-setup.ts
-```typescript
-import '@angular/compiler';
-import '@angular/localize/init';
-import '@analogjs/vite-plugin-angular/setup-vitest';
-
-import { vi } from 'vitest';
-(globalThis as any).jest = vi;
-
-import { getTestBed } from '@angular/core/testing';
-import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
-
-getTestBed().initTestEnvironment(BrowserDynamicTestingModule, platformBrowserDynamicTesting());
-
-(globalThis as any).fetch = vi.fn().mockResolvedValue({
-  ok: true,
-  text: () => Promise.resolve('<svg></svg>'),
-});
 ```
 
 ## File: apps/frontend/eslint.config.cjs
@@ -43731,38 +43352,6 @@ module.exports = [
       },
     })),
 ];
-```
-
-## File: apps/frontend/jest.config.ts
-```typescript
-import type { Config } from 'jest';
-
-const config: Config = {
-  preset: 'jest-preset-angular',
-  setupFilesAfterEnv: ['<rootDir>/src/test-setup.ts'],
-  transform: {
-    '^.+\\.(ts|mjs|js)$': ['jest-preset-angular', { tsconfig: '<rootDir>/tsconfig.spec.json' }],
-  },
-  moduleNameMapper: {
-    '^common/(.*)$': '<rootDir>/../../common/$1',
-    '^@uxcommon/(.*)$': '<rootDir>/src/app/uxcommon/$1',
-    '^@icons/(.*)$': '<rootDir>/src/app/uxcommon/components/icons/$1',
-    '^@experiences/(.*)$': '<rootDir>/src/app/experiences/$1',
-    '^@common$': '<rootDir>/../../common/src/index.ts',
-    '^apps/frontend/(.*)$': '<rootDir>/$1',
-    '^apps/frontend/src/environments/environment$': '<rootDir>/src/__mocks__/environment.mock.ts',
-    '^apps/frontend/src/environments/environment\\.prod$': '<rootDir>/src/__mocks__/environment.prod.mock.ts',
-    '.*environments/environment$': '<rootDir>/src/__mocks__/environment.mock.ts',
-    '.*environments/environment\\.prod$': '<rootDir>/src/__mocks__/environment.prod.mock.ts',
-    '\\.(html)$': '<rootDir>/src/__mocks__/html.mock.ts',
-    '\\.svg\\?raw$': '<rootDir>/src/__mocks__/svg.mock.ts',
-  },
-  moduleFileExtensions: ['ts', 'html', 'js', 'json', 'mjs'],
-  testMatch: ['<rootDir>/src/**/*.spec.ts'],
-  coverageDirectory: '../../coverage/apps/frontend',
-};
-
-export default config;
 ```
 
 ## File: apps/frontend/postcss.config.cjs
@@ -44669,6 +44258,292 @@ export class BrowserFrame {
 }
 ```
 
+## File: apps/website/src/app/ui/constellation.ts
+```typescript
+import { afterNextRender, Component, DestroyRef, ElementRef, inject, input, viewChild } from '@angular/core';
+
+/* The marketing site is light-only and this canvas sits on the fixed navy
+   band, so the palette is literal hex mirroring the shared theme tokens
+   (primary #3498db, secondary #22a6b3 in libs/uxcommon themes.css) plus
+   harmonious datapoint hues around them. */
+const PRIMARY = '#3498db';
+const SECONDARY = '#22a6b3';
+const PALETTE = ['#3498db', '#22a6b3', '#5b6fd6', '#27ae8f', '#4bb8e8', '#2f66c9', '#54cdc4'] as const;
+
+/** Small satellite dot orbiting a person-node (their "datapoints"). */
+interface MiniDot {
+  readonly ang: number;
+  readonly dist: number;
+  readonly r: number;
+  readonly color: string;
+  readonly phase: number;
+  readonly wob: number;
+}
+
+/** One drifting person-node in the constellation. */
+interface NetNode {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  boost: number;
+  readonly r: number;
+  readonly color: string;
+  readonly phase: number;
+  readonly minis: readonly MiniDot[];
+}
+
+function rgba(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+function clamp(v: number, a: number, b: number): number {
+  return Math.max(a, Math.min(b, v));
+}
+
+/**
+ * The people-network constellation: drifting person-dots, each with its own
+ * cluster of datapoints, linked by proximity threads that brighten near the
+ * pointer. Canvas-based and browser-only (started in afterNextRender, so the
+ * prerender emits an empty canvas). Honors prefers-reduced-motion by drawing
+ * a single static frame. Size it from the call site; the host fills its box.
+ */
+@Component({
+  selector: 'pc-constellation',
+  template: `<canvas #canvas class="block h-full w-full"></canvas>`,
+  host: { class: 'block' },
+})
+export class Constellation {
+  /** Number of person-dots; 0 derives it from the canvas area. */
+  public readonly density = input<number>(0);
+  /** Playback speed multiplier. */
+  public readonly speed = input<number>(1);
+
+  private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
+  private readonly hostRef = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  private ctx: CanvasRenderingContext2D | null = null;
+  private w = 0;
+  private h = 0;
+  private nodes: NetNode[] = [];
+  private readonly mouse = { x: -1e4, y: -1e4, active: false };
+  private visible = true;
+  private animated = true;
+  private raf = 0;
+  private last = 0;
+  private time = 0;
+
+  constructor() {
+    const destroyRef = inject(DestroyRef);
+    let resizeObs: ResizeObserver | null = null;
+    let intersectObs: IntersectionObserver | null = null;
+
+    afterNextRender(() => {
+      const canvas = this.canvasRef().nativeElement;
+      this.ctx = canvas.getContext('2d');
+      if (!this.ctx) return;
+
+      this.animated = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      resizeObs = new ResizeObserver(() => this.resize());
+      resizeObs.observe(this.hostRef.nativeElement);
+      this.resize();
+
+      if (!this.animated) return;
+
+      intersectObs = new IntersectionObserver((entries) => {
+        this.visible = entries[0]?.isIntersecting ?? true;
+      });
+      intersectObs.observe(this.hostRef.nativeElement);
+      canvas.addEventListener('pointermove', (e: PointerEvent) => {
+        const r = canvas.getBoundingClientRect();
+        this.mouse.x = e.clientX - r.left;
+        this.mouse.y = e.clientY - r.top;
+        this.mouse.active = true;
+      });
+      canvas.addEventListener('pointerleave', () => {
+        this.mouse.active = false;
+      });
+
+      const loop = (now: number): void => {
+        this.raf = requestAnimationFrame(loop);
+        if (!this.visible || !this.w) return;
+        this.frame(now);
+      };
+      this.raf = requestAnimationFrame(loop);
+    });
+
+    destroyRef.onDestroy(() => {
+      // raf is only ever set in the browser; the prerenderer has no cancelAnimationFrame.
+      if (this.raf) cancelAnimationFrame(this.raf);
+      resizeObs?.disconnect();
+      intersectObs?.disconnect();
+    });
+  }
+
+  private resize(): void {
+    const host = this.hostRef.nativeElement;
+    const w = host.clientWidth;
+    const h = host.clientHeight;
+    if (!w || !h || !this.ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.w = w;
+    this.h = h;
+    const canvas = this.canvasRef().nativeElement;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.seed();
+    if (!this.animated) this.frame(0);
+  }
+
+  /** (Re)scatter the nodes with rough even spacing and per-node datapoint clusters. */
+  private seed(): void {
+    const w = this.w;
+    const h = this.h;
+    const n = this.density() > 0 ? this.density() : clamp(Math.round((w * h) / 16000), 14, 70);
+    const margin = 36;
+    const nodes: NetNode[] = [];
+    const minDist = Math.sqrt((w * h) / n) * 0.55;
+    for (let i = 0; i < n; i++) {
+      let x = 0;
+      let y = 0;
+      let ok = false;
+      let tries = 0;
+      while (!ok && tries < 40) {
+        x = margin + Math.random() * (w - margin * 2);
+        y = margin + Math.random() * (h - margin * 2);
+        ok = nodes.every((p) => (p.x - x) ** 2 + (p.y - y) ** 2 > minDist * minDist);
+        tries++;
+      }
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 4 + Math.random() * 6; // px/sec drift
+      const k = 4 + Math.floor(Math.random() * 4); // 4..7 datapoints
+      const base = Math.random() * Math.PI * 2;
+      const colors = [...PALETTE].sort(() => Math.random() - 0.5);
+      const minis: MiniDot[] = [];
+      for (let j = 0; j < k; j++) {
+        minis.push({
+          ang: base + (j - (k - 1) / 2) * 0.42 + (Math.random() - 0.5) * 0.15,
+          dist: 9 + Math.random() * 8,
+          r: 1.8 + Math.random() * 1.1,
+          color: colors[j % colors.length] ?? PRIMARY,
+          phase: Math.random() * Math.PI * 2,
+          wob: 0.4 + Math.random() * 0.6,
+        });
+      }
+      nodes.push({
+        x,
+        y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        boost: 0,
+        r: 3.4 + Math.random() * 2.2,
+        color: Math.random() < 0.55 ? PRIMARY : SECONDARY,
+        phase: Math.random() * Math.PI * 2,
+        minis,
+      });
+    }
+    this.nodes = nodes;
+  }
+
+  private linkDist(): number {
+    return clamp(Math.min(this.w, this.h) * 0.32, 90, 190);
+  }
+
+  private frame(now: number): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const w = this.w;
+    const h = this.h;
+    const dt = Math.min(0.05, (now - (this.last || now)) / 1000) * this.speed();
+    this.last = now;
+    this.time += dt;
+    const t = this.time;
+    const nodes = this.nodes;
+    const L = this.linkDist();
+    const m = this.mouse;
+
+    ctx.clearRect(0, 0, w, h);
+    for (const nd of nodes) {
+      nd.x += nd.vx * dt;
+      nd.y += nd.vy * dt;
+      if (nd.x < 10) {
+        nd.x = 10;
+        nd.vx = Math.abs(nd.vx);
+      }
+      if (nd.x > w - 10) {
+        nd.x = w - 10;
+        nd.vx = -Math.abs(nd.vx);
+      }
+      if (nd.y < 10) {
+        nd.y = 10;
+        nd.vy = Math.abs(nd.vy);
+      }
+      if (nd.y > h - 10) {
+        nd.y = h - 10;
+        nd.vy = -Math.abs(nd.vy);
+      }
+      nd.boost = m.active ? clamp(1 - Math.hypot(nd.x - m.x, nd.y - m.y) / 150, 0, 1) : 0;
+    }
+    // proximity links, brightened near the pointer
+    ctx.lineWidth = 1;
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      if (!a) continue;
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        if (!b) continue;
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d >= L) continue;
+        const alpha = (1 - d / L) * 0.42;
+        const glow = Math.max(a.boost, b.boost);
+        ctx.strokeStyle = rgba(PRIMARY, alpha * (1 + glow * 1.3));
+        ctx.lineWidth = 1 + glow * 0.8;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+    // threads from the pointer to nearby people
+    if (m.active) {
+      for (const nd of nodes) {
+        const d = Math.hypot(nd.x - m.x, nd.y - m.y);
+        if (d < 160) {
+          ctx.strokeStyle = rgba(SECONDARY, (1 - d / 160) * 0.5);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(m.x, m.y);
+          ctx.lineTo(nd.x, nd.y);
+          ctx.stroke();
+        }
+      }
+    }
+    // person-nodes and their datapoint clusters
+    for (const nd of nodes) {
+      const r = nd.r * (1 + nd.boost * 0.7) * (1 + 0.06 * Math.sin(t * 1.4 + nd.phase));
+      ctx.fillStyle = rgba(nd.color, 0.14 * (1 + nd.boost));
+      ctx.beginPath();
+      ctx.arc(nd.x, nd.y, r * 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = rgba(nd.color, 0.95);
+      ctx.beginPath();
+      ctx.arc(nd.x, nd.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      const spread = 1 + nd.boost * 1.9;
+      for (const mn of nd.minis) {
+        const dist = mn.dist * spread + Math.sin(t * mn.wob + mn.phase) * 1.2;
+        ctx.fillStyle = rgba(mn.color, 0.9);
+        ctx.beginPath();
+        ctx.arc(nd.x + Math.cos(mn.ang) * dist, nd.y + Math.sin(mn.ang) * dist, mn.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+}
+```
+
 ## File: apps/website/src/app/ui/site-icon.ts
 ```typescript
 import { Component, computed, input } from '@angular/core';
@@ -44846,6 +44721,65 @@ import { AppComponent } from './app/app';
 import { appConfig } from './app/app.config';
 
 bootstrapApplication(AppComponent, appConfig).catch((err) => console.error(err));
+```
+
+## File: apps/website/src/styles.css
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN. */
+@import '@fontsource-variable/inter';
+
+/* Theme tokens (the DaisyUI palette) are shared with the CRM and companion —
+   single source of truth in libs/uxcommon. The marketing design's colors ARE
+   this palette (primary #3498db, secondary #22a6b3, base-content #1f2937,
+   line #e7e5e4, base-200 #f8f8f8, base-50 #fbfbfc, warning/success chips). */
+@import '../../../libs/uxcommon/src/styles/themes.css';
+
+/* The one marketing-only color: the dark navy used for the hero, footer and
+   CTA bands. Registered as a Tailwind theme color so `bg-navy` / `text-navy`
+   (and opacity modifiers) are generated. */
+@theme {
+  --color-navy: #0e182b;
+}
+
+html,
+body {
+  min-height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  /* The marketing site is light-only regardless of OS preference. */
+  color-scheme: light;
+}
+
+/* Centered content column shared by every section (design uses ~1080px). */
+.site-wrap {
+  width: 100%;
+  max-width: 1080px;
+  margin-inline: auto;
+}
+
+/* The small uppercase eyebrow label above section headings. */
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-base-content) 45%, transparent);
+}
+
+/* Same eyebrow on the dark navy bands (white ink instead of base-content). */
+.eyebrow-dark {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 0.5);
+}
 ```
 
 ## File: apps/website/src/test-setup.ts
@@ -45302,6 +45236,94 @@ interface ImportMeta {
 }
 ```
 
+## File: apps/frontend/archive/old-tailwind.config.ts
+```typescript
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import daisyui from 'daisyui';
+import { createGlobPatternsForDependencies } from '@nx/angular/tailwind';
+import themes from 'daisyui/src/theming/themes/index.js'; // 👈 critical: add `.js`
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+export default {
+  content: [join(__dirname, 'src/**/!(*.stories|*.spec).{html,ts}'), ...createGlobPatternsForDependencies(__dirname)],
+  plugins: [daisyui],
+  daisyui: {
+    themes: [
+      {
+        light: {
+          ...themes.light,
+          'primary-content': '#ffffff',
+          primary: '#0ea5e9',
+          secondary: '#14e8a6',
+          accent: '#0c506e',
+          neutral: '#cbd5e1',
+          'neutral-content': '#1f2937',
+          'base-100': '#ffffff',
+          'base-300': '#f0f0f0',
+          info: '#38bdf8',
+          success: '#2dd4bf',
+          warning: '#e5c963',
+          error: '#f37373',
+        },
+      },
+      {
+        dark: {
+          ...themes.dark,
+          primary: '#00b5ff',
+          secondary: '#00dfff',
+          accent: '#0c506e',
+          neutral: '#040404',
+          'base-100': '#12232E',
+          'base-300': '#334f61',
+          info: '#38bdf8',
+          success: '#2dd4bf',
+          warning: '#e5c963',
+          error: '#ef4444',
+        },
+      },
+    ],
+  },
+  theme: {
+    extend: {
+      animation: {
+        down: 'down 0.2s ease-in-out',
+        up: 'up 0.2s ease-in-out',
+        right: 'right 0.2s ease-in-out',
+        flash: 'flash 0.3s ease-in-out',
+        drop: 'drop 0.4s ease-in-out',
+      },
+      keyframes: {
+        down: {
+          '0%': { transform: 'translateY(-100%)' },
+          '100%': { transform: 'translateY(0%)' },
+        },
+        up: {
+          '0%': { transform: 'translateY(100%)' },
+          '100%': { transform: 'translateY(0)' },
+        },
+        right: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(0)' },
+        },
+        flash: {
+          '0%': { backgroundColor: '#afcea8' },
+          '25%': { backgroundColor: '#bcd6b7' },
+          '50%': { backgroundColor: '#c9dec5' },
+          '75%': { backgroundColor: '#d7e6d4' },
+          '100%': { backgroundColor: '#f2f7f1' },
+        },
+        drop: {
+          '0%': { transform: 'translateY(-50%)', opacity: 0 },
+          '100%': { transform: 'translateY(0)', opacity: 1 },
+        },
+      },
+    },
+  },
+};
+```
+
 ## File: apps/frontend/src/app/auth/signup-page/signup-page.html
 ```html
 <!-- Template for user sign-up, capturing account and organization details. -->
@@ -45401,6 +45423,38 @@ interface ImportMeta {
     >Already have an account? <a routerLink="/signin" class="link hover:text-neutral-300">Sign In</a>.</span
   >
 </pc-auth-layout>
+```
+
+## File: apps/frontend/src/app/auth/auth-guard.ts
+```typescript
+import { inject } from '@angular/core';
+import type { CanActivateFn } from '@angular/router';
+import { Router } from '@angular/router';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+export const authGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  const user = auth.getUser();
+
+  if (!user) return router.navigateByUrl('/signin');
+
+  if (!user.email_verified) {
+    return router.navigateByUrl(`/signin?verificationPending=true&email=${encodeURIComponent(user.email)}`);
+  }
+
+  // /cancel-deletion and /resume-account are public, so these won't loop
+  if (user.tenant_deletion_scheduled_at) {
+    return router.navigateByUrl('/cancel-deletion');
+  }
+
+  if (user.tenant_paused_at) {
+    return router.navigateByUrl('/resume-account');
+  }
+
+  return true;
+};
 ```
 
 ## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.html
@@ -48231,6 +48285,60 @@ export class DeliveriesRoutes implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/duplicates/duplicate-selection.ts
+```typescript
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+interface DuplicateCounts {
+  people: number;
+  households: number;
+  companies: number;
+}
+
+@Component({
+  selector: 'pc-duplicate-selection',
+  imports: [RouterLink, Icon],
+  templateUrl: './duplicate-selection.html',
+  styles: [
+    `
+      :host {
+        display: block;
+        min-height: 100%;
+      }
+    `,
+  ],
+})
+export class DuplicateSelectionComponent implements OnInit {
+  private personsSvc = inject(PersonsService);
+
+  private readonly _loading = createLoadingGate();
+  public readonly isLoading = this._loading.visible;
+  public counts = signal<DuplicateCounts>({ people: 0, households: 0, companies: 0 });
+
+  ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    const end = this._loading.begin();
+
+    try {
+      const countsRes = await this.personsSvc.getDuplicateCounts();
+      this.counts.set(countsRes);
+    } catch (error) {
+      console.error('Failed to load duplicate counts', error);
+      // In case of error, we default to 0 (already set), but you could also show an error badge state
+    } finally {
+      end();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/services/store/email-actions.store.ts
 ```typescript
 import { inject, signal, Service } from '@angular/core';
@@ -48472,6 +48580,178 @@ export class EmailActionsStore {
       this.state.replaceEmail(emailKey, prev);
       throw e;
     }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/services/store/email-cache.store.ts
+```typescript
+import { computed, inject, Service } from '@angular/core';
+import { injectQuery, QueryClient } from '@tanstack/angular-query-experimental';
+
+import { EmailsService } from '../emails-service';
+import { type EmailId, EmailStateStore } from './email-state.store';
+
+@Service()
+export class EmailCacheStore {
+  private readonly svc = inject(EmailsService);
+  private readonly state = inject(EmailStateStore);
+  private readonly queryClient = inject(QueryClient);
+
+  private readonly emailQuery = injectQuery(() => ({
+    queryKey: ['email', this.state.currentSelectedEmailId()],
+    queryFn: async () => {
+      const id = this.state.currentSelectedEmailId();
+      if (!id) return { body: '', header: null };
+      const res = (await this.svc.getEmailWithHeaders(id)) as unknown as {
+        body?: { body_html?: string } | null;
+        header?: any;
+      };
+      return {
+        body: res?.body?.body_html ?? '',
+        header: res?.header ?? null,
+      };
+    },
+    enabled: !!this.state.currentSelectedEmailId(),
+    staleTime: 1000 * 60 * 5, // 5 minutes cache TTL
+  }));
+
+  private readonly activitiesQuery = injectQuery(() => ({
+    queryKey: ['email-activities', this.state.currentSelectedEmailId()],
+    queryFn: async () => {
+      const id = this.state.currentSelectedEmailId();
+      if (!id) return [];
+      const rows = await this.svc.getActivities(id);
+      return rows ?? [];
+    },
+    enabled: !!this.state.currentSelectedEmailId(),
+    staleTime: 1000 * 60 * 5,
+  }));
+
+  public getEmailBodyById = (emailId: EmailId | null) =>
+    computed(() => {
+      const key = emailId ? String(emailId) : null;
+      if (!key) return undefined;
+
+      if (key === this.state.currentSelectedEmailId()) {
+        return this.emailQuery.data()?.body;
+      }
+
+      const cached = this.queryClient.getQueryData<{ body: string; header: any }>(['email', key]);
+      return cached?.body;
+    });
+
+  public getEmailHeaderById = (emailId: EmailId | null) =>
+    computed(() => {
+      const key = emailId ? String(emailId) : null;
+      if (!key) return undefined;
+
+      if (key === this.state.currentSelectedEmailId()) {
+        return this.emailQuery.data()?.header;
+      }
+
+      const cached = this.queryClient.getQueryData<{ body: string; header: any }>(['email', key]);
+      return cached?.header;
+    });
+
+  public getEmailActivitiesById = (emailId: EmailId | null) =>
+    computed(() => {
+      const key = emailId ? String(emailId) : null;
+      if (!key) return undefined;
+
+      if (key === this.state.currentSelectedEmailId()) {
+        return this.activitiesQuery.data();
+      }
+
+      return this.queryClient.getQueryData<any[]>(['email-activities', key]);
+    });
+
+  public appendCommentToHeader(emailId: EmailId, createdComment: any): void {
+    const key = String(emailId);
+    this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {
+      if (!old) return old;
+      const existingHeader = old.header;
+      const nextHeader = existingHeader
+        ? { ...existingHeader, comments: [...(existingHeader.comments ?? []), createdComment] }
+        : { comments: [createdComment] };
+      return { ...old, header: nextHeader };
+    });
+  }
+
+  public async loadEmailBody(emailId: EmailId): Promise<string> {
+    const key = String(emailId);
+    const data = await this.queryClient.fetchQuery({
+      queryKey: ['email', key],
+      queryFn: async () => {
+        const res = (await this.svc.getEmailWithHeaders(key)) as unknown as {
+          body?: { body_html?: string } | null;
+          header?: any;
+        };
+        return {
+          body: res?.body?.body_html ?? '',
+          header: res?.header ?? null,
+        };
+      },
+      staleTime: 1000 * 60 * 5,
+    });
+    return data.body;
+  }
+
+  public async loadEmailWithHeaders(emailId: EmailId): Promise<{ body: string; header: any }> {
+    const key = String(emailId);
+    return this.queryClient.fetchQuery({
+      queryKey: ['email', key],
+      queryFn: async () => {
+        const res = (await this.svc.getEmailWithHeaders(key)) as unknown as {
+          body?: { body_html?: string } | null;
+          header?: any;
+        };
+        return {
+          body: res?.body?.body_html ?? '',
+          header: res?.header ?? null,
+        };
+      },
+      staleTime: 1000 * 60 * 5,
+    });
+  }
+
+  public async loadEmailActivities(emailId: EmailId): Promise<any[]> {
+    const key = String(emailId);
+    return this.queryClient.fetchQuery({
+      queryKey: ['email-activities', key],
+      queryFn: async () => {
+        const rows = await this.svc.getActivities(key);
+        return rows ?? [];
+      },
+      staleTime: 1000 * 60 * 5,
+    });
+  }
+
+  public removeCommentFromHeader(emailId: EmailId, commentId: string | number): void {
+    const key = String(emailId);
+    this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {
+      if (!old) return old;
+      const existingHeader = old.header;
+      if (!existingHeader) return old;
+      const nextHeader = {
+        ...existingHeader,
+        comments: ((existingHeader as any).comments ?? []).filter((c: any) => String(c.id) !== String(commentId)),
+      };
+      return { ...old, header: nextHeader };
+    });
+  }
+
+  public refreshEmailHeader(emailId: EmailId): void {
+    const key = String(emailId);
+    void this.queryClient.invalidateQueries({ queryKey: ['email', key] });
+  }
+
+  public replaceHeader(emailId: EmailId, header: any): void {
+    const key = String(emailId);
+    this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {
+      if (!old) return { body: '', header };
+      return { ...old, header };
+    });
   }
 }
 ```
@@ -54892,439 +55172,250 @@ function eventValue(event: Event): string {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/api-keys/api-keys-settings.ts
-```typescript
-import { Component, signal, computed, inject, OnInit } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-import { DatePipe, NgIf } from '@angular/common';
-import { AuthService } from '../../../auth/auth-service';
+## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.html
+```html
+@if (!details()) {
+<div class="flex h-48 items-center justify-center">
+  <div class="flex flex-col items-center gap-3 text-base-content/50">
+    <span class="loading loading-spinner loading-md"></span>
+    <p class="text-xs font-medium">Retrieving subscription details…</p>
+  </div>
+</div>
+} @else {
+<div class="space-y-8">
+  <!-- Sandbox/Mock Warning Notice -->
+  @if (details()?.isMockMode) {
+  <div
+    class="alert alert-warning shadow-sm border-warning/20 bg-warning/5 text-warning-content rounded-xl flex items-start gap-3"
+  >
+    <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0" />
+    <div>
+      <h3 class="font-semibold text-xs">Sandbox Mode Enabled</h3>
+      <p class="text-xs opacity-90 mt-0.5">
+        Stripe is running in <strong>Mock Mode</strong> for local development. Clicking billing triggers will simulate
+        Stripe responses instantly without making live credit card calls.
+      </p>
+    </div>
+  </div>
+  }
 
-interface ApiKeyInfo {
-  preview: string;
-  createdAt: string;
-  lastUsedAt: string | null;
-}
-
-@Component({
-  selector: 'pc-api-keys-settings',
-  imports: [EmptyState, Icon, DatePipe, NgIf],
-  template: `
-    <div class="api-keys-container">
-      @if (!loaded()) {
-        <div class="skeleton"></div>
-      } @else {
-        <div class="settings-section">
-          <div class="section-header">
-            <h3>Workspace API Key</h3>
-            <p class="description">
-              One key for server-side integrations: submit form responses, event RSVPs, and volunteer signups from your
-              own backend, or connect Zapier. Keep it secret — never embed it in a public web page.
-            </p>
-          </div>
-
-          @if (keyInfo()) {
-            <div class="key-info-card">
-              <div class="key-display">
-                <div class="key-label">Current Key</div>
-                <div class="key-value">
-                  <code>{{ keyInfo()!.preview }}***</code>
-                </div>
-              </div>
-
-              <div class="key-metadata">
-                <div class="metadata-item">
-                  <span class="label">Created</span>
-                  <span class="value">
-                    {{ keyInfo()!.createdAt | date: 'MMM d, y' }}
-                  </span>
-                </div>
-                @if (keyInfo()!.lastUsedAt) {
-                  <div class="metadata-item">
-                    <span class="label">Last used</span>
-                    <span class="value">
-                      {{ keyInfo()!.lastUsedAt | date: 'MMM d, y · h:mm a' }}
-                    </span>
-                  </div>
-                }
-              </div>
-
-              <div class="actions">
-                <button (click)="onRegenerateKey()" [disabled]="regenerating()" class="btn btn-secondary">
-                  <pc-icon name="arrow-path" [size]="4"></pc-icon>
-                  {{ regenerating() ? 'Regenerating...' : 'Regenerate Key' }}
-                </button>
-              </div>
-            </div>
-
-            @if (showNewKey()) {
-              <div class="new-key-banner">
-                <div class="banner-content">
-                  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-                  <div class="banner-text">
-                    <p class="banner-title">Save your new API key</p>
-                    <p class="banner-message">
-                      This is the only time your key will be displayed. Store it securely — you won't be able to
-                      retrieve it again.
-                    </p>
-                  </div>
-                </div>
-                <div class="key-box">
-                  <div class="key-display-new">
-                    <code>{{ newKey() }}</code>
-                  </div>
-                  <button (click)="onCopyKey()" class="btn-copy">
-                    <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-                    Copy
-                  </button>
-                </div>
-              </div>
-            }
+  <!-- Current Subscription Header -->
+  <div class="grid gap-6 md:grid-cols-3">
+    <!-- Current Plan Summary -->
+    <div class="md:col-span-2 card bg-base-200/40 border border-base-200 rounded-2xl p-6 flex flex-col justify-between">
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <span class="pc-eyebrow">Current Plan</span>
+          @if (details()?.hasActiveSubscription) {
+          <pc-status-badge type="success"> <pc-icon name="check-circle" /> Active </pc-status-badge>
           } @else {
-            <div class="empty-key-card">
-              <p>No API key generated yet.</p>
-              <button (click)="onGenerateKey()" [disabled]="generating()" class="btn btn-primary">
-                <pc-icon name="plus" [size]="4"></pc-icon>
-                {{ generating() ? 'Generating...' : 'Generate API Key' }}
-              </button>
-            </div>
+          <pc-status-badge type="error">Inactive</pc-status-badge>
           }
         </div>
+
+        <div>
+          <h3 class="text-3xl font-extrabold text-base-content">{{ planLabel(details()?.plan) }} Plan</h3>
+          @if (details()?.hasActiveSubscription && details()?.endsAt) {
+          <p class="text-xs text-base-content/60 mt-1">
+            Your subscription will renew automatically on <strong>{{ details()?.endsAt | date:'mediumDate' }}</strong>.
+          </p>
+          } @else if (details()?.endsAt) {
+          <p class="text-xs text-error/80 mt-1 font-medium">
+            Your plan has expired or was canceled. Access ends on {{ details()?.endsAt | date:'mediumDate' }}.
+          </p>
+          } @else {
+          <p class="text-xs text-base-content/60 mt-1">
+            You are currently on the free trial version of pplCRM. Upgrade below to unlock all capabilities.
+          </p>
+          } @if (usageSummary()) {
+          <p class="text-xs text-base-content/70 mt-2 font-medium">{{ usageSummary() }}</p>
+          }
+        </div>
+      </div>
+
+      <!-- Action Footer -->
+      <div class="mt-6 flex flex-wrap items-center gap-3">
+        @if (details()?.stripeCustomerId) {
+        <button
+          type="button"
+          class="btn btn-outline btn-secondary btn-sm gap-1.5"
+          [disabled]="actionPending()"
+          (click)="openPortal()"
+        >
+          <pc-icon name="cog-6-tooth" />
+          Manage subscription
+        </button>
+        } @if (details()?.isMockMode && details()?.hasActiveSubscription) {
+        <button
+          type="button"
+          class="btn btn-outline btn-error btn-sm"
+          [disabled]="actionPending()"
+          (click)="cancelMock()"
+        >
+          Mock cancel subscription
+        </button>
+        }
+      </div>
+    </div>
+
+    <!-- Quick Stats Summary -->
+    <div class="card pc-panel p-6 space-y-4">
+      <h4 class="pc-eyebrow">Billing Account</h4>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <span class="text-base-content/50 block text-xs">Organization Tenant ID</span>
+          <span class="font-mono text-base-content/80 font-medium"
+            >#{{ details()?.stripeCustomerId ? details()?.stripeCustomerId?.substring(0, 15) + '...' : 'Unregistered'
+            }}</span
+          >
+        </div>
+        <div>
+          <span class="text-base-content/50 block text-xs">Linked Card</span>
+          <span class="flex items-center gap-1.5 font-medium text-base-content/80 mt-0.5">
+            <pc-icon name="credit-card" [size]="4" class="text-base-content/40" />
+            •••• •••• •••• {{ details()?.hasActiveSubscription ? '4242' : 'N/A' }}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Plans Selection Grid -->
+  <div class="space-y-6">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h3 class="text-xl font-bold tracking-tight text-base-content">Upgrade Options</h3>
+        <p class="text-xs text-base-content/60">Choose the best fit for your campaign team or constituency office.</p>
+      </div>
+
+      <!-- Monthly / Annual billing toggle -->
+      <div class="flex items-center gap-2">
+        <div role="tablist" class="tabs tabs-boxed tabs-sm">
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="billingInterval() === 'month'"
+            (click)="setBillingInterval('month')"
+          >
+            Monthly
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="billingInterval() === 'year'"
+            (click)="setBillingInterval('year')"
+          >
+            Annual
+          </button>
+        </div>
+        <span class="badge badge-success badge-outline badge-sm whitespace-nowrap">{{ annualBadge }}</span>
+      </div>
+    </div>
+
+    <!-- Subscriber slider -->
+    <div class="pc-panel p-6 space-y-3">
+      <div class="flex items-center justify-between gap-3">
+        <label for="subscriber-slider" class="text-xs font-semibold text-base-content"
+          >How many email subscribers do you have?</label
+        >
+        <span class="text-sm font-bold text-primary whitespace-nowrap"
+          >{{ formatCount(sliderValue()) }} subscribers</span
+        >
+      </div>
+      <input
+        id="subscriber-slider"
+        type="range"
+        min="0"
+        [max]="sliderStops.length - 1"
+        step="1"
+        [value]="sliderIndex()"
+        (input)="onSliderInput($event)"
+        class="range range-primary range-sm"
+      />
+      <div class="flex justify-between text-[10px] text-base-content/50 px-1">
+        <span>{{ formatCount(sliderStops[0]) }}</span>
+        <span>{{ formatCount(maxSliderStop()) }}+</span>
+      </div>
+      <p class="text-xs text-base-content/60">Prices below update live for this subscriber count.</p>
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2">
+      @for (plan of plans; track plan.key) {
+      <div
+        class="card flex flex-col justify-between p-6 relative overflow-hidden transition-all"
+        [class.pc-panel]="!plan.featured"
+        [class.hover:border-primary/30]="!plan.featured"
+        [class.bg-base-100]="plan.featured"
+        [class.border-2]="plan.featured"
+        [class.border-primary]="plan.featured"
+        [class.rounded-2xl]="plan.featured"
+        [class.shadow-md]="plan.featured"
+      >
+        @if (details()?.plan === plan.key) {
+        <div
+          class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl"
+        >
+          Active Plan
+        </div>
+        } @else if (plan.featured) {
+        <div
+          class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl"
+        >
+          Popular
+        </div>
+        }
+
+        <div class="space-y-4">
+          <div>
+            <h4 class="font-extrabold text-lg text-base-content">{{ plan.name }}</h4>
+            <p class="text-xs text-base-content/60 min-h-[32px] mt-1">{{ plan.blurb }}</p>
+          </div>
+
+          <div>
+            <div class="flex items-baseline text-base-content">
+              <span class="text-4xl font-extrabold tracking-tight">{{ priceLabel(plan) }}</span>
+              @if (priceLabel(plan).startsWith('$')) {
+              <span class="text-xs font-semibold text-base-content/60 ml-1">/ month</span>
+              }
+            </div>
+            @if (annualNote(plan); as note) {
+            <p class="text-xs text-base-content/60 mt-1">{{ note }} · {{ annualBadge }}</p>
+            }
+          </div>
+
+          <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
+            @for (feature of plan.features; track feature) {
+            <li class="flex items-center gap-2">
+              <pc-icon name="check-circle" class="text-primary shrink-0" />
+              {{ feature }}
+            </li>
+            }
+          </ul>
+        </div>
+
+        <div class="mt-6 pt-4">
+          <button
+            type="button"
+            class="btn btn-primary w-full"
+            [disabled]="details()?.plan === plan.key || actionPending()"
+            (click)="subscribe(plan)"
+          >
+            @if (details()?.plan === plan.key) { Current Tier } @else { Upgrade to {{ plan.name }} }
+          </button>
+        </div>
+      </div>
       }
     </div>
-  `,
-  styles: `
-    .api-keys-container {
-      max-width: 600px;
-    }
 
-    .settings-section {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    .section-header {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .section-header h3 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-      color: hsl(var(--base-content));
-    }
-
-    .description {
-      margin: 0;
-      font-size: 14px;
-      color: hsl(var(--base-content) / 0.7);
-    }
-
-    .key-info-card {
-      border: 1px solid hsl(var(--base-300));
-      border-radius: 8px;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      background: hsl(var(--base-100));
-    }
-
-    .key-display {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .key-label {
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: hsl(var(--base-content) / 0.6);
-    }
-
-    .key-value code {
-      font-family: 'Courier New', monospace;
-      font-size: 14px;
-      padding: 8px 12px;
-      background: hsl(var(--base-200));
-      border-radius: 4px;
-      word-break: break-all;
-      color: hsl(var(--base-content));
-    }
-
-    .key-metadata {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      padding: 12px 0;
-      border-top: 1px solid hsl(var(--base-300));
-      border-bottom: 1px solid hsl(var(--base-300));
-    }
-
-    .metadata-item {
-      display: flex;
-      justify-content: space-between;
-      font-size: 14px;
-    }
-
-    .metadata-item .label {
-      color: hsl(var(--base-content) / 0.6);
-    }
-
-    .metadata-item .value {
-      font-weight: 500;
-      color: hsl(var(--base-content));
-    }
-
-    .actions {
-      display: flex;
-      gap: 12px;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 16px;
-      font-size: 14px;
-      font-weight: 500;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn-primary {
-      background: hsl(var(--primary));
-      color: hsl(var(--primary-content));
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      background: hsl(var(--primary) / 0.9);
-    }
-
-    .btn-secondary {
-      background: hsl(var(--base-200));
-      color: hsl(var(--base-content));
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-      background: hsl(var(--base-300));
-    }
-
-    .empty-key-card {
-      border: 2px dashed hsl(var(--base-300));
-      border-radius: 8px;
-      padding: 40px 20px;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      align-items: center;
-    }
-
-    .empty-key-card p {
-      margin: 0;
-      color: hsl(var(--base-content) / 0.7);
-      font-size: 14px;
-    }
-
-    .new-key-banner {
-      border: 1px solid hsl(var(--warning) / 0.3);
-      background: hsl(var(--warning) / 0.05);
-      border-radius: 8px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .banner-content {
-      display: flex;
-      gap: 12px;
-    }
-
-    .banner-content pc-icon {
-      color: hsl(var(--warning));
-      flex-shrink: 0;
-    }
-
-    .banner-text {
-      flex: 1;
-    }
-
-    .banner-title {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 600;
-      color: hsl(var(--base-content));
-    }
-
-    .banner-message {
-      margin: 4px 0 0 0;
-      font-size: 13px;
-      color: hsl(var(--base-content) / 0.7);
-      line-height: 1.4;
-    }
-
-    .key-box {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .key-display-new {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .key-display-new code {
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-      padding: 12px;
-      background: hsl(var(--base-100));
-      border: 1px solid hsl(var(--base-300));
-      border-radius: 4px;
-      display: block;
-      word-break: break-all;
-      color: hsl(var(--base-content));
-    }
-
-    .btn-copy {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 10px 12px;
-      background: hsl(var(--base-200));
-      color: hsl(var(--base-content));
-      border: none;
-      border-radius: 4px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      flex-shrink: 0;
-    }
-
-    .btn-copy:hover {
-      background: hsl(var(--base-300));
-    }
-
-    .skeleton {
-      height: 200px;
-      background: hsl(var(--base-200));
-      border-radius: 8px;
-      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
-
-    @keyframes pulse {
-      0%,
-      100% {
-        opacity: 1;
-      }
-      50% {
-        opacity: 0.5;
-      }
-    }
-  `,
-})
-export class ApiKeysSettingsComponent implements OnInit {
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly authSvc = inject(AuthService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loaded = this._loading.loaded;
-
-  protected readonly generating = signal(false);
-  protected readonly regenerating = signal(false);
-  protected readonly showNewKey = signal(false);
-  protected readonly newKey = signal('');
-
-  protected readonly keyInfo = computed<ApiKeyInfo | null>(() => {
-    const user = this.authSvc.getUser();
-    return (user as any)?.workspace_api_key_preview || null;
-  });
-
-  ngOnInit() {
-    const end = this._loading.begin();
-    // Settings are typically pre-loaded by the settings page, so just mark loaded
-    end();
-  }
-
-  protected onGenerateKey() {
-    this.generating.set(true);
-    this.settingsSvc
-      .generateApiKey()
-      .then((result: any) => {
-        this.newKey.set(result.key);
-        this.showNewKey.set(true);
-        this.alerts.showSuccess('API key generated successfully');
-        // Refresh user data to show the new preview
-        void this.authSvc.getCurrentUser();
-      })
-      .catch((err: any) => {
-        this.alerts.showError('Failed to generate API key: ' + (err.message || String(err)));
-      })
-      .finally(() => {
-        this.generating.set(false);
-      });
-  }
-
-  protected onRegenerateKey() {
-    void this.dialogs
-      .confirm({
-        title: 'Regenerate API Key',
-        message:
-          'Your current API key will stop working immediately. Make sure all integrations are updated with the new key.',
-        variant: 'danger',
-        confirmText: 'Regenerate',
-      })
-      .then((confirmed: any) => {
-        if (!confirmed) return;
-
-        this.regenerating.set(true);
-        this.settingsSvc
-          .regenerateApiKey()
-          .then((result: any) => {
-            this.newKey.set(result.key);
-            this.showNewKey.set(true);
-            this.alerts.showSuccess('API key regenerated successfully');
-            // Refresh user data to show the new preview
-            void this.authSvc.getCurrentUser();
-          })
-          .catch((err: any) => {
-            this.alerts.showError('Failed to regenerate API key: ' + (err.message || String(err)));
-          })
-          .finally(() => {
-            this.regenerating.set(false);
-          });
-      });
-  }
-
-  protected onCopyKey() {
-    const key = this.newKey();
-    if (!key) return;
-
-    void navigator.clipboard.writeText(key).then(() => {
-      this.alerts.showSuccess('API key copied to clipboard');
-    });
-  }
+    <!-- Enterprise footnote -->
+    <p class="text-xs text-base-content/60 text-center">
+      Running a federation, party or multi-office operation?
+      <a [href]="enterpriseMailto" class="link link-primary font-medium">Contact us about Enterprise</a> for custom
+      pricing.
+    </p>
+  </div>
+</div>
 }
 ```
 
@@ -55341,6 +55432,138 @@ export class ApiKeysSettingsComponent implements OnInit {
 .no-spinner {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
+```typescript
+import { signal, Service } from '@angular/core';
+
+import { SettingsEntryType } from '../../../../../../../libs/common/src';
+
+import { TRPCService } from '../../../services/api/trpc-service';
+
+export type TenantSettingsSnapshot = Record<string, unknown>;
+
+@Service()
+export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
+  public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
+  private readonly isPendingSignal = signal<boolean>(false);
+
+  public async load(force = false) {
+    if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
+
+    this.isPendingSignal.set(true);
+    try {
+      const data = (await this.api.settings.getSnapshot.query()) ?? {};
+      this.snapshotSignal.set(data);
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public getValue<T = unknown>(key: string, fallback: T): T;
+  public getValue<T = unknown>(key: string): T | undefined;
+  public getValue<T = unknown>(key: string, fallback?: T) {
+    const value = this.snapshotSignal()[key];
+    return (value === undefined ? fallback : (value as T)) ?? fallback;
+  }
+
+  public async upsert(entries: SettingsEntryType[]) {
+    if (!entries.length) return this.snapshotSignal();
+
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.upsert.mutate({ entries });
+      this.snapshotSignal.set(data ?? {});
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async requestEmailVerification(email: string) {
+    return this.api.settings.requestEmailVerification.mutate({ email });
+  }
+
+  public async getPhoneVerificationStatus() {
+    return this.api.settings.getPhoneVerificationStatus.query();
+  }
+
+  public async requestPhoneVerification(phone: string) {
+    return this.api.settings.requestPhoneVerification.mutate({ phone });
+  }
+
+  public async confirmPhoneVerification(code: string) {
+    return this.api.settings.confirmPhoneVerification.mutate({ code });
+  }
+
+  public async verifySenderEmail(token: string) {
+    return this.api.settings.verifySenderEmail.mutate({ token });
+  }
+
+  public async addVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.addVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async verifyVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.verifyVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async deleteVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.deleteVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async generateApiKey() {
+    return this.api.settings.generateApiKey.mutate();
+  }
+
+  public async getApiKeyPreview() {
+    return this.api.settings.getApiKeyPreview.query();
+  }
+
+  public async regenerateApiKey() {
+    return this.api.settings.regenerateApiKey.mutate();
+  }
+
+  public snapshot(): TenantSettingsSnapshot {
+    return this.snapshotSignal();
+  }
+
+  public pending(): boolean {
+    return this.isPendingSignal();
+  }
 }
 ```
 
@@ -55606,6 +55829,19 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
       {
         key: 'notifications.person_assigned_in_app',
         label: 'Person assigned (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.email_assigned',
+        label: 'Email assigned',
+        type: 'toggle',
+        helper: 'Alerts when an inbox conversation is assigned to you',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.email_assigned_in_app',
+        label: 'Email assigned (in-app)',
         type: 'toggle',
         defaultValue: true,
       },
@@ -58738,128 +58974,76 @@ export class TasksList implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/invite-user-dialog.ts
+## File: apps/frontend/src/app/experiences/teams/services/teams-service.ts
 ```typescript
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, viewChild } from '@angular/core';
-import { email, form, required } from '@angular/forms/signals';
-import { planDisplayName } from '@common';
+import { Service } from '@angular/core';
+import {
+  AddTeamType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateTeamType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
 
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterOutputs } from '../../../services/api/trpc-types';
 
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { UserAdminService } from '../services/useradmin-service';
+export type TeamListItem = RouterOutputs['teams']['getAll']['rows'][number];
+export type TeamDetail = RouterOutputs['teams']['getById'];
+export type TeamAssignmentInfo = RouterOutputs['teams']['getForVolunteer'][number];
 
-export interface SeatUsage {
-  plan: string;
-  seatLimit: number;
-  seatsUsed: number;
-}
+@Service()
+export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
+  protected override readonly endpointName = 'teams';
 
-const DEFAULT_ROLE = 'user';
-
-/**
- * "Invite a user" dialog — the only way to add a staff login. Collects email, first and last
- * name, and a role, narrates seat usage honestly (an invitation holds a seat immediately), and
- * sends the invitation email on submit.
- */
-@Component({
-  selector: 'pc-invite-user-dialog',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PcInput, PcSelect, ModalShell],
-  templateUrl: './invite-user-dialog.html',
-})
-export class InviteUserDialog {
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly settings = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-
-  private readonly dlgRef = viewChild.required<ModalShell>('dlg');
-
-  public readonly seatUsage = input<SeatUsage | null>(null);
-  public readonly saved = output<void>();
-
-  protected readonly submitting = signal(false);
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: DEFAULT_ROLE,
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    required(p.last_name);
-  });
-
-  protected readonly seatsRemaining = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
-  });
-
-  protected readonly planLabel = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? planDisplayName(usage.plan) : '';
-  });
-
-  public open(): void {
-    this.payload.set({ email: '', first_name: '', last_name: '', role: DEFAULT_ROLE });
-    this.form().reset();
-    void this.prefillDefaultRole();
-    this.dlgRef().show();
+  public add(row: AddTeamType): Promise<TeamDetail> {
+    return this.api.teams.add.mutate(row);
   }
 
-  public close(): void {
-    this.dlgRef().close();
+  public addMany(_rows: AddTeamType[]) {
+    return Promise.resolve([]);
   }
 
-  protected async submit(event: Event): Promise<void> {
-    event.preventDefault();
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
-
-    this.submitting.set(true);
-    try {
-      const raw = this.payload();
-      await this.users.add({
-        email: raw.email.trim(),
-        first_name: raw.first_name.trim(),
-        last_name: raw.last_name.trim(),
-        role: raw.role || null,
-      });
-      this.alerts.showSuccess(`Invitation sent to ${raw.email.trim()}`);
-      this.saved.emit();
-      this.close();
-    } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'Unable to send the invitation';
-      this.alerts.showError(message);
-    } finally {
-      this.submitting.set(false);
-    }
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
   }
 
-  /** Prefill the role with the tenant's configured default invite role (best-effort). */
-  private async prefillDefaultRole(): Promise<void> {
-    try {
-      await this.settings.load();
-      const defaultRole = this.settings.getValue<string>('access.default_role');
-      if (defaultRole) {
-        this.payload.update((p) => ({ ...p, role: defaultRole }));
-      }
-    } catch {
-      // Ignore — keep the built-in default role.
-    }
+  public count(): Promise<number> {
+    return this.api.teams.getAll
+      .query({ startRow: 0, endRow: 1 })
+      .then((res: RouterOutputs['teams']['getAll']) => res.count ?? 0);
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType): Promise<RouterOutputs['teams']['getAll']> {
+    return this.api.teams.getAll.query(options, { signal: this.ac.signal });
+  }
+
+  public getTeamsForVolunteer(personId: string): Promise<RouterOutputs['teams']['getForVolunteer']> {
+    return this.api.teams.getForVolunteer.query(personId, { signal: this.ac.signal });
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string): Promise<TeamDetail> {
+    return this.api.teams.getById.query(id);
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public update(id: string, data: UpdateTeamType): Promise<TeamDetail> {
+    return this.api.teams.update.mutate({ id, data });
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('Team export is not available'));
   }
 }
 ```
@@ -58979,6 +59163,284 @@ export class InviteUserDialog {
 
   <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
+```typescript
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { planDisplayName } from '@common';
+
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { RowActions } from '@uxcommon/components/row-actions/row-actions';
+import { Table } from '@uxcommon/components/table/table';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { UserService } from '@frontend/services/user.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { authRoleLabel } from '../../../../../../../libs/common/src';
+import { UserAdminService } from '../services/useradmin-service';
+import {
+  userIsDeactivated,
+  userLastActiveLabel,
+  userRoleLockReason,
+  userRoleOptions,
+  userStatus,
+} from '../user-status';
+import { InviteUserDialog, type SeatUsage } from './invite-user-dialog';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+
+export interface UserRow {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string | null;
+  verified: boolean;
+  two_factor_enabled: boolean;
+  deletion_scheduled_at: string | null;
+  deactivated_at: string | null;
+  last_active_at: string | null;
+  created_at: string | null;
+  avatar_url: string | null;
+}
+
+/**
+ * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
+ * inline role select with explained locks, honest status/MFA/last-active columns derived from
+ * real session data, and the seat-aware "Invite user" dialog.
+ */
+@Component({
+  selector: 'pc-users-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    EmptyState,
+    RouterLink,
+    Icon,
+    StatusBadge,
+    Table,
+    RowActions,
+    UserAvatarComponent,
+    InviteUserDialog,
+    GridHeaderComponent,
+  ],
+  templateUrl: './users-page.html',
+})
+export class UsersPageComponent implements OnInit {
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly alerts = inject(AlertService);
+  private readonly userService = inject(UserService);
+
+  private readonly inviteDlg = viewChild.required(InviteUserDialog);
+
+  protected readonly loading = createLoadingGate();
+  protected readonly loaded = signal(false);
+  protected readonly rows = signal<UserRow[]>([]);
+  protected readonly seatUsage = signal<SeatUsage | null>(null);
+
+  /** Row that just saved a role change — drives the one-shot saved flash. */
+  protected readonly flashedId = signal<string | null>(null);
+  /** Rows with an in-flight role change; their select is disabled while saving. */
+  protected readonly savingIds = signal<ReadonlySet<string>>(new Set());
+
+  protected readonly currentUserId = computed(() => {
+    const id = this.auth.getUser()?.id;
+    return id != null ? String(id) : null;
+  });
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
+
+  protected readonly activeCount = computed(
+    () => this.rows().filter((r) => r.verified && !userIsDeactivated(r)).length,
+  );
+  protected readonly invitedCount = computed(
+    () => this.rows().filter((r) => !r.verified && !userIsDeactivated(r)).length,
+  );
+  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => userIsDeactivated(r)).length);
+  protected readonly adminCount = computed(
+    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !userIsDeactivated(r)).length,
+  );
+
+  protected readonly seatsRemaining = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
+  });
+
+  private readonly userSignal = this.auth.getUserSignal();
+  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
+
+  /** Why inviting is unavailable — null when it isn't. Doubles as the tooltip copy (§2 explained-disabled). */
+  protected readonly inviteLockReason = computed<string | null>(() => {
+    if (this.isDemo()) {
+      return 'Inviting teammates is locked during the demo. Choose a plan, then exit demo mode';
+    }
+    if (this.seatsRemaining() === 0) {
+      return `All ${this.seatUsage()?.seatLimit} seats on the ${this.planLabel()} plan are in use. Upgrade in Settings → Billing`;
+    }
+    return null;
+  });
+
+  protected readonly planLabel = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? planDisplayName(usage.plan) : '';
+  });
+
+  /** Header grain sentence, e.g. "5 users · 3 active, 1 invited · 2 admins · 4 of 10 seats on the Team plan". */
+  protected readonly headerSentence = computed(() => {
+    const total = this.rows().length;
+    const parts = [`${total} user${total === 1 ? '' : 's'}`];
+    const statusBits = [`${this.activeCount()} active`];
+    if (this.invitedCount() > 0) statusBits.push(`${this.invitedCount()} invited`);
+    if (this.deactivatedCount() > 0) statusBits.push(`${this.deactivatedCount()} deactivated`);
+    parts.push(statusBits.join(', '));
+    parts.push(`${this.adminCount()} admin${this.adminCount() === 1 ? '' : 's'}`);
+    const usage = this.seatUsage();
+    if (usage) parts.push(`${usage.seatsUsed} of ${usage.seatLimit} seats on the ${this.planLabel()} plan`);
+    return parts.join(' · ');
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openInvite(): void {
+    this.inviteDlg().open();
+  }
+
+  protected onInvited(): void {
+    void this.load();
+  }
+
+  protected displayName(row: UserRow): string {
+    return `${row.first_name} ${row.last_name}`.trim() || row.email;
+  }
+
+  protected avatarUrl(row: UserRow): string | null {
+    return row.avatar_url ? (this.userService.resolveAvatarUrl(row.avatar_url) ?? null) : null;
+  }
+
+  protected isSelf(row: UserRow): boolean {
+    return row.id === this.currentUserId();
+  }
+
+  protected roleLabel(role: string | null): string {
+    return authRoleLabel(role);
+  }
+
+  /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
+  protected roleOptions(row: UserRow): string[] {
+    return userRoleOptions(this.currentUserRole(), row.role);
+  }
+
+  /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
+  protected roleLockReason(row: UserRow): string | null {
+    return userRoleLockReason({
+      isSelf: this.isSelf(row),
+      callerRole: this.currentUserRole(),
+      targetRole: row.role,
+      deactivated: userIsDeactivated(row),
+    });
+  }
+
+  protected isDeactivated(row: UserRow): boolean {
+    return userIsDeactivated(row);
+  }
+
+  protected status(row: UserRow): { label: string; tone: PcStatusType } {
+    return userStatus(row);
+  }
+
+  protected lastActiveText(row: UserRow): string {
+    return userLastActiveLabel(row);
+  }
+
+  protected async changeRole(row: UserRow, event: Event): Promise<void> {
+    const select = event.target as HTMLSelectElement;
+    const role = select.value;
+    if (!role || role === row.role) return;
+
+    this.savingIds.update((ids) => new Set(ids).add(row.id));
+    try {
+      await this.users.update(row.id, { role });
+      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
+      this.flashRow(row.id);
+      this.alerts.showSuccess(`Role updated. ${this.displayName(row)} is now ${this.roleLabel(role)}`);
+    } catch (err) {
+      select.value = row.role ?? '';
+      const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
+      this.alerts.showError(message);
+    } finally {
+      this.savingIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(row.id);
+        return next;
+      });
+    }
+  }
+
+  protected async sendPasswordReset(row: UserRow): Promise<void> {
+    try {
+      await this.users.adminTriggerPasswordReset(row.id);
+      this.alerts.showSuccess(`Password reset email sent to ${row.email}`);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'Unable to send the reset email';
+      this.alerts.showError(message);
+    }
+  }
+
+  private async load(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      const [list, seats] = await Promise.all([
+        this.users.getAll({ startRow: 0, endRow: 500 }),
+        this.users.getSeatUsage(),
+      ]);
+      this.rows.set(list.rows.map((raw) => this.toRow(raw)));
+      this.seatUsage.set(seats);
+      this.loaded.set(true);
+    } catch {
+      this.alerts.showError('Unable to load users. Try refreshing the page');
+    } finally {
+      end();
+    }
+  }
+
+  private toRow(raw: Record<string, unknown>): UserRow {
+    return {
+      id: raw['id'] != null ? String(raw['id']) : '',
+      email: typeof raw['email'] === 'string' ? raw['email'] : '',
+      first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
+      last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
+      role: typeof raw['role'] === 'string' ? raw['role'] : null,
+      verified: raw['verified'] === true,
+      two_factor_enabled: raw['two_factor_enabled'] === true,
+      deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
+      deactivated_at: this.toIso(raw['deactivated_at']),
+      last_active_at: this.toIso(raw['last_active_at']),
+      created_at: this.toIso(raw['created_at']),
+      avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
+    };
+  }
+
+  private toIso(value: unknown): string | null {
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string' && value) return value;
+    return null;
+  }
+
+  private flashRow(id: string): void {
+    this.flashedId.set(id);
+    const FLASH_MS = 1300;
+    setTimeout(() => {
+      if (this.flashedId() === id) this.flashedId.set(null);
+    }, FLASH_MS);
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/models/automation-recipes.ts
@@ -60491,6 +60953,72 @@ function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSi
       return authToken ? { Authorization: `Bearer ${authToken}` } : {};
     },
   });
+}
+```
+
+## File: apps/frontend/src/app/services/api/volunteer-service.ts
+```typescript
+import { Service } from '@angular/core';
+import { TRPCService } from './trpc-service';
+
+@Service()
+export class VolunteerService extends TRPCService<'volunteer_events'> {
+  public getAll(options?: any) {
+    return this.api.volunteer.getAll.query(options);
+  }
+
+  public getById(id: string) {
+    return this.api.volunteer.getById.query(id);
+  }
+
+  public add(row: any) {
+    return this.api.volunteer.add.mutate(row);
+  }
+
+  public update(id: string, data: any) {
+    return this.api.volunteer.update.mutate({ id, data });
+  }
+
+  public delete(id: string) {
+    return this.api.volunteer.delete.mutate(id);
+  }
+
+  public getShiftsForEvent(eventId: string) {
+    return this.api.volunteer.getShiftsForEvent.query(eventId);
+  }
+
+  public signupVolunteer(payload: {
+    event_id: string;
+    person_id: string;
+    status?: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
+    hours_worked?: number | null;
+    notes?: string | null;
+  }) {
+    return this.api.volunteer.signupVolunteer.mutate(payload);
+  }
+
+  public updateShift(
+    id: string,
+    data: {
+      status?: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
+      hours_worked?: number | null;
+      notes?: string | null;
+    },
+  ) {
+    return this.api.volunteer.updateShift.mutate({ id, data });
+  }
+
+  public deleteShift(id: string) {
+    return this.api.volunteer.deleteShift.mutate(id);
+  }
+
+  public getHistoryForPerson(personId: string) {
+    return this.api.volunteer.getHistoryForPerson.query(personId);
+  }
+
+  public getVolunteerStats(personId: string) {
+    return this.api.volunteer.getVolunteerStats.query(personId);
+  }
 }
 ```
 
@@ -63799,6 +64327,13 @@ export const appConfig: ApplicationConfig = {
 };
 ```
 
+## File: apps/frontend/src/app/environment-token.ts
+```typescript
+import { InjectionToken } from '@angular/core';
+import { environment } from '../environments/environment';
+export const ENVIRONMENT = new InjectionToken<typeof environment>('ENVIRONMENT', { factory: () => environment });
+```
+
 ## File: apps/frontend/src/environments/environment.ts
 ```typescript
 export const environment = {
@@ -63968,6 +64503,58 @@ interface ImportMeta {
     </pc-root>
   </body>
 </html>
+```
+
+## File: apps/frontend/src/test-setup.ts
+```typescript
+import '@angular/compiler';
+import '@angular/localize/init';
+import '@analogjs/vite-plugin-angular/setup-vitest';
+
+import { vi } from 'vitest';
+(globalThis as any).jest = vi;
+
+import { getTestBed } from '@angular/core/testing';
+import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
+
+getTestBed().initTestEnvironment(BrowserDynamicTestingModule, platformBrowserDynamicTesting());
+
+(globalThis as any).fetch = vi.fn().mockResolvedValue({
+  ok: true,
+  text: () => Promise.resolve('<svg></svg>'),
+});
+```
+
+## File: apps/frontend/jest.config.ts
+```typescript
+import type { Config } from 'jest';
+
+const config: Config = {
+  preset: 'jest-preset-angular',
+  setupFilesAfterEnv: ['<rootDir>/src/test-setup.ts'],
+  transform: {
+    '^.+\\.(ts|mjs|js)$': ['jest-preset-angular', { tsconfig: '<rootDir>/tsconfig.spec.json' }],
+  },
+  moduleNameMapper: {
+    '^common/(.*)$': '<rootDir>/../../common/$1',
+    '^@uxcommon/(.*)$': '<rootDir>/src/app/uxcommon/$1',
+    '^@icons/(.*)$': '<rootDir>/src/app/uxcommon/components/icons/$1',
+    '^@experiences/(.*)$': '<rootDir>/src/app/experiences/$1',
+    '^@common$': '<rootDir>/../../common/src/index.ts',
+    '^apps/frontend/(.*)$': '<rootDir>/$1',
+    '^apps/frontend/src/environments/environment$': '<rootDir>/src/__mocks__/environment.mock.ts',
+    '^apps/frontend/src/environments/environment\\.prod$': '<rootDir>/src/__mocks__/environment.prod.mock.ts',
+    '.*environments/environment$': '<rootDir>/src/__mocks__/environment.mock.ts',
+    '.*environments/environment\\.prod$': '<rootDir>/src/__mocks__/environment.prod.mock.ts',
+    '\\.(html)$': '<rootDir>/src/__mocks__/html.mock.ts',
+    '\\.svg\\?raw$': '<rootDir>/src/__mocks__/svg.mock.ts',
+  },
+  moduleFileExtensions: ['ts', 'html', 'js', 'json', 'mjs'],
+  testMatch: ['<rootDir>/src/**/*.spec.ts'],
+  coverageDirectory: '../../coverage/apps/frontend',
+};
+
+export default config;
 ```
 
 ## File: apps/frontend/vite.config.ts
@@ -64869,292 +65456,6 @@ export class SecurityPage {
 }
 ```
 
-## File: apps/website/src/app/ui/constellation.ts
-```typescript
-import { afterNextRender, Component, DestroyRef, ElementRef, inject, input, viewChild } from '@angular/core';
-
-/* The marketing site is light-only and this canvas sits on the fixed navy
-   band, so the palette is literal hex mirroring the shared theme tokens
-   (primary #3498db, secondary #22a6b3 in libs/uxcommon themes.css) plus
-   harmonious datapoint hues around them. */
-const PRIMARY = '#3498db';
-const SECONDARY = '#22a6b3';
-const PALETTE = ['#3498db', '#22a6b3', '#5b6fd6', '#27ae8f', '#4bb8e8', '#2f66c9', '#54cdc4'] as const;
-
-/** Small satellite dot orbiting a person-node (their "datapoints"). */
-interface MiniDot {
-  readonly ang: number;
-  readonly dist: number;
-  readonly r: number;
-  readonly color: string;
-  readonly phase: number;
-  readonly wob: number;
-}
-
-/** One drifting person-node in the constellation. */
-interface NetNode {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  boost: number;
-  readonly r: number;
-  readonly color: string;
-  readonly phase: number;
-  readonly minis: readonly MiniDot[];
-}
-
-function rgba(hex: string, a: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}
-
-function clamp(v: number, a: number, b: number): number {
-  return Math.max(a, Math.min(b, v));
-}
-
-/**
- * The people-network constellation: drifting person-dots, each with its own
- * cluster of datapoints, linked by proximity threads that brighten near the
- * pointer. Canvas-based and browser-only (started in afterNextRender, so the
- * prerender emits an empty canvas). Honors prefers-reduced-motion by drawing
- * a single static frame. Size it from the call site; the host fills its box.
- */
-@Component({
-  selector: 'pc-constellation',
-  template: `<canvas #canvas class="block h-full w-full"></canvas>`,
-  host: { class: 'block' },
-})
-export class Constellation {
-  /** Number of person-dots; 0 derives it from the canvas area. */
-  public readonly density = input<number>(0);
-  /** Playback speed multiplier. */
-  public readonly speed = input<number>(1);
-
-  private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
-  private readonly hostRef = inject<ElementRef<HTMLElement>>(ElementRef);
-
-  private ctx: CanvasRenderingContext2D | null = null;
-  private w = 0;
-  private h = 0;
-  private nodes: NetNode[] = [];
-  private readonly mouse = { x: -1e4, y: -1e4, active: false };
-  private visible = true;
-  private animated = true;
-  private raf = 0;
-  private last = 0;
-  private time = 0;
-
-  constructor() {
-    const destroyRef = inject(DestroyRef);
-    let resizeObs: ResizeObserver | null = null;
-    let intersectObs: IntersectionObserver | null = null;
-
-    afterNextRender(() => {
-      const canvas = this.canvasRef().nativeElement;
-      this.ctx = canvas.getContext('2d');
-      if (!this.ctx) return;
-
-      this.animated = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      resizeObs = new ResizeObserver(() => this.resize());
-      resizeObs.observe(this.hostRef.nativeElement);
-      this.resize();
-
-      if (!this.animated) return;
-
-      intersectObs = new IntersectionObserver((entries) => {
-        this.visible = entries[0]?.isIntersecting ?? true;
-      });
-      intersectObs.observe(this.hostRef.nativeElement);
-      canvas.addEventListener('pointermove', (e: PointerEvent) => {
-        const r = canvas.getBoundingClientRect();
-        this.mouse.x = e.clientX - r.left;
-        this.mouse.y = e.clientY - r.top;
-        this.mouse.active = true;
-      });
-      canvas.addEventListener('pointerleave', () => {
-        this.mouse.active = false;
-      });
-
-      const loop = (now: number): void => {
-        this.raf = requestAnimationFrame(loop);
-        if (!this.visible || !this.w) return;
-        this.frame(now);
-      };
-      this.raf = requestAnimationFrame(loop);
-    });
-
-    destroyRef.onDestroy(() => {
-      // raf is only ever set in the browser; the prerenderer has no cancelAnimationFrame.
-      if (this.raf) cancelAnimationFrame(this.raf);
-      resizeObs?.disconnect();
-      intersectObs?.disconnect();
-    });
-  }
-
-  private resize(): void {
-    const host = this.hostRef.nativeElement;
-    const w = host.clientWidth;
-    const h = host.clientHeight;
-    if (!w || !h || !this.ctx) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.w = w;
-    this.h = h;
-    const canvas = this.canvasRef().nativeElement;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.seed();
-    if (!this.animated) this.frame(0);
-  }
-
-  /** (Re)scatter the nodes with rough even spacing and per-node datapoint clusters. */
-  private seed(): void {
-    const w = this.w;
-    const h = this.h;
-    const n = this.density() > 0 ? this.density() : clamp(Math.round((w * h) / 16000), 14, 70);
-    const margin = 36;
-    const nodes: NetNode[] = [];
-    const minDist = Math.sqrt((w * h) / n) * 0.55;
-    for (let i = 0; i < n; i++) {
-      let x = 0;
-      let y = 0;
-      let ok = false;
-      let tries = 0;
-      while (!ok && tries < 40) {
-        x = margin + Math.random() * (w - margin * 2);
-        y = margin + Math.random() * (h - margin * 2);
-        ok = nodes.every((p) => (p.x - x) ** 2 + (p.y - y) ** 2 > minDist * minDist);
-        tries++;
-      }
-      const ang = Math.random() * Math.PI * 2;
-      const spd = 4 + Math.random() * 6; // px/sec drift
-      const k = 4 + Math.floor(Math.random() * 4); // 4..7 datapoints
-      const base = Math.random() * Math.PI * 2;
-      const colors = [...PALETTE].sort(() => Math.random() - 0.5);
-      const minis: MiniDot[] = [];
-      for (let j = 0; j < k; j++) {
-        minis.push({
-          ang: base + (j - (k - 1) / 2) * 0.42 + (Math.random() - 0.5) * 0.15,
-          dist: 9 + Math.random() * 8,
-          r: 1.8 + Math.random() * 1.1,
-          color: colors[j % colors.length] ?? PRIMARY,
-          phase: Math.random() * Math.PI * 2,
-          wob: 0.4 + Math.random() * 0.6,
-        });
-      }
-      nodes.push({
-        x,
-        y,
-        vx: Math.cos(ang) * spd,
-        vy: Math.sin(ang) * spd,
-        boost: 0,
-        r: 3.4 + Math.random() * 2.2,
-        color: Math.random() < 0.55 ? PRIMARY : SECONDARY,
-        phase: Math.random() * Math.PI * 2,
-        minis,
-      });
-    }
-    this.nodes = nodes;
-  }
-
-  private linkDist(): number {
-    return clamp(Math.min(this.w, this.h) * 0.32, 90, 190);
-  }
-
-  private frame(now: number): void {
-    if (!this.ctx) return;
-    const ctx = this.ctx;
-    const w = this.w;
-    const h = this.h;
-    const dt = Math.min(0.05, (now - (this.last || now)) / 1000) * this.speed();
-    this.last = now;
-    this.time += dt;
-    const t = this.time;
-    const nodes = this.nodes;
-    const L = this.linkDist();
-    const m = this.mouse;
-
-    ctx.clearRect(0, 0, w, h);
-    for (const nd of nodes) {
-      nd.x += nd.vx * dt;
-      nd.y += nd.vy * dt;
-      if (nd.x < 10) {
-        nd.x = 10;
-        nd.vx = Math.abs(nd.vx);
-      }
-      if (nd.x > w - 10) {
-        nd.x = w - 10;
-        nd.vx = -Math.abs(nd.vx);
-      }
-      if (nd.y < 10) {
-        nd.y = 10;
-        nd.vy = Math.abs(nd.vy);
-      }
-      if (nd.y > h - 10) {
-        nd.y = h - 10;
-        nd.vy = -Math.abs(nd.vy);
-      }
-      nd.boost = m.active ? clamp(1 - Math.hypot(nd.x - m.x, nd.y - m.y) / 150, 0, 1) : 0;
-    }
-    // proximity links, brightened near the pointer
-    ctx.lineWidth = 1;
-    for (let i = 0; i < nodes.length; i++) {
-      const a = nodes[i];
-      if (!a) continue;
-      for (let j = i + 1; j < nodes.length; j++) {
-        const b = nodes[j];
-        if (!b) continue;
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d >= L) continue;
-        const alpha = (1 - d / L) * 0.42;
-        const glow = Math.max(a.boost, b.boost);
-        ctx.strokeStyle = rgba(PRIMARY, alpha * (1 + glow * 1.3));
-        ctx.lineWidth = 1 + glow * 0.8;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      }
-    }
-    // threads from the pointer to nearby people
-    if (m.active) {
-      for (const nd of nodes) {
-        const d = Math.hypot(nd.x - m.x, nd.y - m.y);
-        if (d < 160) {
-          ctx.strokeStyle = rgba(SECONDARY, (1 - d / 160) * 0.5);
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(m.x, m.y);
-          ctx.lineTo(nd.x, nd.y);
-          ctx.stroke();
-        }
-      }
-    }
-    // person-nodes and their datapoint clusters
-    for (const nd of nodes) {
-      const r = nd.r * (1 + nd.boost * 0.7) * (1 + 0.06 * Math.sin(t * 1.4 + nd.phase));
-      ctx.fillStyle = rgba(nd.color, 0.14 * (1 + nd.boost));
-      ctx.beginPath();
-      ctx.arc(nd.x, nd.y, r * 2.6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = rgba(nd.color, 0.95);
-      ctx.beginPath();
-      ctx.arc(nd.x, nd.y, r, 0, Math.PI * 2);
-      ctx.fill();
-      const spread = 1 + nd.boost * 1.9;
-      for (const mn of nd.minis) {
-        const dist = mn.dist * spread + Math.sin(t * mn.wob + mn.phase) * 1.2;
-        ctx.fillStyle = rgba(mn.color, 0.9);
-        ctx.beginPath();
-        ctx.arc(nd.x + Math.cos(mn.ang) * dist, nd.y + Math.sin(mn.ang) * dist, mn.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
-}
-```
-
 ## File: apps/website/src/app/ui/currency-switcher.ts
 ```typescript
 import { Component, computed, inject, input } from '@angular/core';
@@ -65539,65 +65840,6 @@ export const appConfig: ApplicationConfig = {
     { provide: TitleStrategy, useClass: SeoTitleStrategy },
   ],
 };
-```
-
-## File: apps/website/src/styles.css
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN. */
-@import '@fontsource-variable/inter';
-
-/* Theme tokens (the DaisyUI palette) are shared with the CRM and companion —
-   single source of truth in libs/uxcommon. The marketing design's colors ARE
-   this palette (primary #3498db, secondary #22a6b3, base-content #1f2937,
-   line #e7e5e4, base-200 #f8f8f8, base-50 #fbfbfc, warning/success chips). */
-@import '../../../libs/uxcommon/src/styles/themes.css';
-
-/* The one marketing-only color: the dark navy used for the hero, footer and
-   CTA bands. Registered as a Tailwind theme color so `bg-navy` / `text-navy`
-   (and opacity modifiers) are generated. */
-@theme {
-  --color-navy: #0e182b;
-}
-
-html,
-body {
-  min-height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-  /* The marketing site is light-only regardless of OS preference. */
-  color-scheme: light;
-}
-
-/* Centered content column shared by every section (design uses ~1080px). */
-.site-wrap {
-  width: 100%;
-  max-width: 1080px;
-  margin-inline: auto;
-}
-
-/* The small uppercase eyebrow label above section headings. */
-.eyebrow {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-base-content) 45%, transparent);
-}
-
-/* Same eyebrow on the dark navy bands (white ink instead of base-content). */
-.eyebrow-dark {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgb(255 255 255 / 0.5);
-}
 ```
 
 ## File: apps/website/tools/social/apple-icon.html
@@ -66681,250 +66923,743 @@ export class EmailAssign {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.html
-```html
-@if (!details()) {
-<div class="flex h-48 items-center justify-center">
-  <div class="flex flex-col items-center gap-3 text-base-content/50">
-    <span class="loading loading-spinner loading-md"></span>
-    <p class="text-xs font-medium">Retrieving subscription details…</p>
-  </div>
-</div>
-} @else {
-<div class="space-y-8">
-  <!-- Sandbox/Mock Warning Notice -->
-  @if (details()?.isMockMode) {
-  <div
-    class="alert alert-warning shadow-sm border-warning/20 bg-warning/5 text-warning-content rounded-xl flex items-start gap-3"
-  >
-    <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0" />
-    <div>
-      <h3 class="font-semibold text-xs">Sandbox Mode Enabled</h3>
-      <p class="text-xs opacity-90 mt-0.5">
-        Stripe is running in <strong>Mock Mode</strong> for local development. Clicking billing triggers will simulate
-        Stripe responses instantly without making live credit card calls.
-      </p>
-    </div>
-  </div>
-  }
+## File: apps/frontend/src/app/experiences/settings/api-keys/api-keys-settings.ts
+```typescript
+import { Component, signal, computed, inject, OnInit } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SettingsService } from '../services/settings-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+import { DatePipe, NgIf } from '@angular/common';
+import { AuthService } from '../../../auth/auth-service';
 
-  <!-- Current Subscription Header -->
-  <div class="grid gap-6 md:grid-cols-3">
-    <!-- Current Plan Summary -->
-    <div class="md:col-span-2 card bg-base-200/40 border border-base-200 rounded-2xl p-6 flex flex-col justify-between">
-      <div class="space-y-4">
-        <div class="flex items-center justify-between">
-          <span class="pc-eyebrow">Current Plan</span>
-          @if (details()?.hasActiveSubscription) {
-          <pc-status-badge type="success"> <pc-icon name="check-circle" /> Active </pc-status-badge>
-          } @else {
-          <pc-status-badge type="error">Inactive</pc-status-badge>
-          }
-        </div>
+interface ApiKeyInfo {
+  preview: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
 
-        <div>
-          <h3 class="text-3xl font-extrabold text-base-content">{{ planLabel(details()?.plan) }} Plan</h3>
-          @if (details()?.hasActiveSubscription && details()?.endsAt) {
-          <p class="text-xs text-base-content/60 mt-1">
-            Your subscription will renew automatically on <strong>{{ details()?.endsAt | date:'mediumDate' }}</strong>.
-          </p>
-          } @else if (details()?.endsAt) {
-          <p class="text-xs text-error/80 mt-1 font-medium">
-            Your plan has expired or was canceled. Access ends on {{ details()?.endsAt | date:'mediumDate' }}.
-          </p>
-          } @else {
-          <p class="text-xs text-base-content/60 mt-1">
-            You are currently on the free trial version of pplCRM. Upgrade below to unlock all capabilities.
-          </p>
-          } @if (usageSummary()) {
-          <p class="text-xs text-base-content/70 mt-2 font-medium">{{ usageSummary() }}</p>
-          }
-        </div>
-      </div>
-
-      <!-- Action Footer -->
-      <div class="mt-6 flex flex-wrap items-center gap-3">
-        @if (details()?.stripeCustomerId) {
-        <button
-          type="button"
-          class="btn btn-outline btn-secondary btn-sm gap-1.5"
-          [disabled]="actionPending()"
-          (click)="openPortal()"
-        >
-          <pc-icon name="cog-6-tooth" />
-          Manage subscription
-        </button>
-        } @if (details()?.isMockMode && details()?.hasActiveSubscription) {
-        <button
-          type="button"
-          class="btn btn-outline btn-error btn-sm"
-          [disabled]="actionPending()"
-          (click)="cancelMock()"
-        >
-          Mock cancel subscription
-        </button>
-        }
-      </div>
-    </div>
-
-    <!-- Quick Stats Summary -->
-    <div class="card pc-panel p-6 space-y-4">
-      <h4 class="pc-eyebrow">Billing Account</h4>
-
-      <div class="space-y-3 text-xs">
-        <div>
-          <span class="text-base-content/50 block text-xs">Organization Tenant ID</span>
-          <span class="font-mono text-base-content/80 font-medium"
-            >#{{ details()?.stripeCustomerId ? details()?.stripeCustomerId?.substring(0, 15) + '...' : 'Unregistered'
-            }}</span
-          >
-        </div>
-        <div>
-          <span class="text-base-content/50 block text-xs">Linked Card</span>
-          <span class="flex items-center gap-1.5 font-medium text-base-content/80 mt-0.5">
-            <pc-icon name="credit-card" [size]="4" class="text-base-content/40" />
-            •••• •••• •••• {{ details()?.hasActiveSubscription ? '4242' : 'N/A' }}
-          </span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Plans Selection Grid -->
-  <div class="space-y-6">
-    <div class="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h3 class="text-xl font-bold tracking-tight text-base-content">Upgrade Options</h3>
-        <p class="text-xs text-base-content/60">Choose the best fit for your campaign team or constituency office.</p>
-      </div>
-
-      <!-- Monthly / Annual billing toggle -->
-      <div class="flex items-center gap-2">
-        <div role="tablist" class="tabs tabs-boxed tabs-sm">
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="billingInterval() === 'month'"
-            (click)="setBillingInterval('month')"
-          >
-            Monthly
-          </button>
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="billingInterval() === 'year'"
-            (click)="setBillingInterval('year')"
-          >
-            Annual
-          </button>
-        </div>
-        <span class="badge badge-success badge-outline badge-sm whitespace-nowrap">{{ annualBadge }}</span>
-      </div>
-    </div>
-
-    <!-- Subscriber slider -->
-    <div class="pc-panel p-6 space-y-3">
-      <div class="flex items-center justify-between gap-3">
-        <label for="subscriber-slider" class="text-xs font-semibold text-base-content"
-          >How many email subscribers do you have?</label
-        >
-        <span class="text-sm font-bold text-primary whitespace-nowrap"
-          >{{ formatCount(sliderValue()) }} subscribers</span
-        >
-      </div>
-      <input
-        id="subscriber-slider"
-        type="range"
-        min="0"
-        [max]="sliderStops.length - 1"
-        step="1"
-        [value]="sliderIndex()"
-        (input)="onSliderInput($event)"
-        class="range range-primary range-sm"
-      />
-      <div class="flex justify-between text-[10px] text-base-content/50 px-1">
-        <span>{{ formatCount(sliderStops[0]) }}</span>
-        <span>{{ formatCount(maxSliderStop()) }}+</span>
-      </div>
-      <p class="text-xs text-base-content/60">Prices below update live for this subscriber count.</p>
-    </div>
-
-    <div class="grid gap-6 md:grid-cols-2">
-      @for (plan of plans; track plan.key) {
-      <div
-        class="card flex flex-col justify-between p-6 relative overflow-hidden transition-all"
-        [class.pc-panel]="!plan.featured"
-        [class.hover:border-primary/30]="!plan.featured"
-        [class.bg-base-100]="plan.featured"
-        [class.border-2]="plan.featured"
-        [class.border-primary]="plan.featured"
-        [class.rounded-2xl]="plan.featured"
-        [class.shadow-md]="plan.featured"
-      >
-        @if (details()?.plan === plan.key) {
-        <div
-          class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl"
-        >
-          Active Plan
-        </div>
-        } @else if (plan.featured) {
-        <div
-          class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl"
-        >
-          Popular
-        </div>
-        }
-
-        <div class="space-y-4">
-          <div>
-            <h4 class="font-extrabold text-lg text-base-content">{{ plan.name }}</h4>
-            <p class="text-xs text-base-content/60 min-h-[32px] mt-1">{{ plan.blurb }}</p>
+@Component({
+  selector: 'pc-api-keys-settings',
+  imports: [EmptyState, Icon, DatePipe, NgIf],
+  template: `
+    <div class="api-keys-container">
+      @if (!loaded()) {
+        <div class="skeleton"></div>
+      } @else {
+        <div class="settings-section">
+          <div class="section-header">
+            <h3>Workspace API Key</h3>
+            <p class="description">
+              One key for server-side integrations: submit form responses, event RSVPs, and volunteer signups from your
+              own backend, or connect Zapier. Keep it secret — never embed it in a public web page.
+            </p>
           </div>
 
-          <div>
-            <div class="flex items-baseline text-base-content">
-              <span class="text-4xl font-extrabold tracking-tight">{{ priceLabel(plan) }}</span>
-              @if (priceLabel(plan).startsWith('$')) {
-              <span class="text-xs font-semibold text-base-content/60 ml-1">/ month</span>
-              }
+          @if (keyInfo()) {
+            <div class="key-info-card">
+              <div class="key-display">
+                <div class="key-label">Current Key</div>
+                <div class="key-value">
+                  <code>{{ keyInfo()!.preview }}***</code>
+                </div>
+              </div>
+
+              <div class="key-metadata">
+                <div class="metadata-item">
+                  <span class="label">Created</span>
+                  <span class="value">
+                    {{ keyInfo()!.createdAt | date: 'MMM d, y' }}
+                  </span>
+                </div>
+                @if (keyInfo()!.lastUsedAt) {
+                  <div class="metadata-item">
+                    <span class="label">Last used</span>
+                    <span class="value">
+                      {{ keyInfo()!.lastUsedAt | date: 'MMM d, y · h:mm a' }}
+                    </span>
+                  </div>
+                }
+              </div>
+
+              <div class="actions">
+                <button (click)="onRegenerateKey()" [disabled]="regenerating()" class="btn btn-secondary">
+                  <pc-icon name="arrow-path" [size]="4"></pc-icon>
+                  {{ regenerating() ? 'Regenerating...' : 'Regenerate Key' }}
+                </button>
+              </div>
             </div>
-            @if (annualNote(plan); as note) {
-            <p class="text-xs text-base-content/60 mt-1">{{ note }} · {{ annualBadge }}</p>
-            }
-          </div>
 
-          <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
-            @for (feature of plan.features; track feature) {
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              {{ feature }}
-            </li>
+            @if (showNewKey()) {
+              <div class="new-key-banner">
+                <div class="banner-content">
+                  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+                  <div class="banner-text">
+                    <p class="banner-title">Save your new API key</p>
+                    <p class="banner-message">
+                      This is the only time your key will be displayed. Store it securely — you won't be able to
+                      retrieve it again.
+                    </p>
+                  </div>
+                </div>
+                <div class="key-box">
+                  <div class="key-display-new">
+                    <code>{{ newKey() }}</code>
+                  </div>
+                  <button (click)="onCopyKey()" class="btn-copy">
+                    <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+                    Copy
+                  </button>
+                </div>
+              </div>
             }
-          </ul>
+          } @else {
+            <div class="empty-key-card">
+              <p>No API key generated yet.</p>
+              <button (click)="onGenerateKey()" [disabled]="generating()" class="btn btn-primary">
+                <pc-icon name="plus" [size]="4"></pc-icon>
+                {{ generating() ? 'Generating...' : 'Generate API Key' }}
+              </button>
+            </div>
+          }
         </div>
-
-        <div class="mt-6 pt-4">
-          <button
-            type="button"
-            class="btn btn-primary w-full"
-            [disabled]="details()?.plan === plan.key || actionPending()"
-            (click)="subscribe(plan)"
-          >
-            @if (details()?.plan === plan.key) { Current Tier } @else { Upgrade to {{ plan.name }} }
-          </button>
-        </div>
-      </div>
       }
     </div>
+  `,
+  styles: `
+    .api-keys-container {
+      max-width: 600px;
+    }
 
-    <!-- Enterprise footnote -->
-    <p class="text-xs text-base-content/60 text-center">
-      Running a federation, party or multi-office operation?
-      <a [href]="enterpriseMailto" class="link link-primary font-medium">Contact us about Enterprise</a> for custom
-      pricing.
-    </p>
-  </div>
-</div>
+    .settings-section {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .section-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .section-header h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: hsl(var(--base-content));
+    }
+
+    .description {
+      margin: 0;
+      font-size: 14px;
+      color: hsl(var(--base-content) / 0.7);
+    }
+
+    .key-info-card {
+      border: 1px solid hsl(var(--base-300));
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: hsl(var(--base-100));
+    }
+
+    .key-display {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .key-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: hsl(var(--base-content) / 0.6);
+    }
+
+    .key-value code {
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      padding: 8px 12px;
+      background: hsl(var(--base-200));
+      border-radius: 4px;
+      word-break: break-all;
+      color: hsl(var(--base-content));
+    }
+
+    .key-metadata {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px 0;
+      border-top: 1px solid hsl(var(--base-300));
+      border-bottom: 1px solid hsl(var(--base-300));
+    }
+
+    .metadata-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+    }
+
+    .metadata-item .label {
+      color: hsl(var(--base-content) / 0.6);
+    }
+
+    .metadata-item .value {
+      font-weight: 500;
+      color: hsl(var(--base-content));
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: hsl(var(--primary));
+      color: hsl(var(--primary-content));
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: hsl(var(--primary) / 0.9);
+    }
+
+    .btn-secondary {
+      background: hsl(var(--base-200));
+      color: hsl(var(--base-content));
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: hsl(var(--base-300));
+    }
+
+    .empty-key-card {
+      border: 2px dashed hsl(var(--base-300));
+      border-radius: 8px;
+      padding: 40px 20px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .empty-key-card p {
+      margin: 0;
+      color: hsl(var(--base-content) / 0.7);
+      font-size: 14px;
+    }
+
+    .new-key-banner {
+      border: 1px solid hsl(var(--warning) / 0.3);
+      background: hsl(var(--warning) / 0.05);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .banner-content {
+      display: flex;
+      gap: 12px;
+    }
+
+    .banner-content pc-icon {
+      color: hsl(var(--warning));
+      flex-shrink: 0;
+    }
+
+    .banner-text {
+      flex: 1;
+    }
+
+    .banner-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: hsl(var(--base-content));
+    }
+
+    .banner-message {
+      margin: 4px 0 0 0;
+      font-size: 13px;
+      color: hsl(var(--base-content) / 0.7);
+      line-height: 1.4;
+    }
+
+    .key-box {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .key-display-new {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .key-display-new code {
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      padding: 12px;
+      background: hsl(var(--base-100));
+      border: 1px solid hsl(var(--base-300));
+      border-radius: 4px;
+      display: block;
+      word-break: break-all;
+      color: hsl(var(--base-content));
+    }
+
+    .btn-copy {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 12px;
+      background: hsl(var(--base-200));
+      color: hsl(var(--base-content));
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .btn-copy:hover {
+      background: hsl(var(--base-300));
+    }
+
+    .skeleton {
+      height: 200px;
+      background: hsl(var(--base-200));
+      border-radius: 8px;
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes pulse {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.5;
+      }
+    }
+  `,
+})
+export class ApiKeysSettingsComponent implements OnInit {
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly authSvc = inject(AuthService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loaded = this._loading.loaded;
+
+  protected readonly generating = signal(false);
+  protected readonly regenerating = signal(false);
+  protected readonly showNewKey = signal(false);
+  protected readonly newKey = signal('');
+
+  protected readonly keyInfo = computed<ApiKeyInfo | null>(() => {
+    const user = this.authSvc.getUser();
+    return (user as any)?.workspace_api_key_preview || null;
+  });
+
+  ngOnInit() {
+    const end = this._loading.begin();
+    // Settings are typically pre-loaded by the settings page, so just mark loaded
+    end();
+  }
+
+  protected onGenerateKey() {
+    this.generating.set(true);
+    this.settingsSvc
+      .generateApiKey()
+      .then((result: any) => {
+        this.newKey.set(result.key);
+        this.showNewKey.set(true);
+        this.alerts.showSuccess('API key generated successfully');
+        // Refresh user data to show the new preview
+        void this.authSvc.getCurrentUser();
+      })
+      .catch((err: any) => {
+        this.alerts.showError('Failed to generate API key: ' + (err.message || String(err)));
+      })
+      .finally(() => {
+        this.generating.set(false);
+      });
+  }
+
+  protected onRegenerateKey() {
+    void this.dialogs
+      .confirm({
+        title: 'Regenerate API Key',
+        message:
+          'Your current API key will stop working immediately. Make sure all integrations are updated with the new key.',
+        variant: 'danger',
+        confirmText: 'Regenerate',
+      })
+      .then((confirmed: any) => {
+        if (!confirmed) return;
+
+        this.regenerating.set(true);
+        this.settingsSvc
+          .regenerateApiKey()
+          .then((result: any) => {
+            this.newKey.set(result.key);
+            this.showNewKey.set(true);
+            this.alerts.showSuccess('API key regenerated successfully');
+            // Refresh user data to show the new preview
+            void this.authSvc.getCurrentUser();
+          })
+          .catch((err: any) => {
+            this.alerts.showError('Failed to regenerate API key: ' + (err.message || String(err)));
+          })
+          .finally(() => {
+            this.regenerating.set(false);
+          });
+      });
+  }
+
+  protected onCopyKey() {
+    const key = this.newKey();
+    if (!key) return;
+
+    void navigator.clipboard.writeText(key).then(() => {
+      this.alerts.showSuccess('API key copied to clipboard');
+    });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import {
+  ANNUAL_MONTHS_FREE,
+  ANNUAL_PRICE_MULTIPLIER,
+  PLANS,
+  PURCHASABLE_PLAN_KEYS,
+  annualPriceForQuantity,
+  bracketIndexForSubscribers,
+  maxQuantity,
+  planDisplayName,
+  priceLabelAt,
+  type BillingInterval,
+  type PlanDef,
+  type PlanKey,
+  type PurchasablePlanKey,
+} from '@common';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+
+export interface BillingDetailsSnapshot {
+  plan: string;
+  status: string;
+  interval: BillingInterval;
+  endsAt: Date | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  hasActiveSubscription: boolean;
+  isMockMode: boolean;
+}
+
+/** Shape returned by `billing.getUsage` — the tenant's live emailable-subscriber count against
+ * its current plan's bracket ladder. */
+export interface BillingUsageSnapshot {
+  subscribers: number;
+  billedQuantity: number;
+  subscriberCap: number;
+  emailCap: number;
+  monthlyPrice: number;
+  interval: BillingInterval;
+  tierMax: number;
+}
+
+/** Discrete slider stops for "how many subscribers do you have" — mirrors the website pricing
+ * slider so the two surfaces feel identical. */
+const SUBSCRIBER_SLIDER_STOPS = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+] as const;
+
+function isPurchasablePlan(value: string | undefined): value is PurchasablePlanKey {
+  return value != null && (PURCHASABLE_PLAN_KEYS as readonly string[]).includes(value);
+}
+
+@Component({
+  selector: 'pc-billing-settings',
+  imports: [DatePipe, Icon, StatusBadge],
+  templateUrl: './billing-settings.html',
+})
+export class BillingSettingsComponent extends TRPCService<any> implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly actionPending = signal(false);
+  protected readonly details = signal<BillingDetailsSnapshot | null>(null);
+  protected readonly usage = signal<BillingUsageSnapshot | null>(null);
+
+  /** Upgrade grid: the purchasable paid tiers only (Grassroots, Movement). Free is the current
+   * plan for everyone who hasn't upgraded, and Enterprise is a contact-us footnote, not a card. */
+  protected readonly plans: readonly PlanDef[] = PLANS.filter((p) => p.purchasable);
+  protected readonly enterpriseMailto = 'mailto:hello@pplcrm.com?subject=Enterprise%20Inquiry';
+
+  /** Billing interval for the upgrade cards. Monthly is the deliberate default — electoral
+   * campaigns often end mid-year and shouldn't be nudged into annual prepay. */
+  protected readonly billingInterval = signal<BillingInterval>('month');
+  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
+
+  protected readonly sliderStops = SUBSCRIBER_SLIDER_STOPS;
+  protected readonly sliderIndex = signal(0);
+  protected readonly sliderValue = computed(() => this.sliderStops[this.sliderIndex()] ?? this.sliderStops[0]);
+  protected readonly maxSliderStop = computed(
+    () => this.sliderStops[this.sliderStops.length - 1] ?? this.sliderStops[0],
+  );
+
+  /** "12,340 emailable subscribers · billed for up to 15,000 at $89/mo" (or "at $890/yr" on
+   * annual billing) — omits the billed clause for plans with no meaningful bracket (free,
+   * enterprise). */
+  protected readonly usageSummary = computed<string | null>(() => {
+    const snapshot = this.usage();
+    const planKey = this.details()?.plan;
+    if (!snapshot || !planKey) return null;
+
+    const subscribers = `${this.formatCount(snapshot.subscribers)} emailable subscribers`;
+    if (planKey === 'free' || planKey === 'enterprise') return subscribers;
+
+    const cap = this.formatCount(snapshot.subscriberCap);
+    const price =
+      snapshot.interval === 'year'
+        ? `$${snapshot.monthlyPrice * ANNUAL_PRICE_MULTIPLIER}/yr`
+        : `$${snapshot.monthlyPrice}/mo`;
+    return `${subscribers} · billed for up to ${cap} at ${price}`;
+  });
+
+  protected planLabel(plan: string | null | undefined): string {
+    return planDisplayName(plan);
+  }
+
+  protected priceLabel(plan: PlanDef): string {
+    return priceLabelAt(plan, this.sliderValue(), this.billingInterval());
+  }
+
+  /** "billed annually as $290" under an annual card price (null on monthly, out-of-ladder, or
+   * ladderless plans — the card falls back to its plain monthly presentation). */
+  protected annualNote(plan: PlanDef): string | null {
+    if (this.billingInterval() !== 'year' || !plan.pricing) return null;
+    const index = bracketIndexForSubscribers(plan.key, this.sliderValue());
+    if (index === null) return null;
+    return `billed annually as $${this.formatCount(annualPriceForQuantity(plan.key, index))}`;
+  }
+
+  protected setBillingInterval(interval: BillingInterval): void {
+    this.billingInterval.set(interval);
+  }
+
+  protected formatCount(n: number): string {
+    return n.toLocaleString('en-US');
+  }
+
+  protected onSliderInput(event: Event): void {
+    const index = (event.target as HTMLInputElement).valueAsNumber;
+    if (!Number.isNaN(index)) this.sliderIndex.set(index);
+  }
+
+  ngOnInit(): void {
+    void this.initBilling();
+  }
+
+  private async initBilling() {
+    await this.loadBilling();
+
+    // Listen to query params for mock successes or redirect callbacks
+    this.route.queryParams
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => void this.handleQueryParams(params));
+  }
+
+  protected async loadBilling() {
+    const end = this._loading.begin();
+    try {
+      const [details, usage] = await Promise.all([
+        this.api.billing.getDetails.query(),
+        this.api.billing.getUsage.query(),
+      ]);
+      this.details.set(details);
+      this.usage.set(usage);
+      this.syncSliderToUsage(usage);
+    } catch (err) {
+      console.error(err);
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load subscription details.');
+    } finally {
+      end();
+    }
+  }
+
+  /** Snaps the slider to the tenant's live subscriber count, rounded up to the nearest stop.
+   * Falls back to the first stop when usage is unavailable or already past the highest stop. */
+  private syncSliderToUsage(usage: BillingUsageSnapshot | null | undefined): void {
+    const subscribers = usage?.subscribers;
+    if (subscribers == null) {
+      this.sliderIndex.set(0);
+      return;
+    }
+    const index = this.sliderStops.findIndex((stop) => subscribers <= stop);
+    this.sliderIndex.set(index === -1 ? this.sliderStops.length - 1 : index);
+  }
+
+  private async handleQueryParams(params: Record<string, string>): Promise<void> {
+    if (params['mock_checkout_success'] && isPurchasablePlan(params['plan'])) {
+      await this.handleMockActivation(params['plan'], params['interval'] === 'year' ? 'year' : 'month');
+    } else if (params['checkout_success']) {
+      await this.syncFromStripe('Subscription activated successfully! Thank you for your purchase.');
+      this.clearQueryParams();
+    } else if (params['portal_return']) {
+      await this.syncFromStripe(null);
+      this.clearQueryParams();
+    } else if (params['mock_portal_success']) {
+      this.alerts.showSuccess('Simulated Customer Portal: Retrieved successfully.');
+      this.clearQueryParams();
+    }
+  }
+
+  /** Returning from Stripe Checkout/Portal: reconcile the plan straight from Stripe (webhooks
+   * can lag or be unconfigured for the active Stripe mode), then reload the page data. */
+  private async syncFromStripe(successMessage: string | null): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const res = await this.api.billing.syncSubscription.mutate();
+      if (successMessage) {
+        this.alerts.showSuccess(successMessage);
+      } else if (res.synced) {
+        this.alerts.showSuccess('Your billing details are up to date.');
+      }
+    } catch (err) {
+      console.error(err);
+      this.alerts.showError('Could not refresh your subscription from Stripe. Reload the page to try again.');
+    } finally {
+      end();
+    }
+    await this.loadBilling();
+  }
+
+  protected async subscribe(plan: PlanDef) {
+    if (!isPurchasablePlan(plan.key)) return;
+    const planKey = plan.key;
+    this.actionPending.set(true);
+    try {
+      const res = await this.api.billing.createCheckout.mutate({ plan: planKey, interval: this.billingInterval() });
+      if (res?.url) {
+        window.location.href = res.url;
+      } else {
+        throw new Error('No redirect URL returned from billing engine.');
+      }
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Checkout failed. Please try again.');
+      this.actionPending.set(false);
+    }
+  }
+
+  protected async openPortal() {
+    this.actionPending.set(true);
+    try {
+      const res = await this.api.billing.createPortal.mutate();
+      if (res?.url) {
+        window.location.href = res.url;
+      } else {
+        throw new Error('No redirect URL returned from billing portal.');
+      }
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not open billing portal.');
+      this.actionPending.set(false);
+    }
+  }
+
+  private async handleMockActivation(plan: PurchasablePlanKey, interval: BillingInterval = 'month') {
+    const end = this._loading.begin();
+    try {
+      const quantity = this.mockQuantityFor(plan);
+      await this.api.billing.activateMockPlan.mutate({ plan, quantity, interval });
+      this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
+      await this.loadBilling();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Mock plan activation failed.');
+    } finally {
+      end();
+      this.clearQueryParams();
+    }
+  }
+
+  /** The bracket index (Stripe quantity) matching the tenant's current subscriber count, so mock
+   * activation lands on the same billed tier the real checkout would compute. */
+  private mockQuantityFor(plan: PlanKey): number {
+    const subscribers = this.usage()?.subscribers ?? 0;
+    return bracketIndexForSubscribers(plan, subscribers) ?? maxQuantity(plan);
+  }
+
+  protected async cancelMock() {
+    const end = this._loading.begin();
+    try {
+      await this.api.billing.cancelMockPlan.mutate();
+      this.alerts.showSuccess('Mock subscription has been canceled.');
+      await this.loadBilling();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel mock plan.');
+    } finally {
+      end();
+    }
+  }
+
+  private clearQueryParams() {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        mock_checkout_success: null,
+        plan: null,
+        interval: null,
+        checkout_success: null,
+        portal_return: null,
+        mock_portal_success: null,
+      },
+      queryParamsHandling: 'merge',
+    });
+  }
 }
 ```
 
@@ -67420,138 +68155,6 @@ export class DomainSettingsComponent implements OnInit {
       const errMsg = err instanceof Error ? err.message : 'Failed to remove domain.';
       this.alerts.showError(errMsg);
     }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
-```typescript
-import { signal, Service } from '@angular/core';
-
-import { SettingsEntryType } from '../../../../../../../libs/common/src';
-
-import { TRPCService } from '../../../services/api/trpc-service';
-
-export type TenantSettingsSnapshot = Record<string, unknown>;
-
-@Service()
-export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
-  public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
-  private readonly isPendingSignal = signal<boolean>(false);
-
-  public async load(force = false) {
-    if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
-
-    this.isPendingSignal.set(true);
-    try {
-      const data = (await this.api.settings.getSnapshot.query()) ?? {};
-      this.snapshotSignal.set(data);
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public getValue<T = unknown>(key: string, fallback: T): T;
-  public getValue<T = unknown>(key: string): T | undefined;
-  public getValue<T = unknown>(key: string, fallback?: T) {
-    const value = this.snapshotSignal()[key];
-    return (value === undefined ? fallback : (value as T)) ?? fallback;
-  }
-
-  public async upsert(entries: SettingsEntryType[]) {
-    if (!entries.length) return this.snapshotSignal();
-
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.upsert.mutate({ entries });
-      this.snapshotSignal.set(data ?? {});
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async requestEmailVerification(email: string) {
-    return this.api.settings.requestEmailVerification.mutate({ email });
-  }
-
-  public async getPhoneVerificationStatus() {
-    return this.api.settings.getPhoneVerificationStatus.query();
-  }
-
-  public async requestPhoneVerification(phone: string) {
-    return this.api.settings.requestPhoneVerification.mutate({ phone });
-  }
-
-  public async confirmPhoneVerification(code: string) {
-    return this.api.settings.confirmPhoneVerification.mutate({ code });
-  }
-
-  public async verifySenderEmail(token: string) {
-    return this.api.settings.verifySenderEmail.mutate({ token });
-  }
-
-  public async addVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.addVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async verifyVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.verifyVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async deleteVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.deleteVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async generateApiKey() {
-    return this.api.settings.generateApiKey.mutate();
-  }
-
-  public async getApiKeyPreview() {
-    return this.api.settings.getApiKeyPreview.query();
-  }
-
-  public async regenerateApiKey() {
-    return this.api.settings.regenerateApiKey.mutate();
-  }
-
-  public snapshot(): TenantSettingsSnapshot {
-    return this.snapshotSignal();
-  }
-
-  public pending(): boolean {
-    return this.isPendingSignal();
   }
 }
 ```
@@ -68127,284 +68730,6 @@ export class TasksBoard implements OnInit {
 
   protected openList(): void {
     void this.router.navigate(['/tasks']);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
-```typescript
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { planDisplayName } from '@common';
-
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { RowActions } from '@uxcommon/components/row-actions/row-actions';
-import { Table } from '@uxcommon/components/table/table';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { UserService } from '@frontend/services/user.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { authRoleLabel } from '../../../../../../../libs/common/src';
-import { UserAdminService } from '../services/useradmin-service';
-import {
-  userIsDeactivated,
-  userLastActiveLabel,
-  userRoleLockReason,
-  userRoleOptions,
-  userStatus,
-} from '../user-status';
-import { InviteUserDialog, type SeatUsage } from './invite-user-dialog';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-
-export interface UserRow {
-  id: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: string | null;
-  deactivated_at: string | null;
-  last_active_at: string | null;
-  created_at: string | null;
-  avatar_url: string | null;
-}
-
-/**
- * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
- * inline role select with explained locks, honest status/MFA/last-active columns derived from
- * real session data, and the seat-aware "Invite user" dialog.
- */
-@Component({
-  selector: 'pc-users-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    EmptyState,
-    RouterLink,
-    Icon,
-    StatusBadge,
-    Table,
-    RowActions,
-    UserAvatarComponent,
-    InviteUserDialog,
-    GridHeaderComponent,
-  ],
-  templateUrl: './users-page.html',
-})
-export class UsersPageComponent implements OnInit {
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly alerts = inject(AlertService);
-  private readonly userService = inject(UserService);
-
-  private readonly inviteDlg = viewChild.required(InviteUserDialog);
-
-  protected readonly loading = createLoadingGate();
-  protected readonly loaded = signal(false);
-  protected readonly rows = signal<UserRow[]>([]);
-  protected readonly seatUsage = signal<SeatUsage | null>(null);
-
-  /** Row that just saved a role change — drives the one-shot saved flash. */
-  protected readonly flashedId = signal<string | null>(null);
-  /** Rows with an in-flight role change; their select is disabled while saving. */
-  protected readonly savingIds = signal<ReadonlySet<string>>(new Set());
-
-  protected readonly currentUserId = computed(() => {
-    const id = this.auth.getUser()?.id;
-    return id != null ? String(id) : null;
-  });
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
-
-  protected readonly activeCount = computed(
-    () => this.rows().filter((r) => r.verified && !userIsDeactivated(r)).length,
-  );
-  protected readonly invitedCount = computed(
-    () => this.rows().filter((r) => !r.verified && !userIsDeactivated(r)).length,
-  );
-  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => userIsDeactivated(r)).length);
-  protected readonly adminCount = computed(
-    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !userIsDeactivated(r)).length,
-  );
-
-  protected readonly seatsRemaining = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
-  });
-
-  private readonly userSignal = this.auth.getUserSignal();
-  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
-
-  /** Why inviting is unavailable — null when it isn't. Doubles as the tooltip copy (§2 explained-disabled). */
-  protected readonly inviteLockReason = computed<string | null>(() => {
-    if (this.isDemo()) {
-      return 'Inviting teammates is locked during the demo. Choose a plan, then exit demo mode';
-    }
-    if (this.seatsRemaining() === 0) {
-      return `All ${this.seatUsage()?.seatLimit} seats on the ${this.planLabel()} plan are in use. Upgrade in Settings → Billing`;
-    }
-    return null;
-  });
-
-  protected readonly planLabel = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? planDisplayName(usage.plan) : '';
-  });
-
-  /** Header grain sentence, e.g. "5 users · 3 active, 1 invited · 2 admins · 4 of 10 seats on the Team plan". */
-  protected readonly headerSentence = computed(() => {
-    const total = this.rows().length;
-    const parts = [`${total} user${total === 1 ? '' : 's'}`];
-    const statusBits = [`${this.activeCount()} active`];
-    if (this.invitedCount() > 0) statusBits.push(`${this.invitedCount()} invited`);
-    if (this.deactivatedCount() > 0) statusBits.push(`${this.deactivatedCount()} deactivated`);
-    parts.push(statusBits.join(', '));
-    parts.push(`${this.adminCount()} admin${this.adminCount() === 1 ? '' : 's'}`);
-    const usage = this.seatUsage();
-    if (usage) parts.push(`${usage.seatsUsed} of ${usage.seatLimit} seats on the ${this.planLabel()} plan`);
-    return parts.join(' · ');
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected openInvite(): void {
-    this.inviteDlg().open();
-  }
-
-  protected onInvited(): void {
-    void this.load();
-  }
-
-  protected displayName(row: UserRow): string {
-    return `${row.first_name} ${row.last_name}`.trim() || row.email;
-  }
-
-  protected avatarUrl(row: UserRow): string | null {
-    return row.avatar_url ? (this.userService.resolveAvatarUrl(row.avatar_url) ?? null) : null;
-  }
-
-  protected isSelf(row: UserRow): boolean {
-    return row.id === this.currentUserId();
-  }
-
-  protected roleLabel(role: string | null): string {
-    return authRoleLabel(role);
-  }
-
-  /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
-  protected roleOptions(row: UserRow): string[] {
-    return userRoleOptions(this.currentUserRole(), row.role);
-  }
-
-  /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
-  protected roleLockReason(row: UserRow): string | null {
-    return userRoleLockReason({
-      isSelf: this.isSelf(row),
-      callerRole: this.currentUserRole(),
-      targetRole: row.role,
-      deactivated: userIsDeactivated(row),
-    });
-  }
-
-  protected isDeactivated(row: UserRow): boolean {
-    return userIsDeactivated(row);
-  }
-
-  protected status(row: UserRow): { label: string; tone: PcStatusType } {
-    return userStatus(row);
-  }
-
-  protected lastActiveText(row: UserRow): string {
-    return userLastActiveLabel(row);
-  }
-
-  protected async changeRole(row: UserRow, event: Event): Promise<void> {
-    const select = event.target as HTMLSelectElement;
-    const role = select.value;
-    if (!role || role === row.role) return;
-
-    this.savingIds.update((ids) => new Set(ids).add(row.id));
-    try {
-      await this.users.update(row.id, { role });
-      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
-      this.flashRow(row.id);
-      this.alerts.showSuccess(`Role updated. ${this.displayName(row)} is now ${this.roleLabel(role)}`);
-    } catch (err) {
-      select.value = row.role ?? '';
-      const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
-      this.alerts.showError(message);
-    } finally {
-      this.savingIds.update((ids) => {
-        const next = new Set(ids);
-        next.delete(row.id);
-        return next;
-      });
-    }
-  }
-
-  protected async sendPasswordReset(row: UserRow): Promise<void> {
-    try {
-      await this.users.adminTriggerPasswordReset(row.id);
-      this.alerts.showSuccess(`Password reset email sent to ${row.email}`);
-    } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'Unable to send the reset email';
-      this.alerts.showError(message);
-    }
-  }
-
-  private async load(): Promise<void> {
-    const end = this.loading.begin();
-    try {
-      const [list, seats] = await Promise.all([
-        this.users.getAll({ startRow: 0, endRow: 500 }),
-        this.users.getSeatUsage(),
-      ]);
-      this.rows.set(list.rows.map((raw) => this.toRow(raw)));
-      this.seatUsage.set(seats);
-      this.loaded.set(true);
-    } catch {
-      this.alerts.showError('Unable to load users. Try refreshing the page');
-    } finally {
-      end();
-    }
-  }
-
-  private toRow(raw: Record<string, unknown>): UserRow {
-    return {
-      id: raw['id'] != null ? String(raw['id']) : '',
-      email: typeof raw['email'] === 'string' ? raw['email'] : '',
-      first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
-      last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
-      role: typeof raw['role'] === 'string' ? raw['role'] : null,
-      verified: raw['verified'] === true,
-      two_factor_enabled: raw['two_factor_enabled'] === true,
-      deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
-      deactivated_at: this.toIso(raw['deactivated_at']),
-      last_active_at: this.toIso(raw['last_active_at']),
-      created_at: this.toIso(raw['created_at']),
-      avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
-    };
-  }
-
-  private toIso(value: unknown): string | null {
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string' && value) return value;
-    return null;
-  }
-
-  private flashRow(id: string): void {
-    this.flashedId.set(id);
-    const FLASH_MS = 1300;
-    setTimeout(() => {
-      if (this.flashedId() === id) this.flashedId.set(null);
-    }, FLASH_MS);
   }
 }
 ```
@@ -71214,6 +71539,303 @@ export class ComparePage {
 }
 ```
 
+## File: apps/website/src/app/home/home-page.html
+```html
+<pc-site-header variant="over-hero" />
+
+<!-- ============================ HERO ============================ -->
+<section class="bg-navy px-5 pb-12 pt-10 text-center sm:px-8 sm:pb-16 sm:pt-14">
+  <div class="flex flex-wrap items-center justify-center gap-3">
+    <span class="w-full text-center text-[12.5px] font-medium text-white/60">I'm with a</span>
+    <div class="flex gap-1 rounded-lg bg-white/12 p-1">
+      @for (a of audiences; track a.id) {
+      <button
+        type="button"
+        class="rounded-md px-3.5 py-2 text-[13px] font-semibold transition-colors"
+        [class]="aud() === a.id ? 'bg-white text-navy' : 'bg-transparent text-white/80 hover:text-white'"
+        (click)="pick(a.id)"
+      >
+        {{ a.label }}
+      </button>
+      }
+    </div>
+  </div>
+
+  <div class="mx-auto mt-9 max-w-[780px]">
+    <h1
+      class="text-balance text-[clamp(2.125rem,5.5vw,3.125rem)] font-bold leading-[1.1] tracking-[-0.02em] text-white"
+    >
+      {{ hero().h1 }}
+    </h1>
+    <p class="mx-auto mt-5 max-w-[580px] text-[17.5px] leading-relaxed text-white/75">{{ hero().sub }}</p>
+  </div>
+
+  <div class="mt-11">
+    @if (hero().img; as img) {
+    <pc-browser-frame [url]="hero().url" [imageSrc]="img" [imageAlt]="hero().h1" />
+    } @else {
+    <pc-browser-frame [url]="hero().url">
+      <pc-app-preview [kind]="hero().kind" />
+    </pc-browser-frame>
+    }
+  </div>
+</section>
+
+<!-- ========================== WHY PPLCRM ========================== -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">Why pplCRM</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
+        Built for relationships, not pipelines.
+      </h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        Most CRMs exist to move deals to “closed”. Your work never closes: the same people, the same streets, year after
+        year. That one difference shapes everything below.
+      </p>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[980px] gap-4 sm:grid-cols-3">
+      @for (pillar of whyPillars; track pillar.title) {
+      <div class="rounded-xl border border-line bg-base-50 p-6">
+        <span class="grid h-10 w-10 place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="pillar.icon" [size]="20" />
+        </span>
+        <div class="mt-3.5 text-[15px] font-semibold">{{ pillar.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ pillar.body }}</p>
+      </div>
+      }
+    </div>
+    <div class="mt-6 text-center">
+      <a routerLink="/compare" class="text-[13.5px] font-semibold text-primary hover:text-secondary"
+        >How we compare to the tools you use now →</a
+      >
+    </div>
+  </div>
+</section>
+
+<!-- ========================= HOW IT WORKS ========================= -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">How it works</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Free to start. Yours to keep.</h2>
+    </div>
+    <div class="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      @for (step of steps; track step.n) {
+      <div class="rounded-xl border border-line bg-base-100 p-6">
+        <div class="text-[13px] font-bold tabular-nums text-primary">{{ step.n }}</div>
+        <div class="mt-2.5 text-[15px] font-semibold">{{ step.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ step.body }}</p>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- ========================= WHAT IT DOES ========================= -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">What it does</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Know your neighbours.</h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        Not “contacts”. Not “leads”. People, with households, histories, and the issues they’ve told you about.
+      </p>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
+      @for (feature of features; track feature.title) {
+      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
+        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="feature.icon" [size]="20" />
+        </span>
+        <div>
+          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
+          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
+        </div>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- ======================= THE NETWORK EFFECT ======================= -->
+<section class="bg-navy px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap flex flex-wrap items-center gap-10 lg:gap-14">
+    <div class="min-w-0 flex-1 basis-[360px]">
+      <div class="eyebrow-dark">The network effect</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em] text-white">
+        Your list isn’t a list. It’s a network.
+      </h2>
+      <p class="mt-3.5 max-w-[520px] text-[15px] leading-relaxed text-white/75">
+        One supporter is never just one person. Behind every name is a household, a street, a workplace and a circle of
+        friends. pplCRM remembers how your people connect, so one good conversation can carry to the next three.
+      </p>
+      <div class="mt-4 flex flex-col">
+        @for (item of networkPoints; track item.title; let last = $last) {
+        <div class="flex gap-4 border-white/10 py-4" [class.border-b]="!last">
+          <span class="mt-0.5 flex-none text-secondary">
+            <pc-site-icon [name]="item.icon" [size]="22" />
+          </span>
+          <div>
+            <div class="text-[15px] font-semibold text-white">{{ item.title }}</div>
+            <p class="mt-1 text-[13.5px] leading-relaxed text-white/60">{{ item.body }}</p>
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+
+    <div class="min-w-0 flex-1 basis-[380px]">
+      <pc-constellation class="h-[300px] w-full sm:h-[420px]" [density]="30" [speed]="1.05" />
+    </div>
+  </div>
+</section>
+
+<!-- ===================== BEYOND THE BASICS ===================== -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">Beyond the basics</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Turn a list into momentum.</h2>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
+      @for (feature of growFeatures; track feature.title) {
+      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
+        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="feature.icon" [size]="20" />
+        </span>
+        <div>
+          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
+          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
+        </div>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- ======================= COMPANION APPS ======================= -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap flex flex-wrap items-center justify-center gap-10 lg:gap-14">
+    <div class="min-w-0 flex-1 basis-[360px]">
+      <div class="eyebrow">Companion apps · iOS, Android and web</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">For the folks in the field.</h2>
+      <div class="mt-6 flex flex-col">
+        @for (item of companionFeatures; track item.title; let last = $last) {
+        <div class="flex gap-4 py-4" [class.border-b]="!last" [class.border-line]="!last">
+          <span class="mt-0.5 flex-none text-secondary">
+            <pc-site-icon [name]="item.icon" [size]="22" />
+          </span>
+          <div>
+            <div class="text-[15px] font-semibold">{{ item.title }}</div>
+            <p class="mt-1 text-[13.5px] leading-relaxed text-base-content/60">{{ item.body }}</p>
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+
+    <!-- Phone mockup -->
+    <div class="w-[264px] flex-none rounded-[42px] bg-navy p-2.5 shadow-[0_24px_70px_rgba(15,23,42,.28)]">
+      <div class="relative flex h-[500px] flex-col overflow-hidden rounded-[34px] bg-base-200">
+        <span class="absolute left-1/2 top-2.5 h-5 w-20 -translate-x-1/2 rounded-full bg-navy"></span>
+        <div class="bg-base-100 px-5 pb-2.5 pt-8">
+          <div class="text-[9px] font-semibold uppercase tracking-[0.08em] text-primary">Demo campaign · Turf 12</div>
+          <div class="mt-0.5 text-[19px] font-bold tracking-[-0.01em]">Maple Heights</div>
+          <div class="mt-0.5 text-[10.5px] text-base-content/50">14 doors · 21 voters</div>
+          <div class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-base-300">
+            <div class="h-full w-[43%] bg-primary"></div>
+          </div>
+          <div class="mt-1.5 flex justify-between text-[10px] tabular-nums text-base-content/55">
+            <span>6 of 14 doors attempted</span><span>5 conversations</span>
+          </div>
+        </div>
+        <div class="flex flex-1 flex-col gap-1.5 overflow-hidden px-3 py-3">
+          @for (door of doors; track door.addr) {
+          <div
+            class="flex items-center justify-between gap-2 rounded-[10px] border border-line bg-base-100 px-3 py-2.5"
+          >
+            <div class="min-w-0">
+              <div class="truncate text-[12px] font-semibold">{{ door.addr }}</div>
+              <div class="truncate text-[9.5px] text-base-content/50">{{ door.who }}</div>
+            </div>
+            <span class="flex-none rounded-full px-2 py-0.5 text-[9px] font-semibold" [class]="door.chipClass"
+              >{{ door.chip }}</span
+            >
+          </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ PRICING ============================ -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="flex flex-wrap items-baseline justify-between gap-4">
+      <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair, simple pricing.</h2>
+    </div>
+    <p class="mt-3 max-w-[620px] text-[14.5px] leading-relaxed text-base-content/60">
+      Unlimited contacts and households on every plan, including free. You pay only for features and email subscribers,
+      never for the size of your list.
+    </p>
+    <div class="mt-7 grid gap-4 sm:grid-cols-3">
+      @for (tier of tiers; track tier.key) {
+      <div
+        class="rounded-xl bg-base-100 p-6"
+        [class]="tier.featured ? 'border-2 border-primary' : 'border border-line'"
+      >
+        <div class="text-[15px] font-semibold">{{ tier.name }}</div>
+        <div class="mt-2.5 text-[30px] font-bold tabular-nums">{{ startingPrice(tier) }}</div>
+        <div class="text-[12.5px] text-base-content/50">{{ tier.cadence }}</div>
+        <p class="mt-3.5 text-[13.5px] leading-relaxed text-base-content/60">{{ tier.blurb }}</p>
+      </div>
+      }
+    </div>
+    <div class="mt-4 text-right">
+      <a routerLink="/pricing" class="text-[13.5px] font-semibold text-primary hover:text-secondary">Full pricing →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ========================== FAQ PREVIEW ========================== -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <h2 class="text-center text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair questions.</h2>
+    <div class="mt-2.5 text-center">
+      <a routerLink="/faq" class="text-[13.5px] font-semibold text-primary hover:text-secondary">All questions →</a>
+    </div>
+    <div class="mt-9 grid gap-x-10 gap-y-3.5 sm:grid-cols-2">
+      @for (qa of faqs; track qa.q) {
+      <div class="border-t border-line py-5">
+        <div class="text-[15px] font-semibold">{{ qa.q }}</div>
+        <p class="mt-1.5 text-[14px] leading-relaxed text-base-content/60">{{ qa.a }}</p>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- =========================== CLOSING CTA =========================== -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8 sm:py-16">
+  <h2 class="text-[clamp(1.5rem,4vw,1.75rem)] font-bold tracking-[-0.01em] text-white">
+    Try everything before you trust us with a single name.
+  </h2>
+  <p class="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-relaxed text-white/75">
+    Your free workspace opens with sample people, households, turfs and a live inbox already in it. Cut a turf, send a
+    test newsletter, break things. When it clicks, import your real list. No card, no time limit.
+  </p>
+  <div class="mt-6">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />
+```
+
 ## File: apps/website/src/index.html
 ```html
 <!doctype html>
@@ -71685,6 +72307,542 @@ function toNum(n: unknown): number | undefined {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/settings/settings-page.html
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="pc-eyebrow">
+        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
+      </p>
+      <h1 class="text-xl font-bold tracking-tight">
+        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
+      </h1>
+      <p class="text-xs text-base-content/60">
+        @switch (currentMode) { @case ('settings') { Personal to you. Nothing here affects teammates. } @case
+        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
+      </p>
+    </div>
+
+    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
+    @if (hasLoaded() && headerSection(); as section) {
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        class="btn btn-outline btn-accent btn-sm"
+        (click)="resetSection(section)"
+        [disabled]="!isSectionDirty(section) || isSaving(section)"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        (click)="saveSection(section)"
+        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+      >
+        @if (isSaving(section)) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } Save settings
+      </button>
+    </div>
+    }
+  </header>
+
+  @if (hasLoaded()) {
+  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
+    <!-- Sidebar Navigation -->
+    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
+      <nav
+        class="flex flex-row gap-0.5 overflow-x-auto pc-panel p-1.5 md:flex-col md:overflow-visible"
+        aria-label="Settings sections"
+      >
+        @for (section of visibleSections; track trackSection($index, section)) {
+        <button
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [class]="navClass(section.config.id)"
+          (click)="selectSection(section.config.id)"
+        >
+          <pc-icon
+            [name]="section.config.icon"
+            [class.text-primary]="isSelected(section.config.id)"
+            [class.opacity-70]="!isSelected(section.config.id)"
+            [size]="5"
+          />
+          {{ section.config.title }}
+          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
+          @if (isSectionDirty(section)) {
+          <span
+            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
+            title="Unsaved changes in this section"
+            aria-label="Unsaved changes in this section"
+          ></span>
+          }
+        </button>
+        }
+        <!-- Custom self-saving sections (config array in settings-page.ts) -->
+        @for (custom of visibleCustomSections; track custom.id) {
+        <button
+          [id]="'settings-nav-' + custom.id"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [class]="navClass(custom.id)"
+          (click)="selectSection(custom.id)"
+        >
+          <pc-icon
+            [name]="custom.icon"
+            [class.text-primary]="isSelected(custom.id)"
+            [class.opacity-70]="!isSelected(custom.id)"
+            [size]="5"
+          />
+          {{ custom.title }}
+        </button>
+        }
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 w-full max-w-4xl">
+      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
+      <section class="space-y-5 pc-panel p-5">
+        @if (section.config.id !== 'notifications') {
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
+        </header>
+        }
+
+        <!-- (form content) -->
+        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
+          @if (section.config.id === 'sla') {
+          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
+            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+            <p class="text-xs leading-relaxed text-base-content/80">
+              Saving new service levels re-evaluates every currently open email and task against the updated targets.
+              Some may immediately count as breached (or clear) on the dashboard.
+            </p>
+          </div>
+          } @if (section.config.id === 'communications') {
+          <!-- Compliance copy (§3): outbound email is regulated (CAN-SPAM / CASL); the platform can't guarantee it -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3.5 py-2.5">
+            <pc-icon name="information-circle" [size]="5" class="mt-0.5 shrink-0 text-info"></pc-icon>
+            <p class="text-xs leading-relaxed text-base-content/80">
+              You are responsible for ensuring your emails comply with the anti-spam and privacy laws that apply to you
+              and your recipients (such as CAN-SPAM and CASL) — including consent, accurate sender details, a valid
+              physical address, and a working unsubscribe link. pplCRM appends the disclaimer and unsubscribe link you
+              configure below, but is a platform only and cannot guarantee that any message satisfies your legal
+              obligations. When in doubt, consult a qualified legal or compliance advisor.
+            </p>
+          </div>
+          }
+
+          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
+            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
+            'notifications') {
+            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
+              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
+                {{ field.config.label }}
+              </label>
+
+              @switch (field.config.type) { @case ('textarea') {
+              <textarea
+                [id]="field.controlName"
+                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+                rows="4"
+              ></textarea>
+              } @case ('toggle') {
+              <label class="flex items-center gap-3 cursor-pointer py-1">
+                <input
+                  [id]="field.controlName"
+                  type="checkbox"
+                  class="toggle toggle-primary toggle-md"
+                  [formField]="section.form[field.controlName]"
+                />
+                <span class="text-xs font-normal text-base-content/70">
+                  {{ field.config.placeholder ?? 'Enabled' }}
+                </span>
+              </label>
+              } @case ('select') {
+              <select
+                [id]="field.controlName"
+                class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              >
+                @for (option of field.config.options ?? []; track option.value ?? $index) {
+                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+              } @case ('number') {
+              <input
+                [id]="field.controlName"
+                type="number"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('date') {
+              <input
+                [id]="field.controlName"
+                type="date"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('day-toggles') {
+              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
+                @for (day of dayChips; track day.value) {
+                <button
+                  type="button"
+                  class="btn btn-sm min-w-12 font-medium"
+                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
+                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
+                  (click)="toggleDay(section, field.controlName, day.value)"
+                >
+                  {{ day.label }}
+                </button>
+                }
+              </div>
+              } @default {
+              <input
+                [id]="field.controlName"
+                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } } @if (field.config.helper) {
+              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
+              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
+                <pc-icon name="exclamation-circle"></pc-icon>
+                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
+              </p>
+              }
+            </div>
+            } }
+          </div>
+
+          <!-- Custom extensions for specific sections -->
+          @if (section.config.id === 'communications') {
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
+            <div class="space-y-1">
+              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
+              <p class="text-xs text-base-content/50">
+                Add and verify email addresses to select them as campaign defaults.
+              </p>
+            </div>
+
+            <!-- Add new sender email form -->
+            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+              <div class="flex-1">
+                <input
+                  type="email"
+                  placeholder="sender@example.com"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                  [value]="senderEmailInput()"
+                  (input)="senderEmailInput.set($any($event.target).value)"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary"
+                (click)="verifySenderEmail(senderEmailInput())"
+                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
+              >
+                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
+                <span class="countdown font-mono text-xs"
+                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
+                >s } @else { Request verification }
+              </button>
+            </div>
+
+            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
+            <div
+              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
+            >
+              <span class="font-semibold text-base-content flex items-center gap-1.5">
+                <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
+                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
+              </span>
+              <span>
+                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
+              </span>
+              <span class="text-base-content/50 flex items-center gap-1">
+                You can request verification again in
+                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
+                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
+                </span>
+                seconds.
+              </span>
+            </div>
+            }
+
+            <!-- List of verified emails -->
+            <div class="space-y-2">
+              <h4 class="pc-eyebrow">Verified sender emails</h4>
+              @if (verifiedEmailsList().length === 0) {
+              <pc-empty-state
+                icon="envelope"
+                [bordered]="false"
+                title="No verified sender emails yet"
+                hint="Add an email above to request verification."
+              />
+              } @else {
+              <div class="flex flex-wrap gap-2">
+                @for (email of verifiedEmailsList(); track email) {
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
+                  <pc-icon name="check-circle" [size]="4"></pc-icon>
+                  {{ email }}
+                </span>
+                }
+              </div>
+              }
+            </div>
+
+            <!-- Sending phone verification (anti-abuse gate for Free-plan sends) -->
+            <div class="space-y-3 border-t border-base-200 pt-6">
+              <div class="space-y-1">
+                <h3 class="text-xs font-semibold text-base-content/90">Sending phone verification</h3>
+                <p class="text-xs text-base-content/50">
+                  Free-plan workspaces verify a mobile number once before their first newsletter send. It keeps spammers
+                  off the shared sending pool your newsletters depend on.
+                </p>
+              </div>
+
+              @if (phoneStatus()?.verified) {
+              <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
+                <pc-icon name="check-circle" [size]="4"></pc-icon>
+                {{ phoneStatus()?.phone }} verified
+              </span>
+              } @else {
+              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+                <div class="flex-1">
+                  <input
+                    type="tel"
+                    placeholder="+1 555 123 4567"
+                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                    [value]="phoneInput()"
+                    (input)="phoneInput.set($any($event.target).value)"
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  (click)="requestPhoneCode()"
+                  [disabled]="phoneBusy() || !phoneInput().trim()"
+                >
+                  @if (phoneBusy() && !phoneCodeSentTo()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } @else { Send code }
+                </button>
+              </div>
+
+              @if (phoneCodeSentTo()) {
+              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+                <div class="flex-1">
+                  <input
+                    type="text"
+                    inputmode="numeric"
+                    maxlength="6"
+                    placeholder="6-digit code"
+                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                    [value]="phoneCodeInput()"
+                    (input)="phoneCodeInput.set($any($event.target).value)"
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  (click)="confirmPhoneCode()"
+                  [disabled]="phoneBusy() || phoneCodeInput().trim().length < 6"
+                >
+                  @if (phoneBusy()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } @else { Verify }
+                </button>
+              </div>
+              <p class="text-xs text-base-content/50">
+                We texted a code to <strong>{{ phoneCodeSentTo() }}</strong>. It expires in 10 minutes.
+              </p>
+              } }
+            </div>
+          </div>
+          } @if (section.config.id === 'data') {
+          <div class="border-t border-base-200 pt-6 mt-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
+                <p class="text-xs text-base-content/50">
+                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
+                  changed.
+                </p>
+                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
+                <p class="text-xs text-warning mt-1 font-medium">
+                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
+                </p>
+                }
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
+                (click)="recomputeAddressFingerprints()"
+                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
+              >
+                @if (recomputingFingerprints()) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Recompute fingerprints
+              </button>
+            </div>
+          </div>
+          } @if (section.config.id === 'notifications') {
+          <div class="space-y-5">
+            <div class="border-b border-base-200 pb-3 space-y-1">
+              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
+              <p class="text-xs text-base-content/60">
+                Customize which email and in-app notifications you would like to receive for your own account.
+              </p>
+            </div>
+
+            <div class="pc-table-shell">
+              <table class="table pc-table w-full">
+                <thead>
+                  <tr class="border-b border-base-200">
+                    <th>Notification type</th>
+                    <th class="text-center w-36">Email</th>
+                    <th class="text-center w-36">In-app alerts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
+                  <tr class="hover:bg-base-200/20">
+                    <td class="align-middle">
+                      <div class="font-semibold text-base-content">{{ group.label }}</div>
+                      @if (group.helper) {
+                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
+                      }
+                    </td>
+                    <td class="align-middle text-center">
+                      <input
+                        [id]="group.emailField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.emailField.controlName]"
+                      />
+                    </td>
+                    <td class="align-middle text-center">
+                      @if (group.inAppField) {
+                      <input
+                        [id]="group.inAppField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.inAppField.controlName]"
+                      />
+                      }
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          }
+
+          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
+          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
+        </form>
+      </section>
+      } }
+
+      <!-- Custom self-saving sections: one shell driven by the same config array as the nav -->
+      @for (custom of visibleCustomSections; track custom.id) { @if (isSelected(custom.id)) {
+      <section class="space-y-5 pc-panel p-5">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">{{ custom.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ custom.description }}</p>
+        </header>
+
+        @switch (custom.id) { @case ('email-sync') {
+        <div class="grid gap-8 lg:grid-cols-2">
+          <!-- Microsoft Office 365 Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
+                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+                <path fill="#81bc06" d="M12 1h10v10H12z" />
+                <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                <path fill="#ffba08" d="M12 12h10v10H12z" />
+              </svg>
+              Microsoft Office 365
+            </h3>
+            <pc-ms-sync-settings></pc-ms-sync-settings>
+          </div>
+
+          <!-- Google Suite Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+              Google Suite (Gmail)
+            </h3>
+            <pc-google-sync-settings></pc-google-sync-settings>
+          </div>
+        </div>
+        } @case ('domains') {
+        <pc-domains-settings></pc-domains-settings>
+        } @case ('donations') {
+        <pc-donations-settings></pc-donations-settings>
+        } @case ('storage') {
+        <pc-storage-settings></pc-storage-settings>
+        } @case ('billing') {
+        <pc-billing-settings></pc-billing-settings>
+        } @case ('passkeys') {
+        <pc-passkey-settings></pc-passkey-settings>
+        } @case ('api-keys') {
+        <pc-api-keys-settings></pc-api-keys-settings>
+        } @case ('account') {
+        <pc-account-settings></pc-account-settings>
+        } }
+      </section>
+      } }
+    </main>
+  </div>
+  } @else {
+  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg"></span>
+      <p class="font-medium">Loading your settings…</p>
+    </div>
+  </div>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
 ```typescript
 import { DatePipe } from '@angular/common';
@@ -72120,6 +73278,8 @@ export class SettingsPage implements OnInit {
           task_due_in_app: true,
           person_assigned: true,
           person_assigned_in_app: true,
+          email_assigned: true,
+          email_assigned_in_app: true,
           export_ready: true,
           export_ready_in_app: true,
           import_summary: true,
@@ -72137,6 +73297,8 @@ export class SettingsPage implements OnInit {
             notifications_task_due_in_app: prefs.task_due_in_app ?? true,
             notifications_person_assigned: prefs.person_assigned ?? true,
             notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            notifications_email_assigned: prefs.email_assigned ?? true,
+            notifications_email_assigned_in_app: prefs.email_assigned_in_app ?? true,
             notifications_export_ready: prefs.export_ready ?? true,
             notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
             notifications_import_summary: prefs.import_summary ?? true,
@@ -72216,6 +73378,8 @@ export class SettingsPage implements OnInit {
               task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
               person_assigned: parseBool(raw['notifications_person_assigned']),
               person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
+              email_assigned: parseBool(raw['notifications_email_assigned']),
+              email_assigned_in_app: parseBool(raw['notifications_email_assigned_in_app']),
               export_ready: parseBool(raw['notifications_export_ready']),
               export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
               import_summary: parseBool(raw['notifications_import_summary']),
@@ -76738,310 +77902,6 @@ interface RegularNewsletterPayload {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.ts
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import {
-  ANNUAL_MONTHS_FREE,
-  ANNUAL_PRICE_MULTIPLIER,
-  PLANS,
-  PURCHASABLE_PLAN_KEYS,
-  annualPriceForQuantity,
-  bracketIndexForSubscribers,
-  maxQuantity,
-  planDisplayName,
-  priceLabelAt,
-  type BillingInterval,
-  type PlanDef,
-  type PlanKey,
-  type PurchasablePlanKey,
-} from '@common';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-
-export interface BillingDetailsSnapshot {
-  plan: string;
-  status: string;
-  interval: BillingInterval;
-  endsAt: Date | null;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
-  hasActiveSubscription: boolean;
-  isMockMode: boolean;
-}
-
-/** Shape returned by `billing.getUsage` — the tenant's live emailable-subscriber count against
- * its current plan's bracket ladder. */
-export interface BillingUsageSnapshot {
-  subscribers: number;
-  billedQuantity: number;
-  subscriberCap: number;
-  emailCap: number;
-  monthlyPrice: number;
-  interval: BillingInterval;
-  tierMax: number;
-}
-
-/** Discrete slider stops for "how many subscribers do you have" — mirrors the website pricing
- * slider so the two surfaces feel identical. */
-const SUBSCRIBER_SLIDER_STOPS = [
-  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
-] as const;
-
-function isPurchasablePlan(value: string | undefined): value is PurchasablePlanKey {
-  return value != null && (PURCHASABLE_PLAN_KEYS as readonly string[]).includes(value);
-}
-
-@Component({
-  selector: 'pc-billing-settings',
-  imports: [DatePipe, Icon, StatusBadge],
-  templateUrl: './billing-settings.html',
-})
-export class BillingSettingsComponent extends TRPCService<any> implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly destroyRef = inject(DestroyRef);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly actionPending = signal(false);
-  protected readonly details = signal<BillingDetailsSnapshot | null>(null);
-  protected readonly usage = signal<BillingUsageSnapshot | null>(null);
-
-  /** Upgrade grid: the purchasable paid tiers only (Grassroots, Movement). Free is the current
-   * plan for everyone who hasn't upgraded, and Enterprise is a contact-us footnote, not a card. */
-  protected readonly plans: readonly PlanDef[] = PLANS.filter((p) => p.purchasable);
-  protected readonly enterpriseMailto = 'mailto:hello@pplcrm.com?subject=Enterprise%20Inquiry';
-
-  /** Billing interval for the upgrade cards. Monthly is the deliberate default — electoral
-   * campaigns often end mid-year and shouldn't be nudged into annual prepay. */
-  protected readonly billingInterval = signal<BillingInterval>('month');
-  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
-
-  protected readonly sliderStops = SUBSCRIBER_SLIDER_STOPS;
-  protected readonly sliderIndex = signal(0);
-  protected readonly sliderValue = computed(() => this.sliderStops[this.sliderIndex()] ?? this.sliderStops[0]);
-  protected readonly maxSliderStop = computed(
-    () => this.sliderStops[this.sliderStops.length - 1] ?? this.sliderStops[0],
-  );
-
-  /** "12,340 emailable subscribers · billed for up to 15,000 at $89/mo" (or "at $890/yr" on
-   * annual billing) — omits the billed clause for plans with no meaningful bracket (free,
-   * enterprise). */
-  protected readonly usageSummary = computed<string | null>(() => {
-    const snapshot = this.usage();
-    const planKey = this.details()?.plan;
-    if (!snapshot || !planKey) return null;
-
-    const subscribers = `${this.formatCount(snapshot.subscribers)} emailable subscribers`;
-    if (planKey === 'free' || planKey === 'enterprise') return subscribers;
-
-    const cap = this.formatCount(snapshot.subscriberCap);
-    const price =
-      snapshot.interval === 'year'
-        ? `$${snapshot.monthlyPrice * ANNUAL_PRICE_MULTIPLIER}/yr`
-        : `$${snapshot.monthlyPrice}/mo`;
-    return `${subscribers} · billed for up to ${cap} at ${price}`;
-  });
-
-  protected planLabel(plan: string | null | undefined): string {
-    return planDisplayName(plan);
-  }
-
-  protected priceLabel(plan: PlanDef): string {
-    return priceLabelAt(plan, this.sliderValue(), this.billingInterval());
-  }
-
-  /** "billed annually as $290" under an annual card price (null on monthly, out-of-ladder, or
-   * ladderless plans — the card falls back to its plain monthly presentation). */
-  protected annualNote(plan: PlanDef): string | null {
-    if (this.billingInterval() !== 'year' || !plan.pricing) return null;
-    const index = bracketIndexForSubscribers(plan.key, this.sliderValue());
-    if (index === null) return null;
-    return `billed annually as $${this.formatCount(annualPriceForQuantity(plan.key, index))}`;
-  }
-
-  protected setBillingInterval(interval: BillingInterval): void {
-    this.billingInterval.set(interval);
-  }
-
-  protected formatCount(n: number): string {
-    return n.toLocaleString('en-US');
-  }
-
-  protected onSliderInput(event: Event): void {
-    const index = (event.target as HTMLInputElement).valueAsNumber;
-    if (!Number.isNaN(index)) this.sliderIndex.set(index);
-  }
-
-  ngOnInit(): void {
-    void this.initBilling();
-  }
-
-  private async initBilling() {
-    await this.loadBilling();
-
-    // Listen to query params for mock successes or redirect callbacks
-    this.route.queryParams
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((params) => void this.handleQueryParams(params));
-  }
-
-  protected async loadBilling() {
-    const end = this._loading.begin();
-    try {
-      const [details, usage] = await Promise.all([
-        this.api.billing.getDetails.query(),
-        this.api.billing.getUsage.query(),
-      ]);
-      this.details.set(details);
-      this.usage.set(usage);
-      this.syncSliderToUsage(usage);
-    } catch (err) {
-      console.error(err);
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load subscription details.');
-    } finally {
-      end();
-    }
-  }
-
-  /** Snaps the slider to the tenant's live subscriber count, rounded up to the nearest stop.
-   * Falls back to the first stop when usage is unavailable or already past the highest stop. */
-  private syncSliderToUsage(usage: BillingUsageSnapshot | null | undefined): void {
-    const subscribers = usage?.subscribers;
-    if (subscribers == null) {
-      this.sliderIndex.set(0);
-      return;
-    }
-    const index = this.sliderStops.findIndex((stop) => subscribers <= stop);
-    this.sliderIndex.set(index === -1 ? this.sliderStops.length - 1 : index);
-  }
-
-  private async handleQueryParams(params: Record<string, string>): Promise<void> {
-    if (params['mock_checkout_success'] && isPurchasablePlan(params['plan'])) {
-      await this.handleMockActivation(params['plan'], params['interval'] === 'year' ? 'year' : 'month');
-    } else if (params['checkout_success']) {
-      await this.syncFromStripe('Subscription activated successfully! Thank you for your purchase.');
-      this.clearQueryParams();
-    } else if (params['portal_return']) {
-      await this.syncFromStripe(null);
-      this.clearQueryParams();
-    } else if (params['mock_portal_success']) {
-      this.alerts.showSuccess('Simulated Customer Portal: Retrieved successfully.');
-      this.clearQueryParams();
-    }
-  }
-
-  /** Returning from Stripe Checkout/Portal: reconcile the plan straight from Stripe (webhooks
-   * can lag or be unconfigured for the active Stripe mode), then reload the page data. */
-  private async syncFromStripe(successMessage: string | null): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const res = await this.api.billing.syncSubscription.mutate();
-      if (successMessage) {
-        this.alerts.showSuccess(successMessage);
-      } else if (res.synced) {
-        this.alerts.showSuccess('Your billing details are up to date.');
-      }
-    } catch (err) {
-      console.error(err);
-      this.alerts.showError('Could not refresh your subscription from Stripe. Reload the page to try again.');
-    } finally {
-      end();
-    }
-    await this.loadBilling();
-  }
-
-  protected async subscribe(plan: PlanDef) {
-    if (!isPurchasablePlan(plan.key)) return;
-    const planKey = plan.key;
-    this.actionPending.set(true);
-    try {
-      const res = await this.api.billing.createCheckout.mutate({ plan: planKey, interval: this.billingInterval() });
-      if (res?.url) {
-        window.location.href = res.url;
-      } else {
-        throw new Error('No redirect URL returned from billing engine.');
-      }
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Checkout failed. Please try again.');
-      this.actionPending.set(false);
-    }
-  }
-
-  protected async openPortal() {
-    this.actionPending.set(true);
-    try {
-      const res = await this.api.billing.createPortal.mutate();
-      if (res?.url) {
-        window.location.href = res.url;
-      } else {
-        throw new Error('No redirect URL returned from billing portal.');
-      }
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not open billing portal.');
-      this.actionPending.set(false);
-    }
-  }
-
-  private async handleMockActivation(plan: PurchasablePlanKey, interval: BillingInterval = 'month') {
-    const end = this._loading.begin();
-    try {
-      const quantity = this.mockQuantityFor(plan);
-      await this.api.billing.activateMockPlan.mutate({ plan, quantity, interval });
-      this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
-      await this.loadBilling();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Mock plan activation failed.');
-    } finally {
-      end();
-      this.clearQueryParams();
-    }
-  }
-
-  /** The bracket index (Stripe quantity) matching the tenant's current subscriber count, so mock
-   * activation lands on the same billed tier the real checkout would compute. */
-  private mockQuantityFor(plan: PlanKey): number {
-    const subscribers = this.usage()?.subscribers ?? 0;
-    return bracketIndexForSubscribers(plan, subscribers) ?? maxQuantity(plan);
-  }
-
-  protected async cancelMock() {
-    const end = this._loading.begin();
-    try {
-      await this.api.billing.cancelMockPlan.mutate();
-      this.alerts.showSuccess('Mock subscription has been canceled.');
-      await this.loadBilling();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel mock plan.');
-    } finally {
-      end();
-    }
-  }
-
-  private clearQueryParams() {
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: {
-        mock_checkout_success: null,
-        plan: null,
-        interval: null,
-        checkout_success: null,
-        portal_return: null,
-        mock_portal_success: null,
-      },
-      queryParamsHandling: 'merge',
-    });
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
 ```typescript
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
@@ -77715,542 +78575,6 @@ export class DonationsSettingsComponent implements OnInit {
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/settings/settings-page.html
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
-  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
-    <div class="space-y-1">
-      <p class="pc-eyebrow">
-        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
-      </p>
-      <h1 class="text-xl font-bold tracking-tight">
-        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
-      </h1>
-      <p class="text-xs text-base-content/60">
-        @switch (currentMode) { @case ('settings') { Personal to you. Nothing here affects teammates. } @case
-        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
-      </p>
-    </div>
-
-    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
-    @if (hasLoaded() && headerSection(); as section) {
-    <div class="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        class="btn btn-outline btn-accent btn-sm"
-        (click)="resetSection(section)"
-        [disabled]="!isSectionDirty(section) || isSaving(section)"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        (click)="saveSection(section)"
-        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-      >
-        @if (isSaving(section)) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } Save settings
-      </button>
-    </div>
-    }
-  </header>
-
-  @if (hasLoaded()) {
-  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
-    <!-- Sidebar Navigation -->
-    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
-      <nav
-        class="flex flex-row gap-0.5 overflow-x-auto pc-panel p-1.5 md:flex-col md:overflow-visible"
-        aria-label="Settings sections"
-      >
-        @for (section of visibleSections; track trackSection($index, section)) {
-        <button
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [class]="navClass(section.config.id)"
-          (click)="selectSection(section.config.id)"
-        >
-          <pc-icon
-            [name]="section.config.icon"
-            [class.text-primary]="isSelected(section.config.id)"
-            [class.opacity-70]="!isSelected(section.config.id)"
-            [size]="5"
-          />
-          {{ section.config.title }}
-          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
-          @if (isSectionDirty(section)) {
-          <span
-            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
-            title="Unsaved changes in this section"
-            aria-label="Unsaved changes in this section"
-          ></span>
-          }
-        </button>
-        }
-        <!-- Custom self-saving sections (config array in settings-page.ts) -->
-        @for (custom of visibleCustomSections; track custom.id) {
-        <button
-          [id]="'settings-nav-' + custom.id"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [class]="navClass(custom.id)"
-          (click)="selectSection(custom.id)"
-        >
-          <pc-icon
-            [name]="custom.icon"
-            [class.text-primary]="isSelected(custom.id)"
-            [class.opacity-70]="!isSelected(custom.id)"
-            [size]="5"
-          />
-          {{ custom.title }}
-        </button>
-        }
-      </nav>
-    </aside>
-
-    <!-- Main Content Area -->
-    <main class="flex-1 w-full max-w-4xl">
-      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
-      <section class="space-y-5 pc-panel p-5">
-        @if (section.config.id !== 'notifications') {
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
-        </header>
-        }
-
-        <!-- (form content) -->
-        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
-          @if (section.config.id === 'sla') {
-          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
-          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
-            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-            <p class="text-xs leading-relaxed text-base-content/80">
-              Saving new service levels re-evaluates every currently open email and task against the updated targets.
-              Some may immediately count as breached (or clear) on the dashboard.
-            </p>
-          </div>
-          } @if (section.config.id === 'communications') {
-          <!-- Compliance copy (§3): outbound email is regulated (CAN-SPAM / CASL); the platform can't guarantee it -->
-          <div class="flex items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3.5 py-2.5">
-            <pc-icon name="information-circle" [size]="5" class="mt-0.5 shrink-0 text-info"></pc-icon>
-            <p class="text-xs leading-relaxed text-base-content/80">
-              You are responsible for ensuring your emails comply with the anti-spam and privacy laws that apply to you
-              and your recipients (such as CAN-SPAM and CASL) — including consent, accurate sender details, a valid
-              physical address, and a working unsubscribe link. pplCRM appends the disclaimer and unsubscribe link you
-              configure below, but is a platform only and cannot guarantee that any message satisfies your legal
-              obligations. When in doubt, consult a qualified legal or compliance advisor.
-            </p>
-          </div>
-          }
-
-          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
-            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
-            'notifications') {
-            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
-              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
-                {{ field.config.label }}
-              </label>
-
-              @switch (field.config.type) { @case ('textarea') {
-              <textarea
-                [id]="field.controlName"
-                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-                rows="4"
-              ></textarea>
-              } @case ('toggle') {
-              <label class="flex items-center gap-3 cursor-pointer py-1">
-                <input
-                  [id]="field.controlName"
-                  type="checkbox"
-                  class="toggle toggle-primary toggle-md"
-                  [formField]="section.form[field.controlName]"
-                />
-                <span class="text-xs font-normal text-base-content/70">
-                  {{ field.config.placeholder ?? 'Enabled' }}
-                </span>
-              </label>
-              } @case ('select') {
-              <select
-                [id]="field.controlName"
-                class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              >
-                @for (option of field.config.options ?? []; track option.value ?? $index) {
-                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
-                }
-              </select>
-              } @case ('number') {
-              <input
-                [id]="field.controlName"
-                type="number"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('date') {
-              <input
-                [id]="field.controlName"
-                type="date"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('day-toggles') {
-              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
-                @for (day of dayChips; track day.value) {
-                <button
-                  type="button"
-                  class="btn btn-sm min-w-12 font-medium"
-                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
-                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
-                  (click)="toggleDay(section, field.controlName, day.value)"
-                >
-                  {{ day.label }}
-                </button>
-                }
-              </div>
-              } @default {
-              <input
-                [id]="field.controlName"
-                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } } @if (field.config.helper) {
-              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
-              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
-              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
-                <pc-icon name="exclamation-circle"></pc-icon>
-                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
-              </p>
-              }
-            </div>
-            } }
-          </div>
-
-          <!-- Custom extensions for specific sections -->
-          @if (section.config.id === 'communications') {
-          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
-            <div class="space-y-1">
-              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
-              <p class="text-xs text-base-content/50">
-                Add and verify email addresses to select them as campaign defaults.
-              </p>
-            </div>
-
-            <!-- Add new sender email form -->
-            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-              <div class="flex-1">
-                <input
-                  type="email"
-                  placeholder="sender@example.com"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                  [value]="senderEmailInput()"
-                  (input)="senderEmailInput.set($any($event.target).value)"
-                />
-              </div>
-              <button
-                type="button"
-                class="btn btn-primary"
-                (click)="verifySenderEmail(senderEmailInput())"
-                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
-              >
-                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
-                <span class="loading loading-spinner loading-xs"></span>
-                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
-                <span class="countdown font-mono text-xs"
-                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
-                >s } @else { Request verification }
-              </button>
-            </div>
-
-            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
-            <div
-              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
-            >
-              <span class="font-semibold text-base-content flex items-center gap-1.5">
-                <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
-                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
-              </span>
-              <span>
-                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
-              </span>
-              <span class="text-base-content/50 flex items-center gap-1">
-                You can request verification again in
-                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
-                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
-                </span>
-                seconds.
-              </span>
-            </div>
-            }
-
-            <!-- List of verified emails -->
-            <div class="space-y-2">
-              <h4 class="pc-eyebrow">Verified sender emails</h4>
-              @if (verifiedEmailsList().length === 0) {
-              <pc-empty-state
-                icon="envelope"
-                [bordered]="false"
-                title="No verified sender emails yet"
-                hint="Add an email above to request verification."
-              />
-              } @else {
-              <div class="flex flex-wrap gap-2">
-                @for (email of verifiedEmailsList(); track email) {
-                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
-                  <pc-icon name="check-circle" [size]="4"></pc-icon>
-                  {{ email }}
-                </span>
-                }
-              </div>
-              }
-            </div>
-
-            <!-- Sending phone verification (anti-abuse gate for Free-plan sends) -->
-            <div class="space-y-3 border-t border-base-200 pt-6">
-              <div class="space-y-1">
-                <h3 class="text-xs font-semibold text-base-content/90">Sending phone verification</h3>
-                <p class="text-xs text-base-content/50">
-                  Free-plan workspaces verify a mobile number once before their first newsletter send. It keeps spammers
-                  off the shared sending pool your newsletters depend on.
-                </p>
-              </div>
-
-              @if (phoneStatus()?.verified) {
-              <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
-                <pc-icon name="check-circle" [size]="4"></pc-icon>
-                {{ phoneStatus()?.phone }} verified
-              </span>
-              } @else {
-              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-                <div class="flex-1">
-                  <input
-                    type="tel"
-                    placeholder="+1 555 123 4567"
-                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                    [value]="phoneInput()"
-                    (input)="phoneInput.set($any($event.target).value)"
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  (click)="requestPhoneCode()"
-                  [disabled]="phoneBusy() || !phoneInput().trim()"
-                >
-                  @if (phoneBusy() && !phoneCodeSentTo()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else { Send code }
-                </button>
-              </div>
-
-              @if (phoneCodeSentTo()) {
-              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-                <div class="flex-1">
-                  <input
-                    type="text"
-                    inputmode="numeric"
-                    maxlength="6"
-                    placeholder="6-digit code"
-                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                    [value]="phoneCodeInput()"
-                    (input)="phoneCodeInput.set($any($event.target).value)"
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  (click)="confirmPhoneCode()"
-                  [disabled]="phoneBusy() || phoneCodeInput().trim().length < 6"
-                >
-                  @if (phoneBusy()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else { Verify }
-                </button>
-              </div>
-              <p class="text-xs text-base-content/50">
-                We texted a code to <strong>{{ phoneCodeSentTo() }}</strong>. It expires in 10 minutes.
-              </p>
-              } }
-            </div>
-          </div>
-          } @if (section.config.id === 'data') {
-          <div class="border-t border-base-200 pt-6 mt-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
-                <p class="text-xs text-base-content/50">
-                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
-                  changed.
-                </p>
-                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
-                <p class="text-xs text-warning mt-1 font-medium">
-                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
-                </p>
-                }
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary shrink-0"
-                (click)="recomputeAddressFingerprints()"
-                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
-              >
-                @if (recomputingFingerprints()) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Recompute fingerprints
-              </button>
-            </div>
-          </div>
-          } @if (section.config.id === 'notifications') {
-          <div class="space-y-5">
-            <div class="border-b border-base-200 pb-3 space-y-1">
-              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
-              <p class="text-xs text-base-content/60">
-                Customize which email and in-app notifications you would like to receive for your own account.
-              </p>
-            </div>
-
-            <div class="pc-table-shell">
-              <table class="table pc-table w-full">
-                <thead>
-                  <tr class="border-b border-base-200">
-                    <th>Notification type</th>
-                    <th class="text-center w-36">Email</th>
-                    <th class="text-center w-36">In-app alerts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-base-content">{{ group.label }}</div>
-                      @if (group.helper) {
-                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
-                      }
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        [id]="group.emailField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.emailField.controlName]"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      @if (group.inAppField) {
-                      <input
-                        [id]="group.inAppField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.inAppField.controlName]"
-                      />
-                      }
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-          }
-
-          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
-          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
-        </form>
-      </section>
-      } }
-
-      <!-- Custom self-saving sections: one shell driven by the same config array as the nav -->
-      @for (custom of visibleCustomSections; track custom.id) { @if (isSelected(custom.id)) {
-      <section class="space-y-5 pc-panel p-5">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">{{ custom.title }}</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">{{ custom.description }}</p>
-        </header>
-
-        @switch (custom.id) { @case ('email-sync') {
-        <div class="grid gap-8 lg:grid-cols-2">
-          <!-- Microsoft Office 365 Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
-                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
-                <path fill="#81bc06" d="M12 1h10v10H12z" />
-                <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                <path fill="#ffba08" d="M12 12h10v10H12z" />
-              </svg>
-              Microsoft Office 365
-            </h3>
-            <pc-ms-sync-settings></pc-ms-sync-settings>
-          </div>
-
-          <!-- Google Suite Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              Google Suite (Gmail)
-            </h3>
-            <pc-google-sync-settings></pc-google-sync-settings>
-          </div>
-        </div>
-        } @case ('domains') {
-        <pc-domains-settings></pc-domains-settings>
-        } @case ('donations') {
-        <pc-donations-settings></pc-donations-settings>
-        } @case ('storage') {
-        <pc-storage-settings></pc-storage-settings>
-        } @case ('billing') {
-        <pc-billing-settings></pc-billing-settings>
-        } @case ('passkeys') {
-        <pc-passkey-settings></pc-passkey-settings>
-        } @case ('api-keys') {
-        <pc-api-keys-settings></pc-api-keys-settings>
-        } @case ('account') {
-        <pc-account-settings></pc-account-settings>
-        } }
-      </section>
-      } }
-    </main>
-  </div>
-  } @else {
-  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg"></span>
-      <p class="font-medium">Loading your settings…</p>
-    </div>
-  </div>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
@@ -80596,555 +80920,253 @@ export class FormsPageComponent implements OnInit {
 </div>
 ```
 
-## File: apps/website/src/app/home/home-page.html
+## File: apps/website/src/app/pricing/pricing-page.html
 ```html
-<pc-site-header variant="over-hero" />
+<pc-site-header variant="solid" />
 
-<!-- ============================ HERO ============================ -->
-<section class="bg-navy px-5 pb-12 pt-10 text-center sm:px-8 sm:pb-16 sm:pt-14">
-  <div class="flex flex-wrap items-center justify-center gap-3">
-    <span class="w-full text-center text-[12.5px] font-medium text-white/60">I'm with a</span>
-    <div class="flex gap-1 rounded-lg bg-white/12 p-1">
-      @for (a of audiences; track a.id) {
-      <button
-        type="button"
-        class="rounded-md px-3.5 py-2 text-[13px] font-semibold transition-colors"
-        [class]="aud() === a.id ? 'bg-white text-navy' : 'bg-transparent text-white/80 hover:text-white'"
-        (click)="pick(a.id)"
-      >
-        {{ a.label }}
-      </button>
-      }
-    </div>
-  </div>
-
-  <div class="mx-auto mt-9 max-w-[780px]">
-    <h1
-      class="text-balance text-[clamp(2.125rem,5.5vw,3.125rem)] font-bold leading-[1.1] tracking-[-0.02em] text-white"
-    >
-      {{ hero().h1 }}
-    </h1>
-    <p class="mx-auto mt-5 max-w-[580px] text-[17.5px] leading-relaxed text-white/75">{{ hero().sub }}</p>
-  </div>
-
-  <div class="mt-11">
-    @if (hero().img; as img) {
-    <pc-browser-frame [url]="hero().url" [imageSrc]="img" [imageAlt]="hero().h1" />
-    } @else {
-    <pc-browser-frame [url]="hero().url">
-      <pc-app-preview [kind]="hero().kind" />
-    </pc-browser-frame>
-    }
-  </div>
-</section>
-
-<!-- ========================== WHY PPLCRM ========================== -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="mx-auto max-w-[620px] text-center">
-      <div class="eyebrow">Why pplCRM</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
-        Built for relationships, not pipelines.
-      </h2>
-      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
-        Most CRMs exist to move deals to “closed”. Your work never closes: the same people, the same streets, year after
-        year. That one difference shapes everything below.
-      </p>
-    </div>
-    <div class="mx-auto mt-9 grid max-w-[980px] gap-4 sm:grid-cols-3">
-      @for (pillar of whyPillars; track pillar.title) {
-      <div class="rounded-xl border border-line bg-base-50 p-6">
-        <span class="grid h-10 w-10 place-items-center rounded-[10px] bg-primary/12 text-primary">
-          <pc-site-icon [name]="pillar.icon" [size]="20" />
-        </span>
-        <div class="mt-3.5 text-[15px] font-semibold">{{ pillar.title }}</div>
-        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ pillar.body }}</p>
-      </div>
-      }
-    </div>
-    <div class="mt-6 text-center">
-      <a routerLink="/compare" class="text-[13.5px] font-semibold text-primary hover:text-secondary"
-        >How we compare to the tools you use now →</a
-      >
-    </div>
-  </div>
-</section>
-
-<!-- ========================= HOW IT WORKS ========================= -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="mx-auto max-w-[620px] text-center">
-      <div class="eyebrow">How it works</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Free to start. Yours to keep.</h2>
-    </div>
-    <div class="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      @for (step of steps; track step.n) {
-      <div class="rounded-xl border border-line bg-base-100 p-6">
-        <div class="text-[13px] font-bold tabular-nums text-primary">{{ step.n }}</div>
-        <div class="mt-2.5 text-[15px] font-semibold">{{ step.title }}</div>
-        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ step.body }}</p>
-      </div>
-      }
-    </div>
-  </div>
-</section>
-
-<!-- ========================= WHAT IT DOES ========================= -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="mx-auto max-w-[620px] text-center">
-      <div class="eyebrow">What it does</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Know your neighbours.</h2>
-      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
-        Not “contacts”. Not “leads”. People, with households, histories, and the issues they’ve told you about.
-      </p>
-    </div>
-    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
-      @for (feature of features; track feature.title) {
-      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
-        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
-          <pc-site-icon [name]="feature.icon" [size]="20" />
-        </span>
-        <div>
-          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
-          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
-        </div>
-      </div>
-      }
-    </div>
-  </div>
-</section>
-
-<!-- ======================= THE NETWORK EFFECT ======================= -->
-<section class="bg-navy px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap flex flex-wrap items-center gap-10 lg:gap-14">
-    <div class="min-w-0 flex-1 basis-[360px]">
-      <div class="eyebrow-dark">The network effect</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em] text-white">
-        Your list isn’t a list. It’s a network.
-      </h2>
-      <p class="mt-3.5 max-w-[520px] text-[15px] leading-relaxed text-white/75">
-        One supporter is never just one person. Behind every name is a household, a street, a workplace and a circle of
-        friends. pplCRM remembers how your people connect, so one good conversation can carry to the next three.
-      </p>
-      <div class="mt-4 flex flex-col">
-        @for (item of networkPoints; track item.title; let last = $last) {
-        <div class="flex gap-4 border-white/10 py-4" [class.border-b]="!last">
-          <span class="mt-0.5 flex-none text-secondary">
-            <pc-site-icon [name]="item.icon" [size]="22" />
-          </span>
-          <div>
-            <div class="text-[15px] font-semibold text-white">{{ item.title }}</div>
-            <p class="mt-1 text-[13.5px] leading-relaxed text-white/60">{{ item.body }}</p>
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-
-    <div class="min-w-0 flex-1 basis-[380px]">
-      <pc-constellation class="h-[300px] w-full sm:h-[420px]" [density]="30" [speed]="1.05" />
-    </div>
-  </div>
-</section>
-
-<!-- ===================== BEYOND THE BASICS ===================== -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="mx-auto max-w-[620px] text-center">
-      <div class="eyebrow">Beyond the basics</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Turn a list into momentum.</h2>
-    </div>
-    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
-      @for (feature of growFeatures; track feature.title) {
-      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
-        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
-          <pc-site-icon [name]="feature.icon" [size]="20" />
-        </span>
-        <div>
-          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
-          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
-        </div>
-      </div>
-      }
-    </div>
-  </div>
-</section>
-
-<!-- ======================= COMPANION APPS ======================= -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap flex flex-wrap items-center justify-center gap-10 lg:gap-14">
-    <div class="min-w-0 flex-1 basis-[360px]">
-      <div class="eyebrow">Companion apps · iOS, Android and web</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">For the folks in the field.</h2>
-      <div class="mt-6 flex flex-col">
-        @for (item of companionFeatures; track item.title; let last = $last) {
-        <div class="flex gap-4 py-4" [class.border-b]="!last" [class.border-line]="!last">
-          <span class="mt-0.5 flex-none text-secondary">
-            <pc-site-icon [name]="item.icon" [size]="22" />
-          </span>
-          <div>
-            <div class="text-[15px] font-semibold">{{ item.title }}</div>
-            <p class="mt-1 text-[13.5px] leading-relaxed text-base-content/60">{{ item.body }}</p>
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-
-    <!-- Phone mockup -->
-    <div class="w-[264px] flex-none rounded-[42px] bg-navy p-2.5 shadow-[0_24px_70px_rgba(15,23,42,.28)]">
-      <div class="relative flex h-[500px] flex-col overflow-hidden rounded-[34px] bg-base-200">
-        <span class="absolute left-1/2 top-2.5 h-5 w-20 -translate-x-1/2 rounded-full bg-navy"></span>
-        <div class="bg-base-100 px-5 pb-2.5 pt-8">
-          <div class="text-[9px] font-semibold uppercase tracking-[0.08em] text-primary">Demo campaign · Turf 12</div>
-          <div class="mt-0.5 text-[19px] font-bold tracking-[-0.01em]">Maple Heights</div>
-          <div class="mt-0.5 text-[10.5px] text-base-content/50">14 doors · 21 voters</div>
-          <div class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-base-300">
-            <div class="h-full w-[43%] bg-primary"></div>
-          </div>
-          <div class="mt-1.5 flex justify-between text-[10px] tabular-nums text-base-content/55">
-            <span>6 of 14 doors attempted</span><span>5 conversations</span>
-          </div>
-        </div>
-        <div class="flex flex-1 flex-col gap-1.5 overflow-hidden px-3 py-3">
-          @for (door of doors; track door.addr) {
-          <div
-            class="flex items-center justify-between gap-2 rounded-[10px] border border-line bg-base-100 px-3 py-2.5"
-          >
-            <div class="min-w-0">
-              <div class="truncate text-[12px] font-semibold">{{ door.addr }}</div>
-              <div class="truncate text-[9.5px] text-base-content/50">{{ door.who }}</div>
-            </div>
-            <span class="flex-none rounded-full px-2 py-0.5 text-[9px] font-semibold" [class]="door.chipClass"
-              >{{ door.chip }}</span
-            >
-          </div>
-          }
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ PRICING ============================ -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="flex flex-wrap items-baseline justify-between gap-4">
-      <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair, simple pricing.</h2>
-    </div>
-    <p class="mt-3 max-w-[620px] text-[14.5px] leading-relaxed text-base-content/60">
-      Unlimited contacts and households on every plan, including free. You pay only for features and email subscribers,
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">Pricing</div>
+    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">Fair, simple pricing.</h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      Unlimited contacts and households on every plan, including Free. You pay only for features and email subscribers,
       never for the size of your list.
     </p>
-    <div class="mt-7 grid gap-4 sm:grid-cols-3">
-      @for (tier of tiers; track tier.key) {
-      <div
-        class="rounded-xl bg-base-100 p-6"
-        [class]="tier.featured ? 'border-2 border-primary' : 'border border-line'"
-      >
-        <div class="text-[15px] font-semibold">{{ tier.name }}</div>
-        <div class="mt-2.5 text-[30px] font-bold tabular-nums">{{ startingPrice(tier) }}</div>
-        <div class="text-[12.5px] text-base-content/50">{{ tier.cadence }}</div>
-        <p class="mt-3.5 text-[13.5px] leading-relaxed text-base-content/60">{{ tier.blurb }}</p>
-      </div>
-      }
-    </div>
-    <div class="mt-4 text-right">
-      <a routerLink="/pricing" class="text-[13.5px] font-semibold text-primary hover:text-secondary">Full pricing →</a>
-    </div>
   </div>
 </section>
 
-<!-- ========================== FAQ PREVIEW ========================== -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <h2 class="text-center text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair questions.</h2>
-    <div class="mt-2.5 text-center">
-      <a routerLink="/faq" class="text-[13.5px] font-semibold text-primary hover:text-secondary">All questions →</a>
+<!-- Slider + plan cards: the one input that re-prices the three cards below. -->
+<section class="px-5 pt-12 sm:px-8">
+  <div class="site-wrap rounded-xl border border-line bg-base-100 px-6 py-5">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+      <label for="subscriber-slider" class="text-[14.5px] font-semibold">
+        How many email subscribers do you have?
+      </label>
+      <div class="text-[15px] font-bold tabular-nums text-primary">{{ subscribersLabel() }} subscribers</div>
     </div>
-    <div class="mt-9 grid gap-x-10 gap-y-3.5 sm:grid-cols-2">
-      @for (qa of faqs; track qa.q) {
-      <div class="border-t border-line py-5">
-        <div class="text-[15px] font-semibold">{{ qa.q }}</div>
-        <p class="mt-1.5 text-[14px] leading-relaxed text-base-content/60">{{ qa.a }}</p>
+    <input
+      id="subscriber-slider"
+      type="range"
+      min="0"
+      [max]="maxStopIndex"
+      step="1"
+      class="range range-primary range-sm mt-4 w-full"
+      [value]="stopIndex()"
+      (input)="onSlide($event)"
+    />
+    <div class="mt-1.5 flex justify-between text-[11px] tabular-nums text-base-content/40">
+      <span>1,000</span>
+      <span>200,000</span>
+    </div>
+
+    <!-- Monthly / Annual billing toggle -->
+    <div class="mt-4 flex flex-col items-center gap-2 border-t border-line pt-4">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        <button role="tab" class="tab" [class.tab-active]="interval() === 'month'" (click)="setInterval('month')">
+          Monthly
+        </button>
+        <button role="tab" class="tab" [class.tab-active]="interval() === 'year'" (click)="setInterval('year')">
+          Annual
+        </button>
       </div>
-      }
+      <span class="rounded-full bg-success/12 px-2.5 py-1 text-[11px] font-semibold text-success">
+        Annual billing: {{ annualBadge }}
+      </span>
     </div>
   </div>
-</section>
 
-<!-- =========================== CLOSING CTA =========================== -->
-<section class="bg-navy px-5 py-14 text-center sm:px-8 sm:py-16">
-  <h2 class="text-[clamp(1.5rem,4vw,1.75rem)] font-bold tracking-[-0.01em] text-white">
-    Try everything before you trust us with a single name.
-  </h2>
-  <p class="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-relaxed text-white/75">
-    Your free workspace opens with sample people, households, turfs and a live inbox already in it. Cut a turf, send a
-    test newsletter, break things. When it clicks, import your real list. No card, no time limit.
+  <!-- Plan cards -->
+  <div class="site-wrap mt-4 grid gap-4 sm:grid-cols-3">
+    @for (tier of tiers; track tier.key) {
+    <div
+      class="flex flex-col rounded-xl bg-base-100 p-6"
+      [class]="tier.featured ? 'border-2 border-primary' : 'border border-line'"
+    >
+      <div class="flex h-6 items-center justify-between">
+        <div class="text-[16px] font-semibold">{{ tier.name }}</div>
+        @if (tier.featured) {
+        <span class="rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary"> Best value </span>
+        }
+      </div>
+      <div class="mt-3 min-h-[52px]">
+        @if (!overMax(tier)) {
+        <div class="text-[30px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
+        <div class="mt-1.5 text-[12px] text-base-content/50">
+          {{ cadence(tier) }} · at {{ subscribersLabel() }} subscribers
+        </div>
+        @if (annualNote(tier); as note) {
+        <div class="mt-1 text-[12px] font-medium text-success">{{ note }}</div>
+        } } @else if (tier.key === 'free') {
+        <div class="text-[30px] font-bold tabular-nums leading-none text-base-content/35">{{ zeroPrice() }}</div>
+        <div class="mt-1.5 text-[12px] text-base-content/50">Covers up to 1,000 subscribers</div>
+        } @else {
+        <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
+        <div class="mt-2 text-[12px] text-base-content/50">
+          For more than {{ maxSubscribersLabel(tier) }} subscribers
+        </div>
+        }
+      </div>
+      <p class="mt-3 text-[13.5px] leading-relaxed text-base-content/70">{{ stepUpLabel(tier) }}</p>
+      <p class="mt-2 text-[12px] leading-relaxed text-base-content/50">{{ capsLine(tier) }}</p>
+      <div class="mt-auto pt-5">
+        <a
+          [href]="signupUrl"
+          class="btn w-full rounded-field text-[13.5px] font-semibold"
+          [class]="tier.featured ? 'btn-primary' : 'btn-outline btn-primary'"
+          >Start free</a
+        >
+      </div>
+    </div>
+    }
+  </div>
+
+  @if (interval() === 'year') {
+  <p class="site-wrap mt-3 text-center text-[12px] text-base-content/50">
+    Per-month prices on annual billing are rounded to the nearest dollar. You're billed once a year, at the exact annual
+    total shown on each card.
   </p>
-  <div class="mt-6">
+  }
+
+  <!-- Included in every plan -->
+  <div class="site-wrap mt-4 rounded-xl border border-line bg-base-50 p-6">
+    <div class="eyebrow">Included in every plan, including Free</div>
+    <ul class="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+      @for (item of includedEverywhere; track item) {
+      <li class="flex items-center gap-2 text-[13px] text-base-content/70">
+        <pc-site-icon name="check-circle" [size]="15" class="flex-none text-primary" />
+        <span>{{ item }}</span>
+      </li>
+      }
+    </ul>
+  </div>
+</section>
+
+<!-- What differs between plans -->
+<section class="px-5 py-12 sm:px-8">
+  <div class="site-wrap">
+    <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em]">What changes as you step up.</h2>
+    <p class="mt-2 max-w-[620px] text-[13.5px] text-base-content/60">
+      The grid below only lists what differs between plans; everything above is in all of them.
+    </p>
+  </div>
+
+  <div class="site-wrap mt-5 overflow-x-auto rounded-xl border border-line bg-base-100">
+    <table class="w-full min-w-[640px] border-separate border-spacing-0">
+      <thead>
+        <tr>
+          <th class="sticky left-0 z-[2] w-[240px] border-b border-line bg-base-100 px-5 py-4 text-left align-bottom">
+            <div class="text-[12.5px] font-normal text-base-content/50">
+              Prices shown at {{ subscribersLabel() }} subscribers
+            </div>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <th
+            class="min-w-[150px] border-b border-line px-4 py-4 text-center"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            <div class="text-[15px] font-semibold">{{ tier.name }}</div>
+            <div class="mt-0.5 text-[12.5px] font-normal tabular-nums text-base-content/60">
+              @if (!overMax(tier)) { {{ priceLabel(tier) }} {{ cadence(tier) }} } @else if (tier.key === 'free') { Up to
+              1,000 subscribers } @else { Contact us }
+            </div>
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (group of diffMatrix; track group.category; let groupLast = $last) {
+        <tr>
+          <th class="sticky left-0 z-[1] bg-base-100 px-5 pb-2 pt-6 text-left">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
+              {{ group.category }}
+            </span>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <td class="pb-2 pt-6" [class]="tier.featured ? 'bg-primary/5' : ''"></td>
+          }
+        </tr>
+        @for (row of group.rows; track row.label; let rowLast = $last) {
+        <tr>
+          <th
+            class="sticky left-0 z-[1] border-line bg-base-100 px-5 py-3 text-left text-[13.5px] font-normal text-base-content/80"
+            [class.border-b]="!(groupLast && rowLast)"
+          >
+            {{ row.label }}
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <!-- `relative` contains the absolute sr-only spans, so they can't widen the page
+               past the overflow-x wrapper on small screens. -->
+          <td
+            class="relative border-line px-4 py-3 text-center text-[13px] text-base-content/70"
+            [class.border-b]="!(groupLast && rowLast)"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            @let value = matrixValue(row, tier); @if (value === true) {
+            <svg class="mx-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span class="sr-only">Included</span>
+            } @else if (value === false) {
+            <span class="text-base-content/30" aria-hidden="true">—</span>
+            <span class="sr-only">Not included</span>
+            } @else { {{ value }} }
+          </td>
+          }
+        </tr>
+        } }
+      </tbody>
+    </table>
+  </div>
+
+  @if (isConverted()) {
+  <p
+    class="site-wrap mt-4 rounded-xl border border-line bg-base-200/60 px-5 py-3 text-center text-[13px] text-base-content/70"
+  >
+    Prices shown in {{ currencySymbol() }} are estimates at today's exchange rate. You'll be billed in US dollars.
+  </p>
+  }
+
+  <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
+    Need more than 200,000 subscribers, SSO or custom contracts?
+    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Talk to us</a>.
+  </p>
+
+  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
+    Donations processed through Stripe carry a 1% platform fee plus Stripe’s own processing fees. Subscriptions have no
+    hidden fees.
+  </p>
+
+  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
+    Volunteers join the companion apps by invite and never take a staff seat. Questions about a plan?
+    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Write to us</a> or
+    <a class="font-semibold text-primary hover:text-secondary" routerLink="/faq">read the FAQ</a>.
+  </p>
+</section>
+
+<!-- CTA band -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    Every plan starts on sample data.
+  </h2>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
     <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
       Start free with sample data
+    </a>
+    <a
+      [href]="mailto"
+      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
+    >
+      Book a 15-minute walkthrough
     </a>
   </div>
 </section>
 
 <pc-site-footer />
-```
-
-## File: apps/website/src/app/legal/privacy-content.ts
-```typescript
-import type { LegalDoc } from './legal-types';
-
-/**
- * The privacy policy. Every operational claim in here (retention windows,
- * cookie names, subprocessors, deletion behavior) mirrors what the product
- * actually does; if the product changes, change this document in the same
- * commit. Plain language on purpose: the policy is part of the pitch.
- */
-export const PRIVACY_DOC: LegalDoc = {
-  eyebrow: 'Legal',
-  title: 'Privacy policy',
-  intro:
-    'What we collect, why, where it lives, and the things we will never do with it. Written to be read, not skimmed past.',
-  updated: 'July 21, 2026',
-  blocks: [
-    {
-      kind: 'h2',
-      id: 'overview',
-      text: 'Who we are and what this covers',
-    },
-    {
-      kind: 'p',
-      text: 'pplCRM (“we”, “us”) is a relationship platform for constituency offices, campaigns and non-profits, operated from Canada. This policy covers the marketing site (pplcrm.com), the application (app.pplcrm.com and api.pplcrm.com), the volunteer companion apps (go.pplcrm.com), and the public pages organizations publish through us (their pages on pplforms.com). You can reach us about anything in this policy at hello@pplcrm.com.',
-    },
-    {
-      kind: 'p',
-      text: 'The short version: we collect what we need to run the service and nothing else. We never sell, share, rent or mine the people in your workspace. We run no advertising trackers and no third-party analytics anywhere. Delete means deleted.',
-    },
-    {
-      kind: 'h2',
-      id: 'roles',
-      text: 'Two kinds of data: yours and your organization’s',
-    },
-    {
-      kind: 'p',
-      text: 'It helps to separate two roles, because your rights differ between them.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Data we control.** Your account details, billing information, support conversations and website interactions. For this data, we decide how it is handled, and this policy is the full story.',
-        '**Data your organization controls.** Everything inside a workspace: the constituents, voters, donors and volunteers your organization stores, plus notes, donations, form submissions and synced email. Here the organization is the data controller and we are its service provider; we process this data only on the organization’s instructions and never for our own purposes.',
-      ],
-    },
-    {
-      kind: 'p',
-      text: 'If you are in an organization’s list rather than a pplCRM account holder, the section “If you are in one of our customers’ lists” below is written for you.',
-    },
-    {
-      kind: 'h2',
-      id: 'account-data',
-      text: 'What we collect about account holders',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Identity and sign-in.** Your name, email address and password. Passwords are stored only as an argon2id hash; nobody at pplCRM can see them. If you enable passkeys or two-factor codes, we store the public credential or a hashed one-time code, never a usable secret.',
-        '**Session security data.** The IP address and browser signature of your active sessions. We keep these so we can show you where you are signed in and challenge sign-ins from a new device or location.',
-        '**Billing.** Paid plans are billed through Stripe. Stripe collects your card details and billing address directly; card numbers never touch our servers. We keep your plan, invoices and billing contact.',
-        '**Phone number.** Only if you provide one, for example to verify sending on the free plan. Verification codes are sent by SMS and stored hashed.',
-        '**Support.** Emails you send to hello@pplcrm.com, so we can answer them and improve the product.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'workspace-data',
-      text: 'Data your organization stores in its workspace',
-    },
-    {
-      kind: 'p',
-      text: 'A workspace can hold contact details for people, households and companies, notes and tags, casework, donation history, event RSVPs, volunteer availability, and campaign facts such as support level and voting status. Some of this is politically sensitive personal information; we treat the entire workspace with the same care regardless of category.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Addresses and maps.** Household addresses can be geocoded so they appear on maps and turfs. Geocoding sends the street address to the Google Maps Geocoding API and stores the resulting coordinates.',
-        '**Synced mailboxes.** If a workspace admin connects Gmail or Microsoft 365, we sync email content into the workspace so conversations sit next to the people they belong to. The OAuth tokens for these connections are encrypted at rest with AES-256-GCM, and you can disconnect at any time. Our use of data received from Google APIs adheres to the Google API Services User Data Policy, including its Limited Use requirements.',
-        '**Newsletter engagement.** When an organization sends a newsletter, delivery and engagement events (bounces, unsubscribes, opens and clicks) are recorded so the sender can respect them.',
-        '**Uploaded files.** Imports and attachments are stored in Canada with the rest of your workspace data.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'public-pages',
-      text: 'Public forms, donations, events and volunteer links',
-    },
-    {
-      kind: 'p',
-      text: 'Organizations can publish signup forms, donation pages, event pages and volunteer links. Anything you submit on those pages goes into that organization’s workspace, and the organization is responsible for how it is used. Donation payments are processed by Stripe (see the subprocessor list below); we receive the donation record, never your full card details. Volunteers using a companion link verify with a one-time code sent to the email or mobile number the organization has on file; codes and device sessions are stored hashed and expire automatically.',
-    },
-    {
-      kind: 'h2',
-      id: 'how-we-use',
-      text: 'How we use personal information',
-    },
-    {
-      kind: 'list',
-      items: [
-        'To run the service: signing you in, storing and displaying your workspace, sending the emails and SMS messages you ask it to send.',
-        'To bill you and send you invoices, receipts and important account notices.',
-        'To keep the platform safe: rate limiting, new-device challenges, and the sending guards that pause senders whose mail bounces or draws complaints.',
-        'To answer support requests, using the minimum data needed to help.',
-        'To comply with the law when we genuinely must, and we will tell you when the law allows it.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'what-we-never-do',
-      text: 'What we never do',
-    },
-    {
-      kind: 'list',
-      items: [
-        'We never sell, share, rent or trade personal information, yours or your organization’s. To anyone.',
-        'We never use workspace data for advertising, profiling, or building products for other customers, and we do not use it to train machine-learning models.',
-        'We run no third-party analytics, advertising pixels or fingerprinting scripts on the website or in the product.',
-        'We never read workspace content out of curiosity. Access by our team is limited to what a specific support request or safety issue requires.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'subprocessors',
-      text: 'Service providers we rely on',
-    },
-    {
-      kind: 'p',
-      text: 'We use a small set of infrastructure providers, each for one job. They receive only what that job requires and may not use it for anything else.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Microsoft Azure.** Hosts the application, database and file storage in Canada.',
-        '**Cloudflare.** Serves the marketing site and the public form, donation and companion pages at the network edge.',
-        '**Stripe.** Subscription billing, tax calculation, and card donation processing. Stripe stores payment and donor data in the United States.',
-        '**Postmark.** Delivers transactional email such as verification links, security codes and account notices.',
-        '**SendGrid.** Delivers newsletters and automation emails from your organization’s own verified domain and reports delivery and engagement events.',
-        '**Twilio.** Sends SMS one-time codes for volunteer verification and free-plan sending verification.',
-        '**Anthropic.** Powers the newsletter deliverability check’s AI content review. It receives only the draft being checked (subject, body text and link list) when a check runs — never your contact lists — and under our agreement the content is not used to train models.',
-        '**Sentry.** Collects error reports from our backend servers when something breaks, so we can fix it. Reports contain the technical failure details (the error, where in our code it happened, which background job or request type failed) with sign-in cookies, credentials and request bodies stripped before sending — never your contact lists or workspace records. Sentry stores these reports in the United States. Nothing from Sentry runs in your browser.',
-        '**Google Maps.** Geocodes household addresses and renders maps.',
-        '**Google and Microsoft.** Mailbox sync, only for workspaces that connect them.',
-        '**Zapier.** Only if your organization creates an integration; data flows are defined by the workflows you build.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'residency',
-      text: 'Where your data lives',
-    },
-    {
-      kind: 'p',
-      text: 'Workspaces are hosted in Canada, and your workspace data stays in Canada for processing and backups. Four narrow exceptions apply: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States, and technical error reports from our backend (with credentials and workspace content stripped) are stored by Sentry in the United States.',
-    },
-    {
-      kind: 'h2',
-      id: 'retention',
-      text: 'Retention and deletion',
-    },
-    {
-      kind: 'p',
-      text: 'We keep personal information only while it does its job, and the product enforces its own deadlines.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Records you delete** are removed from the live database immediately. Automated backups expire within 7 days, at which point deleted data is gone from those too.',
-        '**Workspace deletion** can be scheduled by an organization admin. After a 30-day grace window (cancelable at any time), every record in the workspace is permanently deleted, and we confirm by email when it is done.',
-        '**Activity logs** are kept for 90 days, then pruned automatically.',
-        '**Export files** are downloadable for 30 days, then removed. **Import source files** are kept for 90 days so you can audit an import, then removed.',
-        '**Sessions** expire after 24 hours, or 30 days if you chose “remember me”. Volunteer device sessions expire after 30 days.',
-        '**Suppression records** (unsubscribes, bounces, complaints) are kept while a workspace is active, because keeping them is what honors the opt-out.',
-        '**Billing records** are kept as long as tax and accounting law requires.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'security',
-      text: 'How we protect it',
-    },
-    {
-      kind: 'p',
-      text: 'Encryption in transit everywhere, encrypted OAuth secrets at rest, hashed tokens, workspace isolation enforced by automated checks on every build, signature-verified webhooks, and least-privilege access for field volunteers. The full, honest detail (including what we do not claim) is on the [security page](/security).',
-    },
-    {
-      kind: 'h2',
-      id: 'cookies',
-      text: 'Cookies',
-    },
-    {
-      kind: 'p',
-      text: 'We use exactly two cookies, both ours, neither used for tracking.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**pc_refresh.** Keeps you signed in to the app. HttpOnly and secure, so scripts cannot read it.',
-        '**pc_signed_in.** A yes/no flag that lets this website show “Dashboard” instead of “Log in” when you already have a session. It contains no personal data.',
-      ],
-    },
-    {
-      kind: 'p',
-      text: 'There are no advertising cookies, no analytics cookies, and no third-party cookies. That is the whole list.',
-    },
-    {
-      kind: 'h2',
-      id: 'rights',
-      text: 'Your rights',
-    },
-    {
-      kind: 'p',
-      text: 'Wherever you are, we extend the same rights: access the personal information we hold about you, correct it, receive a portable copy, and have it deleted. Account holders can exercise most of these directly in the product (export lives in settings; deletion is described above). For anything else, email hello@pplcrm.com and we will respond within 30 days. We comply with PIPEDA and applicable provincial privacy law in Canada, and with the GDPR and UK GDPR for workspaces and visitors in those regions. If you are unsatisfied with our answer, you can complain to your privacy regulator; in Canada that is the Office of the Privacy Commissioner.',
-    },
-    {
-      kind: 'h2',
-      id: 'in-someones-list',
-      text: 'If you are in one of our customers’ lists',
-    },
-    {
-      kind: 'p',
-      text: 'If a constituency office, campaign or non-profit that uses pplCRM holds your information, that organization decides why and how it is used, and your request is theirs to answer: contact them directly to access, correct or delete your record, or to opt out of contact. Every newsletter sent through pplCRM carries the sender’s name, postal address and a working unsubscribe link, and unsubscribes are honored automatically across all future sends. If you contact us instead, we will forward your request to the organization and help them fulfill it.',
-    },
-    {
-      kind: 'h2',
-      id: 'children',
-      text: 'Children',
-    },
-    {
-      kind: 'p',
-      text: 'pplCRM is a tool for organizations and is not directed at children. You must be the age of majority where you live to create an account. We do not knowingly collect personal information from children for our own purposes; organizations are responsible for the lawfulness of the records they store.',
-    },
-    {
-      kind: 'h2',
-      id: 'changes',
-      text: 'Changes to this policy',
-    },
-    {
-      kind: 'p',
-      text: 'When this policy changes materially, we will email workspace admins and update the date at the top before the change takes effect. We will never weaken the commitments in “What we never do” quietly; a change to those would be announced prominently and in advance.',
-    },
-    {
-      kind: 'h2',
-      id: 'contact',
-      text: 'Contact',
-    },
-    {
-      kind: 'p',
-      text: 'Privacy questions, requests and complaints all go to hello@pplcrm.com. A human reads every one.',
-    },
-  ],
-};
 ```
 
 ## File: apps/website/src/app/legal/eula-content.ts
@@ -81406,404 +81428,255 @@ export const EULA_DOC: LegalDoc = {
 };
 ```
 
-## File: apps/website/src/app/pricing/pricing-page.html
-```html
-<pc-site-header variant="solid" />
-
-<!-- Hero -->
-<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
-  <div class="mx-auto max-w-[760px] text-center">
-    <div class="eyebrow">Pricing</div>
-    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">Fair, simple pricing.</h1>
-    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
-      Unlimited contacts and households on every plan, including Free. You pay only for features and email subscribers,
-      never for the size of your list.
-    </p>
-  </div>
-</section>
-
-<!-- Slider + plan cards: the one input that re-prices the three cards below. -->
-<section class="px-5 pt-12 sm:px-8">
-  <div class="site-wrap rounded-xl border border-line bg-base-100 px-6 py-5">
-    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-      <label for="subscriber-slider" class="text-[14.5px] font-semibold">
-        How many email subscribers do you have?
-      </label>
-      <div class="text-[15px] font-bold tabular-nums text-primary">{{ subscribersLabel() }} subscribers</div>
-    </div>
-    <input
-      id="subscriber-slider"
-      type="range"
-      min="0"
-      [max]="maxStopIndex"
-      step="1"
-      class="range range-primary range-sm mt-4 w-full"
-      [value]="stopIndex()"
-      (input)="onSlide($event)"
-    />
-    <div class="mt-1.5 flex justify-between text-[11px] tabular-nums text-base-content/40">
-      <span>1,000</span>
-      <span>200,000</span>
-    </div>
-
-    <!-- Monthly / Annual billing toggle -->
-    <div class="mt-4 flex flex-col items-center gap-2 border-t border-line pt-4">
-      <div role="tablist" class="tabs tabs-boxed tabs-sm">
-        <button role="tab" class="tab" [class.tab-active]="interval() === 'month'" (click)="setInterval('month')">
-          Monthly
-        </button>
-        <button role="tab" class="tab" [class.tab-active]="interval() === 'year'" (click)="setInterval('year')">
-          Annual
-        </button>
-      </div>
-      <span class="rounded-full bg-success/12 px-2.5 py-1 text-[11px] font-semibold text-success">
-        Annual billing: {{ annualBadge }}
-      </span>
-    </div>
-  </div>
-
-  <!-- Plan cards -->
-  <div class="site-wrap mt-4 grid gap-4 sm:grid-cols-3">
-    @for (tier of tiers; track tier.key) {
-    <div
-      class="flex flex-col rounded-xl bg-base-100 p-6"
-      [class]="tier.featured ? 'border-2 border-primary' : 'border border-line'"
-    >
-      <div class="flex h-6 items-center justify-between">
-        <div class="text-[16px] font-semibold">{{ tier.name }}</div>
-        @if (tier.featured) {
-        <span class="rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary"> Best value </span>
-        }
-      </div>
-      <div class="mt-3 min-h-[52px]">
-        @if (!overMax(tier)) {
-        <div class="text-[30px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
-        <div class="mt-1.5 text-[12px] text-base-content/50">
-          {{ cadence(tier) }} · at {{ subscribersLabel() }} subscribers
-        </div>
-        @if (annualNote(tier); as note) {
-        <div class="mt-1 text-[12px] font-medium text-success">{{ note }}</div>
-        } } @else if (tier.key === 'free') {
-        <div class="text-[30px] font-bold tabular-nums leading-none text-base-content/35">{{ zeroPrice() }}</div>
-        <div class="mt-1.5 text-[12px] text-base-content/50">Covers up to 1,000 subscribers</div>
-        } @else {
-        <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
-        <div class="mt-2 text-[12px] text-base-content/50">
-          For more than {{ maxSubscribersLabel(tier) }} subscribers
-        </div>
-        }
-      </div>
-      <p class="mt-3 text-[13.5px] leading-relaxed text-base-content/70">{{ stepUpLabel(tier) }}</p>
-      <p class="mt-2 text-[12px] leading-relaxed text-base-content/50">{{ capsLine(tier) }}</p>
-      <div class="mt-auto pt-5">
-        <a
-          [href]="signupUrl"
-          class="btn w-full rounded-field text-[13.5px] font-semibold"
-          [class]="tier.featured ? 'btn-primary' : 'btn-outline btn-primary'"
-          >Start free</a
-        >
-      </div>
-    </div>
-    }
-  </div>
-
-  @if (interval() === 'year') {
-  <p class="site-wrap mt-3 text-center text-[12px] text-base-content/50">
-    Per-month prices on annual billing are rounded to the nearest dollar. You're billed once a year, at the exact annual
-    total shown on each card.
-  </p>
-  }
-
-  <!-- Included in every plan -->
-  <div class="site-wrap mt-4 rounded-xl border border-line bg-base-50 p-6">
-    <div class="eyebrow">Included in every plan, including Free</div>
-    <ul class="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-      @for (item of includedEverywhere; track item) {
-      <li class="flex items-center gap-2 text-[13px] text-base-content/70">
-        <pc-site-icon name="check-circle" [size]="15" class="flex-none text-primary" />
-        <span>{{ item }}</span>
-      </li>
-      }
-    </ul>
-  </div>
-</section>
-
-<!-- What differs between plans -->
-<section class="px-5 py-12 sm:px-8">
-  <div class="site-wrap">
-    <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em]">What changes as you step up.</h2>
-    <p class="mt-2 max-w-[620px] text-[13.5px] text-base-content/60">
-      The grid below only lists what differs between plans; everything above is in all of them.
-    </p>
-  </div>
-
-  <div class="site-wrap mt-5 overflow-x-auto rounded-xl border border-line bg-base-100">
-    <table class="w-full min-w-[640px] border-separate border-spacing-0">
-      <thead>
-        <tr>
-          <th class="sticky left-0 z-[2] w-[240px] border-b border-line bg-base-100 px-5 py-4 text-left align-bottom">
-            <div class="text-[12.5px] font-normal text-base-content/50">
-              Prices shown at {{ subscribersLabel() }} subscribers
-            </div>
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <th
-            class="min-w-[150px] border-b border-line px-4 py-4 text-center"
-            [class]="tier.featured ? 'bg-primary/5' : ''"
-          >
-            <div class="text-[15px] font-semibold">{{ tier.name }}</div>
-            <div class="mt-0.5 text-[12.5px] font-normal tabular-nums text-base-content/60">
-              @if (!overMax(tier)) { {{ priceLabel(tier) }} {{ cadence(tier) }} } @else if (tier.key === 'free') { Up to
-              1,000 subscribers } @else { Contact us }
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody>
-        @for (group of diffMatrix; track group.category; let groupLast = $last) {
-        <tr>
-          <th class="sticky left-0 z-[1] bg-base-100 px-5 pb-2 pt-6 text-left">
-            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
-              {{ group.category }}
-            </span>
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <td class="pb-2 pt-6" [class]="tier.featured ? 'bg-primary/5' : ''"></td>
-          }
-        </tr>
-        @for (row of group.rows; track row.label; let rowLast = $last) {
-        <tr>
-          <th
-            class="sticky left-0 z-[1] border-line bg-base-100 px-5 py-3 text-left text-[13.5px] font-normal text-base-content/80"
-            [class.border-b]="!(groupLast && rowLast)"
-          >
-            {{ row.label }}
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <!-- `relative` contains the absolute sr-only spans, so they can't widen the page
-               past the overflow-x wrapper on small screens. -->
-          <td
-            class="relative border-line px-4 py-3 text-center text-[13px] text-base-content/70"
-            [class.border-b]="!(groupLast && rowLast)"
-            [class]="tier.featured ? 'bg-primary/5' : ''"
-          >
-            @let value = matrixValue(row, tier); @if (value === true) {
-            <svg class="mx-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            <span class="sr-only">Included</span>
-            } @else if (value === false) {
-            <span class="text-base-content/30" aria-hidden="true">—</span>
-            <span class="sr-only">Not included</span>
-            } @else { {{ value }} }
-          </td>
-          }
-        </tr>
-        } }
-      </tbody>
-    </table>
-  </div>
-
-  @if (isConverted()) {
-  <p
-    class="site-wrap mt-4 rounded-xl border border-line bg-base-200/60 px-5 py-3 text-center text-[13px] text-base-content/70"
-  >
-    Prices shown in {{ currencySymbol() }} are estimates at today's exchange rate. You'll be billed in US dollars.
-  </p>
-  }
-
-  <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
-    Need more than 200,000 subscribers, SSO or custom contracts?
-    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Talk to us</a>.
-  </p>
-
-  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
-    Donations processed through Stripe carry a 1% platform fee plus Stripe’s own processing fees. Subscriptions have no
-    hidden fees.
-  </p>
-
-  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
-    Volunteers join the companion apps by invite and never take a staff seat. Questions about a plan?
-    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Write to us</a> or
-    <a class="font-semibold text-primary hover:text-secondary" routerLink="/faq">read the FAQ</a>.
-  </p>
-</section>
-
-<!-- CTA band -->
-<section class="bg-navy px-5 py-14 text-center sm:px-8">
-  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
-    Every plan starts on sample data.
-  </h2>
-  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
-    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
-      Start free with sample data
-    </a>
-    <a
-      [href]="mailto"
-      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
-    >
-      Book a 15-minute walkthrough
-    </a>
-  </div>
-</section>
-
-<pc-site-footer />
-```
-
-## File: apps/website/src/app/legal/security-content.ts
+## File: apps/website/src/app/legal/privacy-content.ts
 ```typescript
 import type { LegalDoc } from './legal-types';
 
 /**
- * The security page. Every mechanism named here (argon2id, hashed tokens,
- * AES-256-GCM OAuth secrets, signature-verified webhooks, tenant-scoping
- * checks, retention windows) exists in the codebase; if an implementation
- * changes, change this document in the same commit. The honesty section
- * (no certification claims) is deliberate; do not add badges we have not
- * earned.
+ * The privacy policy. Every operational claim in here (retention windows,
+ * cookie names, subprocessors, deletion behavior) mirrors what the product
+ * actually does; if the product changes, change this document in the same
+ * commit. Plain language on purpose: the policy is part of the pitch.
  */
-export const SECURITY_DOC: LegalDoc = {
-  eyebrow: 'Trust',
-  title: 'Security',
+export const PRIVACY_DOC: LegalDoc = {
+  eyebrow: 'Legal',
+  title: 'Privacy policy',
   intro:
-    'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
+    'What we collect, why, where it lives, and the things we will never do with it. Written to be read, not skimmed past.',
   updated: 'July 21, 2026',
   blocks: [
     {
       kind: 'h2',
-      id: 'approach',
-      text: 'Our approach',
+      id: 'overview',
+      text: 'Who we are and what this covers',
     },
     {
       kind: 'p',
-      text: 'A political or community list is one of the most sensitive databases an organization holds: names, addresses, donations, opinions. We designed for that from the first table. The principles are simple: hold as little as possible, encrypt what must be held, hand out the narrowest slice that does the job, make deletion real, and verify everything that arrives from outside. This page describes the mechanisms, not aspirations.',
+      text: 'pplCRM (“we”, “us”) is a relationship platform for constituency offices, campaigns and non-profits, operated from Canada. This policy covers the marketing site (pplcrm.com), the application (app.pplcrm.com and api.pplcrm.com), the volunteer companion apps (go.pplcrm.com), and the public pages organizations publish through us (their pages on pplforms.com). You can reach us about anything in this policy at hello@pplcrm.com.',
+    },
+    {
+      kind: 'p',
+      text: 'The short version: we collect what we need to run the service and nothing else. We never sell, share, rent or mine the people in your workspace. We run no advertising trackers and no third-party analytics anywhere. Delete means deleted.',
     },
     {
       kind: 'h2',
-      id: 'isolation',
-      text: 'Workspace isolation',
+      id: 'roles',
+      text: 'Two kinds of data: yours and your organization’s',
+    },
+    {
+      kind: 'p',
+      text: 'It helps to separate two roles, because your rights differ between them.',
     },
     {
       kind: 'list',
       items: [
-        'Every organization’s workspace is isolated. Every database query in the product is scoped to your workspace, and that rule is enforced by an automated check that runs on every build: code that touches workspace tables without workspace scoping fails and cannot ship.',
-        'The application connects to the database with a least-privilege role, and row-level security in the database provides defense in depth behind the application checks.',
-        'Public identifiers for people are deliberately non-sequential, so records cannot be enumerated by walking IDs.',
+        '**Data we control.** Your account details, billing information, support conversations and website interactions. For this data, we decide how it is handled, and this policy is the full story.',
+        '**Data your organization controls.** Everything inside a workspace: the constituents, voters, donors and volunteers your organization stores, plus notes, donations, form submissions and synced email. Here the organization is the data controller and we are its service provider; we process this data only on the organization’s instructions and never for our own purposes.',
       ],
     },
     {
+      kind: 'p',
+      text: 'If you are in an organization’s list rather than a pplCRM account holder, the section “If you are in one of our customers’ lists” below is written for you.',
+    },
+    {
       kind: 'h2',
-      id: 'accounts',
-      text: 'Account security',
+      id: 'account-data',
+      text: 'What we collect about account holders',
     },
     {
       kind: 'list',
       items: [
-        '**Passwords** are hashed with argon2id (64 MB memory cost), the current best practice, and are never stored or logged in plain text. At signup, passwords are checked against known breach corpora and you are warned before choosing one that has leaked elsewhere.',
-        '**Passkeys** (WebAuthn) are supported for phishing-resistant sign-in.',
-        '**Two-factor authentication** challenges sign-ins from a new device or location with a short-lived one-time code, and workspace admins can require 2FA for everyone in the organization.',
-        '**Sessions** use a short-lived access token plus a refresh token kept in an HttpOnly, secure cookie that page scripts cannot read. Session and refresh tokens are stored server-side only as SHA-256 hashes, so a database leak does not yield usable sessions. Sessions expire after 24 hours, or 30 days with “remember me”, and you can see and revoke your active sessions.',
-        '**Abuse resistance:** sign-in attempts are rate limited per IP, verification codes expire in minutes and allow limited attempts, and sign-in responses are constant-time so attackers cannot discover which emails have accounts.',
+        '**Identity and sign-in.** Your name, email address and password. Passwords are stored only as an argon2id hash; nobody at pplCRM can see them. If you enable passkeys or two-factor codes, we store the public credential or a hashed one-time code, never a usable secret.',
+        '**Session security data.** The IP address and browser signature of your active sessions. We keep these so we can show you where you are signed in and challenge sign-ins from a new device or location.',
+        '**Billing.** Paid plans are billed through Stripe. Stripe collects your card details and billing address directly; card numbers never touch our servers. We keep your plan, invoices and billing contact.',
+        '**Phone number.** Only if you provide one, for example to verify sending on the free plan. Verification codes are sent by SMS and stored hashed.',
+        '**Support.** Emails you send to hello@pplcrm.com, so we can answer them and improve the product.',
       ],
     },
     {
       kind: 'h2',
-      id: 'encryption',
-      text: 'Encryption',
+      id: 'workspace-data',
+      text: 'Data your organization stores in its workspace',
+    },
+    {
+      kind: 'p',
+      text: 'A workspace can hold contact details for people, households and companies, notes and tags, casework, donation history, event RSVPs, volunteer availability, and campaign facts such as support level and voting status. Some of this is politically sensitive personal information; we treat the entire workspace with the same care regardless of category.',
     },
     {
       kind: 'list',
       items: [
-        'All traffic is encrypted in transit with TLS, with HSTS enforced. The application sets a strict content security policy and does not allow itself to be framed by other sites.',
-        'Database connections are encrypted, and stored data is encrypted at rest by the hosting platform.',
-        'OAuth tokens for connected mailboxes (Gmail, Microsoft 365) get an extra application-level layer: AES-256-GCM encryption with a key held outside the database.',
-        'Secrets that only need comparison (session tokens, verification codes, reset codes, volunteer device sessions) are stored as one-way hashes, never as plaintext.',
+        '**Addresses and maps.** Household addresses can be geocoded so they appear on maps and turfs. Geocoding sends the street address to the Google Maps Geocoding API and stores the resulting coordinates.',
+        '**Synced mailboxes.** If a workspace admin connects Gmail or Microsoft 365, we sync email content into the workspace so conversations sit next to the people they belong to. The OAuth tokens for these connections are encrypted at rest with AES-256-GCM, and you can disconnect at any time. Our use of data received from Google APIs adheres to the Google API Services User Data Policy, including its Limited Use requirements.',
+        '**Newsletter engagement.** When an organization sends a newsletter, delivery and engagement events (bounces, unsubscribes, opens and clicks) are recorded so the sender can respect them.',
+        '**Uploaded files.** Imports and attachments are stored in Canada with the rest of your workspace data.',
       ],
     },
     {
       kind: 'h2',
-      id: 'field-access',
-      text: 'Field and volunteer access',
+      id: 'public-pages',
+      text: 'Public forms, donations, events and volunteer links',
     },
     {
       kind: 'p',
-      text: 'Field tools are where lists usually leak, so companion access is least-privilege by construction. A volunteer link exposes exactly one turf or route, never the list. Volunteers verify with a one-time code sent to the contact your organization has on file (codes expire in 10 minutes, five attempts maximum) and must be approved once by an admin before first use. Device sessions are stored hashed and expire after 30 days; links expire too, and both are revocable at any time. A lost phone is an inconvenience, not a breach of your list.',
+      text: 'Organizations can publish signup forms, donation pages, event pages and volunteer links. Anything you submit on those pages goes into that organization’s workspace, and the organization is responsible for how it is used. Donation payments are processed by Stripe (see the subprocessor list below); we receive the donation record, never your full card details. Volunteers using a companion link verify with a one-time code sent to the email or mobile number the organization has on file; codes and device sessions are stored hashed and expire automatically.',
     },
     {
       kind: 'h2',
-      id: 'payments',
-      text: 'Payments',
-    },
-    {
-      kind: 'p',
-      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe. We store the donation record; Stripe stores the payment instruments, under its PCI DSS obligations.',
-    },
-    {
-      kind: 'h2',
-      id: 'webhooks-integrations',
-      text: 'Integrations and webhooks',
+      id: 'how-we-use',
+      text: 'How we use personal information',
     },
     {
       kind: 'list',
       items: [
-        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
-        'Mailbox sync is opt-in per workspace, scoped by OAuth consent, disconnectable at any time, and its tokens are encrypted as described above.',
-        'API keys for integrations are generated per workspace and revocable.',
+        'To run the service: signing you in, storing and displaying your workspace, sending the emails and SMS messages you ask it to send.',
+        'To bill you and send you invoices, receipts and important account notices.',
+        'To keep the platform safe: rate limiting, new-device challenges, and the sending guards that pause senders whose mail bounces or draws complaints.',
+        'To answer support requests, using the minimum data needed to help.',
+        'To comply with the law when we genuinely must, and we will tell you when the law allows it.',
       ],
     },
     {
       kind: 'h2',
-      id: 'sending',
-      text: 'Sending protections',
-    },
-    {
-      kind: 'p',
-      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Every newsletter also passes a deliverability check before it sends — a 0–100 score over content best practices plus an AI review that catches phishing-shaped and scam-like content; drafts scoring below 50 cannot send until fixed. The AI review runs on every send, on every plan — it exists to stop a compromised account from blasting phishing before a single message leaves, not just to police new signups. Each plan’s monthly email allowance (2× your subscriber cap on Free, 8× on Grassroots, 12× on Movement) is enforced in the send path, and emails sent by automations count toward the same allowance — send volume is tied to the audience size a workspace actually pays for, so a small plan cannot be used to blast a huge imported list. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself, for newsletters and automation emails alike: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
-    },
-    {
-      kind: 'h2',
-      id: 'infrastructure',
-      text: 'Infrastructure, residency and backups',
+      id: 'what-we-never-do',
+      text: 'What we never do',
     },
     {
       kind: 'list',
       items: [
-        'The platform runs on Microsoft Azure, with workspaces hosted in Canada; workspace data stays there for processing and backups.',
-        'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
-        'Databases are backed up automatically every day, with backups retained for 7 days in Canada. Deleted data therefore leaves backups within 7 days of leaving the live database.',
+        'We never sell, share, rent or trade personal information, yours or your organization’s. To anyone.',
+        'We never use workspace data for advertising, profiling, or building products for other customers, and we do not use it to train machine-learning models.',
+        'We run no third-party analytics, advertising pixels or fingerprinting scripts on the website or in the product.',
+        'We never read workspace content out of curiosity. Access by our team is limited to what a specific support request or safety issue requires.',
       ],
     },
     {
       kind: 'h2',
-      id: 'monitoring',
-      text: 'Audit trails',
+      id: 'subprocessors',
+      text: 'Service providers we rely on',
     },
     {
       kind: 'p',
-      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data. Our servers are also monitored around the clock: automated probes check the service from outside every few minutes and page us when it is unreachable, and server errors are reported to an error-tracking service (with credentials and workspace content stripped — see the privacy policy’s subprocessor list) so we usually know about a problem before you do.',
+      text: 'We use a small set of infrastructure providers, each for one job. They receive only what that job requires and may not use it for anything else.',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Microsoft Azure.** Hosts the application, database and file storage in Canada.',
+        '**Cloudflare.** Serves the marketing site and the public form, donation and companion pages at the network edge.',
+        '**Stripe.** Subscription billing, tax calculation, and card donation processing. Stripe stores payment and donor data in the United States.',
+        '**Postmark.** Delivers transactional email such as verification links, security codes and account notices.',
+        '**SendGrid.** Delivers newsletters and automation emails from your organization’s own verified domain and reports delivery and engagement events.',
+        '**Twilio.** Sends SMS one-time codes for volunteer verification and free-plan sending verification.',
+        '**Anthropic.** Powers the newsletter deliverability check’s AI content review. It receives only the draft being checked (subject, body text and link list) when a check runs — never your contact lists — and under our agreement the content is not used to train models.',
+        '**Sentry.** Collects error reports from our backend servers when something breaks, so we can fix it. Reports contain the technical failure details (the error, where in our code it happened, which background job or request type failed) with sign-in cookies, credentials and request bodies stripped before sending — never your contact lists or workspace records. Sentry stores these reports in the United States. Nothing from Sentry runs in your browser.',
+        '**Google Maps.** Geocodes household addresses and renders maps.',
+        '**Google and Microsoft.** Mailbox sync, only for workspaces that connect them.',
+        '**Zapier.** Only if your organization creates an integration; data flows are defined by the workflows you build.',
+      ],
     },
     {
       kind: 'h2',
-      id: 'honesty',
-      text: 'What we do not claim',
+      id: 'residency',
+      text: 'Where your data lives',
     },
     {
       kind: 'p',
-      text: 'We are a small team and we would rather show you exactly what we do than imply an audit we have not had. We do not currently hold SOC 2 or ISO 27001 certification, and we do not display compliance badges we have not earned. What you get instead is specific, checkable engineering: the mechanisms on this page, the retention windows in the [privacy policy](/privacy), and the commitments on the [data ownership page](/data-ownership). If your organization requires a security questionnaire for procurement, write to us and we will answer it honestly.',
+      text: 'Workspaces are hosted in Canada, and your workspace data stays in Canada for processing and backups. Four narrow exceptions apply: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States, and technical error reports from our backend (with credentials and workspace content stripped) are stored by Sentry in the United States.',
     },
     {
       kind: 'h2',
-      id: 'disclosure',
-      text: 'Reporting a vulnerability',
+      id: 'retention',
+      text: 'Retention and deletion',
     },
     {
       kind: 'p',
-      text: 'If you believe you have found a security issue, email hello@pplcrm.com with “Security” in the subject line and we will respond within 3 business days. Please give us reasonable time to fix the issue before disclosing it publicly, do not access data that is not yours, and do not degrade the service while testing. We will not take legal action against good-faith research that follows these rules, and we credit reporters who want credit once a fix ships.',
+      text: 'We keep personal information only while it does its job, and the product enforces its own deadlines.',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Records you delete** are removed from the live database immediately. Automated backups expire within 7 days, at which point deleted data is gone from those too.',
+        '**Workspace deletion** can be scheduled by an organization admin. After a 30-day grace window (cancelable at any time), every record in the workspace is permanently deleted, and we confirm by email when it is done.',
+        '**Activity logs** are kept for 90 days, then pruned automatically.',
+        '**Export files** are downloadable for 30 days, then removed. **Import source files** are kept for 90 days so you can audit an import, then removed.',
+        '**Sessions** expire after 24 hours, or 30 days if you chose “remember me”. Volunteer device sessions expire after 30 days.',
+        '**Suppression records** (unsubscribes, bounces, complaints) are kept while a workspace is active, because keeping them is what honors the opt-out.',
+        '**Billing records** are kept as long as tax and accounting law requires.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'security',
+      text: 'How we protect it',
+    },
+    {
+      kind: 'p',
+      text: 'Encryption in transit everywhere, encrypted OAuth secrets at rest, hashed tokens, workspace isolation enforced by automated checks on every build, signature-verified webhooks, and least-privilege access for field volunteers. The full, honest detail (including what we do not claim) is on the [security page](/security).',
+    },
+    {
+      kind: 'h2',
+      id: 'cookies',
+      text: 'Cookies',
+    },
+    {
+      kind: 'p',
+      text: 'We use exactly two cookies, both ours, neither used for tracking.',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**pc_refresh.** Keeps you signed in to the app. HttpOnly and secure, so scripts cannot read it.',
+        '**pc_signed_in.** A yes/no flag that lets this website show “Dashboard” instead of “Log in” when you already have a session. It contains no personal data.',
+      ],
+    },
+    {
+      kind: 'p',
+      text: 'There are no advertising cookies, no analytics cookies, and no third-party cookies. That is the whole list.',
+    },
+    {
+      kind: 'h2',
+      id: 'rights',
+      text: 'Your rights',
+    },
+    {
+      kind: 'p',
+      text: 'Wherever you are, we extend the same rights: access the personal information we hold about you, correct it, receive a portable copy, and have it deleted. Account holders can exercise most of these directly in the product (export lives in settings; deletion is described above). For anything else, email hello@pplcrm.com and we will respond within 30 days. We comply with PIPEDA and applicable provincial privacy law in Canada, and with the GDPR and UK GDPR for workspaces and visitors in those regions. If you are unsatisfied with our answer, you can complain to your privacy regulator; in Canada that is the Office of the Privacy Commissioner.',
+    },
+    {
+      kind: 'h2',
+      id: 'in-someones-list',
+      text: 'If you are in one of our customers’ lists',
+    },
+    {
+      kind: 'p',
+      text: 'If a constituency office, campaign or non-profit that uses pplCRM holds your information, that organization decides why and how it is used, and your request is theirs to answer: contact them directly to access, correct or delete your record, or to opt out of contact. Every newsletter sent through pplCRM carries the sender’s name, postal address and a working unsubscribe link, and unsubscribes are honored automatically across all future sends. If you contact us instead, we will forward your request to the organization and help them fulfill it.',
+    },
+    {
+      kind: 'h2',
+      id: 'children',
+      text: 'Children',
+    },
+    {
+      kind: 'p',
+      text: 'pplCRM is a tool for organizations and is not directed at children. You must be the age of majority where you live to create an account. We do not knowingly collect personal information from children for our own purposes; organizations are responsible for the lawfulness of the records they store.',
+    },
+    {
+      kind: 'h2',
+      id: 'changes',
+      text: 'Changes to this policy',
+    },
+    {
+      kind: 'p',
+      text: 'When this policy changes materially, we will email workspace admins and update the date at the top before the change takes effect. We will never weaken the commitments in “What we never do” quietly; a change to those would be announced prominently and in advance.',
+    },
+    {
+      kind: 'h2',
+      id: 'contact',
+      text: 'Contact',
+    },
+    {
+      kind: 'p',
+      text: 'Privacy questions, requests and complaints all go to hello@pplcrm.com. A human reads every one.',
     },
   ],
 };
@@ -82313,6 +82186,160 @@ export class HomePage {
     this.aud.set(id);
   }
 }
+```
+
+## File: apps/website/src/app/legal/security-content.ts
+```typescript
+import type { LegalDoc } from './legal-types';
+
+/**
+ * The security page. Every mechanism named here (argon2id, hashed tokens,
+ * AES-256-GCM OAuth secrets, signature-verified webhooks, tenant-scoping
+ * checks, retention windows) exists in the codebase; if an implementation
+ * changes, change this document in the same commit. The honesty section
+ * (no certification claims) is deliberate; do not add badges we have not
+ * earned.
+ */
+export const SECURITY_DOC: LegalDoc = {
+  eyebrow: 'Trust',
+  title: 'Security',
+  intro:
+    'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
+  updated: 'July 21, 2026',
+  blocks: [
+    {
+      kind: 'h2',
+      id: 'approach',
+      text: 'Our approach',
+    },
+    {
+      kind: 'p',
+      text: 'A political or community list is one of the most sensitive databases an organization holds: names, addresses, donations, opinions. We designed for that from the first table. The principles are simple: hold as little as possible, encrypt what must be held, hand out the narrowest slice that does the job, make deletion real, and verify everything that arrives from outside. This page describes the mechanisms, not aspirations.',
+    },
+    {
+      kind: 'h2',
+      id: 'isolation',
+      text: 'Workspace isolation',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Every organization’s workspace is isolated. Every database query in the product is scoped to your workspace, and that rule is enforced by an automated check that runs on every build: code that touches workspace tables without workspace scoping fails and cannot ship.',
+        'The application connects to the database with a least-privilege role, and row-level security in the database provides defense in depth behind the application checks.',
+        'Public identifiers for people are deliberately non-sequential, so records cannot be enumerated by walking IDs.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'accounts',
+      text: 'Account security',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Passwords** are hashed with argon2id (64 MB memory cost), the current best practice, and are never stored or logged in plain text. At signup, passwords are checked against known breach corpora and you are warned before choosing one that has leaked elsewhere.',
+        '**Passkeys** (WebAuthn) are supported for phishing-resistant sign-in.',
+        '**Two-factor authentication** challenges sign-ins from a new device or location with a short-lived one-time code, and workspace admins can require 2FA for everyone in the organization.',
+        '**Sessions** use a short-lived access token plus a refresh token kept in an HttpOnly, secure cookie that page scripts cannot read. Session and refresh tokens are stored server-side only as SHA-256 hashes, so a database leak does not yield usable sessions. Sessions expire after 24 hours, or 30 days with “remember me”, and you can see and revoke your active sessions.',
+        '**Abuse resistance:** sign-in attempts are rate limited per IP, verification codes expire in minutes and allow limited attempts, and sign-in responses are constant-time so attackers cannot discover which emails have accounts.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'encryption',
+      text: 'Encryption',
+    },
+    {
+      kind: 'list',
+      items: [
+        'All traffic is encrypted in transit with TLS, with HSTS enforced. The application sets a strict content security policy and does not allow itself to be framed by other sites.',
+        'Database connections are encrypted, and stored data is encrypted at rest by the hosting platform.',
+        'OAuth tokens for connected mailboxes (Gmail, Microsoft 365) get an extra application-level layer: AES-256-GCM encryption with a key held outside the database.',
+        'Secrets that only need comparison (session tokens, verification codes, reset codes, volunteer device sessions) are stored as one-way hashes, never as plaintext.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'field-access',
+      text: 'Field and volunteer access',
+    },
+    {
+      kind: 'p',
+      text: 'Field tools are where lists usually leak, so companion access is least-privilege by construction. A volunteer link exposes exactly one turf or route, never the list. Volunteers verify with a one-time code sent to the contact your organization has on file (codes expire in 10 minutes, five attempts maximum) and must be approved once by an admin before first use. Device sessions are stored hashed and expire after 30 days; links expire too, and both are revocable at any time. A lost phone is an inconvenience, not a breach of your list.',
+    },
+    {
+      kind: 'h2',
+      id: 'payments',
+      text: 'Payments',
+    },
+    {
+      kind: 'p',
+      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe. We store the donation record; Stripe stores the payment instruments, under its PCI DSS obligations.',
+    },
+    {
+      kind: 'h2',
+      id: 'webhooks-integrations',
+      text: 'Integrations and webhooks',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
+        'Mailbox sync is opt-in per workspace, scoped by OAuth consent, disconnectable at any time, and its tokens are encrypted as described above.',
+        'API keys for integrations are generated per workspace and revocable.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'sending',
+      text: 'Sending protections',
+    },
+    {
+      kind: 'p',
+      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Every newsletter also passes a deliverability check before it sends — a 0–100 score over content best practices plus an AI review that catches phishing-shaped and scam-like content; drafts scoring below 50 cannot send until fixed. The AI review runs on every send, on every plan — it exists to stop a compromised account from blasting phishing before a single message leaves, not just to police new signups. Each plan’s monthly email allowance (2× your subscriber cap on Free, 8× on Grassroots, 12× on Movement) is enforced in the send path, and emails sent by automations count toward the same allowance — send volume is tied to the audience size a workspace actually pays for, so a small plan cannot be used to blast a huge imported list. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself, for newsletters and automation emails alike: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
+    },
+    {
+      kind: 'h2',
+      id: 'infrastructure',
+      text: 'Infrastructure, residency and backups',
+    },
+    {
+      kind: 'list',
+      items: [
+        'The platform runs on Microsoft Azure, with workspaces hosted in Canada; workspace data stays there for processing and backups.',
+        'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
+        'Databases are backed up automatically every day, with backups retained for 7 days in Canada. Deleted data therefore leaves backups within 7 days of leaving the live database.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'monitoring',
+      text: 'Audit trails',
+    },
+    {
+      kind: 'p',
+      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data. Our servers are also monitored around the clock: automated probes check the service from outside every few minutes and page us when it is unreachable, and server errors are reported to an error-tracking service (with credentials and workspace content stripped — see the privacy policy’s subprocessor list) so we usually know about a problem before you do.',
+    },
+    {
+      kind: 'h2',
+      id: 'honesty',
+      text: 'What we do not claim',
+    },
+    {
+      kind: 'p',
+      text: 'We are a small team and we would rather show you exactly what we do than imply an audit we have not had. We do not currently hold SOC 2 or ISO 27001 certification, and we do not display compliance badges we have not earned. What you get instead is specific, checkable engineering: the mechanisms on this page, the retention windows in the [privacy policy](/privacy), and the commitments on the [data ownership page](/data-ownership). If your organization requires a security questionnaire for procurement, write to us and we will answer it honestly.',
+    },
+    {
+      kind: 'h2',
+      id: 'disclosure',
+      text: 'Reporting a vulnerability',
+    },
+    {
+      kind: 'p',
+      text: 'If you believe you have found a security issue, email hello@pplcrm.com with “Security” in the subject line and we will respond within 3 business days. Please give us reasonable time to fix the issue before disclosing it publicly, do not access data that is not yours, and do not degrade the service while testing. We will not take legal action against good-faith research that follows these rules, and we credit reporters who want credit once a fix ships.',
+    },
+  ],
+};
 ```
 
 ## File: apps/website/src/app/faq/faq-page.ts

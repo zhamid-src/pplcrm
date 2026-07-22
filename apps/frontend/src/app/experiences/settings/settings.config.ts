@@ -192,6 +192,19 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         defaultValue: true,
       },
       {
+        key: 'notifications.email_assigned',
+        label: 'Email assigned',
+        type: 'toggle',
+        helper: 'Alerts when an inbox conversation is assigned to you',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.email_assigned_in_app',
+        label: 'Email assigned (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
         key: 'notifications.export_ready',
         label: 'Export ready',
         type: 'toggle',

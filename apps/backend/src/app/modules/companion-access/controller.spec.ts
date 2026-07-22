@@ -217,6 +217,17 @@ describe('CompanionAccessController', () => {
     const types = await outboxTypes(db, s.tenantId);
     expect(types.filter((t) => t === 'send-transactional-email').length).toBeGreaterThanOrEqual(2); // code + admin notice
 
+    // ...and by an in-app bell notification linking to the approval page.
+    const bell = await db
+      .selectFrom('notifications')
+      .selectAll()
+      .where('tenant_id', '=', s.tenantId)
+      .where('user_id', '=', s.adminId)
+      .execute();
+    expect(bell).toHaveLength(1);
+    expect(bell[0]?.title).toMatch(/waiting for approval/i);
+    expect(bell[0]?.link).toBe('/volunteer-access');
+
     // The session exists but the guard blocks unapproved volunteers.
     const link = { tenant_id: s.tenantId, volunteer_person_id: s.personId };
     await expect(controller.requireSession(confirm.sessionToken, link)).rejects.toThrow(/approval/i);

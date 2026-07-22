@@ -222,7 +222,7 @@ describe('SettingsPage', () => {
     expect(notifSection?.fields.length).toBeGreaterThan(1);
 
     const groups = component['getNotificationGroups'](notifSection!);
-    expect(groups.length).toBe(6); // 6 categories of notification preferences
+    expect(groups.length).toBe(7); // 7 categories of notification preferences
     expect(groups[0].emailField).toBeTruthy();
     expect(groups[0].inAppField).toBeTruthy();
   });

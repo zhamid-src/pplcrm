@@ -13,6 +13,8 @@ import type { Models, TypeTenantId } from '../../../../../../libs/common/src/lib
 import type { Selectable } from 'kysely';
 import type { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { notificationEnabled } from '../../lib/profile-preferences';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
 import { sanitizeHtml } from '../../lib/mail/sanitize-util';
@@ -27,6 +29,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   private commentsRepo = new EmailCommentsRepo();
   private draftsRepo = new EmailDraftsRepo();
   private activityRepo = new UserActivityRepo();
+  private mailService = new TransactionalEmailService();
   private storageService = new StorageService();
 
   constructor() {
@@ -93,25 +96,50 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
           .catch((e) => logger.error({ err: e }, 'Failed to log email assign activity'));
       }
 
-      if (user_id) {
+      // Notify the assignee (in-app + email, each behind its own preference).
+      // Self-assignment ("I'll take it") stays silent — you already know.
+      if (user_id && user_id !== actor_id) {
         try {
           const email = (await this.getRepo().getOneBy('id', { tenant_id, value: id })) as
             | Selectable<Models['emails']>
             | undefined;
           if (email) {
             const subject = email.subject || '(No Subject)';
-            const notificationsRepo = new NotificationsRepo();
-            await notificationsRepo.pushNotification({
-              tenant_id,
-              user_id,
-              title: 'Email Assigned',
-              message: `You have been assigned the email: "${subject}"`,
-              type: 'email',
-              link: `/inbox?email=${id}`,
-            });
+            const assignee = await this.getRepo()
+              .db.selectFrom('authusers')
+              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+              .where('authusers.tenant_id', '=', tenant_id)
+              .where('authusers.id', '=', user_id)
+              .executeTakeFirst();
+            if (assignee && notificationEnabled(assignee.profile_preferences, 'email_assigned_in_app')) {
+              const notificationsRepo = new NotificationsRepo();
+              await notificationsRepo.pushNotification({
+                tenant_id,
+                user_id,
+                title: 'Email Assigned',
+                message: `You have been assigned the email: "${subject}"`,
+                type: 'email',
+                link: `/inbox?email=${id}`,
+              });
+            }
+            if (assignee?.email && notificationEnabled(assignee.profile_preferences, 'email_assigned')) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `New email assigned: ${subject}`,
+                text: `Hi ${assignee.first_name},\n\nAn inbox conversation has been assigned to you: "${subject}".\n\nView it: ${env.appUrl}/inbox?email=${id}`,
+                html: `<h2>Email assigned to you</h2>
+<p>Hi ${assignee.first_name},</p>
+<p>An inbox conversation has been assigned to you: <strong>"${subject}"</strong>.</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/inbox?email=${id}" class="btn">Open in Inbox</a>
+</div>`,
+                tenant_id,
+              });
+            }
           }
         } catch (nErr) {
-          logger.error({ err: nErr }, 'Failed to push notification for email assignment');
+          logger.error({ err: nErr }, 'Failed to notify assignee of email assignment');
         }
       }
 

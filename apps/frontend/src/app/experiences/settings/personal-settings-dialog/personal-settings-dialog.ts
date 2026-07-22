@@ -41,6 +41,12 @@ const NOTIF_ROWS: NotifRow[] = [
     inAppKey: 'person_assigned_in_app',
   },
   {
+    label: 'Email assigned',
+    helper: 'When an inbox conversation is assigned to you',
+    emailKey: 'email_assigned',
+    inAppKey: 'email_assigned_in_app',
+  },
+  {
     label: 'Export ready',
     helper: 'Download link when a CSV export finishes',
     emailKey: 'export_ready',
@@ -158,6 +164,8 @@ export class PersonalSettingsDialog {
         task_due_in_app: p['task_due_in_app'] ?? true,
         person_assigned: p['person_assigned'] ?? true,
         person_assigned_in_app: p['person_assigned_in_app'] ?? true,
+        email_assigned: p['email_assigned'] ?? true,
+        email_assigned_in_app: p['email_assigned_in_app'] ?? true,
         export_ready: p['export_ready'] ?? true,
         export_ready_in_app: p['export_ready_in_app'] ?? true,
         import_summary: p['import_summary'] ?? true,
