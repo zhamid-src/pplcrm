@@ -6197,50 +6197,6 @@ export class StatCard {
 }
 ````
 
-## File: libs/uxcommon/src/components/status-badge/status-badge.ts
-````typescript
-import { Component, computed, input } from '@angular/core';
-
-export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
-
-@Component({
-  selector: 'pc-status-badge',
-  template: `
-    <span class="badge font-semibold uppercase" [class]="badgeClass()">
-      <ng-content></ng-content>
-    </span>
-  `,
-})
-export class StatusBadge {
-  public type = input<PcStatusType>('ghost');
-  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
-
-  protected badgeClass = computed(() => {
-    const t = this.type();
-    let cls = '';
-    if (this.size() === 'xs') cls += 'badge-xs ';
-    else if (this.size() === 'sm') cls += 'badge-sm ';
-    else if (this.size() === 'md') cls += 'badge-md ';
-    else if (this.size() === 'lg') cls += 'badge-lg ';
-
-    switch (t) {
-      case 'success':
-        return cls + 'badge-success text-success-content';
-      case 'warning':
-        return cls + 'badge-warning text-warning-content';
-      case 'error':
-        return cls + 'badge-error text-error-content';
-      case 'info':
-        return cls + 'badge-info text-info-content';
-      case 'neutral':
-        return cls + 'badge-neutral text-neutral-content';
-      default:
-        return cls + 'badge-ghost';
-    }
-  });
-}
-````
-
 ## File: libs/uxcommon/src/components/swap/swap.ts
 ````typescript
 import { Component, input, output } from '@angular/core';
@@ -10477,6 +10433,50 @@ export class RowActions {
 }
 ````
 
+## File: libs/uxcommon/src/components/status-badge/status-badge.ts
+````typescript
+import { Component, computed, input } from '@angular/core';
+
+export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
+
+@Component({
+  selector: 'pc-status-badge',
+  template: `
+    <span class="badge whitespace-nowrap font-semibold uppercase" [class]="badgeClass()">
+      <ng-content></ng-content>
+    </span>
+  `,
+})
+export class StatusBadge {
+  public type = input<PcStatusType>('ghost');
+  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
+
+  protected badgeClass = computed(() => {
+    const t = this.type();
+    let cls = '';
+    if (this.size() === 'xs') cls += 'badge-xs ';
+    else if (this.size() === 'sm') cls += 'badge-sm ';
+    else if (this.size() === 'md') cls += 'badge-md ';
+    else if (this.size() === 'lg') cls += 'badge-lg ';
+
+    switch (t) {
+      case 'success':
+        return cls + 'badge-success text-success-content';
+      case 'warning':
+        return cls + 'badge-warning text-warning-content';
+      case 'error':
+        return cls + 'badge-error text-error-content';
+      case 'info':
+        return cls + 'badge-info text-info-content';
+      case 'neutral':
+        return cls + 'badge-neutral text-neutral-content';
+      default:
+        return cls + 'badge-ghost';
+    }
+  });
+}
+````
+
 ## File: libs/uxcommon/src/components/tags/tagitem.css
 ````css
 :host {
@@ -12976,7 +12976,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'assign', text: 'Assign and share' },
       {
         kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Assigning **sends the volunteer their private link automatically** by email and text, using whichever contacts their person record has on file — no contact on file, and the app warns you to share the link yourself via **Copy volunteer link** (note that copying mints a fresh link, which replaces the one that was sent). The link expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Assigning **sends the volunteer their private link automatically** by email and text, using whichever contacts their person record has on file — no contact on file, and the app warns you to share the link yourself via **Copy volunteer link** (note that copying mints a fresh link, which replaces the one that was sent). If the message went missing — or the volunteer’s contact details changed — pick **Resend link to volunteer** from the route’s ⋯ menu: it emails/texts them a fresh link (the old one stops working). The link expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy or resend the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
       },
       { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
       {
