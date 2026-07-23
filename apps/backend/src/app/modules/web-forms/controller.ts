@@ -16,7 +16,7 @@ import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
 import { createSigner, createVerifier } from 'fast-jwt';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
-import type { PublicTenant } from '../../lib/public-tenant';
+import { publicOrgName, type PublicTenant } from '../../lib/public-tenant';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { HouseholdRepo } from '../households/repositories/households.repo';
 
@@ -885,7 +885,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     if (!form || form.form_type === 'donation' || form.form_type === 'recurring_donation') {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
     }
-    const orgName = await this.getOrgName(String(form.tenant_id));
+    const orgName = await publicOrgName(String(form.tenant_id));
     if (form.status !== 'published') {
       return { status: 'closed' as const, orgName, name: String(form.name) };
     }
@@ -913,17 +913,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         fields: normalized.fields.filter((f) => f.on),
       },
     };
-  }
-
-  private async getOrgName(tenantId: string): Promise<string> {
-    const row = await this.getRepo()
-      .db.selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    return typeof value === 'string' && value.trim() ? value : 'Our organization';
   }
 
   /** Single form, fields normalized — used by the editor + preview. */

@@ -13,6 +13,7 @@ import type {
   IAuthKeyPayload,
 } from '../../../../../../libs/common/src';
 import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
+import { publicOrgName } from '../../lib/public-tenant';
 import { checkRateLimit } from '../../lib/rate-limiter';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { SmsService } from '../../lib/sms/sms.service';
@@ -78,7 +79,7 @@ export class CompanionAccessController {
     const link = await this.resolveLink(kind, token);
     if (!link) return { state: 'dead' };
 
-    const organizationName = await this.organizationName(link.tenant_id);
+    const organizationName = await publicOrgName(link.tenant_id);
     const organizerName = await this.organizerFirstName(link.tenant_id, link.organizer_id);
     if (!link.volunteer_person_id) return { state: 'unassigned', organizerName, organizationName };
 
@@ -135,7 +136,7 @@ export class CompanionAccessController {
     if (!destination) throw new BadRequestError('That contact method is not on file for this link.');
 
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    const orgName = await this.organizationName(link.tenant_id);
+    const orgName = await publicOrgName(link.tenant_id);
 
     await this.volunteersRepo.transaction().execute(async (trx) => {
       const volunteer = await this.volunteersRepo.ensureForPerson(
@@ -419,18 +420,6 @@ export class CompanionAccessController {
         trx,
       );
     }
-  }
-
-  private async organizationName(tenant_id: string): Promise<string> {
-    const row = await this.volunteersRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenant_id)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    if (typeof value === 'string' && value.trim()) return value.trim().replace(/^"|"$/g, '');
-    return 'pplCRM';
   }
 
   private async organizerFirstName(tenant_id: string, user_id: string): Promise<string | undefined> {

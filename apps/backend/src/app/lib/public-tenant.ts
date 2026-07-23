@@ -59,7 +59,12 @@ export async function resolveTenantById(tenantId: string): Promise<PublicTenant 
   return row?.slug ? { id: tenantId, slug: String(row.slug) } : null;
 }
 
-/** Org display name for public pages (same source as the /f/:slug page header). */
+/**
+ * Org display name for public pages and outbound volunteer email/SMS (same source as the
+ * /f/:slug page header). Falls back to the tenant's signup name when the Workspace
+ * organization.name setting was never filled in — never the generic "Our organization"
+ * unless both are somehow blank.
+ */
 export async function publicOrgName(tenantId: string): Promise<string> {
   const row = await BaseRepository.dbInstance
     .selectFrom('settings')
@@ -68,7 +73,14 @@ export async function publicOrgName(tenantId: string): Promise<string> {
     .where('key', '=', 'organization.name')
     .executeTakeFirst();
   const value = row?.value;
-  return typeof value === 'string' && value.trim() ? value : 'Our organization';
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  const tenant = await BaseRepository.dbInstance
+    .selectFrom('tenants')
+    .select('name')
+    .where('id', '=', tenantId)
+    .executeTakeFirst();
+  const name = tenant?.name;
+  return typeof name === 'string' && name.trim() ? name.trim() : 'Our organization';
 }
 
 /**

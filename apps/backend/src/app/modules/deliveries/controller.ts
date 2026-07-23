@@ -23,6 +23,7 @@ import { env } from '../../../env';
 import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
 import { geocodeAddress } from '../../lib/gis/geocode-address';
 import { notifyVolunteerOfLink, type VolunteerLinkSendResult } from '../../lib/mail/volunteer-link-notify';
+import { publicOrgName } from '../../lib/public-tenant';
 import { legMinutes, roadKm, type LatLng } from '../../lib/routing/geo';
 import { planRoutes, type PlanParams, type PlanStopInput } from '../../lib/routing/plan-routes';
 import {
@@ -466,7 +467,7 @@ export class DeliveriesController {
     // token also retires any link a previously assigned volunteer still holds.
     const rawToken = randomBytes(32).toString('base64url');
     const url = `${env.companionUrl}/r/${rawToken}`;
-    const orgName = await this.publicOrgName(auth.tenant_id);
+    const orgName = await publicOrgName(auth.tenant_id);
     let sent: VolunteerLinkSendResult = { email: false, sms: false };
     await this.routesRepo.transaction().execute(async (trx) => {
       await trx
@@ -531,7 +532,7 @@ export class DeliveriesController {
 
     const rawToken = randomBytes(32).toString('base64url');
     const url = `${env.companionUrl}/r/${rawToken}`;
-    const orgName = await this.publicOrgName(auth.tenant_id);
+    const orgName = await publicOrgName(auth.tenant_id);
     let sent: VolunteerLinkSendResult = { email: false, sms: false };
     await this.routesRepo.transaction().execute(async (trx) => {
       await trx
@@ -847,7 +848,7 @@ export class DeliveriesController {
     await this.requireCompanionSession(route, sessionToken);
     const tenantId = String(route.tenant_id);
     const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
-    const orgName = await this.publicOrgName(tenantId);
+    const orgName = await publicOrgName(tenantId);
     return this.publicRoutePayload(route, stops, orgName);
   }
 
@@ -905,7 +906,7 @@ export class DeliveriesController {
     });
     const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId);
     const fresh = await this.routesRepo.getRouteRow(tenantId, routeId);
-    const orgName = await this.publicOrgName(tenantId);
+    const orgName = await publicOrgName(tenantId);
     return fresh ? this.publicRoutePayload(fresh, stops, orgName) : null;
   }
 
@@ -1245,17 +1246,6 @@ export class DeliveriesController {
     const exp = (route as Record<string, unknown>)['share_token_expires_at'];
     if (!exp) return false;
     return new Date(String(exp)) > new Date();
-  }
-
-  private async publicOrgName(tenantId: string): Promise<string> {
-    const row = await this.routesRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    return typeof value === 'string' && value.trim() ? value : 'Our organization';
   }
 
   private publicRoutePayload(
