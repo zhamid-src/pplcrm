@@ -46,22 +46,27 @@
         class="flex flex-row gap-0.5 overflow-x-auto pc-panel p-1.5 md:flex-col md:overflow-visible"
         aria-label="Settings sections"
       >
-        @for (section of visibleSections; track trackSection($index, section)) {
+        <!-- Grouped nav merged from both section sources (navGroups in settings-page.ts).
+             Eyebrows hide below md, where the nav is a horizontal pill row. -->
+        @for (group of navGroups; track group.label) { @if (group.label) {
+        <div class="pc-eyebrow hidden md:block mx-2.5 mt-3 mb-0.5 first:mt-1">{{ group.label }}</div>
+        } @for (item of group.items; track item.id) {
         <button
+          [id]="'settings-nav-' + item.id"
           type="button"
           class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [class]="navClass(section.config.id)"
-          (click)="selectSection(section.config.id)"
+          [class]="navClass(item.id)"
+          (click)="selectSection(item.id)"
         >
           <pc-icon
-            [name]="section.config.icon"
-            [class.text-primary]="isSelected(section.config.id)"
-            [class.opacity-70]="!isSelected(section.config.id)"
+            [name]="item.icon"
+            [class.text-primary]="isSelected(item.id)"
+            [class.opacity-70]="!isSelected(item.id)"
             [size]="5"
           />
-          {{ section.config.title }}
+          {{ item.title }}
           <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
-          @if (isSectionDirty(section)) {
+          @if (item.section && isSectionDirty(item.section)) {
           <span
             class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
             title="Unsaved changes in this section"
@@ -69,25 +74,7 @@
           ></span>
           }
         </button>
-        }
-        <!-- Custom self-saving sections (config array in settings-page.ts) -->
-        @for (custom of visibleCustomSections; track custom.id) {
-        <button
-          [id]="'settings-nav-' + custom.id"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [class]="navClass(custom.id)"
-          (click)="selectSection(custom.id)"
-        >
-          <pc-icon
-            [name]="custom.icon"
-            [class.text-primary]="isSelected(custom.id)"
-            [class.opacity-70]="!isSelected(custom.id)"
-            [size]="5"
-          />
-          {{ custom.title }}
-        </button>
-        }
+        } }
       </nav>
     </aside>
 

@@ -36,6 +36,26 @@ export interface SettingsSectionConfig {
   fields: SettingsFieldConfig[];
 }
 
+/** One labeled cluster of sidebar nav items. `label: null` renders the items
+ *  without an eyebrow (the personal /settings mode stays a flat list). */
+export interface SettingsNavGroup {
+  label: string | null;
+  /** Section ids in display order — may mix form-driven (SETTINGS_SECTIONS)
+   *  and self-saving custom sections (CUSTOM_SECTIONS in settings-page.ts). */
+  ids: string[];
+}
+
+export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
+  { label: 'Workspace', ids: ['organization', 'access'] },
+  { label: 'Email', ids: ['communications', 'email-sync', 'domains'] },
+  { label: 'Features', ids: ['sla', 'donations', 'app'] },
+  { label: 'Plan & account', ids: ['storage', 'billing', 'api-keys', 'account'] },
+];
+
+export const PERSONAL_NAV_GROUPS: SettingsNavGroup[] = [
+  { label: null, ids: ['notifications', 'appearance', 'passkeys'] },
+];
+
 export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
   {
     id: 'organization',
@@ -75,7 +95,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
   },
   {
     id: 'app',
-    title: 'App',
+    title: 'Companion Apps',
     description: 'How the volunteer-facing apps and shared links behave for your organization.',
     icon: 'wrench-screwdriver',
     fields: [

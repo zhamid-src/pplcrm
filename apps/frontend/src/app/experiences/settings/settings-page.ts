@@ -20,7 +20,14 @@ import { GoogleSyncSettings } from './google-sync/google-sync-settings';
 import { MsSyncSettings } from './ms-sync/ms-sync-settings';
 import { PasskeySettingsComponent } from './security/passkey-settings';
 import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
-import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
+import {
+  PERSONAL_NAV_GROUPS,
+  SETTINGS_SECTIONS,
+  SettingsFieldConfig,
+  SettingsNavGroup,
+  SettingsSectionConfig,
+  WORKSPACE_NAV_GROUPS,
+} from './settings.config';
 import { StorageSettingsComponent } from './storage/storage-settings';
 
 interface SectionFieldState {
@@ -53,6 +60,20 @@ interface CustomSectionConfig {
   id: string;
   mode: 'settings' | 'workspace';
   title: string;
+}
+
+/** One sidebar nav entry, merged from either section source. `section` is set
+ *  only for form-driven sections and drives the unsaved-changes dot. */
+interface NavItem {
+  icon: PcIconNameType;
+  id: string;
+  section?: SectionState;
+  title: string;
+}
+
+interface NavGroup {
+  items: NavItem[];
+  label: string | null;
 }
 
 const CUSTOM_SECTIONS: CustomSectionConfig[] = [
@@ -198,6 +219,31 @@ export class SettingsPage implements OnInit {
   /** The custom (self-saving) sections visible in the current mode. */
   protected get visibleCustomSections(): CustomSectionConfig[] {
     return CUSTOM_SECTIONS.filter((s) => s.mode === this.currentMode);
+  }
+
+  /** The sidebar nav: both section sources merged in the order declared by the
+   *  mode's nav groups. Sections missing from the declaration are appended to
+   *  the last group so a new section can never silently vanish from the nav. */
+  protected get navGroups(): NavGroup[] {
+    const byId = new Map<string, NavItem>();
+    for (const s of this.visibleSections) {
+      byId.set(s.config.id, { id: s.config.id, title: s.config.title, icon: s.config.icon, section: s });
+    }
+    for (const c of this.visibleCustomSections) {
+      byId.set(c.id, { id: c.id, title: c.title, icon: c.icon });
+    }
+    const declared: SettingsNavGroup[] = this.currentMode === 'workspace' ? WORKSPACE_NAV_GROUPS : PERSONAL_NAV_GROUPS;
+    const groups: NavGroup[] = declared.map((g) => ({
+      label: g.label,
+      items: g.ids.map((id) => byId.get(id)).filter((item): item is NavItem => item != null),
+    }));
+    const declaredIds = new Set(declared.flatMap((g) => g.ids));
+    const leftovers = [...byId.values()].filter((item) => !declaredIds.has(item.id));
+    const lastGroup = groups.at(-1);
+    if (leftovers.length > 0 && lastGroup) {
+      lastGroup.items.push(...leftovers);
+    }
+    return groups.filter((g) => g.items.length > 0);
   }
 
   /** Custom sections whose actions the demo guard blocks; they render an explaining banner
