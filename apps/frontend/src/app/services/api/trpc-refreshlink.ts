@@ -89,11 +89,17 @@ function handleRefreshFailure(
   router: Router,
   observer: Observer<unknown, unknown>,
 ): void {
-  tokenSvc.clearAll();
-  // Don't evict a guest from a legitimately public page (reset link, public form, etc.) just because
-  // a stale token's refresh failed — surface the error instead.
-  if (!isCurrentRoutePublic(router.url)) {
-    void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
+  // Only an UNAUTHORIZED from the refresh endpoint proves the session is gone (real sign-out /
+  // revocation). Anything else — backend down, offline, edge 503, a storage hiccup — says nothing
+  // about the session, so keep the tokens and let the next request retry the refresh; signing the
+  // user out during an outage would strand them on a sign-in form that can't work either.
+  if (isUnauthorizedError(err)) {
+    tokenSvc.clearAll();
+    // Don't evict a guest from a legitimately public page (reset link, public form, etc.) just
+    // because a stale token's refresh failed — surface the error instead.
+    if (!isCurrentRoutePublic(router.url)) {
+      void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
+    }
   }
   observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
 }
@@ -154,9 +160,9 @@ export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TR
             // rejects it with UNAUTHORIZED, the session behind our access token is usually gone
             // because another tab's silent refresh rotated it away. The shared refresh cookie is
             // still good, so mint a fresh token and retry the call once — invisibly. Only when
-            // that refresh itself fails (real sign-out / revocation) do we clear tokens and
-            // redirect to /signin. Retrying is safe: the auth gate rejects before the resolver
-            // runs, so the original call never executed.
+            // that refresh itself comes back UNAUTHORIZED (real sign-out / revocation) do we clear
+            // tokens and redirect to /signin. Retrying is safe: the auth gate rejects before the
+            // resolver runs, so the original call never executed.
             next(op).subscribe({
               next: (value) => observer.next(value),
               complete: () => observer.complete(),
@@ -167,7 +173,9 @@ export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TR
                 }
                 performRefresh(tokenSvc)
                   .then(() => forwardOp(op, next, observer))
-                  .catch(() => handleRefreshFailure(err, tokenSvc, router, observer));
+                  // Judge by the refresh's own failure, not the original UNAUTHORIZED: a refresh
+                  // that died on the network must not sign the user out.
+                  .catch((refreshErr: unknown) => handleRefreshFailure(refreshErr, tokenSvc, router, observer));
               },
             });
           } catch (err) {

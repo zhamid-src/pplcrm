@@ -4,7 +4,7 @@ import { JSendServerError } from '../../../../../libs/common/src';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ApiError } from './api/api-error';
-import { getUserErrorMessage } from './api/user-message';
+import { SERVER_UNREACHABLE_MESSAGE, getUserErrorMessage, isServerUnreachable } from './api/user-message';
 
 import { TokenService } from './api/token-service';
 import { isCurrentRoutePublic } from '../routing/public-routes';
@@ -19,6 +19,13 @@ export class ErrorService {
 
   public handle(error: unknown): void {
     console.error('ErrorService.handle:', error);
+    // Backend unreachable (offline / outage / edge 503): the server said nothing about the
+    // session, so never sign the user out — just say what's wrong. AlertService coalesces the
+    // identical toasts a burst of failing queries would produce.
+    if (isServerUnreachable(error)) {
+      this.alerts.showError(SERVER_UNREACHABLE_MESSAGE);
+      return;
+    }
     // Handle JSend server errors produced by the HTTP interceptor
     if (error instanceof JSendServerError) {
       if (!this.redirectFromStatus(error.statusCode)) {

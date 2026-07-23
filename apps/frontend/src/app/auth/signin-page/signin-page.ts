@@ -7,7 +7,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TokenService } from '../../services/api/token-service';
-import { getUserErrorMessage } from '../../services/api/user-message';
+import { SERVER_UNREACHABLE_MESSAGE, getUserErrorMessage, isServerUnreachable } from '../../services/api/user-message';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -130,8 +130,14 @@ export class SignInPage implements OnInit, OnDestroy {
         const end = this._loading.begin();
         try {
           ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
-        } catch {
-          // network error — fall through to password
+        } catch (err) {
+          // Backend unreachable: say so now and stay on the email step, instead of walking the
+          // user into a password prompt that cannot possibly succeed.
+          if (isServerUnreachable(err)) {
+            this.alertSvc.showError(SERVER_UNREACHABLE_MESSAGE);
+            return null;
+          }
+          // any other failure — fall through to password
         } finally {
           end();
         }

@@ -214,7 +214,36 @@ describe('trpc-refreshlink', () => {
     const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
 
     await expect(runLink(link, makeOp('persons.getAll'), successNext())).rejects.toBeInstanceOf(TRPCClientError);
-    expect(mockTokenSvc.clearAll).toHaveBeenCalled();
+    // A storage hiccup is not proof the session is gone — no sign-out.
+    expect(mockTokenSvc.clearAll).not.toHaveBeenCalled();
+    expect(mockRouter.navigate).not.toHaveBeenCalled();
+  });
+
+  it('should keep tokens and stay put when the pre-flight refresh dies on the network (backend down)', async () => {
+    currentAuthToken = expiredToken;
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as any;
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+    const mockNext = successNext();
+
+    await expect(runLink(link, makeOp('persons.getAll'), mockNext)).rejects.toBeInstanceOf(TRPCClientError);
+
+    expect(mockNext).not.toHaveBeenCalled(); // the original call never went out
+    // The backend said nothing about the session — the user must NOT be signed out.
+    expect(mockTokenSvc.clearAll).not.toHaveBeenCalled();
+    expect(mockRouter.navigate).not.toHaveBeenCalled();
+  });
+
+  it('should keep tokens when the post-UNAUTHORIZED retry refresh dies on the network', async () => {
+    currentAuthToken = validToken;
+    // The call 401s (session rotated away), but the refresh round-trip can't reach the backend.
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as any;
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+    const mockNext = errorNext(unauthorizedClientError());
+
+    await expect(runLink(link, makeOp('persons.getAll'), mockNext)).rejects.toBeInstanceOf(TRPCClientError);
+
+    expect(mockTokenSvc.clearAll).not.toHaveBeenCalled();
+    expect(mockRouter.navigate).not.toHaveBeenCalled();
   });
 
   it('should clear tokens but NOT redirect when the refresh fails on a public route', async () => {

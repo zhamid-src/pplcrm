@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { JSendServerError } from '../../../../../libs/common/src';
 import { ApiError } from './api/api-error';
 import { TokenService } from './api/token-service';
+import { SERVER_UNREACHABLE_MESSAGE } from './api/user-message';
 import { ErrorService } from './error.service';
 
 const FALLBACK = 'Something went wrong, please try again';
@@ -91,11 +92,12 @@ describe('ErrorService', () => {
       expect(mockTokenSvc.clearAll).not.toHaveBeenCalled();
     });
 
-    it('tolerates a TRPCClientError without data and still shows a toast', () => {
-      service.handle(new TRPCClientError('connection refused'));
+    it('translates a data-less TRPCClientError (backend unreachable) into the outage message — no sign-out', () => {
+      service.handle(new TRPCClientError('Failed to fetch'));
 
-      expect(mockAlerts.showError).toHaveBeenCalledWith('connection refused');
+      expect(mockAlerts.showError).toHaveBeenCalledWith(SERVER_UNREACHABLE_MESSAGE);
       expect(mockRouter.navigate).not.toHaveBeenCalled();
+      expect(mockTokenSvc.clearAll).not.toHaveBeenCalled();
     });
   });
 
@@ -119,6 +121,14 @@ describe('ErrorService', () => {
       service.handle(new ApiError('Export failed'));
 
       expect(mockAlerts.showError).toHaveBeenCalledWith('Export failed');
+    });
+
+    it('shows the outage message when the wrapped original error is a network-level failure', () => {
+      service.handle(new ApiError('Failed to load persons', new TRPCClientError('Failed to fetch')));
+
+      expect(mockAlerts.showError).toHaveBeenCalledWith(SERVER_UNREACHABLE_MESSAGE);
+      expect(mockRouter.navigate).not.toHaveBeenCalled();
+      expect(mockTokenSvc.clearAll).not.toHaveBeenCalled();
     });
   });
 
