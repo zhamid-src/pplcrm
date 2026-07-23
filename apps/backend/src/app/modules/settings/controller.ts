@@ -32,6 +32,20 @@ import { SmsService } from '../../lib/sms/sms.service';
 import { hashToken } from '../../lib/token-hash';
 import { getPlanDef } from '@common';
 import { assertNotDemoMode } from '../demo/demo-guard';
+import { DEMO_MANIFEST_SETTINGS_KEY } from '../demo/demo-seed';
+import { STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY } from '../donations/stripe-connect';
+
+/** Server-managed settings keys that must never be written via the public upsert: the
+ * verified sender/domain lists back the newsletter send guards, the Stripe Connect account
+ * id/status back the donations fail-closed gate, and the demo manifest drives demo-data
+ * deletion. A direct write to any of them is a guard bypass or data corruption. */
+const SERVER_MANAGED_SETTINGS_MESSAGES: Record<string, string> = {
+  'communications.verified_emails': 'Verified emails list cannot be modified directly.',
+  'communications.verified_domains': 'Verified domains list cannot be modified directly.',
+  [STRIPE_ACCOUNT_ID_KEY]: 'Stripe connection settings cannot be modified directly.',
+  [STRIPE_ACCOUNT_STATUS_KEY]: 'Stripe connection settings cannot be modified directly.',
+  [DEMO_MANIFEST_SETTINGS_KEY]: 'This setting is managed by pplCRM and cannot be modified directly.',
+};
 import { SettingsRepo } from './repositories/settings.repo';
 
 const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
@@ -92,15 +106,14 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
-    // Workspace configuration is locked while the tenant is on the demo test drive.
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-
-    // 1. Block direct updates to verified_emails setting key
-    if (entries.some((entry) => entry.key === 'communications.verified_emails')) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Verified emails list cannot be modified directly.',
-      });
+    // 1. Block direct updates to server-managed keys (SERVER_MANAGED_SETTINGS_MESSAGES).
+    //    Ordinary workspace settings are deliberately NOT demo-gated — the demo guard covers
+    //    only outward-facing actions (verification, sync, sending, invites, Stripe Connect).
+    for (const entry of entries) {
+      const blockedMessage = SERVER_MANAGED_SETTINGS_MESSAGES[entry.key];
+      if (blockedMessage) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: blockedMessage });
+      }
     }
 
     // 2. Validate default from and reply-to emails

@@ -144,6 +144,11 @@ export class SettingsPage implements OnInit {
 
   protected readonly currentMode: 'settings' | 'workspace';
   protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
+  private readonly userSignal = this.auth.getUserSignal();
+  /** Sender verification, domain verification, and mailbox sync are blocked server-side
+   *  during the demo; the inline banners explain it (§2 explained-disabled). Ordinary
+   *  workspace settings save normally in demo mode. */
+  protected readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
   protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
   protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
   protected readonly fingerprintRecomputeNextAvailable = computed(() => {
@@ -193,6 +198,12 @@ export class SettingsPage implements OnInit {
   /** The custom (self-saving) sections visible in the current mode. */
   protected get visibleCustomSections(): CustomSectionConfig[] {
     return CUSTOM_SECTIONS.filter((s) => s.mode === this.currentMode);
+  }
+
+  /** Custom sections whose actions the demo guard blocks; they render an explaining banner
+   *  and their controls are disabled instead of failing server-side. */
+  protected isDemoLocked(sectionId: string): boolean {
+    return this.isDemo() && (sectionId === 'email-sync' || sectionId === 'domains' || sectionId === 'donations');
   }
 
   /** Nav-button classes shared by config-driven and custom section buttons. */

@@ -4,10 +4,13 @@ import { ForbiddenError } from '../../errors/app-errors';
 
 /**
  * Demo mode is the pre-plan test drive: the tenant can explore and edit the
- * seeded data freely, but must not touch outward-facing configuration (sender
- * identities, domains, mailbox sync), send email, or invite teammates. Those
- * unlock when they subscribe and exit demo mode. Enforced server-side at the
- * mutation entry points — the UI copy is a courtesy, this guard is the contract.
+ * seeded data and ordinary workspace settings freely, but must not touch
+ * outward-facing setup (sender email/phone/domain verification, mailbox sync,
+ * Stripe Connect), send email, or invite teammates. Those unlock when they
+ * subscribe and exit demo mode. Enforced server-side at the mutation entry
+ * points — the UI copy is a courtesy, this guard is the contract. Plain
+ * `settings.upsert` is deliberately not guarded; its server-managed keys are
+ * protected individually.
  */
 export const DEMO_MODE_BLOCKED_MESSAGE =
   'This is part of the demo. Choose a plan on the Billing page, then exit demo mode to unlock configuration and sending.';
