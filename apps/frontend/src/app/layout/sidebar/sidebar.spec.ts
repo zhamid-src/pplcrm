@@ -84,6 +84,19 @@ describe('Sidebar Component', () => {
     expect(component['isMobileOpen']()).toBe(true);
   });
 
+  it('should honor collapse state when the sidebar is expanded', () => {
+    mockSidebarSvc.isCollapsed.mockReturnValue(true);
+    // isMobileOpen is true in the default mock, so the sidebar is not effectively narrow
+    expect(component['isVisuallyCollapsed']('section1')).toBe(true);
+  });
+
+  it('should ignore collapse state on the narrow icon rail', () => {
+    mockSidebarSvc.isCollapsed.mockReturnValue(true);
+    // Mobile closed + small screen (matchMedia mock reports matches: false) = narrow rail
+    mockSidebarSvc.isMobileOpen.mockReturnValue(false);
+    expect(component['isVisuallyCollapsed']('section1')).toBe(false);
+  });
+
   it('should toggle collapse state of a section', () => {
     component['toggleCollapse']('section1');
     expect(mockSidebarSvc.toggleCollapsed).toHaveBeenCalledWith('section1');

@@ -1,6 +1,6 @@
 ---
 name: pplcrm-campaigns
-description: How pplCRM's Campaigns feature (§15) works — office/election contexts, the shared-rolodex vs campaign-scoped-facts split, campaign_person_facts (support level + voting status), the three-layer email consent model (campaign_subscriptions / email_suppressions / persons.do_not_contact), domain scoping via options.campaignId, the per-user context switcher, archive read-only rules, and carry-over. USE WHEN touching anything under modules/campaigns, experiences/campaigns, the campaign switcher, campaign_person_facts / campaign_subscriptions / email_suppressions schema, support level or voting status, DNC, newsletter sendability, or a campaign_id column on any table. EXAMPLES 'add a campaign-scoped concept to a person', 'why is this person not getting the newsletter', 'which campaign does a knock update', 'copy supporters into the new campaign'.
+description: How pplCRM's Campaigns feature (§15) works — office/election contexts, the shared-rolodex vs campaign-scoped-facts split, campaign_person_facts (support level + voting status), the three-layer email consent model (campaign_subscriptions / email_suppressions / persons.do_not_contact), domain scoping via options.campaignId, admin-assigned campaign membership (authusers.campaign_id) and admin-only context switching, archive read-only rules, and carry-over. USE WHEN touching anything under modules/campaigns, experiences/campaigns, the Workspace→Campaigns settings section, campaign assignment on users/invites, campaign_person_facts / campaign_subscriptions / email_suppressions schema, support level or voting status, DNC, newsletter sendability, or a campaign_id column on any table. EXAMPLES 'add a campaign-scoped concept to a person', 'why is this person not getting the newsletter', 'which campaign does a knock update', 'copy supporters into the new campaign', 'why is this editor forbidden from another campaign'.
 ---
 
 # Campaigns (§15): office/election contexts
@@ -38,14 +38,34 @@ person columns, NULL = "not one". No system tags remain; the `system-tags.ts` ma
 **Sendable in campaign X** = subscribed row in X ∧ no suppression for the email ∧ not DNC(email).
 The single choke point is `NewslettersController.buildRecipientQuery` — change sendability there.
 
-## Context plumbing
+## Context plumbing (admin-assigned since 2026-07-23)
 
-- No campaign in the auth token. The per-user active context lives in
-  `profiles.preferences.active_campaign_id`; `campaigns.getContext` returns list + active id
-  (falls back to the office), `setActiveCampaign` persists it.
+- **Membership is admin-assigned.** `authusers.campaign_id` (nullable FK; NULL = office) is the
+  campaign an Editor/Viewer belongs to — set by an admin on the Users page / user detail page /
+  invite dialog (`InviteAuthUserObj`/`UpdateAuthUserObj.campaign_id`, validated by
+  `AuthController.resolveAssignableCampaignId`: must be a live tenant campaign; office stores as
+  NULL). Admins/owners are never scoped by it ("All campaigns"). Archiving a campaign clears its
+  members' `campaign_id` back to NULL in the same transaction (`CampaignsController.archive`).
+- No campaign in the auth token. For **admins/owners** the active context lives in
+  `profiles.preferences.active_campaign_id`; `campaigns.getContext` returns every campaign + active
+  id (falls back to the office), `setActiveCampaign` (admin/owner-only) persists it. For
+  **Editors/Viewers** `getContext` returns exactly their assigned campaign (office when unassigned
+  or the assignment is archived/dangling) — they cannot switch.
+- **Enforcement**: `isAuthed` in `apps/backend/src/trpc.ts` recursively scans the raw input of every
+  authed procedure for `campaignId`/`campaign_id` keys when the caller is role `user`/`viewer` and
+  throws FORBIDDEN unless each id equals the caller's assigned campaign (office id when
+  unassigned). The `/api/emails/send` REST route mirrors this check inline. Campaign management
+  (crud + add/archive/unarchive/carryOver/getSwitcherList/setActiveCampaign) is
+  `adminOrOwnerProcedure`; person-fact/subscription procedures stay `authProcedure`.
+- **UI surfaces**: management lives in Workspace settings → Campaigns
+  (`experiences/settings/campaigns/campaigns-settings.ts`, custom section id `campaigns`;
+  `/campaigns` redirects to `/workspace/campaigns`, deep pages `/campaigns/add`, `/campaigns/:id`,
+  `/campaigns/:id/edit` are roleGuard-ed). There is no avatar-menu entry and no switcher for
+  non-admins. The profile page shows the user's campaign; the Users list grows a Campaign column
+  once an election exists.
 - Frontend: `CampaignContextService` (`services/campaign-context.service.ts`) holds the
-  `activeCampaignId` signal; the sidebar `pc-campaign-switcher` drives it. Scoped services stamp
-  `campaignId` into getAll options and `campaign_id` into add payloads.
+  `activeCampaignId` signal (for non-admins the backend pins it to their assignment). Scoped
+  services stamp `campaignId` into getAll options and `campaign_id` into add payloads.
 - Backend reads: `options.campaignId` filters generically in `BaseRepository.getAll` for tables in
   `CAMPAIGN_SCOPED_TABLES` (base.repo.ts) — `newsletters`, `donations`, `donation_pledges`,
   `donation_periods`, `web_forms`, `lists`, `events`, `turfs`, `delivery_requests`,

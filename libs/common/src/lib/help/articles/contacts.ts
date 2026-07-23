@@ -72,7 +72,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. The card always shows the campaign you are working in — your assigned campaign, or, for admins, the context selected under **Workspace → Campaigns**.',
       },
       {
         kind: 'p',

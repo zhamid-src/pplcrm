@@ -119,6 +119,32 @@ import { BaseRepository } from './app/lib/base.repo';
 import { runWithTenant } from './app/lib/tenant-context';
 import { hashToken } from './app/lib/token-hash';
 
+/**
+ * Campaigns §15 — input keys that name a campaign context. Editors/Viewers are
+ * pinned to their admin-assigned campaign, so any of these keys arriving with a
+ * different id is a scope violation (the UI never sends one; only a tampered
+ * client would). Admin-only inputs (carry-over's source/target ids) are gated by
+ * adminOrOwnerProcedure and deliberately not listed here.
+ */
+const CAMPAIGN_INPUT_KEYS = new Set(['campaignId', 'campaign_id']);
+
+/** Recursively collect every campaign id named by the (already-deserialized) raw input. */
+function collectCampaignIds(value: unknown, depth = 0, out = new Set<string>()): Set<string> {
+  if (depth > 4 || value === null || typeof value !== 'object') return out;
+  if (Array.isArray(value)) {
+    for (const item of value) collectCampaignIds(item, depth + 1, out);
+    return out;
+  }
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (CAMPAIGN_INPUT_KEYS.has(key)) {
+      if ((typeof v === 'string' && v !== '') || typeof v === 'number') out.add(String(v));
+    } else {
+      collectCampaignIds(v, depth + 1, out);
+    }
+  }
+  return out;
+}
+
 const isAuthed = middleware(async (opts) => {
   const { ctx } = opts;
 
@@ -135,11 +161,11 @@ const isAuthed = middleware(async (opts) => {
   // app-level `.where('tenant_id', …)` filters. Wrapping the auth lookups too is
   // harmless (they are already tenant-scoped) and covers all downstream resolvers.
   return runWithTenant(auth.tenant_id, async () => {
-    let user: { role: string | null; verified: boolean } | undefined;
+    let user: { role: string | null; verified: boolean; campaign_id: string | null } | undefined;
     if (/^\d+$/.test(auth.user_id)) {
       const record = await BaseRepository.dbInstance
         .selectFrom('authusers')
-        .select(['role', 'verified'])
+        .select(['role', 'verified', 'campaign_id'])
         .where('id', '=', auth.user_id)
         .where('tenant_id', '=', auth.tenant_id)
         .executeTakeFirst();
@@ -147,6 +173,7 @@ const isAuthed = middleware(async (opts) => {
         user = {
           role: record.role,
           verified: record.verified === true || String(record.verified) === 'true',
+          campaign_id: record.campaign_id != null ? String(record.campaign_id) : null,
         };
       }
     }
@@ -187,6 +214,34 @@ const isAuthed = middleware(async (opts) => {
           code: 'FORBIDDEN',
           message: 'Viewers are not allowed to make changes.',
         });
+      }
+    }
+
+    // Campaigns §15 — Editors/Viewers belong to exactly one campaign (their
+    // admin-assigned one, or the office when unassigned). Any campaignId /
+    // campaign_id in the request input must name that campaign; anything else
+    // is a cross-campaign read/write attempt.
+    if (user.role === 'user' || user.role === 'viewer') {
+      const requested = collectCampaignIds(await opts.getRawInput());
+      if (requested.size > 0) {
+        let allowed = user.campaign_id;
+        if (allowed === null) {
+          const office = await BaseRepository.dbInstance
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('kind', '=', 'office')
+            .executeTakeFirst();
+          allowed = office ? String(office.id) : null;
+        }
+        for (const id of requested) {
+          if (id !== allowed) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'You can only work in your assigned campaign.',
+            });
+          }
+        }
       }
     }
 

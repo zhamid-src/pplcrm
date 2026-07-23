@@ -248,6 +248,13 @@ export class Sidebar {
     return this.sidebarSvc.isCollapsed(name);
   }
 
+  /** Collapse is a text-density preference that only applies to the expanded sidebar. The
+   *  narrow icon rail always shows every section's icons — a collapsed section there has no
+   *  visible header, so its items would be unreachable. */
+  protected isVisuallyCollapsed(name: string): boolean {
+    return !this.isEffectivelyNarrow() && this.isCollapsed(name);
+  }
+
   protected isDrawerFull() {
     return this.sidebarSvc.isFull();
   }

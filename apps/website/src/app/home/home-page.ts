@@ -213,7 +213,7 @@ export class HomePage {
     {
       icon: 'rectangle-stack',
       title: 'One list, every campaign',
-      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf; switch context and the whole workspace follows.',
+      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf; admins decide who works in which campaign, and the whole workspace follows.',
     },
   ];
 

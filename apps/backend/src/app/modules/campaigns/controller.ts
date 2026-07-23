@@ -36,14 +36,39 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
   }
 
   /**
-   * One round-trip for the header switcher: every campaign plus the id of the
-   * context this user is working in. The stored preference wins when it still
-   * points at an existing campaign; otherwise fall back to the office context
-   * (which always exists). Archived campaigns remain selectable — they are
-   * viewable read-only history.
+   * One round-trip for the context payload.
+   *
+   * Admins/owners: every campaign plus the id of the context they are working
+   * in. Their stored preference wins when it still points at an existing
+   * campaign; otherwise fall back to the office context (which always exists).
+   * Archived campaigns remain selectable — they are viewable read-only history.
+   *
+   * Editors/Viewers: exactly their admin-assigned campaign (§15 — they belong to
+   * one campaign and cannot switch). Unassigned, archived, or dangling
+   * assignments resolve to the office context.
    */
   public async getContext(auth: IAuthKeyPayload) {
     const campaigns = await this.getRepo().getSwitcherList({ tenant_id: auth.tenant_id });
+    const isAdmin = auth.role === 'admin' || auth.role === 'owner';
+
+    if (!isAdmin) {
+      const me = await this.getRepo()
+        .db.selectFrom('authusers')
+        .select('campaign_id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', auth.user_id)
+        .executeTakeFirst();
+      const assignedId = me?.campaign_id != null ? String(me.campaign_id) : null;
+      const assigned =
+        (assignedId ? campaigns.find((c) => String(c.id) === assignedId && c.status === 'active') : undefined) ??
+        campaigns.find((c) => c.kind === 'office') ??
+        campaigns[0];
+      return {
+        campaigns: assigned ? [this.toContextItem(assigned)] : [],
+        active_campaign_id: assigned ? String(assigned.id) : null,
+      };
+    }
+
     const profile = await this.profilesRepo.getOneByAuthId(auth.user_id);
     const preferred = parseProfilePreferences(profile?.preferences)?.active_campaign_id;
     const active =
@@ -51,14 +76,7 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
       campaigns.find((c) => c.kind === 'office') ??
       campaigns[0];
     return {
-      campaigns: campaigns.map((c) => ({
-        id: String(c.id),
-        name: c.name,
-        kind: c.kind,
-        status: c.status,
-        startdate: c.startdate,
-        enddate: c.enddate,
-      })),
+      campaigns: campaigns.map((c) => this.toContextItem(c)),
       active_campaign_id: active ? String(active.id) : null,
     };
   }
@@ -107,11 +125,26 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
     if (campaign.kind === 'office') {
       throw new BadRequestError('The office context cannot be archived. It is the permanent workspace.');
     }
-    return this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status: 'archived', updatedby_id: auth.user_id } as OperationDataType<'campaigns', 'update'>,
-    });
+    return this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        // Members assigned to this campaign fall back to the office context —
+        // an archived campaign is read-only history nobody can work in (§15).
+        await trx
+          .updateTable('authusers')
+          .set({ campaign_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('campaign_id', '=', id)
+          .execute();
+        return this.getRepo().update(
+          {
+            tenant_id: auth.tenant_id,
+            id,
+            row: { status: 'archived', updatedby_id: auth.user_id } as OperationDataType<'campaigns', 'update'>,
+          },
+          trx,
+        );
+      });
   }
 
   public async unarchive(id: string, auth: IAuthKeyPayload) {
@@ -328,6 +361,17 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
 
   public override async deleteMany(): Promise<never> {
     throw new BadRequestError('Campaigns cannot be deleted. Archive them instead.');
+  }
+
+  private toContextItem(c: Awaited<ReturnType<CampaignsRepo['getSwitcherList']>>[number]) {
+    return {
+      id: String(c.id),
+      name: c.name,
+      kind: c.kind,
+      status: c.status,
+      startdate: c.startdate,
+      enddate: c.enddate,
+    };
   }
 
   private async getCampaignOrThrow(tenant_id: string, id: string) {

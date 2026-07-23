@@ -193,7 +193,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          'Collapse any section by clicking its heading (useful for areas you rarely use).',
+          'Collapse any section by clicking its heading (useful for areas you rarely use). Collapsing applies to the full-width sidebar only; the icon-only rail always shows every icon.',
           'On a narrow window the sidebar shrinks to an icon-only rail and the expand control is hidden; hover an icon to see its name. Widen the window past roughly 1024px to get the labels and the toggle back.',
           'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
           'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',

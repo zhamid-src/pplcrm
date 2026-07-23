@@ -117,7 +117,10 @@
           <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
             @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
             'notifications') {
-            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
+            <div
+              [class.md:col-span-2]="field.config.type === 'textarea' || field.config.fullWidth"
+              class="flex flex-col gap-1"
+            >
               <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
                 {{ field.config.label }}
               </label>
@@ -518,6 +521,8 @@
               <pc-google-sync-settings></pc-google-sync-settings>
             </div>
           </div>
+          } @case ('campaigns') {
+          <pc-campaigns-settings></pc-campaigns-settings>
           } @case ('domains') {
           <pc-domains-settings></pc-domains-settings>
           } @case ('donations') {

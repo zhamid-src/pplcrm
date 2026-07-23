@@ -189,6 +189,45 @@
           }
         </div>
 
+        <!-- Campaign assignment (§15): instant-apply, hidden until an election campaign exists -->
+        @if (showCampaignControl()) {
+        <div>
+          <label class="mb-1 block text-xs font-medium text-base-content/70" for="user-campaign">Campaign</label>
+          @if (!targetIsCampaignScoped()) {
+          <select
+            id="user-campaign"
+            class="select select-bordered select-sm w-full"
+            disabled
+            aria-label="Campaign: admins and owners can work in every campaign"
+          >
+            <option>All campaigns</option>
+          </select>
+          <p class="mt-1 text-xs text-base-content/50">Admins and owners can work in every campaign.</p>
+          } @else {
+          <select
+            id="user-campaign"
+            class="select select-bordered select-sm w-full"
+            [class.animate-saved-flash]="campaignFlash()"
+            [disabled]="campaignSaving()"
+            [attr.aria-label]="'Campaign for ' + displayName()"
+            (change)="changeCampaign($event)"
+          >
+            @for (c of assignableCampaigns(); track c.id) {
+            <option
+              [value]="c.kind === 'office' ? '' : c.id"
+              [selected]="(c.kind === 'office' ? null : c.id) === (detail()?.campaign_id ?? null)"
+            >
+              {{ c.name }}
+            </option>
+            }
+          </select>
+          <p class="mt-1 text-xs text-base-content/50">
+            Everything they see and do stays in this campaign. Applies immediately.
+          </p>
+          }
+        </div>
+        }
+
         <div class="border-t border-base-200 pt-4">
           <pc-detail-item
             label="Two-factor auth"

@@ -42,7 +42,7 @@ export class CampaignViewComponent {
   protected readonly campaign = signal<Record<string, unknown> | null>(null);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Campaigns', route: '/campaigns' },
+    { label: 'Campaigns', route: '/workspace/campaigns' },
     { label: this.name() || 'Campaign' },
   ]);
 
@@ -124,7 +124,7 @@ export class CampaignViewComponent {
     const confirmed = await this.dialogs.confirm({
       title: 'Archive campaign',
       message:
-        'Archiving makes this campaign read-only: its supporter data, consent, and outreach history stay viewable, but nothing new can be recorded in it. You can unarchive it later.',
+        'Archiving makes this campaign read-only: its supporter data, consent, and outreach history stay viewable, but nothing new can be recorded in it. Users assigned to this campaign move back to the office context. You can unarchive it later.',
       confirmText: 'Archive',
     });
     if (!confirmed) return;

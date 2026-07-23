@@ -279,7 +279,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     // Retrieve sender user details
     const user = await db
       .selectFrom('authusers')
-      .select(['email', 'first_name', 'last_name'])
+      .select(['email', 'first_name', 'last_name', 'role', 'campaign_id'])
       .where('tenant_id', '=', tenantId)
       .where('id', '=', userId)
       .executeTakeFirst();
@@ -315,6 +315,25 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const campaignId = fields.campaignId ? String(fields.campaignId) : null;
     if (!campaignId) {
       return reply.status(400).send({ status: 'error', message: 'Missing campaign context.' });
+    }
+
+    // Campaigns §15 — Editors/Viewers are pinned to their admin-assigned campaign
+    // (office when unassigned); only admins/owners may dispatch mail through
+    // another campaign's mailbox. Mirrors the tRPC isAuthed campaign-scope check.
+    if (user.role !== 'admin' && user.role !== 'owner') {
+      let allowed = user.campaign_id != null ? String(user.campaign_id) : null;
+      if (allowed === null) {
+        const office = await db
+          .selectFrom('campaigns')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('kind', '=', 'office')
+          .executeTakeFirst();
+        allowed = office ? String(office.id) : null;
+      }
+      if (campaignId !== allowed) {
+        return reply.status(403).send({ status: 'error', message: 'You can only send from your assigned campaign.' });
+      }
     }
 
     // Parse recipient lists and content fields

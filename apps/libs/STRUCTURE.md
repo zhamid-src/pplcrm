@@ -2797,6 +2797,8 @@ export interface IUserStatsSnapshot {
 export interface IAuthUserRecord extends IAuthUser {
   last_name: string;
   role: string | null;
+  /** Campaigns §15 — admin-assigned campaign; null = office. Not enforced for admins/owners. */
+  campaign_id: string | null;
   verified: boolean;
   two_factor_enabled: boolean;
   deletion_scheduled_at: Date | null;
@@ -5457,6 +5459,220 @@ export class Icon {
     }
   }
 }
+````
+
+## File: libs/uxcommon/src/components/icons/icons.index.ts
+````typescript
+/****************************************************** */
+/*
+/* Look at https://heroicons.com for icons. Most of these
+/* are from the Heroicons set, some are custom.
+/*
+/****************************************************** */
+export type PcIconNameType = keyof typeof icons;
+
+export async function loadIconSvg(name: PcIconNameType): Promise<string> {
+  let cached = _cache.get(name);
+  if (!cached) {
+    cached = resolveIconSvg(name);
+    _cache.set(name, cached);
+  }
+  return cached;
+}
+
+async function resolveIconSvg(name: PcIconNameType): Promise<string> {
+  const svg = await fetchSvg(icons[name]);
+  if (svg != null) return svg;
+  // Fall back to the generic unknown glyph — but only if it itself is a real SVG.
+  if (name !== UNKNOWN) {
+    const fallback = await loadIconSvg(UNKNOWN);
+    if (fallback) return fallback;
+  }
+  // Nothing usable (e.g. the assets aren't being served): render nothing rather than
+  // injecting a dev-server 404 page ("Cannot GET /assets/icons/unknown.svg") as markup.
+  return '';
+}
+
+/** Fetch an icon and return its text only if it is actually an SVG, else null. */
+async function fetchSvg(url: string): Promise<string | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const text = await r.text();
+    return text.trimStart().startsWith('<svg') ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+const UNKNOWN: PcIconNameType = 'unknown';
+
+/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
+const _cache = new Map<PcIconNameType, Promise<string>>();
+
+export const icons = {
+  none: 'none',
+  'add-company': 'assets/icons/add-company.svg',
+  'add-form': 'assets/icons/add-form.svg',
+  'add-group': 'assets/icons/add-group.svg',
+  'add-home': 'assets/icons/add-home.svg',
+  'add-issue': 'assets/icons/add-issue.svg',
+  'add-label': 'assets/icons/add-label.svg',
+  'add-list': 'assets/icons/add-list.svg',
+  'add-newsletter': 'assets/icons/add-newsletter.svg',
+  'add-notes': 'assets/icons/add-notes.svg',
+  'add-schedule': 'assets/icons/add-schedule.svg',
+  'add-task': 'assets/icons/add-task.svg',
+  'add-ticket': 'assets/icons/add-ticket.svg',
+  'add-users': 'assets/icons/add-users.svg',
+  'add-volunteer': 'assets/icons/add-volunteer.svg',
+  'add-fundraising': 'assets/icons/add-fundraising.svg',
+  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
+  'archive-box': 'assets/icons/archive-box.svg',
+  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
+  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
+  'arrow-left': 'assets/icons/arrow-left.svg',
+  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
+  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
+  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
+  'arrow-path': 'assets/icons/arrow-path.svg',
+  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
+  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
+  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
+  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
+  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
+  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
+  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
+  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
+  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
+  'at-symbol': 'assets/icons/at-symbol.svg',
+  'attach-fat': 'assets/icons/attach-fat.svg',
+  'attach-file-off': 'assets/icons/attach-file-off.svg',
+  banknotes: 'assets/icons/banknotes.svg',
+  'bars-3': 'assets/icons/bars-3.svg',
+  'bars-4': 'assets/icons/bars-4.svg',
+  bell: 'assets/icons/bell.svg',
+  bookmark: 'assets/icons/bookmark.svg',
+  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
+  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
+  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
+  briefcase: 'assets/icons/briefcase.svg',
+  calendar: 'assets/icons/calendar.svg',
+  'chart-pie': 'assets/icons/chart-pie.svg',
+  'check-circle': 'assets/icons/check-circle.svg',
+  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
+  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
+  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
+  'chevron-down': 'assets/icons/chevron-down.svg',
+  'chevron-left': 'assets/icons/chevron-left.svg',
+  'chevron-right': 'assets/icons/chevron-right.svg',
+  'chevron-up': 'assets/icons/chevron-up.svg',
+  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
+  clock: 'assets/icons/clock.svg',
+  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
+  cog: 'assets/icons/cog.svg',
+  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
+  'collapse-content': 'assets/icons/collapse-content.svg',
+  'credit-card': 'assets/icons/credit-card.svg',
+  'currency-dollar': 'assets/icons/currency-dollar.svg',
+  document: 'assets/icons/document.svg',
+  'document-check': 'assets/icons/document-check.svg',
+  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
+  'document-duplicate': 'assets/icons/document-duplicate.svg',
+  'document-text': 'assets/icons/document-text.svg',
+  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
+  envelope: 'assets/icons/envelope.svg',
+  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
+  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
+  'expand-content': 'assets/icons/expand-content.svg',
+  eye: 'assets/icons/eye.svg',
+  'eye-slash': 'assets/icons/eye-slash.svg',
+  facebook: 'assets/icons/facebook.svg',
+  file: 'assets/icons/file.svg',
+  'file-archive': 'assets/icons/file-archive.svg',
+  'file-audio': 'assets/icons/file-audio.svg',
+  'file-calendar': 'assets/icons/file-calendar.svg',
+  'file-code': 'assets/icons/file-code.svg',
+  'file-contact': 'assets/icons/file-contact.svg',
+  'file-db': 'assets/icons/file-db.svg',
+  'file-design': 'assets/icons/file-design.svg',
+  'file-disk': 'assets/icons/file-disk.svg',
+  'file-doc': 'assets/icons/file-doc.svg',
+  'file-ebook': 'assets/icons/file-ebook.svg',
+  'file-email': 'assets/icons/file-email.svg',
+  'file-exe': 'assets/icons/file-exe.svg',
+  'file-font': 'assets/icons/file-font.svg',
+  'file-image': 'assets/icons/file-image.svg',
+  'file-pdf': 'assets/icons/file-pdf.svg',
+  'file-sheet': 'assets/icons/file-sheet.svg',
+  'file-slides': 'assets/icons/file-slides.svg',
+  'file-text': 'assets/icons/file-text.svg',
+  'file-video': 'assets/icons/file-video.svg',
+  filter: 'assets/icons/funnel.svg',
+  forward: 'assets/icons/forward.svg',
+  funnel: 'assets/icons/funnel.svg',
+  'globe-americas': 'assets/icons/globe-americas.svg',
+  hashtag: 'assets/icons/hashtag.svg',
+  home: 'assets/icons/home.svg',
+  'house-modern': 'assets/icons/house-modern.svg',
+  identification: 'assets/icons/identification.svg',
+  inbox: 'assets/icons/inbox.svg',
+  'inbox-stack': 'assets/icons/inbox-stack.svg',
+  'information-circle': 'assets/icons/information-circle.svg',
+  instagram: 'assets/icons/instagram.svg',
+  label: 'assets/icons/label.svg',
+  linkedin: 'assets/icons/linkedin.svg',
+  'lock-closed': 'assets/icons/lock-closed.svg',
+  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
+  mailbox: 'assets/icons/mailbox.svg',
+  map: 'assets/icons/map.svg',
+  'map-pin': 'assets/icons/map-pin.svg',
+  megaphone: 'assets/icons/megaphone.svg',
+  message: 'assets/icons/message.svg',
+  'menu-open': 'assets/icons/menu-open.svg',
+  merge: 'assets/icons/merge.svg',
+  moon: 'assets/icons/moon.svg',
+  notification: 'assets/icons/notification.svg',
+  'paper-airplane': 'assets/icons/paper-airplane.svg',
+  'paper-clip': 'assets/icons/paper-clip.svg',
+  'pencil-square': 'assets/icons/pencil-square.svg',
+  plus: 'assets/icons/plus.svg',
+  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
+  print: 'assets/icons/print.svg',
+  'queue-list': 'assets/icons/queue-list.svg',
+  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
+  'redo-fat': 'assets/icons/redo-fat.svg',
+  route: 'assets/icons/route.svg',
+  reply: 'assets/icons/reply.svg',
+  'reply-all': 'assets/icons/reply-all.svg',
+  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
+  save: 'assets/icons/save.svg',
+  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
+  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
+  star: 'assets/icons/star.svg',
+  'star-filled': 'assets/icons/star-filled.svg',
+  sun: 'assets/icons/sun.svg',
+  'table-cells': 'assets/icons/table-cells.svg',
+  phone: 'assets/icons/phone.svg',
+  tag: 'assets/icons/tag.svg',
+  task: 'assets/icons/task.svg',
+  ticket: 'assets/icons/ticket.svg',
+  trash: 'assets/icons/trash.svg',
+  'trash-forever': 'assets/icons/trash-forever.svg',
+  'undo-fat': 'assets/icons/undo-fat.svg',
+  unknown: 'assets/icons/unknown.svg',
+  'user-circle': 'assets/icons/user-circle.svg',
+  'user-group': 'assets/icons/user-group.svg',
+  'user-plus': 'assets/icons/user-plus.svg',
+  users: 'assets/icons/users.svg',
+  'view-column': 'assets/icons/view-column.svg',
+  'view-kanban': 'assets/icons/view-kanban.svg',
+  volunteer: 'assets/icons/volunteer.svg',
+  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
+  'x-circle': 'assets/icons/x-circle.svg',
+  x: 'assets/icons/x.svg',
+  'x-mark': 'assets/icons/x-mark.svg',
+} as const;
 ````
 
 ## File: libs/uxcommon/src/components/input/input.ts
@@ -8214,7 +8430,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. The card always shows the campaign you are working in — your assigned campaign, or, for admins, the context selected under **Workspace → Campaigns**.',
       },
       {
         kind: 'p',
@@ -8506,6 +8722,8 @@ export const InviteAuthUserObj = z.object({
   first_name: nameSchema('First name'),
   last_name: nameSchema('Last name').nullable().optional(),
   role: z.string().max(100).nullable().optional(),
+  /** Campaigns §15 — assign the invitee to a campaign; null/absent = the office context. */
+  campaign_id: z.string().nullable().optional(),
 });
 
 export const NotificationPreferencesObj = z.object({
@@ -8546,6 +8764,8 @@ export const UpdateAuthUserObj = z.object({
   verified: z.boolean().optional(),
   two_factor_enabled: z.boolean().optional(),
   notification_preferences: NotificationPreferencesObj.optional(),
+  /** Campaigns §15 — admin-assigned campaign; null = the office context. Admin/owner callers only. */
+  campaign_id: z.string().nullable().optional(),
 });
 
 export const Verify2FAObj = z.object({
@@ -10113,220 +10333,6 @@ export class GeocodeChip {
 }
 ````
 
-## File: libs/uxcommon/src/components/icons/icons.index.ts
-````typescript
-/****************************************************** */
-/*
-/* Look at https://heroicons.com for icons. Most of these
-/* are from the Heroicons set, some are custom.
-/*
-/****************************************************** */
-export type PcIconNameType = keyof typeof icons;
-
-export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  let cached = _cache.get(name);
-  if (!cached) {
-    cached = resolveIconSvg(name);
-    _cache.set(name, cached);
-  }
-  return cached;
-}
-
-async function resolveIconSvg(name: PcIconNameType): Promise<string> {
-  const svg = await fetchSvg(icons[name]);
-  if (svg != null) return svg;
-  // Fall back to the generic unknown glyph — but only if it itself is a real SVG.
-  if (name !== UNKNOWN) {
-    const fallback = await loadIconSvg(UNKNOWN);
-    if (fallback) return fallback;
-  }
-  // Nothing usable (e.g. the assets aren't being served): render nothing rather than
-  // injecting a dev-server 404 page ("Cannot GET /assets/icons/unknown.svg") as markup.
-  return '';
-}
-
-/** Fetch an icon and return its text only if it is actually an SVG, else null. */
-async function fetchSvg(url: string): Promise<string | null> {
-  try {
-    const r = await fetch(url);
-    if (!r.ok) return null;
-    const text = await r.text();
-    return text.trimStart().startsWith('<svg') ? text : null;
-  } catch {
-    return null;
-  }
-}
-
-const UNKNOWN: PcIconNameType = 'unknown';
-
-/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<PcIconNameType, Promise<string>>();
-
-export const icons = {
-  none: 'none',
-  'add-company': 'assets/icons/add-company.svg',
-  'add-form': 'assets/icons/add-form.svg',
-  'add-group': 'assets/icons/add-group.svg',
-  'add-home': 'assets/icons/add-home.svg',
-  'add-issue': 'assets/icons/add-issue.svg',
-  'add-label': 'assets/icons/add-label.svg',
-  'add-list': 'assets/icons/add-list.svg',
-  'add-newsletter': 'assets/icons/add-newsletter.svg',
-  'add-notes': 'assets/icons/add-notes.svg',
-  'add-schedule': 'assets/icons/add-schedule.svg',
-  'add-task': 'assets/icons/add-task.svg',
-  'add-ticket': 'assets/icons/add-ticket.svg',
-  'add-users': 'assets/icons/add-users.svg',
-  'add-volunteer': 'assets/icons/add-volunteer.svg',
-  'add-fundraising': 'assets/icons/add-fundraising.svg',
-  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
-  'archive-box': 'assets/icons/archive-box.svg',
-  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
-  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
-  'arrow-left': 'assets/icons/arrow-left.svg',
-  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
-  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
-  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
-  'arrow-path': 'assets/icons/arrow-path.svg',
-  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
-  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
-  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
-  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
-  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
-  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
-  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
-  'at-symbol': 'assets/icons/at-symbol.svg',
-  'attach-fat': 'assets/icons/attach-fat.svg',
-  'attach-file-off': 'assets/icons/attach-file-off.svg',
-  banknotes: 'assets/icons/banknotes.svg',
-  'bars-3': 'assets/icons/bars-3.svg',
-  'bars-4': 'assets/icons/bars-4.svg',
-  bell: 'assets/icons/bell.svg',
-  bookmark: 'assets/icons/bookmark.svg',
-  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
-  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
-  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
-  briefcase: 'assets/icons/briefcase.svg',
-  calendar: 'assets/icons/calendar.svg',
-  'chart-pie': 'assets/icons/chart-pie.svg',
-  'check-circle': 'assets/icons/check-circle.svg',
-  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
-  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
-  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
-  'chevron-down': 'assets/icons/chevron-down.svg',
-  'chevron-left': 'assets/icons/chevron-left.svg',
-  'chevron-right': 'assets/icons/chevron-right.svg',
-  'chevron-up': 'assets/icons/chevron-up.svg',
-  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
-  clock: 'assets/icons/clock.svg',
-  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
-  cog: 'assets/icons/cog.svg',
-  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
-  'collapse-content': 'assets/icons/collapse-content.svg',
-  'credit-card': 'assets/icons/credit-card.svg',
-  'currency-dollar': 'assets/icons/currency-dollar.svg',
-  document: 'assets/icons/document.svg',
-  'document-check': 'assets/icons/document-check.svg',
-  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
-  'document-duplicate': 'assets/icons/document-duplicate.svg',
-  'document-text': 'assets/icons/document-text.svg',
-  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  envelope: 'assets/icons/envelope.svg',
-  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
-  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
-  'expand-content': 'assets/icons/expand-content.svg',
-  eye: 'assets/icons/eye.svg',
-  'eye-slash': 'assets/icons/eye-slash.svg',
-  facebook: 'assets/icons/facebook.svg',
-  file: 'assets/icons/file.svg',
-  'file-archive': 'assets/icons/file-archive.svg',
-  'file-audio': 'assets/icons/file-audio.svg',
-  'file-calendar': 'assets/icons/file-calendar.svg',
-  'file-code': 'assets/icons/file-code.svg',
-  'file-contact': 'assets/icons/file-contact.svg',
-  'file-db': 'assets/icons/file-db.svg',
-  'file-design': 'assets/icons/file-design.svg',
-  'file-disk': 'assets/icons/file-disk.svg',
-  'file-doc': 'assets/icons/file-doc.svg',
-  'file-ebook': 'assets/icons/file-ebook.svg',
-  'file-email': 'assets/icons/file-email.svg',
-  'file-exe': 'assets/icons/file-exe.svg',
-  'file-font': 'assets/icons/file-font.svg',
-  'file-image': 'assets/icons/file-image.svg',
-  'file-pdf': 'assets/icons/file-pdf.svg',
-  'file-sheet': 'assets/icons/file-sheet.svg',
-  'file-slides': 'assets/icons/file-slides.svg',
-  'file-text': 'assets/icons/file-text.svg',
-  'file-video': 'assets/icons/file-video.svg',
-  filter: 'assets/icons/funnel.svg',
-  forward: 'assets/icons/forward.svg',
-  funnel: 'assets/icons/funnel.svg',
-  'globe-americas': 'assets/icons/globe-americas.svg',
-  hashtag: 'assets/icons/hashtag.svg',
-  home: 'assets/icons/home.svg',
-  'house-modern': 'assets/icons/house-modern.svg',
-  identification: 'assets/icons/identification.svg',
-  inbox: 'assets/icons/inbox.svg',
-  'inbox-stack': 'assets/icons/inbox-stack.svg',
-  'information-circle': 'assets/icons/information-circle.svg',
-  instagram: 'assets/icons/instagram.svg',
-  label: 'assets/icons/label.svg',
-  linkedin: 'assets/icons/linkedin.svg',
-  'lock-closed': 'assets/icons/lock-closed.svg',
-  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
-  mailbox: 'assets/icons/mailbox.svg',
-  map: 'assets/icons/map.svg',
-  'map-pin': 'assets/icons/map-pin.svg',
-  megaphone: 'assets/icons/megaphone.svg',
-  message: 'assets/icons/message.svg',
-  'menu-open': 'assets/icons/menu-open.svg',
-  merge: 'assets/icons/merge.svg',
-  moon: 'assets/icons/moon.svg',
-  notification: 'assets/icons/notification.svg',
-  'paper-airplane': 'assets/icons/paper-airplane.svg',
-  'paper-clip': 'assets/icons/paper-clip.svg',
-  'pencil-square': 'assets/icons/pencil-square.svg',
-  plus: 'assets/icons/plus.svg',
-  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
-  print: 'assets/icons/print.svg',
-  'queue-list': 'assets/icons/queue-list.svg',
-  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
-  'redo-fat': 'assets/icons/redo-fat.svg',
-  route: 'assets/icons/route.svg',
-  reply: 'assets/icons/reply.svg',
-  'reply-all': 'assets/icons/reply-all.svg',
-  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
-  save: 'assets/icons/save.svg',
-  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
-  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
-  star: 'assets/icons/star.svg',
-  'star-filled': 'assets/icons/star-filled.svg',
-  sun: 'assets/icons/sun.svg',
-  'table-cells': 'assets/icons/table-cells.svg',
-  phone: 'assets/icons/phone.svg',
-  tag: 'assets/icons/tag.svg',
-  task: 'assets/icons/task.svg',
-  ticket: 'assets/icons/ticket.svg',
-  trash: 'assets/icons/trash.svg',
-  'trash-forever': 'assets/icons/trash-forever.svg',
-  'undo-fat': 'assets/icons/undo-fat.svg',
-  unknown: 'assets/icons/unknown.svg',
-  'user-circle': 'assets/icons/user-circle.svg',
-  'user-group': 'assets/icons/user-group.svg',
-  'user-plus': 'assets/icons/user-plus.svg',
-  users: 'assets/icons/users.svg',
-  'view-column': 'assets/icons/view-column.svg',
-  'view-kanban': 'assets/icons/view-kanban.svg',
-  volunteer: 'assets/icons/volunteer.svg',
-  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
-  'x-circle': 'assets/icons/x-circle.svg',
-  x: 'assets/icons/x.svg',
-  'x-mark': 'assets/icons/x-mark.svg',
-} as const;
-````
-
 ## File: libs/uxcommon/src/components/row-actions/row-actions.ts
 ````typescript
 import { ChangeDetectionStrategy, Component, ElementRef, input, viewChild } from '@angular/core';
@@ -10855,415 +10861,6 @@ export function formatCurrency(amount: number, code: CurrencyCode): string {
 }
 ````
 
-## File: libs/common/src/lib/help/articles/getting-started.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
-  {
-    id: 'welcome',
-    category: 'getting-started',
-    title: 'Welcome to pplCRM',
-    summary: 'What pplCRM is for and a five-minute tour of the main areas.',
-    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
-    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'pplCRM keeps every relationship your organization cares about (supporters, donors, volunteers, households, and companies) in one place, together with the conversations, donations, events, and tasks attached to them.',
-      },
-      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
-      {
-        kind: 'list',
-        items: [
-          '**Dashboard**: your landing page, with key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Work**: [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts; tabs under the People header switch between them.',
-          '**Outreach**: [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
-          '**Field**: [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
-          '**Data**: [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
-          '**Admin** (administrators only): [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Not seeing a section?',
-        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin. See [Users and roles](/help/users-roles).',
-      },
-      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [People](/people)',
-            detail:
-              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
-          },
-          {
-            title: 'Open a profile',
-            detail:
-              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
-          },
-          {
-            title: 'Organize with tags and lists',
-            detail:
-              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
-          },
-          {
-            title: 'Send your first newsletter',
-            detail:
-              'Pick a template, choose an audience, and send. [Create and send a newsletter](/help/newsletters) walks through it.',
-          },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every page in this help center is searchable. Head back to [Help](/help) and start typing.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Your workspace starts in demo mode',
-        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
-      },
-    ],
-  },
-  {
-    id: 'demo-mode',
-    category: 'getting-started',
-    title: 'Demo mode and sample data',
-    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
-    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
-    related: ['welcome', 'add-people', 'import'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of pplCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
-      },
-      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
-      {
-        kind: 'list',
-        items: [
-          '**60 people in 24 households** with real Ottawa street addresses, so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
-          '**10 companies**, with several people linked to them.',
-          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
-          '**Canvassing turfs** cut across the wards (one complete, one being knocked right now, one just assigned, and one still a draft) with real door knocks so the field report and coverage map have something to show.',
-          '**Yard-sign deliveries**: sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
-          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in; their accounts exist so assignment and triage look real.',
-          '**Tasks** in every state: overdue, due this week, waiting, and done.',
-          '**A working inbox**: a handful of emails from demo contacts, some open, some closed, some assigned.',
-          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
-          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
-          '**A donations ledger**: recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Why draft forms show responses',
-        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link. See [Forms](/help/forms).',
-      },
-      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
-      {
-        kind: 'p',
-        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'What stays locked during the demo',
-        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and connecting a Stripe account for donations. Everything else works, including workspace settings; update your organization details, service levels, and defaults at any time and they carry over when you exit the demo. Choose a plan on the [Billing](/workspace/billing) page to unlock the rest.',
-      },
-      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Choose a plan',
-            detail:
-              'Exiting the demo requires an active subscription. Pick one on the [Billing](/workspace/billing) page.',
-          },
-          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
-          {
-            title: 'Choose Exit demo mode',
-            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
-          },
-          {
-            title: 'Start fresh',
-            detail:
-              'A Getting started checklist appears on the [Dashboard](/dashboard) once the demo is gone. Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
-      {
-        kind: 'list',
-        items: [
-          '**Your six draft forms**: volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
-          '**The starter tags and issues**: the tag labels (community leader, lawn sign location, and so on) and the issues list stay as a ready-made vocabulary for your real contacts. They lose their demo attachments and are fully yours to rename, recolor, merge, or delete on the [Tags](/tags) and [Issues](/issues) pages.',
-          '**Anything you created yourself** while exploring: your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address. Tags you applied to your own contacts stay applied.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'getting-around',
-    category: 'getting-started',
-    title: 'Finding your way around',
-    summary:
-      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
-    keywords: [
-      'navigation',
-      'breadcrumbs',
-      'sidebar',
-      'pins',
-      'bookmarks',
-      'favourites',
-      'favorites',
-      'theme',
-      'dark mode',
-      'fullscreen',
-      'next record',
-      'previous record',
-    ],
-    related: ['welcome', 'search', 'shortcuts'],
-    blocks: [
-      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
-      {
-        kind: 'p',
-        text: 'Every page shows a breadcrumb trail in the top bar. The bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from, with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
-      },
-      {
-        kind: 'p',
-        text: 'When you open a record from a grid, the header also shows your position in the filtered set (“4 of 43 filtered”) with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'No pager on a record?',
-        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
-      },
-      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
-      {
-        kind: 'p',
-        text: 'The bookmark icon in the top bar pins the main page you are on (a grid like People, or the dashboard) to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
-      },
-      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
-      {
-        kind: 'list',
-        items: [
-          'Collapse any section by clicking its heading (useful for areas you rarely use).',
-          'On a narrow window the sidebar shrinks to an icon-only rail and the expand control is hidden; hover an icon to see its name. Widen the window past roughly 1024px to get the labels and the toggle back.',
-          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
-          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
-          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list. See [Keyboard shortcuts](/help/shortcuts).',
-        ],
-      },
-      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
-      {
-        kind: 'list',
-        items: [
-          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
-          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'search',
-    category: 'getting-started',
-    title: 'Search with ⌘K',
-    summary: 'The top-bar search filters the page you are on as you type. Here is how to get the most from it.',
-    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
-    related: ['filters', 'shortcuts', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
-      },
-      {
-        kind: 'list',
-        items: [
-          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
-          'Search is case-insensitive and ignores extra spaces.',
-          'Clear the search box to bring every row back.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Search and filters stack',
-        text: 'Text search combines with any tag, issue, or list filters you have applied. The grid states how many rows match the combination, so you always know what you are looking at.',
-      },
-      {
-        kind: 'p',
-        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections. The full map is in [Keyboard shortcuts](/help/shortcuts).',
-      },
-      {
-        kind: 'p',
-        text: 'Need something more precise than text matching (say, everyone in a city with a certain tag)? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
-      },
-    ],
-  },
-  {
-    id: 'dashboard',
-    category: 'getting-started',
-    title: 'The dashboard and SLA health',
-    summary:
-      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
-    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
-    related: ['welcome', 'inbox', 'tasks', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now (unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft), and every number in it is a link straight to that work.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Next-action cards**: the three cards below the briefing surface your most urgent queues (task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send). A card turns quiet when there is nothing to do there.',
-          '**Stat tiles**: a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
-          '**New contacts** and **Coming up**: a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
-          '**Representative performance**: a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
-        ],
-      },
-      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
-      {
-        kind: 'p',
-        text: 'A service-level agreement (SLA) is a promise about response time: for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**On track**: no open items have exceeded their target.',
-          '**Warning**: the number of breached items has reached the warning threshold.',
-          '**Critical**: breaches have reached the critical threshold and need attention now.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels**. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Chase the cause, not the number',
-        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first. Those are the ones breaching.',
-      },
-    ],
-  },
-  {
-    id: 'shortcuts',
-    category: 'getting-started',
-    title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in pplCRM on one page, plus the ? overlay that shows them anywhere.',
-    keywords: [
-      'keyboard',
-      'shortcuts',
-      'keys',
-      'hotkeys',
-      'productivity',
-      'j',
-      'k',
-      'command k',
-      'go to',
-      'g then',
-      'question mark',
-      'palette',
-    ],
-    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Press ? anywhere',
-        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
-      },
-      { kind: 'h2', id: 'global', text: 'Anywhere' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
-          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
-          { keys: ['g'], action: 'Start a “go to” chord, then follow with a section key below' },
-          { keys: ['?'], action: 'Show the shortcuts overlay' },
-          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
-        ],
-      },
-      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
-      {
-        kind: 'p',
-        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
-      },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['g', 'h'], action: 'Dashboard (home)' },
-          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
-          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
-          { keys: ['g', 'l'], action: '[Lists](/lists)' },
-          { keys: ['g', 'a'], action: '[Automations](/automations)' },
-          { keys: ['g', 'p'], action: '[People](/people)' },
-          { keys: ['g', 'u'], action: '[Households](/households)' },
-          { keys: ['g', 'c'], action: '[Companies](/companies)' },
-          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
-          { keys: ['g', 't'], action: '[Teams](/teams)' },
-          { keys: ['g', 'o'], action: '[Donations](/donations)' },
-          { keys: ['g', 'f'], action: '[Forms](/forms)' },
-          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
-        ],
-      },
-      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['c'], action: 'Compose' },
-          { keys: ['r'], action: 'Reply' },
-          { keys: ['a'], action: 'Reply all' },
-          { keys: ['f'], action: 'Forward' },
-          { keys: ['e'], action: 'Mark done' },
-          { keys: ['s'], action: 'Star or unstar' },
-          { keys: ['Shift', 'I'], action: 'Mark as read' },
-          { keys: ['Shift', 'U'], action: 'Mark as unread' },
-          { keys: ['#'], action: 'Delete' },
-          { keys: ['J'], action: 'Next email' },
-          { keys: ['K'], action: 'Previous email' },
-          { keys: ['Enter'], action: 'Open or expand' },
-          { keys: ['U'], action: 'Back to the list' },
-        ],
-      },
-      { kind: 'h2', id: 'records', text: 'On a record page' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['J'], action: 'Next record in the filtered set you came from' },
-          { keys: ['K'], action: 'Previous record in the filtered set' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'When J and K are quiet',
-        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
-      },
-      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
-          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
-      },
-    ],
-  },
-];
-````
-
 ## File: libs/common/src/lib/schemas/content-check.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -11694,326 +11291,409 @@ export * from './schemas/companion-access.schema';
 export * from './schemas/content-check.schema';
 ````
 
-## File: libs/common/src/lib/help/articles/administration.ts
+## File: libs/common/src/lib/help/articles/getting-started.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
 
-export const ADMIN_ARTICLES: HelpArticle[] = [
+export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
   {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
+    id: 'welcome',
+    category: 'getting-started',
+    title: 'Welcome to pplCRM',
+    summary: 'What pplCRM is for and a five-minute tour of the main areas.',
+    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
+    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
     blocks: [
       {
         kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+        text: 'pplCRM keeps every relationship your organization cares about (supporters, donors, volunteers, households, and companies) in one place, together with the conversations, donations, events, and tasks attached to them.',
       },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      {
-        kind: 'p',
-        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
-      },
-      { kind: 'h2', id: 'user-page', text: 'The user page' },
-      {
-        kind: 'p',
-        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
-      },
-      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
-      {
-        kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The roles' },
+      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
       {
         kind: 'list',
         items: [
-          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
-          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
-          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization**: your name, contact details, and mailing address.',
-          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
-          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access**: default role for invitations and the MFA requirement.',
-          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance**: default theme and date format for the workspace.',
-          '**API keys**: the workspace API key for server-side integrations — submitting forms, RSVPs, and volunteer signups from your own backend, or connecting Zapier. Shown once at generation; regenerating invalidates the old key.',
-          '**Billing**: your plan, live usage, and payment details.',
-        ],
-      },
-      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
-      {
-        kind: 'p',
-        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
-          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
-          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus priority support.',
-          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
-      },
-      {
-        kind: 'p',
-        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
-      },
-      {
-        kind: 'p',
-        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
-      },
-      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
-      {
-        kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, the subscription moves to the new bracket, and the prorated difference for the remainder of your current billing period is charged right away — on **either** interval. Growth never interrupts sending, and your monthly email allowance rises with the new bracket the moment it applies. If your list shrinks back below a bracket, the lower price reconciles at the next renewal rather than refunding the current period. If a payment fails, newsletter sending goes on hold until the payment method is updated on the [Billing](/workspace/billing) page — everything else keeps working.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
-      },
-    ],
-  },
-  {
-    id: 'volunteer-access',
-    category: 'admin',
-    title: 'Volunteer access approvals',
-    summary:
-      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
-    keywords: [
-      'volunteer',
-      'access',
-      'approve',
-      'companion',
-      'canvass',
-      'delivery',
-      'link',
-      'verify',
-      'revoke',
-      'code',
-    ],
-    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
-      },
-      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
-      {
-        kind: 'p',
-        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
-      },
-      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
-      {
-        kind: 'p',
-        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Verification needs a contact on file',
-        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
-      {
-        kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
-      },
-    ],
-  },
-  {
-    id: 'campaigns-contexts',
-    category: 'admin',
-    title: 'Campaigns and contexts',
-    summary:
-      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
-    keywords: [
-      'campaigns',
-      'campaign',
-      'context',
-      'office',
-      'election',
-      'switcher',
-      'archive',
-      'workspace',
-      'constituency',
-    ],
-    related: ['users-roles', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
-      },
-      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
-      {
-        kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
-      },
-      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
-      {
-        kind: 'list',
-        items: [
-          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
-          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
-          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
-          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
-          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
-        ],
-      },
-      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
-      {
-        kind: 'list',
-        items: [
-          '**Create** a campaign before the race, with a start date and election day.',
-          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
-          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
-          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+          '**Dashboard**: your landing page, with key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Work**: [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts; tabs under the People header switch between them.',
+          '**Outreach**: [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
+          '**Field**: [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
+          '**Data**: [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
+          '**Admin** (administrators only): [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
         ],
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'The office cannot be archived or deleted',
-        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+        title: 'Not seeing a section?',
+        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin. See [Users and roles](/help/users-roles).',
+      },
+      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [People](/people)',
+            detail:
+              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
+          },
+          {
+            title: 'Open a profile',
+            detail:
+              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
+          },
+          {
+            title: 'Organize with tags and lists',
+            detail:
+              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
+          },
+          {
+            title: 'Send your first newsletter',
+            detail:
+              'Pick a template, choose an audience, and send. [Create and send a newsletter](/help/newsletters) walks through it.',
+          },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every page in this help center is searchable. Head back to [Help](/help) and start typing.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Your workspace starts in demo mode',
+        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
+      },
+    ],
+  },
+  {
+    id: 'demo-mode',
+    category: 'getting-started',
+    title: 'Demo mode and sample data',
+    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
+    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
+    related: ['welcome', 'add-people', 'import'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of pplCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
+      },
+      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
+      {
+        kind: 'list',
+        items: [
+          '**60 people in 24 households** with real Ottawa street addresses, so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
+          '**10 companies**, with several people linked to them.',
+          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
+          '**Canvassing turfs** cut across the wards (one complete, one being knocked right now, one just assigned, and one still a draft) with real door knocks so the field report and coverage map have something to show.',
+          '**Yard-sign deliveries**: sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
+          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in; their accounts exist so assignment and triage look real.',
+          '**Tasks** in every state: overdue, due this week, waiting, and done.',
+          '**A working inbox**: a handful of emails from demo contacts, some open, some closed, some assigned.',
+          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
+          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
+          '**A donations ledger**: recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Why draft forms show responses',
+        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link. See [Forms](/help/forms).',
+      },
+      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
+      {
+        kind: 'p',
+        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'What stays locked during the demo',
+        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and connecting a Stripe account for donations. Everything else works, including workspace settings; update your organization details, service levels, and defaults at any time and they carry over when you exit the demo. Choose a plan on the [Billing](/workspace/billing) page to unlock the rest.',
+      },
+      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Choose a plan',
+            detail:
+              'Exiting the demo requires an active subscription. Pick one on the [Billing](/workspace/billing) page.',
+          },
+          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
+          {
+            title: 'Choose Exit demo mode',
+            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
+          },
+          {
+            title: 'Start fresh',
+            detail:
+              'A Getting started checklist appears on the [Dashboard](/dashboard) once the demo is gone. Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
+      {
+        kind: 'list',
+        items: [
+          '**Your six draft forms**: volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
+          '**The starter tags and issues**: the tag labels (community leader, lawn sign location, and so on) and the issues list stay as a ready-made vocabulary for your real contacts. They lose their demo attachments and are fully yours to rename, recolor, merge, or delete on the [Tags](/tags) and [Issues](/issues) pages.',
+          '**Anything you created yourself** while exploring: your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address. Tags you applied to your own contacts stay applied.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'getting-around',
+    category: 'getting-started',
+    title: 'Finding your way around',
+    summary:
+      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
+    keywords: [
+      'navigation',
+      'breadcrumbs',
+      'sidebar',
+      'pins',
+      'bookmarks',
+      'favourites',
+      'favorites',
+      'theme',
+      'dark mode',
+      'fullscreen',
+      'next record',
+      'previous record',
+    ],
+    related: ['welcome', 'search', 'shortcuts'],
+    blocks: [
+      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
+      {
+        kind: 'p',
+        text: 'Every page shows a breadcrumb trail in the top bar. The bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from, with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
+      },
+      {
+        kind: 'p',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set (“4 of 43 filtered”) with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'No pager on a record?',
+        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
+      },
+      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
+      {
+        kind: 'p',
+        text: 'The bookmark icon in the top bar pins the main page you are on (a grid like People, or the dashboard) to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+      },
+      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
+      {
+        kind: 'list',
+        items: [
+          'Collapse any section by clicking its heading (useful for areas you rarely use). Collapsing applies to the full-width sidebar only; the icon-only rail always shows every icon.',
+          'On a narrow window the sidebar shrinks to an icon-only rail and the expand control is hidden; hover an icon to see its name. Widen the window past roughly 1024px to get the labels and the toggle back.',
+          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
+          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list. See [Keyboard shortcuts](/help/shortcuts).',
+        ],
+      },
+      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
+      {
+        kind: 'list',
+        items: [
+          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
+          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'search',
+    category: 'getting-started',
+    title: 'Search with ⌘K',
+    summary: 'The top-bar search filters the page you are on as you type. Here is how to get the most from it.',
+    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
+    related: ['filters', 'shortcuts', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
+          'Search is case-insensitive and ignores extra spaces.',
+          'Clear the search box to bring every row back.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Search and filters stack',
+        text: 'Text search combines with any tag, issue, or list filters you have applied. The grid states how many rows match the combination, so you always know what you are looking at.',
+      },
+      {
+        kind: 'p',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections. The full map is in [Keyboard shortcuts](/help/shortcuts).',
+      },
+      {
+        kind: 'p',
+        text: 'Need something more precise than text matching (say, everyone in a city with a certain tag)? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+      },
+    ],
+  },
+  {
+    id: 'dashboard',
+    category: 'getting-started',
+    title: 'The dashboard and SLA health',
+    summary:
+      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
+    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
+    related: ['welcome', 'inbox', 'tasks', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now (unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft), and every number in it is a link straight to that work.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Next-action cards**: the three cards below the briefing surface your most urgent queues (task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send). A card turns quiet when there is nothing to do there.',
+          '**Stat tiles**: a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up**: a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance**: a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+        ],
+      },
+      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
+      {
+        kind: 'p',
+        text: 'A service-level agreement (SLA) is a promise about response time: for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**On track**: no open items have exceeded their target.',
+          '**Warning**: the number of breached items has reached the warning threshold.',
+          '**Critical**: breaches have reached the critical threshold and need attention now.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels**. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Chase the cause, not the number',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first. Those are the ones breaching.',
+      },
+    ],
+  },
+  {
+    id: 'shortcuts',
+    category: 'getting-started',
+    title: 'Keyboard shortcuts',
+    summary: 'Every keyboard shortcut in pplCRM on one page, plus the ? overlay that shows them anywhere.',
+    keywords: [
+      'keyboard',
+      'shortcuts',
+      'keys',
+      'hotkeys',
+      'productivity',
+      'j',
+      'k',
+      'command k',
+      'go to',
+      'g then',
+      'question mark',
+      'palette',
+    ],
+    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Press ? anywhere',
+        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
+      },
+      { kind: 'h2', id: 'global', text: 'Anywhere' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
+          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
+          { keys: ['g'], action: 'Start a “go to” chord, then follow with a section key below' },
+          { keys: ['?'], action: 'Show the shortcuts overlay' },
+          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
+        ],
+      },
+      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
+      {
+        kind: 'p',
+        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
+      },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['g', 'h'], action: 'Dashboard (home)' },
+          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
+          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
+          { keys: ['g', 'l'], action: '[Lists](/lists)' },
+          { keys: ['g', 'a'], action: '[Automations](/automations)' },
+          { keys: ['g', 'p'], action: '[People](/people)' },
+          { keys: ['g', 'u'], action: '[Households](/households)' },
+          { keys: ['g', 'c'], action: '[Companies](/companies)' },
+          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
+          { keys: ['g', 't'], action: '[Teams](/teams)' },
+          { keys: ['g', 'o'], action: '[Donations](/donations)' },
+          { keys: ['g', 'f'], action: '[Forms](/forms)' },
+          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
+          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
+        ],
+      },
+      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['c'], action: 'Compose' },
+          { keys: ['r'], action: 'Reply' },
+          { keys: ['a'], action: 'Reply all' },
+          { keys: ['f'], action: 'Forward' },
+          { keys: ['e'], action: 'Mark done' },
+          { keys: ['s'], action: 'Star or unstar' },
+          { keys: ['Shift', 'I'], action: 'Mark as read' },
+          { keys: ['Shift', 'U'], action: 'Mark as unread' },
+          { keys: ['#'], action: 'Delete' },
+          { keys: ['J'], action: 'Next email' },
+          { keys: ['K'], action: 'Previous email' },
+          { keys: ['Enter'], action: 'Open or expand' },
+          { keys: ['U'], action: 'Back to the list' },
+        ],
+      },
+      { kind: 'h2', id: 'records', text: 'On a record page' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['J'], action: 'Next record in the filtered set you came from' },
+          { keys: ['K'], action: 'Previous record in the filtered set' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'When J and K are quiet',
+        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
+      },
+      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
+          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
       },
     ],
   },
@@ -12610,6 +12290,358 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
 ];
 ````
 
+## File: libs/common/src/lib/help/articles/administration.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: [
+      'users',
+      'roles',
+      'invite',
+      'admin',
+      'editor',
+      'viewer',
+      'permissions',
+      'access',
+      'mfa',
+      'security',
+      'campaign',
+      'assignment',
+    ],
+    related: ['settings', 'profile', 'activity-log', 'campaigns-contexts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. Once an election campaign exists, a **Campaign** column appears too: pick which campaign each Editor or Viewer works in (admins and owners always have every campaign, so their cell reads “All campaigns”). The **⋯** menu on each row opens the profile or sends a password reset email.',
+      },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why), assigns the user’s campaign once an election campaign exists (see [Campaigns and contexts](/help/campaigns-contexts)), and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role — plus, when your workspace has more than one campaign, the campaign the new Editor or Viewer will work in. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
+          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Editors and Viewers also **belong to exactly one campaign** — the one an admin assigned them to (unassigned means the office). They cannot switch campaigns themselves; admins and owners can work in every campaign. See [Campaigns and contexts](/help/campaigns-contexts).',
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'p',
+        text: 'The sidebar clusters the sections into four groups: **Workspace**, **Email**, **Features**, and **Plan & account**.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Organization**: your name, contact details, and mailing address.',
+          '**Campaigns**: your permanent office context and any election campaigns — create and archive them, switch which one you (as an admin) are working in, and read how user assignment works. See [Campaigns and contexts](/help/campaigns-contexts).',
+          '**Teams & access**: default role for invitations and the MFA requirement.',
+          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Email sync**: connect your email provider so incoming and outgoing email syncs into your pplCRM inbox.',
+          '**Domain verification**: the DNS records (SPF, DKIM, DMARC) that let you send email from your own domain.',
+          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Donations**: donation limit, residency restrictions, tax credit tiers, and your Stripe connection.',
+          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
+          '**Storage**: your plan quota, live usage, and the files taking up the most space.',
+          '**Billing**: your plan, live usage, and payment details.',
+          '**API keys**: the workspace API key for server-side integrations (submitting forms, RSVPs, and volunteer signups from your own backend, or connecting Zapier). Shown once at generation; regenerating invalidates the old key.',
+          '**Account**: pause your organization account, or permanently delete it and all its data.',
+        ],
+      },
+      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
+      {
+        kind: 'p',
+        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
+          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
+          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus priority support.',
+          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
+      },
+      {
+        kind: 'p',
+        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
+      },
+      {
+        kind: 'p',
+        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
+      },
+      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
+      {
+        kind: 'p',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, the subscription moves to the new bracket, and the prorated difference for the remainder of your current billing period is charged right away — on **either** interval. Growth never interrupts sending, and your monthly email allowance rises with the new bracket the moment it applies. If your list shrinks back below a bracket, the lower price reconciles at the next renewal rather than refunding the current period. If a payment fails, newsletter sending goes on hold until the payment method is updated on the [Billing](/workspace/billing) page — everything else keeps working.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'assign',
+      'assignment',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'settings', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, an administrator creates an **election campaign** alongside it under [Workspace → Campaigns](/workspace/campaigns). People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'assignment', text: 'Who works in which campaign' },
+      {
+        kind: 'p',
+        text: 'Campaign membership is an admin decision, not a personal choice. **Editors and Viewers belong to exactly one campaign**: the one an admin assigned them to on the [Users](/users) page or in the invite dialog (unassigned members work in the office). Everything they see and do — newsletters, forms, donations, canvassing, the inbox — stays inside that campaign, and their [Profile](/profile) shows which campaign they are part of. **Admins and owners can work in every campaign**: they pick the context they are currently working in from [Workspace → Campaigns](/workspace/campaigns) (**Work in this campaign**), and that choice is theirs alone and follows them across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, users assigned to it move back to the office context, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/kysely.models.ts
 ````typescript
 // tsco:ignore
@@ -12828,6 +12860,11 @@ interface AuthUsers extends RecordType {
   previous_email: string | null;
   previous_role: string | null;
   passkey_setup_dismissed_at: Timestamp | null;
+  /**
+   * Campaigns §15 — admin-assigned campaign for Editors/Viewers; NULL = the
+   * permanent office context. Ignored for admins/owners (they see every campaign).
+   */
+  campaign_id: string | null;
 }
 
 /** Per-campaign email CONSENT (§15). Address health lives in EmailSuppressions; DNC on Persons. */
@@ -14813,7 +14850,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/workspace/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
       },
       {
         kind: 'p',

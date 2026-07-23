@@ -15,10 +15,13 @@
   </pc-grid-header>
 
   <!-- Table -->
-  <pc-table [loading]="loading.visible()" [columns]="6">
+  <pc-table [loading]="loading.visible()" [columns]="columnCount()">
     <ng-container pcTableHead>
       <th>User</th>
       <th>Role</th>
+      @if (showCampaignColumn()) {
+      <th>Campaign</th>
+      }
       <th>Status</th>
       <th>MFA</th>
       <th>Last active</th>
@@ -27,7 +30,7 @@
 
     @if (loaded() && rows().length === 0) {
     <tr>
-      <td colspan="6" class="px-6">
+      <td [attr.colspan]="columnCount()" class="px-6">
         <pc-empty-state icon="users" [bordered]="false" title="No users yet" hint="Invite your first teammate.">
           <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
         </pc-empty-state>
@@ -74,6 +77,34 @@
         </select>
         }
       </td>
+      @if (showCampaignColumn()) {
+      <td>
+        @if (!isCampaignScoped(row)) {
+        <span
+          class="tooltip tooltip-right text-xs text-base-content/60"
+          data-tip="Admins and owners can work in every campaign"
+        >
+          All campaigns
+        </span>
+        } @else {
+        <select
+          class="select select-bordered select-sm w-36"
+          [disabled]="savingIds().has(row.id)"
+          [attr.aria-label]="'Campaign for ' + displayName(row)"
+          (change)="changeCampaign(row, $event)"
+        >
+          @for (c of assignableCampaigns(); track c.id) {
+          <option
+            [value]="c.kind === 'office' ? '' : c.id"
+            [selected]="(c.kind === 'office' ? null : c.id) === row.campaign_id"
+          >
+            {{ c.name }}
+          </option>
+          }
+        </select>
+        }
+      </td>
+      }
       <td>
         <pc-status-badge [type]="status(row).tone">{{ status(row).label }}</pc-status-badge>
       </td>

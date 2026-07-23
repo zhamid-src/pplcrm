@@ -155,6 +155,34 @@ describe('CampaignsController', () => {
     await expect(controller.archive(officeId, auth)).rejects.toBeInstanceOf(BadRequestError);
   });
 
+  it('pins editors to their assigned campaign and reverts them to office on archive', async () => {
+    await controller.addCampaign(
+      { name: 'Pin Race', kind: 'election', description: null, notes: null, startdate: null, enddate: null },
+      auth,
+    );
+    const rows = await controller.getSwitcherList(auth);
+    const electionId = String(rows.find((c) => c.kind === 'election')?.id);
+
+    await db.updateTable('authusers').set({ campaign_id: electionId }).where('id', '=', userId).execute();
+
+    // Editor: exactly the assigned campaign, no switching surface.
+    const editorAuth = { ...auth, role: 'user' } as IAuthKeyPayload;
+    let ctx = await controller.getContext(editorAuth);
+    expect(ctx.active_campaign_id).toBe(electionId);
+    expect(ctx.campaigns).toHaveLength(1);
+
+    // Admin: every campaign stays visible.
+    const adminCtx = await controller.getContext({ ...auth, role: 'admin' } as IAuthKeyPayload);
+    expect(adminCtx.campaigns.length).toBeGreaterThan(1);
+
+    // Archiving the election clears its members back to the office context.
+    await controller.archive(electionId, auth);
+    const me = await db.selectFrom('authusers').select('campaign_id').where('id', '=', userId).executeTakeFirst();
+    expect(me?.campaign_id).toBeNull();
+    ctx = await controller.getContext(editorAuth);
+    expect(ctx.active_campaign_id).toBe(officeId);
+  });
+
   it('never hard-deletes campaigns', async () => {
     await expect(controller.delete()).rejects.toBeInstanceOf(BadRequestError);
     await expect(controller.deleteMany()).rejects.toBeInstanceOf(BadRequestError);

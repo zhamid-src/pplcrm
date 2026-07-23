@@ -4,6 +4,7 @@ import { provideRouter } from '@angular/router';
 import { vi, describe, beforeEach, afterEach, it, expect } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AuthService } from '../../auth/auth-service';
+import { CampaignContextService } from '../../services/campaign-context.service';
 import { UserService } from '../../services/user.service';
 import { ProfilePage } from './profile-page';
 
@@ -60,6 +61,15 @@ describe('ProfilePage', () => {
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: AuthService, useValue: mockAuthSvc },
         { provide: UserService, useValue: mockUserSvc },
+        {
+          provide: CampaignContextService,
+          useValue: {
+            campaigns: () => [],
+            activeCampaign: () => null,
+            activeCampaignId: () => null,
+            ensureLoaded: () => Promise.resolve(),
+          },
+        },
       ],
     }).compileComponents();
 

@@ -449,7 +449,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new UnauthorizedError();
     }
     const options = {
-      columns: ['id', 'email', 'first_name', 'role', 'verified', 'passkey_setup_dismissed_at'],
+      columns: ['id', 'email', 'first_name', 'role', 'campaign_id', 'verified', 'passkey_setup_dismissed_at'],
     } as QueryParams<'authusers'>;
 
     try {
@@ -814,6 +814,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new ForbiddenError('Admins cannot invite users with the Owner role.');
     }
 
+    // Campaigns §15 — the invitee's admin-assigned campaign; null = office context.
+    const campaignId = await this.resolveAssignableCampaignId(auth.tenant_id, input.campaign_id);
+
     const tempPassword = this.generateTempPassword();
     const password = await hashPassword(tempPassword);
     const repo = this.getRepo();
@@ -825,6 +828,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         password,
         first_name: input.first_name,
         role,
+        campaign_id: campaignId,
         verified: false,
         createdby_id: auth.user_id,
         updatedby_id: auth.user_id,
@@ -1602,6 +1606,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (data.first_name !== undefined) row['first_name'] = data.first_name;
     if (data.last_name !== undefined) row['last_name'] = data.last_name ?? '';
     if (data.role !== undefined) row['role'] = data.role ?? null;
+    // Campaigns §15 — campaign assignment is an admin/owner decision; users never
+    // reassign themselves (that would be self-service context switching).
+    if (data.campaign_id !== undefined) {
+      const nextAssignment = data.campaign_id != null ? String(data.campaign_id) : null;
+      const currentAssignment = existingUser.campaign_id != null ? String(existingUser.campaign_id) : null;
+      if (nextAssignment !== currentAssignment) {
+        if (callerRole !== 'admin' && callerRole !== 'owner') {
+          throw new ForbiddenError('Only admins and owners can assign users to campaigns.');
+        }
+        row['campaign_id'] = await this.resolveAssignableCampaignId(auth.tenant_id, nextAssignment);
+      }
+    }
     if (data.verified !== undefined) row['verified'] = data.verified;
     if (data.two_factor_enabled !== undefined) row['two_factor_enabled'] = data.two_factor_enabled;
     if (Object.keys(row).length > 0) {
@@ -2168,6 +2184,32 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     );
   }
 
+  /**
+   * Campaigns §15 — validate a campaign-assignment id: it must be a live (not
+   * archived) campaign of this tenant. Returns null for "the office context"
+   * (no explicit assignment stored).
+   */
+  private async resolveAssignableCampaignId(
+    tenant_id: string,
+    campaign_id: string | null | undefined,
+  ): Promise<string | null> {
+    if (campaign_id == null || campaign_id === '') return null;
+    const campaign = await this.getRepo()
+      .db.selectFrom('campaigns')
+      .select(['id', 'status', 'kind'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', campaign_id)
+      .executeTakeFirst();
+    if (!campaign) throw new NotFoundError('Campaign not found');
+    if (campaign.status === 'archived') {
+      throw new BadRequestError('Users cannot be assigned to an archived campaign.');
+    }
+    // The office is the default context; store it as NULL so office members are
+    // unaffected if the office row is ever recreated.
+    if (campaign.kind === 'office') return null;
+    return String(campaign.id);
+  }
+
   private generateTempPassword(length = 18) {
     return randomBytes(Math.max(12, Math.ceil(length / 2)))
       .toString('base64url')
@@ -2282,6 +2324,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       first_name: (record['first_name'] as string | null | undefined) ?? '',
       last_name: lastName,
       role: record['role'] != null ? String(record['role']) : null,
+      campaign_id: record['campaign_id'] != null ? String(record['campaign_id']) : null,
       verified: this.coerceBoolean(record['verified']),
       email_verified: this.coerceBoolean(record['verified']),
       two_factor_enabled: this.coerceBoolean(record['two_factor_enabled']),

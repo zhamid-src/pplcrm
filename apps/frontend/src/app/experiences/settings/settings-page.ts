@@ -14,6 +14,7 @@ import { HouseholdsService } from '../households/services/households-service';
 import { AccountSettingsComponent } from './account/account-settings';
 import { ApiKeysSettingsComponent } from './api-keys/api-keys-settings';
 import { BillingSettingsComponent } from './billing/billing-settings';
+import { CampaignsSettingsComponent } from './campaigns/campaigns-settings';
 import { DomainSettingsComponent } from './domains/domains-settings';
 import { DonationsSettingsComponent } from './donations/donations-settings';
 import { GoogleSyncSettings } from './google-sync/google-sync-settings';
@@ -77,6 +78,14 @@ interface NavGroup {
 }
 
 const CUSTOM_SECTIONS: CustomSectionConfig[] = [
+  {
+    id: 'campaigns',
+    mode: 'workspace',
+    icon: 'square-3-stack-3d',
+    title: 'Campaigns',
+    description:
+      'Separate working contexts (your permanent office plus election campaigns) that share one contact list. Admins manage them and assign users to them.',
+  },
   {
     id: 'passkeys',
     mode: 'settings',
@@ -145,6 +154,7 @@ const CUSTOM_SECTIONS: CustomSectionConfig[] = [
     MsSyncSettings,
     GoogleSyncSettings,
     BillingSettingsComponent,
+    CampaignsSettingsComponent,
     DomainSettingsComponent,
     DonationsSettingsComponent,
     AccountSettingsComponent,

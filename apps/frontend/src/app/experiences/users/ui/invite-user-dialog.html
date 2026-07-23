@@ -16,6 +16,24 @@
       <option value="viewer">Viewer: read-only access</option>
     </pc-select>
 
+    @if (showCampaignPicker()) { @if (roleIsCampaignScoped()) {
+    <div>
+      <pc-select label="Campaign" [formField]="form.campaign_id">
+        @for (c of assignableCampaigns(); track c.id) {
+        <option [value]="c.kind === 'office' ? '' : c.id">{{ c.name }}</option>
+        }
+      </pc-select>
+      <p class="mt-1 text-xs text-base-content/50">
+        Everything they see and do stays in this campaign. An admin can reassign them later from the Users page.
+      </p>
+    </div>
+    } @else {
+    <p class="flex items-start gap-1.5 text-xs text-base-content/50">
+      <pc-icon name="square-3-stack-3d" [size]="4" class="mt-0.5 flex-shrink-0"></pc-icon>
+      <span>Admins and owners can work in every campaign, so no campaign assignment is needed.</span>
+    </p>
+    } }
+
     <p class="flex items-start gap-1.5 text-xs text-base-content/50">
       <pc-icon name="information-circle" [size]="4" class="mt-0.5 flex-shrink-0"></pc-icon>
       <span>

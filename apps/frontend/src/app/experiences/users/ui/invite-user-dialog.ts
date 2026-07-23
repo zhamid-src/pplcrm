@@ -9,6 +9,7 @@ import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 import { SettingsService } from '../../settings/services/settings-service';
 import { UserAdminService } from '../services/useradmin-service';
 
@@ -36,6 +37,7 @@ export class InviteUserDialog {
   private readonly auth = inject(AuthService);
   private readonly settings = inject(SettingsService);
   private readonly alerts = inject(AlertService);
+  private readonly campaignContext = inject(CampaignContextService);
 
   private readonly dlgRef = viewChild.required<ModalShell>('dlg');
 
@@ -51,6 +53,19 @@ export class InviteUserDialog {
     first_name: '',
     last_name: '',
     role: DEFAULT_ROLE,
+    /** Campaigns §15 — '' = the office context; an id = an election campaign. */
+    campaign_id: '',
+  });
+
+  /** Active contexts the invitee can be assigned to; the picker shows only when an election exists. */
+  protected readonly assignableCampaigns = computed(() =>
+    this.campaignContext.campaigns().filter((c) => c.status === 'active'),
+  );
+  protected readonly showCampaignPicker = computed(() => this.assignableCampaigns().length > 1);
+  /** Admins/owners can work in every campaign, so an assignment wouldn't scope them. */
+  protected readonly roleIsCampaignScoped = computed(() => {
+    const role = this.payload().role;
+    return role !== 'admin' && role !== 'owner';
   });
 
   protected readonly form = form(this.payload, (p) => {
@@ -71,9 +86,10 @@ export class InviteUserDialog {
   });
 
   public open(): void {
-    this.payload.set({ email: '', first_name: '', last_name: '', role: DEFAULT_ROLE });
+    this.payload.set({ email: '', first_name: '', last_name: '', role: DEFAULT_ROLE, campaign_id: '' });
     this.form().reset();
     void this.prefillDefaultRole();
+    void this.campaignContext.ensureLoaded();
     this.dlgRef().show();
   }
 
@@ -95,6 +111,7 @@ export class InviteUserDialog {
         first_name: raw.first_name.trim(),
         last_name: raw.last_name.trim(),
         role: raw.role || null,
+        campaign_id: this.roleIsCampaignScoped() && raw.campaign_id ? raw.campaign_id : null,
       });
       this.alerts.showSuccess(`Invitation sent to ${raw.email.trim()}`);
       this.saved.emit();

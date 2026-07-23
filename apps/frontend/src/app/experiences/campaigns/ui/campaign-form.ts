@@ -47,7 +47,7 @@ export class CampaignFormComponent implements OnInit {
   protected readonly loading = this._loading.visible;
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const campaigns: PcBreadcrumb = { label: 'Campaigns', route: '/campaigns' };
+    const campaigns: PcBreadcrumb = { label: 'Campaigns', route: '/workspace/campaigns' };
     const id = this.id();
     if (id) {
       return [campaigns, { label: this.detailName() || 'Campaign', route: ['/campaigns', id] }, { label: 'Edit' }];
@@ -105,7 +105,7 @@ export class CampaignFormComponent implements OnInit {
         this.form().reset();
         this.alerts.showSuccess('Campaign created');
         if (typeof done === 'function') done();
-        else await this.router.navigate(['/campaigns']);
+        else await this.router.navigate(['/workspace/campaigns']);
       } else {
         const payload: UpdateCampaignType = {
           name: raw.name.trim() || undefined,
