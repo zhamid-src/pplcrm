@@ -1248,6 +1248,31 @@ export async function down(db: Kysely<any>): Promise<void> {
 }
 ````
 
+## File: apps/backend/src/app/_migrations/2026-07-16-drop-tenant-stripe-secrets.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Stripe Connect migration (WS2, 2026-07-16): donations no longer use tenant-held Stripe secrets —
+ * charges run on the platform key against the tenant's connected account
+ * (`donations.stripe_account_id`), and the per-tenant Stripe webhook secret is replaced by the
+ * platform Connect endpoint (STRIPE_CONNECT_WEBHOOK_SECRET). Purge the now-dead (and previously
+ * plaintext-stored) secrets. Pre-ship: only dev/test keys exist. `donations.webhook_token` stays —
+ * the Helcim webhook still routes by it.
+ */
+export async function up(db: Kysely<unknown>): Promise<void> {
+  await sql`
+    DELETE FROM public.settings
+    WHERE key IN ('donations.stripe_secret_key', 'donations.stripe_webhook_secret')
+  `.execute(db);
+}
+
+export async function down(_db: Kysely<unknown>): Promise<void> {
+  // Deleted secrets are not recoverable; nothing to restore.
+}
+````
+
 ## File: apps/backend/src/app/config/email-folders.config.ts
 ````typescript
 import type { EmailFolderConfig } from '../../../../../libs/common/src';
@@ -2464,6 +2489,405 @@ const purify = DOMPurify(window);
 export function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return '';
   return purify.sanitize(html);
+}
+````
+
+## File: apps/backend/src/app/lib/mail/sendgrid-whitelabel.service.ts
+````typescript
+import { promises as dns } from 'dns';
+import { logger } from '../../logger';
+
+export interface DNSVerificationRecord {
+  host: string;
+  type: string;
+  data: string;
+  valid: boolean;
+}
+
+export interface DomainAuthData {
+  id: number;
+  domain: string;
+  subdomain: string;
+  dns: {
+    mail_cname?: DNSVerificationRecord;
+    dkim1?: DNSVerificationRecord;
+    dkim2?: DNSVerificationRecord;
+  };
+}
+
+export interface LinkBrandingData {
+  id: number;
+  domain: string;
+  subdomain: string;
+  valid: boolean;
+  dns: {
+    domain?: DNSVerificationRecord;
+  };
+}
+
+interface SgDnsRecord {
+  host: string;
+  type: string;
+  data: string;
+  valid?: boolean;
+}
+
+interface SgDomainAuthResponse {
+  id: number;
+  domain: string;
+  subdomain: string;
+  dns?: {
+    mail_cname?: SgDnsRecord;
+    dkim1?: SgDnsRecord;
+    dkim2?: SgDnsRecord;
+  };
+}
+
+interface SgLinkBrandingResponse {
+  id: number;
+  domain: string;
+  subdomain: string;
+  valid?: boolean;
+  dns?: {
+    domain?: SgDnsRecord;
+  };
+}
+
+interface SgValidateResponse {
+  valid?: boolean;
+  validation_results?: Record<string, { valid?: boolean } | undefined>;
+}
+
+export class SendGridWhitelabelService {
+  private isValidApiKey(apiKey?: string): boolean {
+    if (!apiKey) return false;
+    const trimmed = apiKey.trim();
+    // Typical SendGrid API key starts with SG.
+    return trimmed.length > 20 && trimmed.startsWith('SG.');
+  }
+
+  private async request<T = unknown>(
+    path: string,
+    options: {
+      method: string;
+      body?: unknown;
+      apiKey?: string;
+      subuser?: string;
+    },
+  ): Promise<T> {
+    const { method, body, apiKey, subuser } = options;
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    };
+
+    if (subuser) {
+      headers['on-behalf-of'] = subuser;
+    }
+
+    const response = await fetch(`https://api.sendgrid.com/v3${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`SendGrid API responded with ${response.status}: ${text}`);
+    }
+
+    if (response.status === 204) {
+      return {} as T;
+    }
+
+    return response.json();
+  }
+
+  public async createDomainAuthentication(domain: string, apiKey?: string, subuser?: string): Promise<DomainAuthData> {
+    if (!this.isValidApiKey(apiKey)) {
+      // Return simulated/mock domain auth records
+      const mockId = Math.floor(100000 + Math.random() * 900000);
+      return {
+        id: mockId,
+        domain,
+        subdomain: 'em',
+        dns: {
+          mail_cname: {
+            host: `em.${domain}`,
+            type: 'CNAME',
+            data: `u${mockId}.wl.sendgrid.net`,
+            valid: false,
+          },
+          dkim1: {
+            host: `s1._domainkey.${domain}`,
+            type: 'CNAME',
+            data: `s1.domainkey.u${mockId}.wl.sendgrid.net`,
+            valid: false,
+          },
+          dkim2: {
+            host: `s2._domainkey.${domain}`,
+            type: 'CNAME',
+            data: `s2.domainkey.u${mockId}.wl.sendgrid.net`,
+            valid: false,
+          },
+        },
+      };
+    }
+
+    try {
+      const res = await this.request<SgDomainAuthResponse>('/whitelabel/domains', {
+        method: 'POST',
+        apiKey,
+        subuser,
+        body: {
+          domain,
+          subdomain: 'em',
+          automatic_security: true,
+          custom_spf: false,
+          default: false,
+        },
+      });
+
+      return {
+        id: res.id,
+        domain: res.domain,
+        subdomain: res.subdomain,
+        dns: {
+          mail_cname: res.dns?.mail_cname ? { ...res.dns.mail_cname, valid: !!res.dns.mail_cname.valid } : undefined,
+          dkim1: res.dns?.dkim1 ? { ...res.dns.dkim1, valid: !!res.dns.dkim1.valid } : undefined,
+          dkim2: res.dns?.dkim2 ? { ...res.dns.dkim2, valid: !!res.dns.dkim2.valid } : undefined,
+        },
+      };
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] real API call failed, falling back to mock',
+      );
+      return this.createDomainAuthentication(domain, undefined);
+    }
+  }
+
+  public async createLinkBranding(domain: string, apiKey?: string, subuser?: string): Promise<LinkBrandingData> {
+    if (!this.isValidApiKey(apiKey)) {
+      const mockId = Math.floor(100000 + Math.random() * 900000);
+      return {
+        id: mockId,
+        domain,
+        subdomain: 'email',
+        valid: false,
+        dns: {
+          domain: {
+            host: `email.${domain}`,
+            type: 'CNAME',
+            data: 'sendgrid.net',
+            valid: false,
+          },
+        },
+      };
+    }
+
+    try {
+      const res = await this.request<SgLinkBrandingResponse>('/whitelabel/links', {
+        method: 'POST',
+        apiKey,
+        subuser,
+        body: {
+          domain,
+          subdomain: 'email',
+          default: false,
+        },
+      });
+
+      return {
+        id: res.id,
+        domain: res.domain,
+        subdomain: res.subdomain,
+        valid: !!res.valid,
+        dns: {
+          domain: res.dns?.domain ? { ...res.dns.domain, valid: !!res.dns.domain.valid } : undefined,
+        },
+      };
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] real Link Branding API failed, falling back to mock',
+      );
+      return this.createLinkBranding(domain, undefined);
+    }
+  }
+
+  public async validateDomainAuthentication(
+    id: number,
+    apiKey?: string,
+    subuser?: string,
+  ): Promise<{ valid: boolean; validationResults: Record<string, boolean> }> {
+    if (!this.isValidApiKey(apiKey)) {
+      return {
+        valid: true,
+        validationResults: {
+          mail_cname: true,
+          dkim1: true,
+          dkim2: true,
+        },
+      };
+    }
+
+    try {
+      const res = await this.request<SgValidateResponse>(`/whitelabel/domains/${id}/validate`, {
+        method: 'POST',
+        apiKey,
+        subuser,
+      });
+
+      const validationResults: Record<string, boolean> = {};
+      if (res.validation_results) {
+        for (const k of Object.keys(res.validation_results)) {
+          validationResults[k] = !!res.validation_results[k]?.valid;
+        }
+      }
+
+      return {
+        valid: !!res.valid,
+        validationResults,
+      };
+    } catch (err) {
+      // Fail closed: an API failure must not mark a domain verified, or the send
+      // guards would open on the strength of an outage or a revoked key.
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Validate domain API failed, treating records as unverified',
+      );
+      return {
+        valid: false,
+        validationResults: {},
+      };
+    }
+  }
+
+  public async validateLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<boolean> {
+    if (!this.isValidApiKey(apiKey)) {
+      return true;
+    }
+
+    try {
+      const res = await this.request<SgValidateResponse>(`/whitelabel/links/${id}/validate`, {
+        method: 'POST',
+        apiKey,
+        subuser,
+      });
+
+      return !!res.valid;
+    } catch (err) {
+      // Fail closed (same rule as validateDomainAuthentication).
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Validate link branding API failed, treating record as unverified',
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Associate a parent-account authenticated domain with a subuser, so mail sent
+   * on-behalf-of that subuser is DKIM-signed with the domain. Used in platform-key mode,
+   * where the domain auth is created at the parent level but the tenant's mail flows
+   * through a subuser (e.g. the shared free-tier subuser). Returns false on failure so the
+   * caller can record it and retry — never throws.
+   */
+  public async associateDomainWithSubuser(id: number, username: string, apiKey?: string): Promise<boolean> {
+    if (!this.isValidApiKey(apiKey) || !username) return false;
+
+    try {
+      await this.request(`/whitelabel/domains/${id}/subuser`, {
+        method: 'POST',
+        apiKey,
+        body: { username },
+      });
+      return true;
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Associate domain with subuser failed',
+      );
+      return false;
+    }
+  }
+
+  /** Same as associateDomainWithSubuser, for a parent-account link-branding record. */
+  public async associateLinkWithSubuser(id: number, username: string, apiKey?: string): Promise<boolean> {
+    if (!this.isValidApiKey(apiKey) || !username) return false;
+
+    try {
+      await this.request(`/whitelabel/links/${id}/subuser`, {
+        method: 'POST',
+        apiKey,
+        body: { username },
+      });
+      return true;
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Associate link branding with subuser failed',
+      );
+      return false;
+    }
+  }
+
+  public async deleteDomainAuthentication(id: number, apiKey?: string, subuser?: string): Promise<void> {
+    if (!this.isValidApiKey(apiKey)) return;
+
+    try {
+      await this.request(`/whitelabel/domains/${id}`, {
+        method: 'DELETE',
+        apiKey,
+        subuser,
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Delete domain authentication failed',
+      );
+    }
+  }
+
+  public async deleteLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<void> {
+    if (!this.isValidApiKey(apiKey)) return;
+
+    try {
+      await this.request(`/whitelabel/links/${id}`, {
+        method: 'DELETE',
+        apiKey,
+        subuser,
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Delete link branding failed',
+      );
+    }
+  }
+
+  public async verifyDmarc(domain: string): Promise<boolean> {
+    try {
+      const records = await dns.resolveTxt(`_dmarc.${domain}`);
+      return records.some((r) => r.join('').toUpperCase().includes('V=DMARC1'));
+    } catch {
+      return false;
+    }
+  }
+
+  public async verifyCname(host: string, expectedData?: string): Promise<boolean> {
+    try {
+      const records = await dns.resolveCname(host);
+      if (expectedData) {
+        return records.some((r) => r.toLowerCase().trim() === expectedData.toLowerCase().trim());
+      }
+      return records.length > 0;
+    } catch {
+      return false;
+    }
+  }
 }
 ````
 
@@ -4213,6 +4637,26 @@ export class StorageService {
     const blockBlobClient = this.containerClient.getBlockBlobClient(key);
     await blockBlobClient.deleteIfExists();
   }
+}
+````
+
+## File: apps/backend/src/app/lib/stripe-platform-client.ts
+````typescript
+import Stripe from 'stripe';
+import { env } from '../../env';
+
+/** The single platform Stripe client + mock-mode flag, shared by billing (platform subscriptions)
+ * and donations (Connect direct charges on tenant connected accounts via `{ stripeAccount }`
+ * request options). Lives in lib/ so neither module imports from the other. */
+const stripeSecretKey = env.stripeSecretKey;
+export const stripe = stripeSecretKey && !stripeSecretKey.includes('MockKey') ? new Stripe(stripeSecretKey) : null;
+export const isMockMode = stripe === null;
+
+export function getStripe(): Stripe {
+  if (!stripe) {
+    throw new Error('Stripe is not configured (running in mock mode)');
+  }
+  return stripe;
 }
 ````
 
@@ -29567,31 +30011,6 @@ export default defineConfig(() => ({
 }));
 ````
 
-## File: apps/backend/src/app/_migrations/2026-07-16-drop-tenant-stripe-secrets.ts
-````typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Stripe Connect migration (WS2, 2026-07-16): donations no longer use tenant-held Stripe secrets —
- * charges run on the platform key against the tenant's connected account
- * (`donations.stripe_account_id`), and the per-tenant Stripe webhook secret is replaced by the
- * platform Connect endpoint (STRIPE_CONNECT_WEBHOOK_SECRET). Purge the now-dead (and previously
- * plaintext-stored) secrets. Pre-ship: only dev/test keys exist. `donations.webhook_token` stays —
- * the Helcim webhook still routes by it.
- */
-export async function up(db: Kysely<unknown>): Promise<void> {
-  await sql`
-    DELETE FROM public.settings
-    WHERE key IN ('donations.stripe_secret_key', 'donations.stripe_webhook_secret')
-  `.execute(db);
-}
-
-export async function down(_db: Kysely<unknown>): Promise<void> {
-  // Deleted secrets are not recoverable; nothing to restore.
-}
-````
-
 ## File: apps/backend/src/app/_migrations/2026-07-16-remove-helcim-settings.ts
 ````typescript
 import type { Kysely } from 'kysely';
@@ -42744,26 +43163,6 @@ export async function resolveTenantFromRequest(req: {
 }
 ````
 
-## File: apps/backend/src/app/lib/stripe-platform-client.ts
-````typescript
-import Stripe from 'stripe';
-import { env } from '../../env';
-
-/** The single platform Stripe client + mock-mode flag, shared by billing (platform subscriptions)
- * and donations (Connect direct charges on tenant connected accounts via `{ stripeAccount }`
- * request options). Lives in lib/ so neither module imports from the other. */
-const stripeSecretKey = env.stripeSecretKey;
-export const stripe = stripeSecretKey && !stripeSecretKey.includes('MockKey') ? new Stripe(stripeSecretKey) : null;
-export const isMockMode = stripe === null;
-
-export function getStripe(): Stripe {
-  if (!stripe) {
-    throw new Error('Stripe is not configured (running in mock mode)');
-  }
-  return stripe;
-}
-````
-
 ## File: apps/backend/src/app/modules/campaigns/controller.ts
 ````typescript
 import { sql } from 'kysely';
@@ -45166,6 +45565,642 @@ export async function assertNotDemoMode(
     throw new ForbiddenError(message);
   }
 }
+````
+
+## File: apps/backend/src/app/modules/donations/processors/stripe-processor.ts
+````typescript
+import { env } from '../../../../env';
+import { getStripe, isMockMode } from '../../../lib/stripe-platform-client';
+
+export interface OneTimeCheckoutParams {
+  tenantId: string;
+  userId: string;
+  personId: string;
+  amountCents: number;
+  address: { country?: string; state?: string };
+  customUrls?: { successUrl?: string; cancelUrl?: string };
+}
+
+/**
+ * Stripe one-time checkout — Connect direct charges. The session is created with the
+ * PLATFORM key against the tenant's connected account (`{ stripeAccount }`), so the campaign is
+ * merchant of record and pays Stripe's processing fees itself; the platform takes
+ * `payment_intent_data.application_fee_amount` (DONATIONS_PLATFORM_FEE_PERCENT of the gift).
+ * Mock mode keys off the platform client (same `MockKey` convention as billing).
+ */
+export class StripeDonationProcessor {
+  constructor(private readonly config: { accountId: string | undefined; feePercent: number }) {}
+
+  public async createOneTimeCheckout(params: OneTimeCheckoutParams): Promise<{ url: string | null }> {
+    const { tenantId, userId, personId, amountCents, address, customUrls } = params;
+
+    if (isMockMode) {
+      const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
+      let redirectBase = customUrls?.successUrl
+        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
+        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
+
+      if (customUrls?.successUrl) {
+        const separator = redirectBase.includes('?') ? '&' : '?';
+        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${tenantId}&user_id=${userId}`;
+      }
+
+      return { url: redirectBase };
+    }
+
+    const applicationFeeCents = platformFeeCents(amountCents, this.config.feePercent);
+
+    const session = await getStripe().checkout.sessions.create(
+      {
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'cad',
+              product_data: { name: 'Campaign Donation' },
+              unit_amount: amountCents,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        ...(applicationFeeCents > 0 ? { payment_intent_data: { application_fee_amount: applicationFeeCents } } : {}),
+        success_url:
+          customUrls?.successUrl ||
+          `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
+        metadata: {
+          tenantId,
+          personId,
+          amount: String(amountCents),
+          residencyProvince: address.state || '',
+          residencyCountry: address.country || '',
+          createdBy: userId,
+        },
+      },
+      { stripeAccount: this.config.accountId },
+    );
+
+    return { url: session.url };
+  }
+}
+
+/** Platform application fee in cents; 0 means "omit the field" (Stripe rejects a 0 fee). */
+export function platformFeeCents(amountCents: number, feePercent: number): number {
+  return Math.max(0, Math.round((amountCents * feePercent) / 100));
+}
+````
+
+## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
+````typescript
+import type { FastifyPluginCallback } from 'fastify';
+import type Stripe from 'stripe';
+import { env } from '../../../../env';
+import { BaseRepository } from '../../../lib/base.repo';
+import { getStripe } from '../../../lib/stripe-platform-client';
+import { logger } from '../../../logger';
+import { STRIPE_ACCOUNT_ID_KEY } from '../stripe-connect';
+
+/**
+ * Stripe Connect webhook for donations — ONE platform endpoint for every tenant's connected
+ * account (Dashboard: "Listen to events on connected accounts", secret =
+ * STRIPE_CONNECT_WEBHOOK_SECRET). The tenant is resolved from `event.account`; there is no
+ * per-tenant `?token` or webhook secret anymore.
+ */
+const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req, reply) => {
+    try {
+      const signature = (req.headers['stripe-signature'] as string) || '';
+      const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
+
+      // Mock mode (unsigned payload parsing) requires an EXPLICIT opt-in (ALLOW_MOCK_PAYMENTS=true),
+      // never merely "not production" — an unset NODE_ENV must not fail open and accept an
+      // unauthenticated webhook body an attacker could forge (SECURITY-REVIEW 4.2).
+      const isMock = env.allowMockPayments && !env.stripeConnectWebhookSecret;
+
+      let event: Stripe.Event;
+      if (isMock) {
+        event = JSON.parse(payload);
+      } else {
+        if (!env.stripeConnectWebhookSecret) {
+          throw new Error('STRIPE_CONNECT_WEBHOOK_SECRET is not configured.');
+        }
+        event = getStripe().webhooks.constructEvent(payload, signature, env.stripeConnectWebhookSecret);
+      }
+
+      // Resolve the tenant that owns the connected account. In mock mode the forged-locally event
+      // has no `account`, so fall back to the tenantId our own checkout metadata carries.
+      let tenantId: string | undefined;
+      if (event.account) {
+        // Cross-tenant by design — this decides which tenant owns the connected account (same
+        // posture as the former webhook-token lookup; SECURITY-REVIEW.md 2.4).
+        // eslint-disable-next-line local/no-unscoped-db-query
+        const accountRow = await BaseRepository.dbInstance
+          .selectFrom('settings')
+          .select('tenant_id')
+          .where('key', '=', STRIPE_ACCOUNT_ID_KEY)
+          .where('value', '=', JSON.stringify(event.account))
+          .executeTakeFirst();
+        tenantId = accountRow ? String(accountRow.tenant_id) : undefined;
+      } else if (isMock) {
+        const object = (event.data?.object ?? {}) as { metadata?: Record<string, string> };
+        tenantId = object.metadata?.['tenantId'];
+      }
+
+      if (!tenantId) {
+        // Signature verified but we don't know the account (e.g. a connected account we've
+        // forgotten, or a platform-scoped event delivered here by misconfiguration). Acknowledge
+        // with 200 so Stripe doesn't retry forever; log for investigation.
+        logger.warn(
+          `[DonationsWebhook] No tenant for event ${event.id} (${event.type}, account=${event.account ?? 'none'}) — acknowledged and skipped`,
+        );
+        return reply.code(200).send({ received: true });
+      }
+
+      logger.info(`[DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`);
+
+      // Persist for background worker processing (idempotent on stripe_event_id).
+      await BaseRepository.dbInstance
+        .insertInto('webhook_events')
+        .values({
+          tenant_id: tenantId,
+          stripe_event_id: event.id,
+          type: event.type,
+          payload: JSON.stringify(event),
+          status: 'pending',
+        })
+        .onConflict((oc) => oc.column('stripe_event_id').doNothing())
+        .execute();
+
+      return reply.code(200).send({ received: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, 'Donations Connect webhook error');
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  done();
+};
+
+export default donationsWebhookRoute;
+````
+
+## File: apps/backend/src/app/modules/donations/stripe-connect.ts
+````typescript
+import type { StripeConnectCountry } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
+import { env } from '../../../env';
+import { PreconditionFailedError } from '../../errors/app-errors';
+import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
+import { logger } from '../../logger';
+import { assertNotDemoMode } from '../demo/demo-guard';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+
+/** Settings keys for the tenant's Stripe Connect state. Written ONLY by this module (backend),
+ * never by the generic frontend settings save — the frontend has no secret to enter anymore. */
+export const STRIPE_ACCOUNT_ID_KEY = 'donations.stripe_account_id';
+export const STRIPE_ACCOUNT_STATUS_KEY = 'donations.stripe_account_status';
+
+export interface StripeConnectStatus {
+  connected: boolean;
+  accountId: string | null;
+  detailsSubmitted: boolean;
+  chargesEnabled: boolean;
+  requirementsDue: string[];
+  isMockMode: boolean;
+}
+
+interface CachedAccountStatus {
+  detailsSubmitted: boolean;
+  chargesEnabled: boolean;
+}
+
+const settingsRepo = new SettingsRepo();
+
+const NOT_CONNECTED_MESSAGE =
+  'Connect your Stripe account under Workspace → Donations before accepting card donations.';
+
+/** Settings values may come back as a raw JSON string or already parsed (jsonb), same as the
+ * billing settings reads — normalize both. */
+function parseSettingValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+async function readSetting(tenantId: string, key: string): Promise<unknown> {
+  const row = await settingsRepo.getByKey({ tenant_id: tenantId, key });
+  return parseSettingValue(row?.value);
+}
+
+function asCachedStatus(value: unknown): CachedAccountStatus {
+  if (value && typeof value === 'object') {
+    const v = value as Record<string, unknown>;
+    return {
+      detailsSubmitted: v['detailsSubmitted'] === true,
+      chargesEnabled: v['chargesEnabled'] === true,
+    };
+  }
+  return { detailsSubmitted: false, chargesEnabled: false };
+}
+
+/** The tenant's connected account id, or undefined when Stripe isn't connected. */
+export async function getConnectedAccountId(tenantId: string): Promise<string | undefined> {
+  const value = await readSetting(tenantId, STRIPE_ACCOUNT_ID_KEY);
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** Fast checkout-path gate: cached status only, no Stripe round-trip. Mock mode always passes so
+ * local dev works without keys. */
+export async function getCachedConnectState(
+  tenantId: string,
+): Promise<{ accountId: string | undefined; chargesEnabled: boolean }> {
+  if (isMockMode) {
+    return { accountId: undefined, chargesEnabled: true };
+  }
+  const accountId = await getConnectedAccountId(tenantId);
+  if (!accountId) {
+    return { accountId: undefined, chargesEnabled: false };
+  }
+  const cached = asCachedStatus(await readSetting(tenantId, STRIPE_ACCOUNT_STATUS_KEY));
+  return { accountId, chargesEnabled: cached.chargesEnabled };
+}
+
+/** Throws the fail-closed "connect Stripe first" error unless the tenant has a connected account
+ * with charges enabled (or we're in platform mock mode). Returns the account id for `{stripeAccount}`
+ * request options (undefined only in mock mode). */
+export async function assertStripeConnectReady(tenantId: string): Promise<string | undefined> {
+  const state = await getCachedConnectState(tenantId);
+  if (isMockMode) return undefined;
+  if (!state.accountId || !state.chargesEnabled) {
+    throw new PreconditionFailedError(NOT_CONNECTED_MESSAGE);
+  }
+  return state.accountId;
+}
+
+export async function updateCachedAccountStatus(
+  tenantId: string,
+  userId: string,
+  status: CachedAccountStatus,
+): Promise<void> {
+  await settingsRepo.upsertMany({
+    tenant_id: tenantId,
+    user_id: userId,
+    entries: [{ key: STRIPE_ACCOUNT_STATUS_KEY, value: status }],
+  });
+}
+
+/** Live status for the settings page: retrieves the account from Stripe and refreshes the cache;
+ * falls back to the cache if the retrieve fails. */
+export async function getConnectStatus(tenantId: string, userId: string): Promise<StripeConnectStatus> {
+  if (isMockMode) {
+    return {
+      connected: true,
+      accountId: 'acct_mock_platform',
+      detailsSubmitted: true,
+      chargesEnabled: true,
+      requirementsDue: [],
+      isMockMode: true,
+    };
+  }
+
+  const accountId = await getConnectedAccountId(tenantId);
+  if (!accountId) {
+    return {
+      connected: false,
+      accountId: null,
+      detailsSubmitted: false,
+      chargesEnabled: false,
+      requirementsDue: [],
+      isMockMode: false,
+    };
+  }
+
+  try {
+    const account = await getStripe().accounts.retrieve(accountId);
+    const status: CachedAccountStatus = {
+      detailsSubmitted: account.details_submitted === true,
+      chargesEnabled: account.charges_enabled === true,
+    };
+    await updateCachedAccountStatus(tenantId, userId, status);
+    return {
+      connected: true,
+      accountId,
+      detailsSubmitted: status.detailsSubmitted,
+      chargesEnabled: status.chargesEnabled,
+      requirementsDue: account.requirements?.currently_due ?? [],
+      isMockMode: false,
+    };
+  } catch (err) {
+    logger.error({ err }, `[StripeConnect] accounts.retrieve failed for tenant ${tenantId} — using cached status`);
+    const cached = asCachedStatus(await readSetting(tenantId, STRIPE_ACCOUNT_STATUS_KEY));
+    return {
+      connected: true,
+      accountId,
+      detailsSubmitted: cached.detailsSubmitted,
+      chargesEnabled: cached.chargesEnabled,
+      requirementsDue: [],
+      isMockMode: false,
+    };
+  }
+}
+
+/**
+ * Create the connected account on first call and return a Stripe-hosted onboarding URL.
+ *
+ * Account shape (verified against stripe-node v22 typings + current Connect docs): the legacy
+ * `type: 'express'` param is deprecated — controller properties express the decided configuration:
+ * Express dashboard UX, Stripe owns loss liability, and the campaign pays Stripe's processing fees
+ * directly (`fees.payer: 'account'`), which keeps the platform's application fee (env
+ * DONATIONS_PLATFORM_FEE_PERCENT) as clean margin.
+ */
+export async function startOnboarding(
+  tenantId: string,
+  userId: string,
+  country: StripeConnectCountry,
+): Promise<{ url: string }> {
+  // Connecting a real Stripe account is outward-facing setup — locked during the demo.
+  await assertNotDemoMode(settingsRepo.db, tenantId);
+  if (isMockMode) {
+    await settingsRepo.upsertMany({
+      tenant_id: tenantId,
+      user_id: userId,
+      entries: [
+        { key: STRIPE_ACCOUNT_ID_KEY, value: `acct_mock_${tenantId}` },
+        { key: STRIPE_ACCOUNT_STATUS_KEY, value: { detailsSubmitted: true, chargesEnabled: true } },
+      ],
+    });
+    return { url: `${env.appUrl}/workspace/donations?stripe_connected=true&mock=true` };
+  }
+
+  const stripe = getStripe();
+  let accountId = await getConnectedAccountId(tenantId);
+
+  if (!accountId || accountId.startsWith('acct_mock_')) {
+    const account = await stripe.accounts.create({
+      country,
+      controller: {
+        fees: { payer: 'account' },
+        losses: { payments: 'stripe' },
+        requirement_collection: 'stripe',
+        stripe_dashboard: { type: 'express' },
+      },
+      capabilities: { card_payments: { requested: true } },
+      metadata: { tenantId },
+    });
+    accountId = account.id;
+    await settingsRepo.upsertMany({
+      tenant_id: tenantId,
+      user_id: userId,
+      entries: [
+        { key: STRIPE_ACCOUNT_ID_KEY, value: accountId },
+        { key: STRIPE_ACCOUNT_STATUS_KEY, value: { detailsSubmitted: false, chargesEnabled: false } },
+      ],
+    });
+  }
+
+  const link = await stripe.accountLinks.create({
+    account: accountId,
+    type: 'account_onboarding',
+    refresh_url: `${env.appUrl}/workspace/donations?stripe_refresh=true`,
+    return_url: `${env.appUrl}/workspace/donations?stripe_connected=true`,
+  });
+
+  return { url: link.url };
+}
+
+/** Express-dashboard login link for the "Open Stripe dashboard" button. */
+export async function createDashboardLoginLink(tenantId: string): Promise<{ url: string }> {
+  await assertNotDemoMode(settingsRepo.db, tenantId);
+  if (isMockMode) {
+    return { url: `${env.appUrl}/workspace/donations?mock_stripe_dashboard=true` };
+  }
+  const accountId = await getConnectedAccountId(tenantId);
+  if (!accountId) {
+    throw new PreconditionFailedError(NOT_CONNECTED_MESSAGE);
+  }
+  const link = await getStripe().accounts.createLoginLink(accountId);
+  return { url: link.url };
+}
+
+/** Forget the connection (frees the processor choice). The Stripe account itself belongs to the
+ * campaign — we never delete it; reconnecting later creates a fresh account. */
+export async function disconnect(tenantId: string): Promise<void> {
+  await assertNotDemoMode(settingsRepo.db, tenantId);
+  await settingsRepo.db
+    .deleteFrom('settings')
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', [STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY])
+    .execute();
+}
+````
+
+## File: apps/backend/src/app/modules/donations/trpc.router.ts
+````typescript
+import { z } from 'zod';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import {
+  RecordDonationObj,
+  stripeConnectCountrySchema,
+} from '../../../../../../libs/common/src/lib/schemas/donations.schema';
+import { planFeatureGate } from '../billing/plan-gate';
+import { DonationsController } from './controller';
+import { createDashboardLoginLink, disconnect, getConnectStatus, startOnboarding } from './stripe-connect';
+
+const controller = new DonationsController();
+
+// FEATURE_MATRIX plan gate: donations are Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('donations'));
+
+export const DonationsRouter = router({
+  // ── One-time donations ──────────────────────────────────────────────────────
+
+  listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
+
+  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer,
+   * not run through the public Stripe checkout. */
+  recordDonation: authProcedure
+    .input(RecordDonationObj)
+    .mutation(({ ctx, input }) =>
+      controller.recordManualDonation(ctx.auth, input.personId, input.amountCents, input.method, input.campaign_id),
+    ),
+
+  getPersonDonationHistory: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonDonationsList(ctx.auth.tenant_id, input)),
+
+  getDonationStats: authProcedure
+    .input(z.string())
+    .query(async ({ ctx, input }) => controller.getDonationStats(ctx.auth.tenant_id, input)),
+
+  checkEligibility: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+        isRecurring: z.boolean().optional(),
+        remainingMonths: z.number().optional(),
+      }),
+    )
+    .query(({ ctx, input }) =>
+      controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
+        isRecurring: input.isRecurring,
+        remainingMonths: input.remainingMonths,
+      }),
+    ),
+
+  createCheckout: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
+    ),
+
+  /** Country + residency-acknowledged flag + Connect readiness for the donation UI disclaimer. */
+  getResidencyContext: authProcedure.query(({ ctx }) => controller.getResidencyContext(ctx.auth.tenant_id)),
+
+  confirmDonation: authProcedure
+    .input(z.object({ sessionId: z.string() }))
+    .mutation(({ ctx, input }) => controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId)),
+
+  confirmMockDonation: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        sessionId: z.string(),
+        province: z.string(),
+        country: z.string(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockDonation(
+        ctx.auth.tenant_id,
+        ctx.auth.user_id,
+        input.personId,
+        input.amountCents,
+        input.sessionId,
+        input.province,
+        input.country,
+      ),
+    ),
+
+  // ── Recurring pledges ───────────────────────────────────────────────────────
+
+  createRecurringCheckout: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        monthlyAmountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.createRecurringCheckoutSession(ctx.auth, input.personId, input.monthlyAmountCents, input.address),
+    ),
+
+  confirmMockPledge: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        monthlyAmountCents: z.number(),
+        mockSubId: z.string(),
+        province: z.string(),
+        country: z.string(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockPledge(
+        ctx.auth.tenant_id,
+        ctx.auth.user_id,
+        input.personId,
+        input.monthlyAmountCents,
+        input.mockSubId,
+        input.province,
+        input.country,
+      ),
+    ),
+
+  listPledges: authProcedure.query(({ ctx }) => controller.getTenantPledgesList(ctx.auth.tenant_id)),
+
+  getPersonPledges: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonPledges(ctx.auth.tenant_id, input)),
+
+  cancelPledge: authProcedure
+    .input(z.object({ pledgeId: z.string() }))
+    .mutation(({ ctx, input }) => controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id)),
+
+  // ── Donation periods ────────────────────────────────────────────────────────
+
+  getDonationPeriods: authProcedure.query(({ ctx }) => controller.getDonationPeriods(ctx.auth.tenant_id)),
+
+  createDonationPeriod: authProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        start_date: z.string(),
+        end_date: z.string().nullable().optional(),
+        limit_amount: z.number().int().positive(),
+        // Campaigns §15 — contribution-limit windows are per campaign; defaults to the office.
+        campaign_id: z.string().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),
+
+  updateDonationPeriod: authProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().min(1).optional(),
+        start_date: z.string().optional(),
+        end_date: z.string().nullable().optional(),
+        limit_amount: z.number().int().positive().optional(),
+        is_active: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      const { id, ...payload } = input;
+      return controller.updateDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, id, payload);
+    }),
+
+  deleteDonationPeriod: authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
+
+  // ── Stripe Connect (hosted onboarding; no tenant-held secrets) ────────────────
+
+  getStripeConnectStatus: authProcedure.query(({ ctx }) => getConnectStatus(ctx.auth.tenant_id, ctx.auth.user_id)),
+
+  startStripeOnboarding: authProcedure
+    .input(z.object({ country: stripeConnectCountrySchema }))
+    .mutation(({ ctx, input }) => startOnboarding(ctx.auth.tenant_id, ctx.auth.user_id, input.country)),
+
+  createStripeLoginLink: authProcedure.mutation(({ ctx }) => createDashboardLoginLink(ctx.auth.tenant_id)),
+
+  disconnectStripe: authProcedure.mutation(async ({ ctx }) => {
+    await disconnect(ctx.auth.tenant_id);
+    return { success: true };
+  }),
+});
 ````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email-drafts.repo.ts
@@ -50175,103 +51210,6 @@ const config: Config = {
 export default config;
 ````
 
-## File: apps/backend/project.json
-````json
-{
-  "name": "backend",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "apps/backend/src",
-  "projectType": "application",
-  "tags": [],
-  "targets": {
-    "generate-context": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "npx repomix --output apps/backend/STRUCTURE.md --include \"apps/backend/src/**/*\" --ignore \"apps/frontend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/_migrations/schema_dump.sql,**/*.spec.ts\""
-      }
-    },
-    "build": {
-      "executor": "@nx/esbuild:esbuild",
-      "dependsOn": ["generate-context"],
-      "outputs": ["{options.outputPath}"],
-      "defaultConfiguration": "production",
-      "options": {
-        "platform": "node",
-        "outputPath": "dist/apps/backend",
-        "format": ["esm"],
-        "main": "apps/backend/src/main.ts",
-        "tsConfig": "apps/backend/tsconfig.app.json",
-        "assets": ["apps/backend/src/assets"],
-        "generatePackageJson": false,
-        "esbuildOptions": {
-          "packages": "external",
-          "external": ["aws-sdk", "nock", "mock-aws-s3"],
-          "loader": {
-            ".html": "text"
-          },
-          "sourcemap": "inline",
-          "outExtension": {
-            ".js": ".js"
-          }
-        }
-      },
-      "configurations": {
-        "development": {
-          "bundle": true
-        },
-        "production": {
-          "bundle": true,
-          "esbuildOptions": {
-            "sourcemap": false,
-            "packages": "external",
-            "external": ["aws-sdk", "nock", "mock-aws-s3"],
-            "loader": {
-              ".html": "text"
-            },
-            "outExtension": {
-              ".js": ".js"
-            }
-          }
-        }
-      }
-    },
-    "serve": {
-      "executor": "@nx/js:node",
-      "defaultConfiguration": "development",
-      "options": {
-        "buildTarget": "backend:build"
-      },
-      "configurations": {
-        "development": {
-          "buildTarget": "backend:build:development",
-          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
-        },
-        "production": {
-          "buildTarget": "backend:build:production",
-          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
-        }
-      }
-    },
-    "test": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "outputs": ["{workspaceRoot}/coverage/apps/backend"],
-      "options": {
-        "cwd": "apps/backend",
-        "command": "vitest run"
-      }
-    },
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["apps/backend/**/*.ts"]
-      }
-    }
-  }
-}
-````
-
 ## File: apps/companion/src/environments/environment.prod.ts
 ````typescript
 export const environment = {
@@ -53437,6 +54375,528 @@ async function findMetExitCondition(trx: Transaction<Models>, ctx: ExitContext):
 }
 ````
 
+## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
+````typescript
+import * as Sentry from '@sentry/node';
+import { Client } from 'pg';
+import type { Transaction } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { env } from '../../../env';
+import { BillingController } from '../../modules/billing/controller';
+import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
+import { DonationsController } from '../../modules/donations/controller';
+import { updateCachedAccountStatus } from '../../modules/donations/stripe-connect';
+import { getStripe, isMockMode } from '../stripe-platform-client';
+import { logger } from '../../logger';
+
+export class WebhookEventWorker {
+  private isRunning = false;
+  private timer: NodeJS.Timeout | null = null;
+  private activeJobsCount = 0;
+  private shutdownResolver: (() => void) | null = null;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+
+  private readonly webhookEventsRepo = new WebhookEventsRepo();
+  private readonly db = this.webhookEventsRepo.db; // Kysely DB instance
+
+  public start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    logger.info('Webhook Event Worker started.');
+    void this.setupListener();
+    this.poll();
+  }
+
+  public async stop(): Promise<void> {
+    this.isRunning = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.pgClient) {
+      try {
+        await this.pgClient.end();
+      } catch (err) {
+        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
+      }
+      this.pgClient = null;
+    }
+
+    if (this.activeJobsCount > 0) {
+      logger.info(
+        `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
+      );
+      await new Promise<void>((resolve) => {
+        this.shutdownResolver = resolve;
+      });
+    }
+    logger.info('Webhook Event Worker stopped.');
+  }
+
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
+
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'webhook_events_channel') {
+          logger.debug('Webhook Event Worker received notify, waking up...');
+          this.wakeUp();
+        }
+      });
+
+      this.pgClient.on('error', (err) => {
+        logger.error({ err }, 'Postgres listener client error');
+        this.reconnectListener();
+      });
+
+      this.pgClient.on('end', () => {
+        logger.warn('Postgres listener connection closed');
+        this.reconnectListener();
+      });
+
+      await this.pgClient.query('LISTEN webhook_events_channel');
+      logger.info('Listening for webhook_events notifications');
+    } catch (err) {
+      logger.error({ err }, 'Failed to setup Postgres listener');
+      this.reconnectListener();
+    }
+  }
+
+  private reconnectListener() {
+    if (this.pgClient) {
+      this.pgClient.end().catch(() => {
+        /* noop */
+      });
+      this.pgClient = null;
+    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      void this.setupListener();
+    }, 5000);
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
+  }
+
+  private poll() {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => {
+      void this.runPollCycle();
+    }, 0);
+  }
+
+  private async runPollCycle(): Promise<void> {
+    let processedAnEvent = false;
+    try {
+      this.activeJobsCount++;
+      processedAnEvent = await this.processNextEvent();
+    } catch (err) {
+      logger.error({ err }, 'Error in webhook event worker poll cycle');
+    } finally {
+      this.activeJobsCount--;
+
+      // If shutdown was requested and no active jobs remain, resolve the stop() promise
+      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
+        this.shutdownResolver();
+      } else {
+        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
+        // or back off to 30 seconds if no events were found.
+        const delay = processedAnEvent ? 10 : 30000;
+        this.pollWithDelay(delay);
+      }
+    }
+  }
+
+  private pollWithDelay(ms: number) {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => this.poll(), ms);
+  }
+
+  /**
+   * `claimEventId` narrows the claim to one specific row — used only by tests, which run in
+   * parallel spec files sharing one Postgres queue and must never steal each other's pending rows.
+   * Production polling always claims the oldest pending event (no argument).
+   */
+  private async processNextEvent(claimEventId?: string): Promise<boolean> {
+    const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
+
+    // Try to find and lock a webhook event using SKIP LOCKED
+    const eventRecord = await this.db.transaction().execute(async (trx: Transaction<Models>) => {
+      let claimQuery = trx
+        .selectFrom('webhook_events')
+        .selectAll()
+        .where('status', '=', 'pending')
+        .where('run_at', '<=', new Date())
+        .orderBy('id', 'asc')
+        .limit(1);
+      if (claimEventId !== undefined) {
+        claimQuery = claimQuery.where('id', '=', claimEventId);
+      }
+      const pendingEvent = await claimQuery.forUpdate().skipLocked().executeTakeFirst();
+
+      if (!pendingEvent) return null;
+
+      const updatedEvent = await trx
+        .updateTable('webhook_events')
+        .set({
+          status: 'processing',
+          locked_at: new Date(),
+          locked_by: workerId,
+          attempts: Number(pendingEvent.attempts || 0) + 1,
+          updated_at: new Date(),
+        })
+        .where('id', '=', pendingEvent.id)
+        .returningAll()
+        .executeTakeFirst();
+
+      return updatedEvent;
+    });
+
+    if (!eventRecord) return false;
+
+    logger.info(
+      { webhookEventId: eventRecord.id, stripeEventId: eventRecord.stripe_event_id, type: eventRecord.type },
+      'Processing webhook event',
+    );
+
+    const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
+
+    try {
+      const stripeObj = payload.data?.object;
+      const eventType: string = payload.type;
+
+      // Helper to resolve an admin userId for the tenant
+      const resolveUserId = async (tenantId: string, metaUserId: string | null): Promise<string> => {
+        if (metaUserId) return metaUserId;
+        const tenantRow = await this.db
+          .selectFrom('tenants')
+          .select('admin_id')
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+        if (!tenantRow?.admin_id) throw new Error(`Tenant ${tenantId} has no admin_id.`);
+        return String(tenantRow.admin_id);
+      };
+
+      // Stripe Connect events (donations) carry the connected account id; platform-account events
+      // (billing) never do. This is the billing/donations discriminator — a Connect event must
+      // never fall through to the BillingController.
+      const isConnectEvent = typeof payload?.account === 'string' && payload.account.length > 0;
+      const isAccountUpdated = eventType === 'account.updated';
+
+      const isOneTimeDonation =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring !== 'true';
+      const isRecurringCheckoutComplete =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring === 'true';
+      const isInvoicePaid = eventType === 'invoice.payment_succeeded' && stripeObj?.subscription;
+      const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
+      const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
+      const isInvoiceFailed = eventType === 'invoice.payment_failed' && stripeObj?.subscription;
+      const isChargeRefunded = eventType === 'charge.refunded';
+      const isDisputeCreated = eventType === 'charge.dispute.created';
+      const isDisputeClosed = eventType === 'charge.dispute.closed';
+
+      if (isAccountUpdated && eventRecord.tenant_id) {
+        // Connect onboarding progress: cache details_submitted / charges_enabled — this is what
+        // flips the tenant's "charges enabled" gate on after they finish Stripe-hosted onboarding.
+        const tenantId = String(eventRecord.tenant_id);
+        const userId = await resolveUserId(tenantId, null);
+        await updateCachedAccountStatus(tenantId, userId, {
+          detailsSubmitted: stripeObj?.details_submitted === true,
+          chargesEnabled: stripeObj?.charges_enabled === true,
+        });
+      } else if (isOneTimeDonation) {
+        // Standard one-time donation via checkout.session.completed
+        const donationsController = new DonationsController();
+        const tenantId = String(stripeObj.metadata.tenantId);
+        const personId = String(stripeObj.metadata.personId);
+        const amountCents = Number(stripeObj.metadata.amount);
+        const province = String(stripeObj.metadata.residencyProvince || '');
+        const country = String(stripeObj.metadata.residencyCountry || '');
+        const sessionId = String(stripeObj.id);
+        const paymentIntentId = stripeObj.payment_intent ? String(stripeObj.payment_intent) : null;
+        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
+
+        await donationsController.recordSuccessfulDonation(
+          tenantId,
+          personId,
+          amountCents,
+          sessionId,
+          province,
+          country,
+          createdBy,
+          undefined,
+          'card',
+          undefined,
+          paymentIntentId,
+        );
+      } else if (isRecurringCheckoutComplete) {
+        // Subscription checkout completed — create the pledge record.
+        // The first invoice payment is handled separately by invoice.payment_succeeded.
+        const donationsController = new DonationsController();
+        const tenantId = String(stripeObj.metadata.tenantId);
+        const personId = String(stripeObj.metadata.personId);
+        const monthlyAmountCents = Number(stripeObj.metadata.monthlyAmount);
+        const province = String(stripeObj.metadata.residencyProvince || '');
+        const country = String(stripeObj.metadata.residencyCountry || '');
+        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
+        const subscriptionId = String(stripeObj.subscription || '');
+        const customerId = stripeObj.customer ? String(stripeObj.customer) : null;
+
+        if (subscriptionId) {
+          await donationsController.recordNewPledge(
+            tenantId,
+            personId,
+            monthlyAmountCents,
+            subscriptionId,
+            customerId,
+            province,
+            country,
+            createdBy,
+          );
+        }
+      } else if (isInvoicePaid) {
+        // A subscription invoice was paid — record it as a donation installment.
+        const donationsController = new DonationsController();
+        const subscriptionId = String(stripeObj.subscription);
+        const invoiceId = String(stripeObj.id);
+        const amountPaidCents = Number(stripeObj.amount_paid || 0);
+
+        const pledge = await this.db
+          .selectFrom('donation_pledges')
+          .selectAll()
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .executeTakeFirst();
+
+        if (pledge && amountPaidCents > 0) {
+          // Avoid duplicate recording (invoice id as session id key)
+          const alreadyRecorded = await this.db
+            .selectFrom('donations')
+            .select('id')
+            .where('stripe_session_id', '=', invoiceId)
+            .executeTakeFirst();
+
+          if (!alreadyRecorded) {
+            const createdBy = await resolveUserId(String(pledge.tenant_id), null);
+            const invoicePaymentIntentId = stripeObj.payment_intent ? String(stripeObj.payment_intent) : null;
+            await donationsController.recordSuccessfulDonation(
+              String(pledge.tenant_id),
+              String(pledge.person_id),
+              amountPaidCents,
+              invoiceId,
+              pledge.state || '',
+              pledge.country || '',
+              createdBy,
+              String(pledge.id),
+              'card',
+              undefined,
+              invoicePaymentIntentId,
+            );
+          }
+        }
+      } else if (isSubscriptionUpdated) {
+        // Sync pledge status from Stripe subscription status
+        const subscriptionId = String(stripeObj.id);
+        const stripeStatus: string = stripeObj.status;
+        const statusMap: Record<string, string> = {
+          active: 'active',
+          past_due: 'past_due',
+          canceled: 'cancelled',
+          unpaid: 'unpaid',
+        };
+        const mappedStatus = statusMap[stripeStatus];
+        // Stripe's 2025 "basil" API moved `current_period_end` off the Subscription object onto
+        // each item; keep the legacy top-level read as a fallback for older event payloads.
+        const periodEndUnix = stripeObj.current_period_end ?? stripeObj.items?.data?.[0]?.current_period_end;
+        const nextBillingDate = periodEndUnix ? new Date(periodEndUnix * 1000).toISOString().slice(0, 10) : null;
+
+        if (mappedStatus) {
+          await this.db
+            .updateTable('donation_pledges')
+            .set({
+              status: mappedStatus,
+              next_billing_date: nextBillingDate,
+              cancelled_at: mappedStatus === 'cancelled' ? new Date() : null,
+              updated_at: new Date(),
+            })
+            .where('stripe_subscription_id', '=', subscriptionId)
+            .execute();
+        }
+      } else if (isSubscriptionDeleted) {
+        const subscriptionId = String(stripeObj.id);
+        await this.db
+          .updateTable('donation_pledges')
+          .set({ status: 'cancelled', cancelled_at: new Date(), updated_at: new Date() })
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .execute();
+      } else if (isInvoiceFailed) {
+        const subscriptionId = String(stripeObj.subscription);
+        await this.db
+          .updateTable('donation_pledges')
+          .set({ status: 'past_due', updated_at: new Date() })
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .execute();
+      } else if (isChargeRefunded && eventRecord.tenant_id) {
+        // A donation charge was refunded. Only a FULL refund reverses the gift; a partial refund
+        // can't be represented on a single-amount donation row, so we log it and leave the record.
+        const tenantId = String(eventRecord.tenant_id);
+        const amount = Number(stripeObj.amount || 0);
+        const amountRefunded = Number(stripeObj.amount_refunded || 0);
+        const fullyRefunded = stripeObj.refunded === true || (amount > 0 && amountRefunded >= amount);
+        if (fullyRefunded) {
+          const donationsController = new DonationsController();
+          const userId = await resolveUserId(tenantId, null);
+          await donationsController.reverseDonation(tenantId, userId, {
+            paymentIntentId: stripeObj.payment_intent ? String(stripeObj.payment_intent) : null,
+            invoiceId: stripeObj.invoice ? String(stripeObj.invoice) : null,
+            status: 'refunded',
+          });
+
+          // Return our platform fee on a fully refunded gift (decided 2026-07-16) — keeping it
+          // would leave the campaign out of pocket. Application fees live on the PLATFORM account,
+          // so no stripeAccount option. Non-fatal: the donation reversal above must stand even if
+          // the fee refund fails (it can be replayed from the Stripe dashboard).
+          if (!isMockMode && stripeObj.application_fee) {
+            try {
+              await getStripe().applicationFees.createRefund(String(stripeObj.application_fee));
+            } catch (feeErr) {
+              logger.error(
+                { err: feeErr, tenantId, applicationFee: String(stripeObj.application_fee) },
+                'Application fee refund failed after full donation refund',
+              );
+            }
+          }
+        } else {
+          logger.warn(
+            { tenantId, chargeId: stripeObj.id, amount, amountRefunded },
+            'Partial refund received; donation record left unchanged',
+          );
+        }
+      } else if (isDisputeCreated && eventRecord.tenant_id) {
+        // Chargeback opened — funds are withheld, so stop counting the gift toward totals.
+        const tenantId = String(eventRecord.tenant_id);
+        const donationsController = new DonationsController();
+        const userId = await resolveUserId(tenantId, null);
+        await donationsController.reverseDonation(tenantId, userId, {
+          paymentIntentId: stripeObj.payment_intent ? String(stripeObj.payment_intent) : null,
+          invoiceId: null,
+          status: 'disputed',
+        });
+      } else if (isDisputeClosed && eventRecord.tenant_id) {
+        // Chargeback resolved: 'won' restores the gift; 'lost' makes the reversal permanent.
+        const tenantId = String(eventRecord.tenant_id);
+        const donationsController = new DonationsController();
+        const userId = await resolveUserId(tenantId, null);
+        const paymentIntentId = stripeObj.payment_intent ? String(stripeObj.payment_intent) : null;
+        if (stripeObj.status === 'won') {
+          await donationsController.restoreDisputedDonation(tenantId, userId, { paymentIntentId, invoiceId: null });
+        } else if (stripeObj.status === 'lost') {
+          await donationsController.reverseDonation(tenantId, userId, {
+            paymentIntentId,
+            invoiceId: null,
+            status: 'refunded',
+          });
+        }
+      } else if (isConnectEvent) {
+        // A connected-account event we don't have a handler for. Never hand it to the billing
+        // controller — its customer-id lookups only make sense for platform-account events.
+        logger.info(
+          { eventType, account: payload.account, tenantId: eventRecord.tenant_id },
+          'Unhandled Connect webhook event; acknowledged without action',
+        );
+      } else {
+        const billingController = new BillingController();
+        await billingController.processWebhookEvent(payload);
+      }
+
+      // Mark event as processed/completed
+      await this.db
+        .updateTable('webhook_events')
+        .set({
+          status: 'processed',
+          locked_at: null,
+          locked_by: null,
+          processed_at: new Date(),
+          updated_at: new Date(),
+        })
+        .where('id', '=', eventRecord.id)
+        .execute();
+
+      logger.info({ webhookEventId: eventRecord.id }, 'Webhook event completed successfully');
+    } catch (err) {
+      const errorMsg = err instanceof Error && err.message ? err.message : String(err);
+      logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
+      // Webhook failures never surface through a request path, so capture them here explicitly
+      // (no-op when SENTRY_DSN is unset).
+      Sentry.captureException(err, {
+        tags: { webhookType: eventRecord.type },
+        extra: { webhookEventId: eventRecord.id, attempts: eventRecord.attempts },
+      });
+
+      const attempts = Number(eventRecord.attempts || 0);
+      const maxAttempts = Number(eventRecord.max_attempts || 3);
+
+      if (attempts < maxAttempts) {
+        // Retry with backoff (attempts * 30s delay)
+        const delaySeconds = attempts * 30;
+        const runAt = new Date(Date.now() + delaySeconds * 1000);
+        logger.info(
+          { webhookEventId: eventRecord.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts },
+          'Rescheduling webhook event',
+        );
+
+        await this.db
+          .updateTable('webhook_events')
+          .set({
+            status: 'pending',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            run_at: runAt,
+            updated_at: new Date(),
+          })
+          .where('id', '=', eventRecord.id)
+          .execute();
+      } else {
+        logger.error(
+          { webhookEventId: eventRecord.id, maxAttempts },
+          'Webhook event exceeded maximum attempts, marking as failed',
+        );
+        await this.db
+          .updateTable('webhook_events')
+          .set({
+            status: 'failed',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            updated_at: new Date(),
+          })
+          .where('id', '=', eventRecord.id)
+          .execute();
+      }
+    }
+
+    return true;
+  }
+}
+````
+
 ## File: apps/backend/src/app/lib/mail/mentions-util.ts
 ````typescript
 import type { Kysely } from 'kysely';
@@ -53710,405 +55170,6 @@ export class NewsletterEmailService {
 }
 ````
 
-## File: apps/backend/src/app/lib/mail/sendgrid-whitelabel.service.ts
-````typescript
-import { promises as dns } from 'dns';
-import { logger } from '../../logger';
-
-export interface DNSVerificationRecord {
-  host: string;
-  type: string;
-  data: string;
-  valid: boolean;
-}
-
-export interface DomainAuthData {
-  id: number;
-  domain: string;
-  subdomain: string;
-  dns: {
-    mail_cname?: DNSVerificationRecord;
-    dkim1?: DNSVerificationRecord;
-    dkim2?: DNSVerificationRecord;
-  };
-}
-
-export interface LinkBrandingData {
-  id: number;
-  domain: string;
-  subdomain: string;
-  valid: boolean;
-  dns: {
-    domain?: DNSVerificationRecord;
-  };
-}
-
-interface SgDnsRecord {
-  host: string;
-  type: string;
-  data: string;
-  valid?: boolean;
-}
-
-interface SgDomainAuthResponse {
-  id: number;
-  domain: string;
-  subdomain: string;
-  dns?: {
-    mail_cname?: SgDnsRecord;
-    dkim1?: SgDnsRecord;
-    dkim2?: SgDnsRecord;
-  };
-}
-
-interface SgLinkBrandingResponse {
-  id: number;
-  domain: string;
-  subdomain: string;
-  valid?: boolean;
-  dns?: {
-    domain?: SgDnsRecord;
-  };
-}
-
-interface SgValidateResponse {
-  valid?: boolean;
-  validation_results?: Record<string, { valid?: boolean } | undefined>;
-}
-
-export class SendGridWhitelabelService {
-  private isValidApiKey(apiKey?: string): boolean {
-    if (!apiKey) return false;
-    const trimmed = apiKey.trim();
-    // Typical SendGrid API key starts with SG.
-    return trimmed.length > 20 && trimmed.startsWith('SG.');
-  }
-
-  private async request<T = unknown>(
-    path: string,
-    options: {
-      method: string;
-      body?: unknown;
-      apiKey?: string;
-      subuser?: string;
-    },
-  ): Promise<T> {
-    const { method, body, apiKey, subuser } = options;
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    };
-
-    if (subuser) {
-      headers['on-behalf-of'] = subuser;
-    }
-
-    const response = await fetch(`https://api.sendgrid.com/v3${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`SendGrid API responded with ${response.status}: ${text}`);
-    }
-
-    if (response.status === 204) {
-      return {} as T;
-    }
-
-    return response.json();
-  }
-
-  public async createDomainAuthentication(domain: string, apiKey?: string, subuser?: string): Promise<DomainAuthData> {
-    if (!this.isValidApiKey(apiKey)) {
-      // Return simulated/mock domain auth records
-      const mockId = Math.floor(100000 + Math.random() * 900000);
-      return {
-        id: mockId,
-        domain,
-        subdomain: 'em',
-        dns: {
-          mail_cname: {
-            host: `em.${domain}`,
-            type: 'CNAME',
-            data: `u${mockId}.wl.sendgrid.net`,
-            valid: false,
-          },
-          dkim1: {
-            host: `s1._domainkey.${domain}`,
-            type: 'CNAME',
-            data: `s1.domainkey.u${mockId}.wl.sendgrid.net`,
-            valid: false,
-          },
-          dkim2: {
-            host: `s2._domainkey.${domain}`,
-            type: 'CNAME',
-            data: `s2.domainkey.u${mockId}.wl.sendgrid.net`,
-            valid: false,
-          },
-        },
-      };
-    }
-
-    try {
-      const res = await this.request<SgDomainAuthResponse>('/whitelabel/domains', {
-        method: 'POST',
-        apiKey,
-        subuser,
-        body: {
-          domain,
-          subdomain: 'em',
-          automatic_security: true,
-          custom_spf: false,
-          default: false,
-        },
-      });
-
-      return {
-        id: res.id,
-        domain: res.domain,
-        subdomain: res.subdomain,
-        dns: {
-          mail_cname: res.dns?.mail_cname ? { ...res.dns.mail_cname, valid: !!res.dns.mail_cname.valid } : undefined,
-          dkim1: res.dns?.dkim1 ? { ...res.dns.dkim1, valid: !!res.dns.dkim1.valid } : undefined,
-          dkim2: res.dns?.dkim2 ? { ...res.dns.dkim2, valid: !!res.dns.dkim2.valid } : undefined,
-        },
-      };
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] real API call failed, falling back to mock',
-      );
-      return this.createDomainAuthentication(domain, undefined);
-    }
-  }
-
-  public async createLinkBranding(domain: string, apiKey?: string, subuser?: string): Promise<LinkBrandingData> {
-    if (!this.isValidApiKey(apiKey)) {
-      const mockId = Math.floor(100000 + Math.random() * 900000);
-      return {
-        id: mockId,
-        domain,
-        subdomain: 'email',
-        valid: false,
-        dns: {
-          domain: {
-            host: `email.${domain}`,
-            type: 'CNAME',
-            data: 'sendgrid.net',
-            valid: false,
-          },
-        },
-      };
-    }
-
-    try {
-      const res = await this.request<SgLinkBrandingResponse>('/whitelabel/links', {
-        method: 'POST',
-        apiKey,
-        subuser,
-        body: {
-          domain,
-          subdomain: 'email',
-          default: false,
-        },
-      });
-
-      return {
-        id: res.id,
-        domain: res.domain,
-        subdomain: res.subdomain,
-        valid: !!res.valid,
-        dns: {
-          domain: res.dns?.domain ? { ...res.dns.domain, valid: !!res.dns.domain.valid } : undefined,
-        },
-      };
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] real Link Branding API failed, falling back to mock',
-      );
-      return this.createLinkBranding(domain, undefined);
-    }
-  }
-
-  public async validateDomainAuthentication(
-    id: number,
-    apiKey?: string,
-    subuser?: string,
-  ): Promise<{ valid: boolean; validationResults: Record<string, boolean> }> {
-    if (!this.isValidApiKey(apiKey)) {
-      return {
-        valid: true,
-        validationResults: {
-          mail_cname: true,
-          dkim1: true,
-          dkim2: true,
-        },
-      };
-    }
-
-    try {
-      const res = await this.request<SgValidateResponse>(`/whitelabel/domains/${id}/validate`, {
-        method: 'POST',
-        apiKey,
-        subuser,
-      });
-
-      const validationResults: Record<string, boolean> = {};
-      if (res.validation_results) {
-        for (const k of Object.keys(res.validation_results)) {
-          validationResults[k] = !!res.validation_results[k]?.valid;
-        }
-      }
-
-      return {
-        valid: !!res.valid,
-        validationResults,
-      };
-    } catch (err) {
-      // Fail closed: an API failure must not mark a domain verified, or the send
-      // guards would open on the strength of an outage or a revoked key.
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Validate domain API failed, treating records as unverified',
-      );
-      return {
-        valid: false,
-        validationResults: {},
-      };
-    }
-  }
-
-  public async validateLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<boolean> {
-    if (!this.isValidApiKey(apiKey)) {
-      return true;
-    }
-
-    try {
-      const res = await this.request<SgValidateResponse>(`/whitelabel/links/${id}/validate`, {
-        method: 'POST',
-        apiKey,
-        subuser,
-      });
-
-      return !!res.valid;
-    } catch (err) {
-      // Fail closed (same rule as validateDomainAuthentication).
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Validate link branding API failed, treating record as unverified',
-      );
-      return false;
-    }
-  }
-
-  /**
-   * Associate a parent-account authenticated domain with a subuser, so mail sent
-   * on-behalf-of that subuser is DKIM-signed with the domain. Used in platform-key mode,
-   * where the domain auth is created at the parent level but the tenant's mail flows
-   * through a subuser (e.g. the shared free-tier subuser). Returns false on failure so the
-   * caller can record it and retry — never throws.
-   */
-  public async associateDomainWithSubuser(id: number, username: string, apiKey?: string): Promise<boolean> {
-    if (!this.isValidApiKey(apiKey) || !username) return false;
-
-    try {
-      await this.request(`/whitelabel/domains/${id}/subuser`, {
-        method: 'POST',
-        apiKey,
-        body: { username },
-      });
-      return true;
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Associate domain with subuser failed',
-      );
-      return false;
-    }
-  }
-
-  /** Same as associateDomainWithSubuser, for a parent-account link-branding record. */
-  public async associateLinkWithSubuser(id: number, username: string, apiKey?: string): Promise<boolean> {
-    if (!this.isValidApiKey(apiKey) || !username) return false;
-
-    try {
-      await this.request(`/whitelabel/links/${id}/subuser`, {
-        method: 'POST',
-        apiKey,
-        body: { username },
-      });
-      return true;
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Associate link branding with subuser failed',
-      );
-      return false;
-    }
-  }
-
-  public async deleteDomainAuthentication(id: number, apiKey?: string, subuser?: string): Promise<void> {
-    if (!this.isValidApiKey(apiKey)) return;
-
-    try {
-      await this.request(`/whitelabel/domains/${id}`, {
-        method: 'DELETE',
-        apiKey,
-        subuser,
-      });
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Delete domain authentication failed',
-      );
-    }
-  }
-
-  public async deleteLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<void> {
-    if (!this.isValidApiKey(apiKey)) return;
-
-    try {
-      await this.request(`/whitelabel/links/${id}`, {
-        method: 'DELETE',
-        apiKey,
-        subuser,
-      });
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Delete link branding failed',
-      );
-    }
-  }
-
-  public async verifyDmarc(domain: string): Promise<boolean> {
-    try {
-      const records = await dns.resolveTxt(`_dmarc.${domain}`);
-      return records.some((r) => r.join('').toUpperCase().includes('V=DMARC1'));
-    } catch {
-      return false;
-    }
-  }
-
-  public async verifyCname(host: string, expectedData?: string): Promise<boolean> {
-    try {
-      const records = await dns.resolveCname(host);
-      if (expectedData) {
-        return records.some((r) => r.toLowerCase().trim() === expectedData.toLowerCase().trim());
-      }
-      return records.length > 0;
-    } catch {
-      return false;
-    }
-  }
-}
-````
-
 ## File: apps/backend/src/app/lib/api-key.ts
 ````typescript
 import crypto from 'crypto';
@@ -54203,6 +55264,99 @@ export function checkKeyedSubmissionRateLimit(tenantId: string, surface: string)
     }
     throw err;
   }
+}
+````
+
+## File: apps/backend/src/app/modules/billing/subscription-sync.ts
+````typescript
+import { TenantsRepo } from '../auth/repositories/tenants.repo';
+import { logger } from '../../logger';
+import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
+
+const tenantsRepo = new TenantsRepo();
+
+/** The subset of `tenants` columns `syncSubscriptionQuantity` needs — `getOneBy` selects every
+ * column (no subset requested), so narrowing to just these is honest, not a type lie; see
+ * pplcrm-any-exceptions §2. */
+interface TenantSubscriptionRow {
+  stripe_subscription_id: string | null;
+}
+
+function asTenantSubscriptionRow(row: unknown): TenantSubscriptionRow | undefined {
+  if (!row || typeof row !== 'object') return undefined;
+  const value = (row as Record<string, unknown>)['stripe_subscription_id'];
+  return { stripe_subscription_id: typeof value === 'string' ? value : null };
+}
+
+/**
+ * Sync a tenant's billed Stripe `quantity` (the 1-based bracket index — see
+ * `libs/common/src/lib/billing/plans.ts`) to `quantity`.
+ *
+ * - **Mock mode:** no live Stripe subscription exists, so this just writes
+ *   `tenants.subscription_quantity` directly.
+ * - **Live mode:** fetches the live subscription; if its single item's quantity already equals
+ *   `quantity`, this is an idempotent no-op. Otherwise it calls `stripe.subscriptions.update`
+ *   and writes the column optimistically — the `customer.subscription.updated` webhook
+ *   re-syncs it authoritatively afterward. Proration depends on the direction of the change:
+ *   - **Any increase** (monthly or annual): `proration_behavior: 'always_invoice'` — Stripe
+ *     invoices the prorated difference for the remainder of the current period immediately.
+ *     Deferring to renewal would let a tenant buy the lowest bracket, grow into a big send,
+ *     then cancel before the higher bracket ever billed. It also keeps the invariant the
+ *     send-time email allowance relies on: `subscription_quantity` is always a PAID-FOR
+ *     bracket (see newsletters/send-guards.ts).
+ *   - **Any decrease**: `proration_behavior: 'none'` — downgrades reconcile at the cycle
+ *     boundary (`invoice.paid`), never as a mid-cycle credit.
+ *
+ * Split out of `controller.ts` into its own module (rather than exported from there) so
+ * `usage-limits.ts` can import it without creating an import cycle with `controller.ts` (which
+ * itself imports `getPlanLimits` from `usage-limits.ts`).
+ */
+export async function syncSubscriptionQuantity(tenantId: string, quantity: number): Promise<void> {
+  if (isMockMode) {
+    await tenantsRepo.update({
+      tenant_id: tenantId,
+      id: tenantId,
+      row: { subscription_quantity: quantity },
+    });
+    return;
+  }
+
+  const tenantRow = asTenantSubscriptionRow(
+    await tenantsRepo.getOneBy('id', {
+      tenant_id: tenantId,
+      value: tenantId,
+    }),
+  );
+
+  const subscriptionId = tenantRow?.stripe_subscription_id;
+  if (!subscriptionId) {
+    logger.warn(`[syncSubscriptionQuantity] Tenant ${tenantId} has no Stripe subscription — skipping sync`);
+    return;
+  }
+
+  const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+  const item = subscription.items.data[0];
+  if (!item) {
+    logger.warn(`[syncSubscriptionQuantity] Tenant ${tenantId}'s subscription has no line items — skipping sync`);
+    return;
+  }
+
+  if (item.quantity === quantity) {
+    return; // Already in sync — idempotent no-op.
+  }
+
+  const isIncrease = quantity > (item.quantity ?? 0);
+
+  await getStripe().subscriptions.update(subscriptionId, {
+    items: [{ id: item.id, quantity }],
+    proration_behavior: isIncrease ? 'always_invoice' : 'none',
+  });
+
+  await tenantsRepo.update({
+    tenant_id: tenantId,
+    id: tenantId,
+    row: { subscription_quantity: quantity },
+  });
 }
 ````
 
@@ -54346,49 +55500,441 @@ export const DeliveriesRouter = router({
 });
 ````
 
-## File: apps/backend/src/app/modules/donations/processors/stripe-processor.ts
+## File: apps/backend/src/app/modules/donations/controller.ts
 ````typescript
-import { env } from '../../../../env';
-import { getStripe, isMockMode } from '../../../lib/stripe-platform-client';
+import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
+import { BadRequestError, PreconditionFailedError } from '../../errors/app-errors';
+import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
+import { assertStripeConnectReady, getCachedConnectState, getConnectedAccountId } from './stripe-connect';
+import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { DonationsRepo } from './repositories/donations.repo';
+import { DonationPeriodsRepo } from './repositories/periods.repo';
+import { DonationPledgesRepo } from './repositories/pledges.repo';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { WorkflowsController } from '../workflows/controller';
+import type { Selectable, Updateable } from 'kysely';
+import { logger } from '../../logger';
+import { assertTenantMayAcceptDonations, tenantMayAcceptDonations, type SettingsLookup } from './donation-guards';
+import { StripeDonationProcessor } from './processors/stripe-processor';
 
-export interface OneTimeCheckoutParams {
-  tenantId: string;
-  userId: string;
-  personId: string;
-  amountCents: number;
-  address: { country?: string; state?: string };
-  customUrls?: { successUrl?: string; cancelUrl?: string };
-}
+// Donation lifecycle statuses. Only 'succeeded' counts toward cumulative/contribution totals,
+// so flipping a reversed gift to one of the terminal states drops it out of those sums.
+const DONATION_STATUS = {
+  succeeded: 'succeeded',
+  refunded: 'refunded',
+  disputed: 'disputed',
+} as const;
+type ReversedStatus = typeof DONATION_STATUS.refunded | typeof DONATION_STATUS.disputed;
 
-/**
- * Stripe one-time checkout — Connect direct charges. The session is created with the
- * PLATFORM key against the tenant's connected account (`{ stripeAccount }`), so the campaign is
- * merchant of record and pays Stripe's processing fees itself; the platform takes
- * `payment_intent_data.application_fee_amount` (DONATIONS_PLATFORM_FEE_PERCENT of the gift).
- * Mock mode keys off the platform client (same `MockKey` convention as billing).
- */
-export class StripeDonationProcessor {
-  constructor(private readonly config: { accountId: string | undefined; feePercent: number }) {}
+export class DonationsController extends BaseController<'donations', DonationsRepo> {
+  private settingsRepo = new SettingsRepo();
+  private periodsRepo = new DonationPeriodsRepo();
+  private pledgesRepo = new DonationPledgesRepo();
+  private campaignsRepo = new CampaignsRepo();
 
-  public async createOneTimeCheckout(params: OneTimeCheckoutParams): Promise<{ url: string | null }> {
-    const { tenantId, userId, personId, amountCents, address, customUrls } = params;
+  // Bound settings accessor handed to the fail-closed guards, so they stay decoupled from the
+  // settings repo while reusing the same lookup the controller already uses.
+  private readonly settingsLookup: SettingsLookup = (tenantId, key) => this.getSettingVal(tenantId, key);
 
-    if (isMockMode) {
-      const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
-      let redirectBase = customUrls?.successUrl
-        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
-        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
+  constructor() {
+    super(new DonationsRepo());
+  }
 
-      if (customUrls?.successUrl) {
-        const separator = redirectBase.includes('?') ? '&' : '?';
-        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${tenantId}&user_id=${userId}`;
-      }
+  public async getPersonDonationsList(tenantId: string, personId: string) {
+    return this.getRepo().getPersonDonationsList(tenantId, personId);
+  }
 
-      return { url: redirectBase };
+  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
+    return this.getRepo().getPersonCumulativeDonations(tenantId, personId, year);
+  }
+
+  public async getTenantDonationsList(tenantId: string) {
+    return this.getRepo().getTenantDonationsList(tenantId);
+  }
+
+  // ── Donation Periods ────────────────────────────────────────────────────────
+
+  public async getDonationPeriods(tenantId: string) {
+    return this.periodsRepo.getAllForTenant(tenantId);
+  }
+
+  public async createDonationPeriod(
+    tenantId: string,
+    userId: string,
+    payload: { name: string; start_date: string; end_date?: string | null; limit_amount: number; campaign_id?: string },
+  ) {
+    // Contribution-limit windows are per campaign (§15).
+    const campaignId = await this.campaignsRepo.resolveForWrite({
+      tenant_id: tenantId,
+      campaign_id: payload.campaign_id,
+    });
+    return this.periodsRepo.db
+      .insertInto('donation_periods')
+      .values({
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: payload.name,
+        start_date: payload.start_date,
+        end_date: payload.end_date ? payload.end_date : null,
+        limit_amount: payload.limit_amount,
+        is_active: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  public async updateDonationPeriod(
+    tenantId: string,
+    userId: string,
+    id: string,
+    payload: {
+      name?: string;
+      start_date?: string;
+      end_date?: string | null;
+      limit_amount?: number;
+      is_active?: boolean;
+    },
+  ) {
+    const set: Updateable<Models['donation_periods']> = { updatedby_id: userId, updated_at: new Date() };
+    if (payload.name !== undefined) set.name = payload.name;
+    if (payload.start_date !== undefined) set.start_date = payload.start_date;
+    if ('end_date' in payload) set.end_date = payload.end_date ?? null;
+    if (payload.limit_amount !== undefined) set.limit_amount = payload.limit_amount;
+    if (payload.is_active !== undefined) set.is_active = payload.is_active;
+
+    return this.periodsRepo.db
+      .updateTable('donation_periods')
+      .set(set)
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenantId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  public async deleteDonationPeriod(tenantId: string, id: string) {
+    await this.periodsRepo.db
+      .deleteFrom('donation_periods')
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  // ── Pledges ─────────────────────────────────────────────────────────────────
+
+  public async getTenantPledgesList(tenantId: string) {
+    return this.pledgesRepo.getAllForTenant(tenantId);
+  }
+
+  public async getPersonPledges(tenantId: string, personId: string) {
+    return this.pledgesRepo.getForPerson(tenantId, personId);
+  }
+
+  public async cancelPledge(tenantId: string, pledgeId: string, userId: string) {
+    const pledge = await this.pledgesRepo.db
+      .selectFrom('donation_pledges')
+      .selectAll()
+      .where('id', '=', pledgeId)
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    if (!pledge) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Pledge not found.' });
     }
 
-    const applicationFeeCents = platformFeeCents(amountCents, this.config.feePercent);
+    // Cancel in Stripe if there's a real subscription — on the tenant's connected account.
+    if (pledge.stripe_subscription_id && !pledge.stripe_subscription_id.startsWith('sub_mock_')) {
+      const accountId = await getConnectedAccountId(tenantId);
+      if (!isMockMode && accountId) {
+        try {
+          await getStripe().subscriptions.cancel(pledge.stripe_subscription_id, {}, { stripeAccount: accountId });
+        } catch (err) {
+          logger.error({ err }, 'Stripe subscription cancel failed');
+        }
+      }
+    }
 
+    return this.pledgesRepo.db
+      .updateTable('donation_pledges')
+      .set({
+        status: 'cancelled',
+        cancelled_at: new Date(),
+        updatedby_id: userId,
+        updated_at: new Date(),
+      })
+      .where('id', '=', pledgeId)
+      .where('tenant_id', '=', tenantId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private async getSettingVal(tenantId: string, key: string): Promise<any> {
+    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key });
+    return row?.value;
+  }
+
+  public calculateTaxCredit(
+    amountCents: number,
+    cumulativeBeforeCents: number,
+    tiers: Array<{ limit: number; rate: number }>,
+  ): number {
+    if (!tiers || tiers.length === 0) return 0;
+
+    const sortedTiers = [...tiers].sort((a, b) => a.limit - b.limit);
+    let creditCents = 0;
+    let remainingAmount = amountCents;
+    let currentCumulative = cumulativeBeforeCents;
+
+    for (const tier of sortedTiers) {
+      const tierLimitCents = tier.limit * 100;
+
+      if (currentCumulative < tierLimitCents && remainingAmount > 0) {
+        const availableInTier = tierLimitCents - currentCumulative;
+        const amountInTier = Math.min(remainingAmount, availableInTier);
+
+        creditCents += amountInTier * tier.rate;
+        remainingAmount -= amountInTier;
+        currentCumulative += amountInTier;
+      }
+    }
+
+    return Math.round(creditCents);
+  }
+
+  /**
+   * Resolve the active limit window for the tenant.
+   * Returns { limitCents, cumulative } using the donation_period if one is active,
+   * or falling back to the legacy calendar-year setting.
+   */
+  private async resolveLimitWindow(
+    tenantId: string,
+    personId: string,
+  ): Promise<{ limitCents: number; cumulative: number; periodName: string | null }> {
+    const activePeriod = await this.periodsRepo.getActivePeriodForToday(tenantId);
+
+    if (activePeriod) {
+      const cumulative = await this.getRepo().getPersonCumulativeDonationsForPeriod(
+        tenantId,
+        personId,
+        new Date(activePeriod.start_date),
+        activePeriod.end_date ? new Date(activePeriod.end_date) : null,
+      );
+      return {
+        limitCents: Number(activePeriod.limit_amount),
+        cumulative,
+        periodName: activePeriod.name,
+      };
+    }
+
+    // Fallback: calendar year + legacy settings
+    const limitVal = await this.getSettingVal(tenantId, 'donations.limit');
+    const limitSetting = limitVal !== undefined && limitVal !== null ? Number(limitVal) : 1000;
+    const currentYear = new Date().getFullYear();
+    const cumulative = await this.getRepo().getPersonCumulativeDonations(tenantId, personId, currentYear);
+    return { limitCents: limitSetting * 100, cumulative, periodName: null };
+  }
+
+  /**
+   * Perform eligibility checks based on limit and residency restrictions.
+   * For recurring donations, pass monthlyAmountCents and remainingMonths to enforce
+   * the total commitment against the period limit.
+   */
+  public async checkEligibility(
+    tenantId: string,
+    personId: string,
+    amountCents: number,
+    address: { country?: string; state?: string },
+    options?: { isRecurring?: boolean; remainingMonths?: number },
+  ) {
+    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
+
+    // For recurring: check total commitment (monthly × remaining months) against limit
+    const effectiveAmount =
+      options?.isRecurring && options?.remainingMonths ? amountCents * options.remainingMonths : amountCents;
+
+    if (cumulative + effectiveAmount > limitCents) {
+      const allowedAmount = Math.max(0, limitCents - cumulative) / 100;
+      const periodLabel = periodName ? `during the "${periodName}" period` : 'this year';
+      const limitLabel = limitCents / 100;
+      return {
+        eligible: false,
+        reason: `Donation exceeds the maximum limit of $${limitLabel} ${periodLabel}. Already donated: $${cumulative / 100}. Maximum additional allowed: $${allowedAmount}.`,
+      };
+    }
+
+    // Residency check
+    const restrictResidency = (await this.getSettingVal(tenantId, 'donations.restrict_residency')) === true;
+    const allowedCountries = String((await this.getSettingVal(tenantId, 'donations.allowed_countries')) || '').trim();
+    const allowedRegions = String((await this.getSettingVal(tenantId, 'donations.allowed_regions')) || '').trim();
+
+    if (restrictResidency) {
+      const country = (address.country || '').trim().toUpperCase();
+      const state = (address.state || '').trim().toUpperCase();
+
+      if (allowedCountries) {
+        const countriesList = allowedCountries.split(',').map((c) => c.trim().toUpperCase());
+        if (!country || !countriesList.includes(country)) {
+          return {
+            eligible: false,
+            reason: `Donor must reside in one of the allowed countries: ${allowedCountries}.`,
+          };
+        }
+      }
+
+      if (allowedRegions) {
+        const regionsList = allowedRegions.split(',').map((r) => r.trim().toUpperCase());
+        if (!state || !regionsList.includes(state)) {
+          return {
+            eligible: false,
+            reason: `Donor must reside in one of the allowed provinces/states: ${allowedRegions}.`,
+          };
+        }
+      }
+    }
+
+    return { eligible: true };
+  }
+
+  /**
+   * Get donation stats for a person relative to the active limit window.
+   */
+  public async getDonationStats(tenantId: string, personId: string) {
+    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
+    return {
+      cumulativeAmount: cumulative / 100,
+      limitAmount: limitCents / 100,
+      remainingAmount: Math.max(0, limitCents / 100 - cumulative / 100),
+      periodName,
+    };
+  }
+
+  /** Whether this tenant has acknowledged residency settings and may accept donations (fail-closed).
+   * Used by the public donation page to gate rendering before showing a live donation form. */
+  public mayAcceptDonations(tenantId: string): Promise<boolean> {
+    return tenantMayAcceptDonations(this.settingsLookup, tenantId);
+  }
+
+  /**
+   * Context the donation UI needs to show the right residency disclaimer and Stripe affordances:
+   * the tenant's country, whether residency has been acknowledged (the fail-closed gate), and
+   * Connect readiness. Shape is depended on by the frontend — keep name/fields stable.
+   */
+  public async getResidencyContext(tenantId: string): Promise<{
+    country: string | null;
+    residencyAcknowledged: boolean;
+    stripeConnected: boolean;
+  }> {
+    // `tenants` is looked up by primary id (it's on the tenant-scope allow-list — scoping the tenant
+    // table by tenant_id would be circular).
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select('country')
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    const residencyAcknowledged = await tenantMayAcceptDonations(this.settingsLookup, tenantId);
+    // Connect readiness (cached; mock mode reads as connected) — lets the fundraising editor gate
+    // "connect Stripe first" without a second round-trip.
+    const connectState = await getCachedConnectState(tenantId);
+    return {
+      country: tenant?.country != null ? String(tenant.country) : null,
+      residencyAcknowledged,
+      stripeConnected: connectState.chargesEnabled,
+    };
+  }
+
+  // ── One-time Checkout ────────────────────────────────────────────────────────
+
+  public async createCheckoutSession(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    amountCents: number,
+    address: { country?: string; state?: string },
+    customUrls?: { successUrl?: string; cancelUrl?: string },
+  ): Promise<{ url: string | null }> {
+    // Fail-closed residency gate FIRST — an org that hasn't confirmed residency can't take money.
+    await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
+
+    const eligibility = await this.checkEligibility(auth.tenant_id, personId, amountCents, address);
+    if (!eligibility.eligible) {
+      throw new BadRequestError(eligibility.reason);
+    }
+
+    // Connect gate: fails closed unless onboarding is complete (mock mode passes with no account).
+    const accountId = await assertStripeConnectReady(auth.tenant_id);
+    const processor = new StripeDonationProcessor({ accountId, feePercent: env.donationsPlatformFeePercent });
+    return processor.createOneTimeCheckout({
+      tenantId: auth.tenant_id,
+      userId: auth.user_id,
+      personId,
+      amountCents,
+      address,
+      customUrls,
+    });
+  }
+
+  // ── Recurring Subscription Checkout ─────────────────────────────────────────
+
+  /**
+   * Calculate remaining months in the active donation period from today.
+   * Returns null if the period is open-ended.
+   */
+  private getRemainingMonths(endDate: Date | null): number | null {
+    if (!endDate) return null;
+    const now = new Date();
+    const diffMs = endDate.getTime() - now.getTime();
+    if (diffMs <= 0) return 0;
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 30));
+  }
+
+  public async createRecurringCheckoutSession(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    monthlyAmountCents: number,
+    address: { country?: string; state?: string },
+    customUrls?: { successUrl?: string; cancelUrl?: string },
+  ) {
+    // Fail-closed residency gate FIRST (same as one-time).
+    await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
+
+    // Determine remaining months for limit enforcement
+    const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);
+    const remainingMonths = activePeriod?.end_date ? this.getRemainingMonths(new Date(activePeriod.end_date)) : null;
+
+    const eligibility = await this.checkEligibility(auth.tenant_id, personId, monthlyAmountCents, address, {
+      isRecurring: true,
+      remainingMonths: remainingMonths ?? 12,
+    });
+    if (!eligibility.eligible) {
+      throw new BadRequestError(eligibility.reason);
+    }
+
+    // Connect gate: fails closed unless onboarding is complete (mock mode passes with no account).
+    const accountId = await assertStripeConnectReady(auth.tenant_id);
+
+    if (isMockMode) {
+      const mockSubId = 'sub_mock_' + Math.random().toString(36).substring(7);
+      const mockSessionId = 'cs_mock_rec_' + Math.random().toString(36).substring(7);
+
+      let successUrl = customUrls?.successUrl
+        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
+        : `${env.appUrl}/people/${personId}?mock_pledge_success=true&monthly_amount=${monthlyAmountCents / 100}&session_id=${mockSessionId}`;
+
+      if (customUrls?.successUrl) {
+        const sep = successUrl.includes('?') ? '&' : '?';
+        successUrl += `${sep}is_mock=true&person_id=${personId}&monthly_amount_cents=${monthlyAmountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}&mock_sub_id=${mockSubId}`;
+      }
+
+      return { url: successUrl, mock: true };
+    }
+
+    // Create a one-off price for this amount (monthly) — a Connect direct charge on the tenant's
+    // account; the platform fee on recurring gifts is percent-only (application_fee_percent).
     const session = await getStripe().checkout.sessions.create(
       {
         payment_method_types: ['card'],
@@ -54396,590 +55942,444 @@ export class StripeDonationProcessor {
           {
             price_data: {
               currency: 'cad',
-              product_data: { name: 'Campaign Donation' },
-              unit_amount: amountCents,
+              product_data: { name: 'Monthly Campaign Donation' },
+              unit_amount: monthlyAmountCents,
+              recurring: { interval: 'month' },
             },
             quantity: 1,
           },
         ],
-        mode: 'payment',
-        ...(applicationFeeCents > 0 ? { payment_intent_data: { application_fee_amount: applicationFeeCents } } : {}),
+        mode: 'subscription',
         success_url:
           customUrls?.successUrl ||
           `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
+        subscription_data: {
+          ...(env.donationsPlatformFeePercent > 0 ? { application_fee_percent: env.donationsPlatformFeePercent } : {}),
+          metadata: {
+            tenantId: auth.tenant_id,
+            personId,
+            monthlyAmount: String(monthlyAmountCents),
+            residencyProvince: address.state || '',
+            residencyCountry: address.country || '',
+            createdBy: auth.user_id,
+          },
+        },
         metadata: {
-          tenantId,
+          tenantId: auth.tenant_id,
           personId,
-          amount: String(amountCents),
+          monthlyAmount: String(monthlyAmountCents),
           residencyProvince: address.state || '',
           residencyCountry: address.country || '',
-          createdBy: userId,
+          createdBy: auth.user_id,
+          isRecurring: 'true',
         },
       },
-      { stripeAccount: this.config.accountId },
+      { stripeAccount: accountId },
     );
 
     return { url: session.url };
   }
-}
 
-/** Platform application fee in cents; 0 means "omit the field" (Stripe rejects a 0 fee). */
-export function platformFeeCents(amountCents: number, feePercent: number): number {
-  return Math.max(0, Math.round((amountCents * feePercent) / 100));
-}
-````
+  // ── Confirm Flows ────────────────────────────────────────────────────────────
 
-## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
-````typescript
-import type { FastifyPluginCallback } from 'fastify';
-import type Stripe from 'stripe';
-import { env } from '../../../../env';
-import { BaseRepository } from '../../../lib/base.repo';
-import { getStripe } from '../../../lib/stripe-platform-client';
-import { logger } from '../../../logger';
-import { STRIPE_ACCOUNT_ID_KEY } from '../stripe-connect';
+  public async confirmDonation(tenantId: string, userId: string, sessionId: string) {
+    const existing = await this.getRepo()
+      .db.selectFrom('donations')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('stripe_session_id', '=', sessionId)
+      .executeTakeFirst();
 
-/**
- * Stripe Connect webhook for donations — ONE platform endpoint for every tenant's connected
- * account (Dashboard: "Listen to events on connected accounts", secret =
- * STRIPE_CONNECT_WEBHOOK_SECRET). The tenant is resolved from `event.account`; there is no
- * per-tenant `?token` or webhook secret anymore.
- */
-const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req, reply) => {
-    try {
-      const signature = (req.headers['stripe-signature'] as string) || '';
-      const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
+    if (existing) {
+      return { success: true, donation: existing };
+    }
 
-      // Mock mode (unsigned payload parsing) requires an EXPLICIT opt-in (ALLOW_MOCK_PAYMENTS=true),
-      // never merely "not production" — an unset NODE_ENV must not fail open and accept an
-      // unauthenticated webhook body an attacker could forge (SECURITY-REVIEW 4.2).
-      const isMock = env.allowMockPayments && !env.stripeConnectWebhookSecret;
+    if (sessionId.startsWith('cs_mock_')) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Mock sessions must be confirmed via the confirmMockDonation endpoint.',
+      });
+    }
 
-      let event: Stripe.Event;
-      if (isMock) {
-        event = JSON.parse(payload);
-      } else {
-        if (!env.stripeConnectWebhookSecret) {
-          throw new Error('STRIPE_CONNECT_WEBHOOK_SECRET is not configured.');
-        }
-        event = getStripe().webhooks.constructEvent(payload, signature, env.stripeConnectWebhookSecret);
-      }
+    const accountId = await getConnectedAccountId(tenantId);
+    if (isMockMode || !accountId) {
+      throw new PreconditionFailedError('Stripe is not connected for this tenant.');
+    }
 
-      // Resolve the tenant that owns the connected account. In mock mode the forged-locally event
-      // has no `account`, so fall back to the tenantId our own checkout metadata carries.
-      let tenantId: string | undefined;
-      if (event.account) {
-        // Cross-tenant by design — this decides which tenant owns the connected account (same
-        // posture as the former webhook-token lookup; SECURITY-REVIEW.md 2.4).
-        // eslint-disable-next-line local/no-unscoped-db-query
-        const accountRow = await BaseRepository.dbInstance
-          .selectFrom('settings')
-          .select('tenant_id')
-          .where('key', '=', STRIPE_ACCOUNT_ID_KEY)
-          .where('value', '=', JSON.stringify(event.account))
-          .executeTakeFirst();
-        tenantId = accountRow ? String(accountRow.tenant_id) : undefined;
-      } else if (isMock) {
-        const object = (event.data?.object ?? {}) as { metadata?: Record<string, string> };
-        tenantId = object.metadata?.['tenantId'];
-      }
+    const session = await getStripe().checkout.sessions.retrieve(sessionId, {}, { stripeAccount: accountId });
+    if (session.payment_status !== 'paid') {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Session has not been paid.' });
+    }
 
-      if (!tenantId) {
-        // Signature verified but we don't know the account (e.g. a connected account we've
-        // forgotten, or a platform-scoped event delivered here by misconfiguration). Acknowledge
-        // with 200 so Stripe doesn't retry forever; log for investigation.
-        logger.warn(
-          `[DonationsWebhook] No tenant for event ${event.id} (${event.type}, account=${event.account ?? 'none'}) — acknowledged and skipped`,
-        );
-        return reply.code(200).send({ received: true });
-      }
+    const personId = String(session.metadata?.['personId']);
+    const amountCents = Number(session.metadata?.['amount']);
+    const province = String(session.metadata?.['residencyProvince'] || '');
+    const country = String(session.metadata?.['residencyCountry'] || '');
 
-      logger.info(`[DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`);
+    const record = await this.recordSuccessfulDonation(
+      tenantId,
+      personId,
+      amountCents,
+      sessionId,
+      province,
+      country,
+      userId,
+    );
+    return { success: true, donation: record };
+  }
 
-      // Persist for background worker processing (idempotent on stripe_event_id).
-      await BaseRepository.dbInstance
-        .insertInto('webhook_events')
+  public async confirmMockDonation(
+    tenantId: string,
+    userId: string,
+    personId: string,
+    amountCents: number,
+    sessionId: string,
+    province: string,
+    country: string,
+  ) {
+    const existing = await this.getRepo()
+      .db.selectFrom('donations')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('stripe_session_id', '=', sessionId)
+      .executeTakeFirst();
+
+    if (existing) {
+      return { success: true, donation: existing };
+    }
+
+    const record = await this.recordSuccessfulDonation(
+      tenantId,
+      personId,
+      amountCents,
+      sessionId,
+      province,
+      country,
+      userId,
+    );
+    return { success: true, donation: record };
+  }
+
+  /**
+   * Confirm a mock recurring pledge from the frontend (no real Stripe).
+   */
+  public async confirmMockPledge(
+    tenantId: string,
+    userId: string,
+    personId: string,
+    monthlyAmountCents: number,
+    mockSubId: string,
+    province: string,
+    country: string,
+  ) {
+    return this.recordNewPledge(tenantId, personId, monthlyAmountCents, mockSubId, null, province, country, userId);
+  }
+
+  // ── Internal Write Helpers ───────────────────────────────────────────────────
+
+  public async recordNewPledge(
+    tenantId: string,
+    personId: string,
+    monthlyAmountCents: number,
+    stripeSubscriptionId: string,
+    stripeCustomerId: string | null,
+    province: string,
+    country: string,
+    userId: string,
+    campaignId?: string,
+  ): Promise<Selectable<Models['donation_pledges']>> {
+    const existing = await this.pledgesRepo.db
+      .selectFrom('donation_pledges')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('stripe_subscription_id', '=', stripeSubscriptionId)
+      .executeTakeFirst();
+
+    if (existing) return existing;
+
+    // Which fund the pledge belongs to (§15); Stripe-path pledges without an
+    // explicit campaign land in the office context.
+    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+    });
+
+    const person = await this.pledgesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'last_name', 'email'])
+      .where('id', '=', personId)
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    const pledge = await this.pledgesRepo.db.transaction().execute(async (trx) => {
+      const inserted = (await trx
+        .insertInto('donation_pledges')
         .values({
           tenant_id: tenantId,
-          stripe_event_id: event.id,
-          type: event.type,
-          payload: JSON.stringify(event),
-          status: 'pending',
+          campaign_id: resolvedCampaignId,
+          person_id: personId,
+          stripe_subscription_id: stripeSubscriptionId,
+          stripe_customer_id: stripeCustomerId,
+          monthly_amount: monthlyAmountCents,
+          status: 'active',
+          first_name: person?.first_name ?? null,
+          last_name: person?.last_name ?? null,
+          email: person?.email ?? null,
+          state: province || null,
+          country: country || null,
+          createdby_id: userId,
+          updatedby_id: userId,
         })
-        .onConflict((oc) => oc.column('stripe_event_id').doNothing())
+        .returningAll()
+        .executeTakeFirstOrThrow()) as Selectable<Models['donation_pledges']>;
+
+      // "Donor" is derived from donations/pledges data (§15) — no tag to maintain.
+
+      await trx
+        .insertInto('user_activity')
+        .values({
+          tenant_id: tenantId,
+          user_id: userId,
+          activity: `Started a monthly pledge of $${monthlyAmountCents / 100}/month`,
+          entity: 'persons',
+          entity_id: personId,
+          quantity: 1,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
         .execute();
 
-      return reply.code(200).send({ received: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error({ err: message }, 'Donations Connect webhook error');
-      return reply.code(400).send({ error: message });
+      return inserted;
+    });
+
+    return pledge;
+  }
+
+  /** Record an offline gift (spec §12, Fig. 15 "Record donation" dialog) — cash, check, or bank
+   * transfer collected outside the Stripe checkout flow. Shares the tagging/activity-log/workflow
+   * wiring with the Stripe path so offline and online gifts show up identically on the person's
+   * Donations tab and Activity log. */
+  public async recordManualDonation(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    amountCents: number,
+    method: 'card' | 'check' | 'cash' | 'bank_transfer',
+    campaignId?: string,
+  ): Promise<Selectable<Models['donations']>> {
+    const person = await this.getRepo()
+      .db.selectFrom('persons')
+      .select(['id'])
+      .where('id', '=', personId)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!person) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Choose who gave this gift. Receipts need a name.' });
     }
-  });
 
-  done();
-};
-
-export default donationsWebhookRoute;
-````
-
-## File: apps/backend/src/app/modules/donations/stripe-connect.ts
-````typescript
-import type { StripeConnectCountry } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
-import { env } from '../../../env';
-import { PreconditionFailedError } from '../../errors/app-errors';
-import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
-import { logger } from '../../logger';
-import { assertNotDemoMode } from '../demo/demo-guard';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-
-/** Settings keys for the tenant's Stripe Connect state. Written ONLY by this module (backend),
- * never by the generic frontend settings save — the frontend has no secret to enter anymore. */
-export const STRIPE_ACCOUNT_ID_KEY = 'donations.stripe_account_id';
-export const STRIPE_ACCOUNT_STATUS_KEY = 'donations.stripe_account_status';
-
-export interface StripeConnectStatus {
-  connected: boolean;
-  accountId: string | null;
-  detailsSubmitted: boolean;
-  chargesEnabled: boolean;
-  requirementsDue: string[];
-  isMockMode: boolean;
-}
-
-interface CachedAccountStatus {
-  detailsSubmitted: boolean;
-  chargesEnabled: boolean;
-}
-
-const settingsRepo = new SettingsRepo();
-
-const NOT_CONNECTED_MESSAGE =
-  'Connect your Stripe account under Workspace → Donations before accepting card donations.';
-
-/** Settings values may come back as a raw JSON string or already parsed (jsonb), same as the
- * billing settings reads — normalize both. */
-function parseSettingValue(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-async function readSetting(tenantId: string, key: string): Promise<unknown> {
-  const row = await settingsRepo.getByKey({ tenant_id: tenantId, key });
-  return parseSettingValue(row?.value);
-}
-
-function asCachedStatus(value: unknown): CachedAccountStatus {
-  if (value && typeof value === 'object') {
-    const v = value as Record<string, unknown>;
-    return {
-      detailsSubmitted: v['detailsSubmitted'] === true,
-      chargesEnabled: v['chargesEnabled'] === true,
-    };
-  }
-  return { detailsSubmitted: false, chargesEnabled: false };
-}
-
-/** The tenant's connected account id, or undefined when Stripe isn't connected. */
-export async function getConnectedAccountId(tenantId: string): Promise<string | undefined> {
-  const value = await readSetting(tenantId, STRIPE_ACCOUNT_ID_KEY);
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-/** Fast checkout-path gate: cached status only, no Stripe round-trip. Mock mode always passes so
- * local dev works without keys. */
-export async function getCachedConnectState(
-  tenantId: string,
-): Promise<{ accountId: string | undefined; chargesEnabled: boolean }> {
-  if (isMockMode) {
-    return { accountId: undefined, chargesEnabled: true };
-  }
-  const accountId = await getConnectedAccountId(tenantId);
-  if (!accountId) {
-    return { accountId: undefined, chargesEnabled: false };
-  }
-  const cached = asCachedStatus(await readSetting(tenantId, STRIPE_ACCOUNT_STATUS_KEY));
-  return { accountId, chargesEnabled: cached.chargesEnabled };
-}
-
-/** Throws the fail-closed "connect Stripe first" error unless the tenant has a connected account
- * with charges enabled (or we're in platform mock mode). Returns the account id for `{stripeAccount}`
- * request options (undefined only in mock mode). */
-export async function assertStripeConnectReady(tenantId: string): Promise<string | undefined> {
-  const state = await getCachedConnectState(tenantId);
-  if (isMockMode) return undefined;
-  if (!state.accountId || !state.chargesEnabled) {
-    throw new PreconditionFailedError(NOT_CONNECTED_MESSAGE);
-  }
-  return state.accountId;
-}
-
-export async function updateCachedAccountStatus(
-  tenantId: string,
-  userId: string,
-  status: CachedAccountStatus,
-): Promise<void> {
-  await settingsRepo.upsertMany({
-    tenant_id: tenantId,
-    user_id: userId,
-    entries: [{ key: STRIPE_ACCOUNT_STATUS_KEY, value: status }],
-  });
-}
-
-/** Live status for the settings page: retrieves the account from Stripe and refreshes the cache;
- * falls back to the cache if the retrieve fails. */
-export async function getConnectStatus(tenantId: string, userId: string): Promise<StripeConnectStatus> {
-  if (isMockMode) {
-    return {
-      connected: true,
-      accountId: 'acct_mock_platform',
-      detailsSubmitted: true,
-      chargesEnabled: true,
-      requirementsDue: [],
-      isMockMode: true,
-    };
+    return this.recordSuccessfulDonation(
+      auth.tenant_id,
+      personId,
+      amountCents,
+      null,
+      '',
+      '',
+      auth.user_id,
+      undefined,
+      method,
+      campaignId,
+    );
   }
 
-  const accountId = await getConnectedAccountId(tenantId);
-  if (!accountId) {
-    return {
-      connected: false,
-      accountId: null,
-      detailsSubmitted: false,
-      chargesEnabled: false,
-      requirementsDue: [],
-      isMockMode: false,
-    };
-  }
-
-  try {
-    const account = await getStripe().accounts.retrieve(accountId);
-    const status: CachedAccountStatus = {
-      detailsSubmitted: account.details_submitted === true,
-      chargesEnabled: account.charges_enabled === true,
-    };
-    await updateCachedAccountStatus(tenantId, userId, status);
-    return {
-      connected: true,
-      accountId,
-      detailsSubmitted: status.detailsSubmitted,
-      chargesEnabled: status.chargesEnabled,
-      requirementsDue: account.requirements?.currently_due ?? [],
-      isMockMode: false,
-    };
-  } catch (err) {
-    logger.error({ err }, `[StripeConnect] accounts.retrieve failed for tenant ${tenantId} — using cached status`);
-    const cached = asCachedStatus(await readSetting(tenantId, STRIPE_ACCOUNT_STATUS_KEY));
-    return {
-      connected: true,
-      accountId,
-      detailsSubmitted: cached.detailsSubmitted,
-      chargesEnabled: cached.chargesEnabled,
-      requirementsDue: [],
-      isMockMode: false,
-    };
-  }
-}
-
-/**
- * Create the connected account on first call and return a Stripe-hosted onboarding URL.
- *
- * Account shape (verified against stripe-node v22 typings + current Connect docs): the legacy
- * `type: 'express'` param is deprecated — controller properties express the decided configuration:
- * Express dashboard UX, Stripe owns loss liability, and the campaign pays Stripe's processing fees
- * directly (`fees.payer: 'account'`), which keeps the platform's application fee (env
- * DONATIONS_PLATFORM_FEE_PERCENT) as clean margin.
- */
-export async function startOnboarding(
-  tenantId: string,
-  userId: string,
-  country: StripeConnectCountry,
-): Promise<{ url: string }> {
-  // Connecting a real Stripe account is outward-facing setup — locked during the demo.
-  await assertNotDemoMode(settingsRepo.db, tenantId);
-  if (isMockMode) {
-    await settingsRepo.upsertMany({
+  public async recordSuccessfulDonation(
+    tenantId: string,
+    personId: string,
+    amountCents: number,
+    sessionId: string | null,
+    province: string,
+    country: string,
+    userId: string,
+    pledgeId?: string,
+    method: 'card' | 'check' | 'cash' | 'bank_transfer' = 'card',
+    campaignId?: string,
+    stripePaymentIntentId?: string | null,
+  ): Promise<Selectable<Models['donations']>> {
+    // Which fund the gift belongs to (§15); Stripe-path gifts without an
+    // explicit campaign land in the office context.
+    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
       tenant_id: tenantId,
-      user_id: userId,
-      entries: [
-        { key: STRIPE_ACCOUNT_ID_KEY, value: `acct_mock_${tenantId}` },
-        { key: STRIPE_ACCOUNT_STATUS_KEY, value: { detailsSubmitted: true, chargesEnabled: true } },
-      ],
+      campaign_id: campaignId,
     });
-    return { url: `${env.appUrl}/workspace/donations?stripe_connected=true&mock=true` };
+
+    const person = await this.getRepo()
+      .db.selectFrom('persons')
+      .select(['first_name', 'last_name', 'email'])
+      .where('id', '=', personId)
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    const record = await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        const inserted = (await trx
+          .insertInto('donations')
+          .values({
+            tenant_id: tenantId,
+            campaign_id: resolvedCampaignId,
+            person_id: personId,
+            first_name: person?.first_name ?? null,
+            last_name: person?.last_name ?? null,
+            email: person?.email ?? null,
+            amount: amountCents,
+            status: 'succeeded',
+            stripe_session_id: sessionId,
+            stripe_payment_intent_id: stripePaymentIntentId ?? null,
+            state: province || null,
+            country: country || null,
+            pledge_id: pledgeId ? pledgeId : null,
+            method,
+            receipt_sent: true,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
+
+        // "Donor" is derived from donations data (§15) — no tag to maintain.
+
+        try {
+          await trx
+            .insertInto('user_activity')
+            .values({
+              tenant_id: tenantId,
+              user_id: userId,
+              activity: `Collected a donation of $${amountCents / 100}`,
+              entity: 'persons',
+              entity_id: personId,
+              quantity: 1,
+              createdby_id: userId,
+              updatedby_id: userId,
+            })
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to write audit activity log for donation');
+        }
+
+        return inserted;
+      });
+
+    try {
+      const workflowsController = new WorkflowsController();
+      // 'donation_recorded' is the canonical trigger name (the Zod enum + UI card). The old
+      // 'donation_received' string never matched a saveable workflow, so this trigger was dead.
+      await workflowsController.triggerWorkflow(tenantId, personId, 'donation_recorded', null);
+    } catch (workflowErr) {
+      logger.error({ err: workflowErr }, 'Failed to trigger workflow on donation_recorded');
+    }
+
+    return record;
   }
 
-  const stripe = getStripe();
-  let accountId = await getConnectedAccountId(tenantId);
+  /**
+   * Reverse a donation because Stripe reported a full refund or a lost chargeback. Flips the status
+   * to a terminal reversed state (so it drops out of contribution totals, which count only
+   * 'succeeded'), stamps refunded_at, and records an activity entry. Idempotent — a duplicate or
+   * retried webhook for the same reversal is a no-op. Returns true when a donation matched.
+   */
+  public async reverseDonation(
+    tenantId: string,
+    userId: string,
+    opts: { paymentIntentId: string | null; invoiceId: string | null; status: ReversedStatus },
+  ): Promise<boolean> {
+    const donation = await this.getRepo().findByPaymentIntentOrInvoice(tenantId, opts.paymentIntentId, opts.invoiceId);
+    if (!donation) {
+      logger.warn(
+        { tenantId, paymentIntentId: opts.paymentIntentId, invoiceId: opts.invoiceId, status: opts.status },
+        'Refund/dispute webhook did not match any donation; nothing to reverse',
+      );
+      return false;
+    }
+    if (donation.status === opts.status) return true; // already reversed — idempotent
 
-  if (!accountId || accountId.startsWith('acct_mock_')) {
-    const account = await stripe.accounts.create({
-      country,
-      controller: {
-        fees: { payer: 'account' },
-        losses: { payments: 'stripe' },
-        requirement_collection: 'stripe',
-        stripe_dashboard: { type: 'express' },
-      },
-      capabilities: { card_payments: { requested: true } },
-      metadata: { tenantId },
-    });
-    accountId = account.id;
-    await settingsRepo.upsertMany({
-      tenant_id: tenantId,
-      user_id: userId,
-      entries: [
-        { key: STRIPE_ACCOUNT_ID_KEY, value: accountId },
-        { key: STRIPE_ACCOUNT_STATUS_KEY, value: { detailsSubmitted: false, chargesEnabled: false } },
-      ],
-    });
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        await trx
+          .updateTable('donations')
+          .set({ status: opts.status, refunded_at: new Date(), updated_at: new Date() })
+          .where('id', '=', donation.id)
+          .where('tenant_id', '=', tenantId)
+          .execute();
+
+        if (donation.person_id) {
+          const verb = opts.status === DONATION_STATUS.refunded ? 'refunded' : 'disputed (chargeback)';
+          try {
+            await trx
+              .insertInto('user_activity')
+              .values({
+                tenant_id: tenantId,
+                user_id: userId,
+                activity: `Donation of $${donation.amount / 100} ${verb}`,
+                entity: 'persons',
+                entity_id: donation.person_id,
+                quantity: 1,
+                createdby_id: userId,
+                updatedby_id: userId,
+              })
+              .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to write audit activity log for donation reversal');
+          }
+        }
+      });
+    return true;
   }
 
-  const link = await stripe.accountLinks.create({
-    account: accountId,
-    type: 'account_onboarding',
-    refresh_url: `${env.appUrl}/workspace/donations?stripe_refresh=true`,
-    return_url: `${env.appUrl}/workspace/donations?stripe_connected=true`,
-  });
+  /**
+   * Restore a donation whose chargeback the tenant won: Stripe returned the funds, so a gift we
+   * had marked 'disputed' counts again. Only un-reverses a still-disputed row (never resurrects a
+   * genuine refund). Returns true when a donation matched.
+   */
+  public async restoreDisputedDonation(
+    tenantId: string,
+    userId: string,
+    opts: { paymentIntentId: string | null; invoiceId: string | null },
+  ): Promise<boolean> {
+    const donation = await this.getRepo().findByPaymentIntentOrInvoice(tenantId, opts.paymentIntentId, opts.invoiceId);
+    if (!donation) return false;
+    if (donation.status !== DONATION_STATUS.disputed) return true; // nothing to restore — idempotent
 
-  return { url: link.url };
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        await trx
+          .updateTable('donations')
+          .set({ status: DONATION_STATUS.succeeded, refunded_at: null, updated_at: new Date() })
+          .where('id', '=', donation.id)
+          .where('tenant_id', '=', tenantId)
+          .execute();
+
+        if (donation.person_id) {
+          try {
+            await trx
+              .insertInto('user_activity')
+              .values({
+                tenant_id: tenantId,
+                user_id: userId,
+                activity: `Donation of $${donation.amount / 100} chargeback resolved in your favour`,
+                entity: 'persons',
+                entity_id: donation.person_id,
+                quantity: 1,
+                createdby_id: userId,
+                updatedby_id: userId,
+              })
+              .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to write audit activity log for donation restore');
+          }
+        }
+      });
+    return true;
+  }
 }
-
-/** Express-dashboard login link for the "Open Stripe dashboard" button. */
-export async function createDashboardLoginLink(tenantId: string): Promise<{ url: string }> {
-  await assertNotDemoMode(settingsRepo.db, tenantId);
-  if (isMockMode) {
-    return { url: `${env.appUrl}/workspace/donations?mock_stripe_dashboard=true` };
-  }
-  const accountId = await getConnectedAccountId(tenantId);
-  if (!accountId) {
-    throw new PreconditionFailedError(NOT_CONNECTED_MESSAGE);
-  }
-  const link = await getStripe().accounts.createLoginLink(accountId);
-  return { url: link.url };
-}
-
-/** Forget the connection (frees the processor choice). The Stripe account itself belongs to the
- * campaign — we never delete it; reconnecting later creates a fresh account. */
-export async function disconnect(tenantId: string): Promise<void> {
-  await assertNotDemoMode(settingsRepo.db, tenantId);
-  await settingsRepo.db
-    .deleteFrom('settings')
-    .where('tenant_id', '=', tenantId)
-    .where('key', 'in', [STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY])
-    .execute();
-}
-````
-
-## File: apps/backend/src/app/modules/donations/trpc.router.ts
-````typescript
-import { z } from 'zod';
-import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import {
-  RecordDonationObj,
-  stripeConnectCountrySchema,
-} from '../../../../../../libs/common/src/lib/schemas/donations.schema';
-import { planFeatureGate } from '../billing/plan-gate';
-import { DonationsController } from './controller';
-import { createDashboardLoginLink, disconnect, getConnectStatus, startOnboarding } from './stripe-connect';
-
-const controller = new DonationsController();
-
-// FEATURE_MATRIX plan gate: donations are Grassroots-and-up; mutations below are blocked on Free.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('donations'));
-
-export const DonationsRouter = router({
-  // ── One-time donations ──────────────────────────────────────────────────────
-
-  listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
-
-  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer,
-   * not run through the public Stripe checkout. */
-  recordDonation: authProcedure
-    .input(RecordDonationObj)
-    .mutation(({ ctx, input }) =>
-      controller.recordManualDonation(ctx.auth, input.personId, input.amountCents, input.method, input.campaign_id),
-    ),
-
-  getPersonDonationHistory: authProcedure
-    .input(z.string())
-    .query(({ ctx, input }) => controller.getPersonDonationsList(ctx.auth.tenant_id, input)),
-
-  getDonationStats: authProcedure
-    .input(z.string())
-    .query(async ({ ctx, input }) => controller.getDonationStats(ctx.auth.tenant_id, input)),
-
-  checkEligibility: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-        isRecurring: z.boolean().optional(),
-        remainingMonths: z.number().optional(),
-      }),
-    )
-    .query(({ ctx, input }) =>
-      controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
-        isRecurring: input.isRecurring,
-        remainingMonths: input.remainingMonths,
-      }),
-    ),
-
-  createCheckout: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
-    ),
-
-  /** Country + residency-acknowledged flag + Connect readiness for the donation UI disclaimer. */
-  getResidencyContext: authProcedure.query(({ ctx }) => controller.getResidencyContext(ctx.auth.tenant_id)),
-
-  confirmDonation: authProcedure
-    .input(z.object({ sessionId: z.string() }))
-    .mutation(({ ctx, input }) => controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId)),
-
-  confirmMockDonation: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        sessionId: z.string(),
-        province: z.string(),
-        country: z.string(),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.confirmMockDonation(
-        ctx.auth.tenant_id,
-        ctx.auth.user_id,
-        input.personId,
-        input.amountCents,
-        input.sessionId,
-        input.province,
-        input.country,
-      ),
-    ),
-
-  // ── Recurring pledges ───────────────────────────────────────────────────────
-
-  createRecurringCheckout: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        monthlyAmountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.createRecurringCheckoutSession(ctx.auth, input.personId, input.monthlyAmountCents, input.address),
-    ),
-
-  confirmMockPledge: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        monthlyAmountCents: z.number(),
-        mockSubId: z.string(),
-        province: z.string(),
-        country: z.string(),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.confirmMockPledge(
-        ctx.auth.tenant_id,
-        ctx.auth.user_id,
-        input.personId,
-        input.monthlyAmountCents,
-        input.mockSubId,
-        input.province,
-        input.country,
-      ),
-    ),
-
-  listPledges: authProcedure.query(({ ctx }) => controller.getTenantPledgesList(ctx.auth.tenant_id)),
-
-  getPersonPledges: authProcedure
-    .input(z.string())
-    .query(({ ctx, input }) => controller.getPersonPledges(ctx.auth.tenant_id, input)),
-
-  cancelPledge: authProcedure
-    .input(z.object({ pledgeId: z.string() }))
-    .mutation(({ ctx, input }) => controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id)),
-
-  // ── Donation periods ────────────────────────────────────────────────────────
-
-  getDonationPeriods: authProcedure.query(({ ctx }) => controller.getDonationPeriods(ctx.auth.tenant_id)),
-
-  createDonationPeriod: authProcedure
-    .input(
-      z.object({
-        name: z.string().min(1),
-        start_date: z.string(),
-        end_date: z.string().nullable().optional(),
-        limit_amount: z.number().int().positive(),
-        // Campaigns §15 — contribution-limit windows are per campaign; defaults to the office.
-        campaign_id: z.string().optional(),
-      }),
-    )
-    .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),
-
-  updateDonationPeriod: authProcedure
-    .input(
-      z.object({
-        id: z.string(),
-        name: z.string().min(1).optional(),
-        start_date: z.string().optional(),
-        end_date: z.string().nullable().optional(),
-        limit_amount: z.number().int().positive().optional(),
-        is_active: z.boolean().optional(),
-      }),
-    )
-    .mutation(({ ctx, input }) => {
-      const { id, ...payload } = input;
-      return controller.updateDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, id, payload);
-    }),
-
-  deleteDonationPeriod: authProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
-
-  // ── Stripe Connect (hosted onboarding; no tenant-held secrets) ────────────────
-
-  getStripeConnectStatus: authProcedure.query(({ ctx }) => getConnectStatus(ctx.auth.tenant_id, ctx.auth.user_id)),
-
-  startStripeOnboarding: authProcedure
-    .input(z.object({ country: stripeConnectCountrySchema }))
-    .mutation(({ ctx, input }) => startOnboarding(ctx.auth.tenant_id, ctx.auth.user_id, input.country)),
-
-  createStripeLoginLink: authProcedure.mutation(({ ctx }) => createDashboardLoginLink(ctx.auth.tenant_id)),
-
-  disconnectStripe: authProcedure.mutation(async ({ ctx }) => {
-    await disconnect(ctx.auth.tenant_id);
-    return { success: true };
-  }),
-});
 ````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email.repo.ts
@@ -61597,6 +62997,108 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 CMD ["node", "--enable-source-maps", "dist/apps/backend/main.js"]
 ````
 
+## File: apps/backend/project.json
+````json
+{
+  "name": "backend",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/backend/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "generate-context": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx repomix --output apps/backend/STRUCTURE.md --include \"apps/backend/src/**/*\" --ignore \"apps/frontend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/_migrations/schema_dump.sql,**/*.spec.ts\""
+      }
+    },
+    "build": {
+      "executor": "@nx/esbuild:esbuild",
+      "dependsOn": ["generate-context"],
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "platform": "node",
+        "outputPath": "dist/apps/backend",
+        "format": ["esm"],
+        "main": "apps/backend/src/main.ts",
+        "tsConfig": "apps/backend/tsconfig.app.json",
+        "assets": ["apps/backend/src/assets"],
+        "generatePackageJson": false,
+        "esbuildOptions": {
+          "packages": "external",
+          "external": ["aws-sdk", "nock", "mock-aws-s3"],
+          "loader": {
+            ".html": "text"
+          },
+          "sourcemap": "inline",
+          "outExtension": {
+            ".js": ".js"
+          }
+        }
+      },
+      "configurations": {
+        "development": {
+          "bundle": true
+        },
+        "production": {
+          "bundle": true,
+          "esbuildOptions": {
+            "sourcemap": false,
+            "packages": "external",
+            "external": ["aws-sdk", "nock", "mock-aws-s3"],
+            "loader": {
+              ".html": "text"
+            },
+            "outExtension": {
+              ".js": ".js"
+            }
+          }
+        }
+      }
+    },
+    "serve": {
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "backend:build"
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "backend:build:development",
+          "runtimeArgs": [
+            "--inspect=9229",
+            "--enable-source-maps",
+            "--env-file=.env.development",
+            "--disable-warning=DEP0205"
+          ]
+        },
+        "production": {
+          "buildTarget": "backend:build:production",
+          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production", "--disable-warning=DEP0205"]
+        }
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/apps/backend"],
+      "options": {
+        "cwd": "apps/backend",
+        "command": "vitest run"
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["apps/backend/**/*.ts"]
+      }
+    }
+  }
+}
+````
+
 ## File: apps/website/src/app/company/about-page.html
 ````html
 <pc-site-header variant="solid" />
@@ -62983,621 +64485,6 @@ export const legacyImportJobSchema = z.object({
 });
 
 export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
-````
-
-## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
-````typescript
-import * as Sentry from '@sentry/node';
-import { Client } from 'pg';
-import type { Transaction } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { env } from '../../../env';
-import { BillingController } from '../../modules/billing/controller';
-import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
-import { DonationsController } from '../../modules/donations/controller';
-import { updateCachedAccountStatus } from '../../modules/donations/stripe-connect';
-import { getStripe, isMockMode } from '../stripe-platform-client';
-import { logger } from '../../logger';
-
-export class WebhookEventWorker {
-  private isRunning = false;
-  private timer: NodeJS.Timeout | null = null;
-  private activeJobsCount = 0;
-  private shutdownResolver: (() => void) | null = null;
-  private pgClient: Client | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-
-  private readonly webhookEventsRepo = new WebhookEventsRepo();
-  private readonly db = this.webhookEventsRepo.db; // Kysely DB instance
-
-  public start() {
-    if (this.isRunning) return;
-    this.isRunning = true;
-    logger.info('Webhook Event Worker started.');
-    void this.setupListener();
-    this.poll();
-  }
-
-  public async stop(): Promise<void> {
-    this.isRunning = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.pgClient) {
-      try {
-        await this.pgClient.end();
-      } catch (err) {
-        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
-      }
-      this.pgClient = null;
-    }
-
-    if (this.activeJobsCount > 0) {
-      logger.info(
-        `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
-      );
-      await new Promise<void>((resolve) => {
-        this.shutdownResolver = resolve;
-      });
-    }
-    logger.info('Webhook Event Worker stopped.');
-  }
-
-  private async setupListener() {
-    if (!this.isRunning) return;
-    try {
-      this.pgClient = new Client(env.db);
-      await this.pgClient.connect();
-
-      this.pgClient.on('notification', (msg) => {
-        if (msg.channel === 'webhook_events_channel') {
-          logger.debug('Webhook Event Worker received notify, waking up...');
-          this.wakeUp();
-        }
-      });
-
-      this.pgClient.on('error', (err) => {
-        logger.error({ err }, 'Postgres listener client error');
-        this.reconnectListener();
-      });
-
-      this.pgClient.on('end', () => {
-        logger.warn('Postgres listener connection closed');
-        this.reconnectListener();
-      });
-
-      await this.pgClient.query('LISTEN webhook_events_channel');
-      logger.info('Listening for webhook_events notifications');
-    } catch (err) {
-      logger.error({ err }, 'Failed to setup Postgres listener');
-      this.reconnectListener();
-    }
-  }
-
-  private reconnectListener() {
-    if (this.pgClient) {
-      this.pgClient.end().catch(() => {
-        /* noop */
-      });
-      this.pgClient = null;
-    }
-    if (!this.isRunning) return;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => {
-      void this.setupListener();
-    }, 5000);
-  }
-
-  private wakeUp() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.poll();
-  }
-
-  private poll() {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => {
-      void this.runPollCycle();
-    }, 0);
-  }
-
-  private async runPollCycle(): Promise<void> {
-    let processedAnEvent = false;
-    try {
-      this.activeJobsCount++;
-      processedAnEvent = await this.processNextEvent();
-    } catch (err) {
-      logger.error({ err }, 'Error in webhook event worker poll cycle');
-    } finally {
-      this.activeJobsCount--;
-
-      // If shutdown was requested and no active jobs remain, resolve the stop() promise
-      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
-        this.shutdownResolver();
-      } else {
-        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
-        // or back off to 30 seconds if no events were found.
-        const delay = processedAnEvent ? 10 : 30000;
-        this.pollWithDelay(delay);
-      }
-    }
-  }
-
-  private pollWithDelay(ms: number) {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => this.poll(), ms);
-  }
-
-  /**
-   * `claimEventId` narrows the claim to one specific row — used only by tests, which run in
-   * parallel spec files sharing one Postgres queue and must never steal each other's pending rows.
-   * Production polling always claims the oldest pending event (no argument).
-   */
-  private async processNextEvent(claimEventId?: string): Promise<boolean> {
-    const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Try to find and lock a webhook event using SKIP LOCKED
-    const eventRecord = await this.db.transaction().execute(async (trx: Transaction<Models>) => {
-      let claimQuery = trx
-        .selectFrom('webhook_events')
-        .selectAll()
-        .where('status', '=', 'pending')
-        .where('run_at', '<=', new Date())
-        .orderBy('id', 'asc')
-        .limit(1);
-      if (claimEventId !== undefined) {
-        claimQuery = claimQuery.where('id', '=', claimEventId);
-      }
-      const pendingEvent = await claimQuery.forUpdate().skipLocked().executeTakeFirst();
-
-      if (!pendingEvent) return null;
-
-      const updatedEvent = await trx
-        .updateTable('webhook_events')
-        .set({
-          status: 'processing',
-          locked_at: new Date(),
-          locked_by: workerId,
-          attempts: Number(pendingEvent.attempts || 0) + 1,
-          updated_at: new Date(),
-        })
-        .where('id', '=', pendingEvent.id)
-        .returningAll()
-        .executeTakeFirst();
-
-      return updatedEvent;
-    });
-
-    if (!eventRecord) return false;
-
-    logger.info(
-      { webhookEventId: eventRecord.id, stripeEventId: eventRecord.stripe_event_id, type: eventRecord.type },
-      'Processing webhook event',
-    );
-
-    const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
-
-    try {
-      const stripeObj = payload.data?.object;
-      const eventType: string = payload.type;
-
-      // Helper to resolve an admin userId for the tenant
-      const resolveUserId = async (tenantId: string, metaUserId: string | null): Promise<string> => {
-        if (metaUserId) return metaUserId;
-        const tenantRow = await this.db
-          .selectFrom('tenants')
-          .select('admin_id')
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-        if (!tenantRow?.admin_id) throw new Error(`Tenant ${tenantId} has no admin_id.`);
-        return String(tenantRow.admin_id);
-      };
-
-      // Stripe Connect events (donations) carry the connected account id; platform-account events
-      // (billing) never do. This is the billing/donations discriminator — a Connect event must
-      // never fall through to the BillingController.
-      const isConnectEvent = typeof payload?.account === 'string' && payload.account.length > 0;
-      const isAccountUpdated = eventType === 'account.updated';
-
-      const isOneTimeDonation =
-        eventType === 'checkout.session.completed' &&
-        stripeObj?.metadata?.personId &&
-        stripeObj?.metadata?.isRecurring !== 'true';
-      const isRecurringCheckoutComplete =
-        eventType === 'checkout.session.completed' &&
-        stripeObj?.metadata?.personId &&
-        stripeObj?.metadata?.isRecurring === 'true';
-      const isInvoicePaid = eventType === 'invoice.payment_succeeded' && stripeObj?.subscription;
-      const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
-      const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
-      const isInvoiceFailed = eventType === 'invoice.payment_failed' && stripeObj?.subscription;
-      const isChargeRefunded = eventType === 'charge.refunded';
-      const isDisputeCreated = eventType === 'charge.dispute.created';
-      const isDisputeClosed = eventType === 'charge.dispute.closed';
-
-      if (isAccountUpdated && eventRecord.tenant_id) {
-        // Connect onboarding progress: cache details_submitted / charges_enabled — this is what
-        // flips the tenant's "charges enabled" gate on after they finish Stripe-hosted onboarding.
-        const tenantId = String(eventRecord.tenant_id);
-        const userId = await resolveUserId(tenantId, null);
-        await updateCachedAccountStatus(tenantId, userId, {
-          detailsSubmitted: stripeObj?.details_submitted === true,
-          chargesEnabled: stripeObj?.charges_enabled === true,
-        });
-      } else if (isOneTimeDonation) {
-        // Standard one-time donation via checkout.session.completed
-        const donationsController = new DonationsController();
-        const tenantId = String(stripeObj.metadata.tenantId);
-        const personId = String(stripeObj.metadata.personId);
-        const amountCents = Number(stripeObj.metadata.amount);
-        const province = String(stripeObj.metadata.residencyProvince || '');
-        const country = String(stripeObj.metadata.residencyCountry || '');
-        const sessionId = String(stripeObj.id);
-        const paymentIntentId = stripeObj.payment_intent ? String(stripeObj.payment_intent) : null;
-        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
-
-        await donationsController.recordSuccessfulDonation(
-          tenantId,
-          personId,
-          amountCents,
-          sessionId,
-          province,
-          country,
-          createdBy,
-          undefined,
-          'card',
-          undefined,
-          paymentIntentId,
-        );
-      } else if (isRecurringCheckoutComplete) {
-        // Subscription checkout completed — create the pledge record.
-        // The first invoice payment is handled separately by invoice.payment_succeeded.
-        const donationsController = new DonationsController();
-        const tenantId = String(stripeObj.metadata.tenantId);
-        const personId = String(stripeObj.metadata.personId);
-        const monthlyAmountCents = Number(stripeObj.metadata.monthlyAmount);
-        const province = String(stripeObj.metadata.residencyProvince || '');
-        const country = String(stripeObj.metadata.residencyCountry || '');
-        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
-        const subscriptionId = String(stripeObj.subscription || '');
-        const customerId = stripeObj.customer ? String(stripeObj.customer) : null;
-
-        if (subscriptionId) {
-          await donationsController.recordNewPledge(
-            tenantId,
-            personId,
-            monthlyAmountCents,
-            subscriptionId,
-            customerId,
-            province,
-            country,
-            createdBy,
-          );
-        }
-      } else if (isInvoicePaid) {
-        // A subscription invoice was paid — record it as a donation installment.
-        const donationsController = new DonationsController();
-        const subscriptionId = String(stripeObj.subscription);
-        const invoiceId = String(stripeObj.id);
-        const amountPaidCents = Number(stripeObj.amount_paid || 0);
-
-        const pledge = await this.db
-          .selectFrom('donation_pledges')
-          .selectAll()
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .executeTakeFirst();
-
-        if (pledge && amountPaidCents > 0) {
-          // Avoid duplicate recording (invoice id as session id key)
-          const alreadyRecorded = await this.db
-            .selectFrom('donations')
-            .select('id')
-            .where('stripe_session_id', '=', invoiceId)
-            .executeTakeFirst();
-
-          if (!alreadyRecorded) {
-            const createdBy = await resolveUserId(String(pledge.tenant_id), null);
-            const invoicePaymentIntentId = stripeObj.payment_intent ? String(stripeObj.payment_intent) : null;
-            await donationsController.recordSuccessfulDonation(
-              String(pledge.tenant_id),
-              String(pledge.person_id),
-              amountPaidCents,
-              invoiceId,
-              pledge.state || '',
-              pledge.country || '',
-              createdBy,
-              String(pledge.id),
-              'card',
-              undefined,
-              invoicePaymentIntentId,
-            );
-          }
-        }
-      } else if (isSubscriptionUpdated) {
-        // Sync pledge status from Stripe subscription status
-        const subscriptionId = String(stripeObj.id);
-        const stripeStatus: string = stripeObj.status;
-        const statusMap: Record<string, string> = {
-          active: 'active',
-          past_due: 'past_due',
-          canceled: 'cancelled',
-          unpaid: 'unpaid',
-        };
-        const mappedStatus = statusMap[stripeStatus];
-        // Stripe's 2025 "basil" API moved `current_period_end` off the Subscription object onto
-        // each item; keep the legacy top-level read as a fallback for older event payloads.
-        const periodEndUnix = stripeObj.current_period_end ?? stripeObj.items?.data?.[0]?.current_period_end;
-        const nextBillingDate = periodEndUnix ? new Date(periodEndUnix * 1000).toISOString().slice(0, 10) : null;
-
-        if (mappedStatus) {
-          await this.db
-            .updateTable('donation_pledges')
-            .set({
-              status: mappedStatus,
-              next_billing_date: nextBillingDate,
-              cancelled_at: mappedStatus === 'cancelled' ? new Date() : null,
-              updated_at: new Date(),
-            })
-            .where('stripe_subscription_id', '=', subscriptionId)
-            .execute();
-        }
-      } else if (isSubscriptionDeleted) {
-        const subscriptionId = String(stripeObj.id);
-        await this.db
-          .updateTable('donation_pledges')
-          .set({ status: 'cancelled', cancelled_at: new Date(), updated_at: new Date() })
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .execute();
-      } else if (isInvoiceFailed) {
-        const subscriptionId = String(stripeObj.subscription);
-        await this.db
-          .updateTable('donation_pledges')
-          .set({ status: 'past_due', updated_at: new Date() })
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .execute();
-      } else if (isChargeRefunded && eventRecord.tenant_id) {
-        // A donation charge was refunded. Only a FULL refund reverses the gift; a partial refund
-        // can't be represented on a single-amount donation row, so we log it and leave the record.
-        const tenantId = String(eventRecord.tenant_id);
-        const amount = Number(stripeObj.amount || 0);
-        const amountRefunded = Number(stripeObj.amount_refunded || 0);
-        const fullyRefunded = stripeObj.refunded === true || (amount > 0 && amountRefunded >= amount);
-        if (fullyRefunded) {
-          const donationsController = new DonationsController();
-          const userId = await resolveUserId(tenantId, null);
-          await donationsController.reverseDonation(tenantId, userId, {
-            paymentIntentId: stripeObj.payment_intent ? String(stripeObj.payment_intent) : null,
-            invoiceId: stripeObj.invoice ? String(stripeObj.invoice) : null,
-            status: 'refunded',
-          });
-
-          // Return our platform fee on a fully refunded gift (decided 2026-07-16) — keeping it
-          // would leave the campaign out of pocket. Application fees live on the PLATFORM account,
-          // so no stripeAccount option. Non-fatal: the donation reversal above must stand even if
-          // the fee refund fails (it can be replayed from the Stripe dashboard).
-          if (!isMockMode && stripeObj.application_fee) {
-            try {
-              await getStripe().applicationFees.createRefund(String(stripeObj.application_fee));
-            } catch (feeErr) {
-              logger.error(
-                { err: feeErr, tenantId, applicationFee: String(stripeObj.application_fee) },
-                'Application fee refund failed after full donation refund',
-              );
-            }
-          }
-        } else {
-          logger.warn(
-            { tenantId, chargeId: stripeObj.id, amount, amountRefunded },
-            'Partial refund received; donation record left unchanged',
-          );
-        }
-      } else if (isDisputeCreated && eventRecord.tenant_id) {
-        // Chargeback opened — funds are withheld, so stop counting the gift toward totals.
-        const tenantId = String(eventRecord.tenant_id);
-        const donationsController = new DonationsController();
-        const userId = await resolveUserId(tenantId, null);
-        await donationsController.reverseDonation(tenantId, userId, {
-          paymentIntentId: stripeObj.payment_intent ? String(stripeObj.payment_intent) : null,
-          invoiceId: null,
-          status: 'disputed',
-        });
-      } else if (isDisputeClosed && eventRecord.tenant_id) {
-        // Chargeback resolved: 'won' restores the gift; 'lost' makes the reversal permanent.
-        const tenantId = String(eventRecord.tenant_id);
-        const donationsController = new DonationsController();
-        const userId = await resolveUserId(tenantId, null);
-        const paymentIntentId = stripeObj.payment_intent ? String(stripeObj.payment_intent) : null;
-        if (stripeObj.status === 'won') {
-          await donationsController.restoreDisputedDonation(tenantId, userId, { paymentIntentId, invoiceId: null });
-        } else if (stripeObj.status === 'lost') {
-          await donationsController.reverseDonation(tenantId, userId, {
-            paymentIntentId,
-            invoiceId: null,
-            status: 'refunded',
-          });
-        }
-      } else if (isConnectEvent) {
-        // A connected-account event we don't have a handler for. Never hand it to the billing
-        // controller — its customer-id lookups only make sense for platform-account events.
-        logger.info(
-          { eventType, account: payload.account, tenantId: eventRecord.tenant_id },
-          'Unhandled Connect webhook event; acknowledged without action',
-        );
-      } else {
-        const billingController = new BillingController();
-        await billingController.processWebhookEvent(payload);
-      }
-
-      // Mark event as processed/completed
-      await this.db
-        .updateTable('webhook_events')
-        .set({
-          status: 'processed',
-          locked_at: null,
-          locked_by: null,
-          processed_at: new Date(),
-          updated_at: new Date(),
-        })
-        .where('id', '=', eventRecord.id)
-        .execute();
-
-      logger.info({ webhookEventId: eventRecord.id }, 'Webhook event completed successfully');
-    } catch (err) {
-      const errorMsg = err instanceof Error && err.message ? err.message : String(err);
-      logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
-      // Webhook failures never surface through a request path, so capture them here explicitly
-      // (no-op when SENTRY_DSN is unset).
-      Sentry.captureException(err, {
-        tags: { webhookType: eventRecord.type },
-        extra: { webhookEventId: eventRecord.id, attempts: eventRecord.attempts },
-      });
-
-      const attempts = Number(eventRecord.attempts || 0);
-      const maxAttempts = Number(eventRecord.max_attempts || 3);
-
-      if (attempts < maxAttempts) {
-        // Retry with backoff (attempts * 30s delay)
-        const delaySeconds = attempts * 30;
-        const runAt = new Date(Date.now() + delaySeconds * 1000);
-        logger.info(
-          { webhookEventId: eventRecord.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts },
-          'Rescheduling webhook event',
-        );
-
-        await this.db
-          .updateTable('webhook_events')
-          .set({
-            status: 'pending',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            run_at: runAt,
-            updated_at: new Date(),
-          })
-          .where('id', '=', eventRecord.id)
-          .execute();
-      } else {
-        logger.error(
-          { webhookEventId: eventRecord.id, maxAttempts },
-          'Webhook event exceeded maximum attempts, marking as failed',
-        );
-        await this.db
-          .updateTable('webhook_events')
-          .set({
-            status: 'failed',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            updated_at: new Date(),
-          })
-          .where('id', '=', eventRecord.id)
-          .execute();
-      }
-    }
-
-    return true;
-  }
-}
-````
-
-## File: apps/backend/src/app/modules/billing/subscription-sync.ts
-````typescript
-import { TenantsRepo } from '../auth/repositories/tenants.repo';
-import { logger } from '../../logger';
-import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
-
-const tenantsRepo = new TenantsRepo();
-
-/** The subset of `tenants` columns `syncSubscriptionQuantity` needs — `getOneBy` selects every
- * column (no subset requested), so narrowing to just these is honest, not a type lie; see
- * pplcrm-any-exceptions §2. */
-interface TenantSubscriptionRow {
-  stripe_subscription_id: string | null;
-}
-
-function asTenantSubscriptionRow(row: unknown): TenantSubscriptionRow | undefined {
-  if (!row || typeof row !== 'object') return undefined;
-  const value = (row as Record<string, unknown>)['stripe_subscription_id'];
-  return { stripe_subscription_id: typeof value === 'string' ? value : null };
-}
-
-/**
- * Sync a tenant's billed Stripe `quantity` (the 1-based bracket index — see
- * `libs/common/src/lib/billing/plans.ts`) to `quantity`.
- *
- * - **Mock mode:** no live Stripe subscription exists, so this just writes
- *   `tenants.subscription_quantity` directly.
- * - **Live mode:** fetches the live subscription; if its single item's quantity already equals
- *   `quantity`, this is an idempotent no-op. Otherwise it calls `stripe.subscriptions.update`
- *   and writes the column optimistically — the `customer.subscription.updated` webhook
- *   re-syncs it authoritatively afterward. Proration depends on the direction of the change:
- *   - **Any increase** (monthly or annual): `proration_behavior: 'always_invoice'` — Stripe
- *     invoices the prorated difference for the remainder of the current period immediately.
- *     Deferring to renewal would let a tenant buy the lowest bracket, grow into a big send,
- *     then cancel before the higher bracket ever billed. It also keeps the invariant the
- *     send-time email allowance relies on: `subscription_quantity` is always a PAID-FOR
- *     bracket (see newsletters/send-guards.ts).
- *   - **Any decrease**: `proration_behavior: 'none'` — downgrades reconcile at the cycle
- *     boundary (`invoice.paid`), never as a mid-cycle credit.
- *
- * Split out of `controller.ts` into its own module (rather than exported from there) so
- * `usage-limits.ts` can import it without creating an import cycle with `controller.ts` (which
- * itself imports `getPlanLimits` from `usage-limits.ts`).
- */
-export async function syncSubscriptionQuantity(tenantId: string, quantity: number): Promise<void> {
-  if (isMockMode) {
-    await tenantsRepo.update({
-      tenant_id: tenantId,
-      id: tenantId,
-      row: { subscription_quantity: quantity },
-    });
-    return;
-  }
-
-  const tenantRow = asTenantSubscriptionRow(
-    await tenantsRepo.getOneBy('id', {
-      tenant_id: tenantId,
-      value: tenantId,
-    }),
-  );
-
-  const subscriptionId = tenantRow?.stripe_subscription_id;
-  if (!subscriptionId) {
-    logger.warn(`[syncSubscriptionQuantity] Tenant ${tenantId} has no Stripe subscription — skipping sync`);
-    return;
-  }
-
-  const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
-  const item = subscription.items.data[0];
-  if (!item) {
-    logger.warn(`[syncSubscriptionQuantity] Tenant ${tenantId}'s subscription has no line items — skipping sync`);
-    return;
-  }
-
-  if (item.quantity === quantity) {
-    return; // Already in sync — idempotent no-op.
-  }
-
-  const isIncrease = quantity > (item.quantity ?? 0);
-
-  await getStripe().subscriptions.update(subscriptionId, {
-    items: [{ id: item.id, quantity }],
-    proration_behavior: isIncrease ? 'always_invoice' : 'none',
-  });
-
-  await tenantsRepo.update({
-    tenant_id: tenantId,
-    id: tenantId,
-    row: { subscription_quantity: quantity },
-  });
-}
 ````
 
 ## File: apps/backend/src/app/modules/billing/usage-limits.ts
@@ -65616,888 +66503,6 @@ function safeParse(raw: string): unknown {
 }
 ````
 
-## File: apps/backend/src/app/modules/donations/controller.ts
-````typescript
-import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { BadRequestError, PreconditionFailedError } from '../../errors/app-errors';
-import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
-import { assertStripeConnectReady, getCachedConnectState, getConnectedAccountId } from './stripe-connect';
-import { BaseController } from '../../lib/base.controller';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { DonationsRepo } from './repositories/donations.repo';
-import { DonationPeriodsRepo } from './repositories/periods.repo';
-import { DonationPledgesRepo } from './repositories/pledges.repo';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
-import type { Selectable, Updateable } from 'kysely';
-import { logger } from '../../logger';
-import { assertTenantMayAcceptDonations, tenantMayAcceptDonations, type SettingsLookup } from './donation-guards';
-import { StripeDonationProcessor } from './processors/stripe-processor';
-
-// Donation lifecycle statuses. Only 'succeeded' counts toward cumulative/contribution totals,
-// so flipping a reversed gift to one of the terminal states drops it out of those sums.
-const DONATION_STATUS = {
-  succeeded: 'succeeded',
-  refunded: 'refunded',
-  disputed: 'disputed',
-} as const;
-type ReversedStatus = typeof DONATION_STATUS.refunded | typeof DONATION_STATUS.disputed;
-
-export class DonationsController extends BaseController<'donations', DonationsRepo> {
-  private settingsRepo = new SettingsRepo();
-  private periodsRepo = new DonationPeriodsRepo();
-  private pledgesRepo = new DonationPledgesRepo();
-  private campaignsRepo = new CampaignsRepo();
-
-  // Bound settings accessor handed to the fail-closed guards, so they stay decoupled from the
-  // settings repo while reusing the same lookup the controller already uses.
-  private readonly settingsLookup: SettingsLookup = (tenantId, key) => this.getSettingVal(tenantId, key);
-
-  constructor() {
-    super(new DonationsRepo());
-  }
-
-  public async getPersonDonationsList(tenantId: string, personId: string) {
-    return this.getRepo().getPersonDonationsList(tenantId, personId);
-  }
-
-  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
-    return this.getRepo().getPersonCumulativeDonations(tenantId, personId, year);
-  }
-
-  public async getTenantDonationsList(tenantId: string) {
-    return this.getRepo().getTenantDonationsList(tenantId);
-  }
-
-  // ── Donation Periods ────────────────────────────────────────────────────────
-
-  public async getDonationPeriods(tenantId: string) {
-    return this.periodsRepo.getAllForTenant(tenantId);
-  }
-
-  public async createDonationPeriod(
-    tenantId: string,
-    userId: string,
-    payload: { name: string; start_date: string; end_date?: string | null; limit_amount: number; campaign_id?: string },
-  ) {
-    // Contribution-limit windows are per campaign (§15).
-    const campaignId = await this.campaignsRepo.resolveForWrite({
-      tenant_id: tenantId,
-      campaign_id: payload.campaign_id,
-    });
-    return this.periodsRepo.db
-      .insertInto('donation_periods')
-      .values({
-        tenant_id: tenantId,
-        campaign_id: campaignId,
-        name: payload.name,
-        start_date: payload.start_date,
-        end_date: payload.end_date ? payload.end_date : null,
-        limit_amount: payload.limit_amount,
-        is_active: true,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  public async updateDonationPeriod(
-    tenantId: string,
-    userId: string,
-    id: string,
-    payload: {
-      name?: string;
-      start_date?: string;
-      end_date?: string | null;
-      limit_amount?: number;
-      is_active?: boolean;
-    },
-  ) {
-    const set: Updateable<Models['donation_periods']> = { updatedby_id: userId, updated_at: new Date() };
-    if (payload.name !== undefined) set.name = payload.name;
-    if (payload.start_date !== undefined) set.start_date = payload.start_date;
-    if ('end_date' in payload) set.end_date = payload.end_date ?? null;
-    if (payload.limit_amount !== undefined) set.limit_amount = payload.limit_amount;
-    if (payload.is_active !== undefined) set.is_active = payload.is_active;
-
-    return this.periodsRepo.db
-      .updateTable('donation_periods')
-      .set(set)
-      .where('id', '=', id)
-      .where('tenant_id', '=', tenantId)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  public async deleteDonationPeriod(tenantId: string, id: string) {
-    await this.periodsRepo.db
-      .deleteFrom('donation_periods')
-      .where('id', '=', id)
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  // ── Pledges ─────────────────────────────────────────────────────────────────
-
-  public async getTenantPledgesList(tenantId: string) {
-    return this.pledgesRepo.getAllForTenant(tenantId);
-  }
-
-  public async getPersonPledges(tenantId: string, personId: string) {
-    return this.pledgesRepo.getForPerson(tenantId, personId);
-  }
-
-  public async cancelPledge(tenantId: string, pledgeId: string, userId: string) {
-    const pledge = await this.pledgesRepo.db
-      .selectFrom('donation_pledges')
-      .selectAll()
-      .where('id', '=', pledgeId)
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (!pledge) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Pledge not found.' });
-    }
-
-    // Cancel in Stripe if there's a real subscription — on the tenant's connected account.
-    if (pledge.stripe_subscription_id && !pledge.stripe_subscription_id.startsWith('sub_mock_')) {
-      const accountId = await getConnectedAccountId(tenantId);
-      if (!isMockMode && accountId) {
-        try {
-          await getStripe().subscriptions.cancel(pledge.stripe_subscription_id, {}, { stripeAccount: accountId });
-        } catch (err) {
-          logger.error({ err }, 'Stripe subscription cancel failed');
-        }
-      }
-    }
-
-    return this.pledgesRepo.db
-      .updateTable('donation_pledges')
-      .set({
-        status: 'cancelled',
-        cancelled_at: new Date(),
-        updatedby_id: userId,
-        updated_at: new Date(),
-      })
-      .where('id', '=', pledgeId)
-      .where('tenant_id', '=', tenantId)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  private async getSettingVal(tenantId: string, key: string): Promise<any> {
-    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key });
-    return row?.value;
-  }
-
-  public calculateTaxCredit(
-    amountCents: number,
-    cumulativeBeforeCents: number,
-    tiers: Array<{ limit: number; rate: number }>,
-  ): number {
-    if (!tiers || tiers.length === 0) return 0;
-
-    const sortedTiers = [...tiers].sort((a, b) => a.limit - b.limit);
-    let creditCents = 0;
-    let remainingAmount = amountCents;
-    let currentCumulative = cumulativeBeforeCents;
-
-    for (const tier of sortedTiers) {
-      const tierLimitCents = tier.limit * 100;
-
-      if (currentCumulative < tierLimitCents && remainingAmount > 0) {
-        const availableInTier = tierLimitCents - currentCumulative;
-        const amountInTier = Math.min(remainingAmount, availableInTier);
-
-        creditCents += amountInTier * tier.rate;
-        remainingAmount -= amountInTier;
-        currentCumulative += amountInTier;
-      }
-    }
-
-    return Math.round(creditCents);
-  }
-
-  /**
-   * Resolve the active limit window for the tenant.
-   * Returns { limitCents, cumulative } using the donation_period if one is active,
-   * or falling back to the legacy calendar-year setting.
-   */
-  private async resolveLimitWindow(
-    tenantId: string,
-    personId: string,
-  ): Promise<{ limitCents: number; cumulative: number; periodName: string | null }> {
-    const activePeriod = await this.periodsRepo.getActivePeriodForToday(tenantId);
-
-    if (activePeriod) {
-      const cumulative = await this.getRepo().getPersonCumulativeDonationsForPeriod(
-        tenantId,
-        personId,
-        new Date(activePeriod.start_date),
-        activePeriod.end_date ? new Date(activePeriod.end_date) : null,
-      );
-      return {
-        limitCents: Number(activePeriod.limit_amount),
-        cumulative,
-        periodName: activePeriod.name,
-      };
-    }
-
-    // Fallback: calendar year + legacy settings
-    const limitVal = await this.getSettingVal(tenantId, 'donations.limit');
-    const limitSetting = limitVal !== undefined && limitVal !== null ? Number(limitVal) : 1000;
-    const currentYear = new Date().getFullYear();
-    const cumulative = await this.getRepo().getPersonCumulativeDonations(tenantId, personId, currentYear);
-    return { limitCents: limitSetting * 100, cumulative, periodName: null };
-  }
-
-  /**
-   * Perform eligibility checks based on limit and residency restrictions.
-   * For recurring donations, pass monthlyAmountCents and remainingMonths to enforce
-   * the total commitment against the period limit.
-   */
-  public async checkEligibility(
-    tenantId: string,
-    personId: string,
-    amountCents: number,
-    address: { country?: string; state?: string },
-    options?: { isRecurring?: boolean; remainingMonths?: number },
-  ) {
-    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
-
-    // For recurring: check total commitment (monthly × remaining months) against limit
-    const effectiveAmount =
-      options?.isRecurring && options?.remainingMonths ? amountCents * options.remainingMonths : amountCents;
-
-    if (cumulative + effectiveAmount > limitCents) {
-      const allowedAmount = Math.max(0, limitCents - cumulative) / 100;
-      const periodLabel = periodName ? `during the "${periodName}" period` : 'this year';
-      const limitLabel = limitCents / 100;
-      return {
-        eligible: false,
-        reason: `Donation exceeds the maximum limit of $${limitLabel} ${periodLabel}. Already donated: $${cumulative / 100}. Maximum additional allowed: $${allowedAmount}.`,
-      };
-    }
-
-    // Residency check
-    const restrictResidency = (await this.getSettingVal(tenantId, 'donations.restrict_residency')) === true;
-    const allowedCountries = String((await this.getSettingVal(tenantId, 'donations.allowed_countries')) || '').trim();
-    const allowedRegions = String((await this.getSettingVal(tenantId, 'donations.allowed_regions')) || '').trim();
-
-    if (restrictResidency) {
-      const country = (address.country || '').trim().toUpperCase();
-      const state = (address.state || '').trim().toUpperCase();
-
-      if (allowedCountries) {
-        const countriesList = allowedCountries.split(',').map((c) => c.trim().toUpperCase());
-        if (!country || !countriesList.includes(country)) {
-          return {
-            eligible: false,
-            reason: `Donor must reside in one of the allowed countries: ${allowedCountries}.`,
-          };
-        }
-      }
-
-      if (allowedRegions) {
-        const regionsList = allowedRegions.split(',').map((r) => r.trim().toUpperCase());
-        if (!state || !regionsList.includes(state)) {
-          return {
-            eligible: false,
-            reason: `Donor must reside in one of the allowed provinces/states: ${allowedRegions}.`,
-          };
-        }
-      }
-    }
-
-    return { eligible: true };
-  }
-
-  /**
-   * Get donation stats for a person relative to the active limit window.
-   */
-  public async getDonationStats(tenantId: string, personId: string) {
-    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
-    return {
-      cumulativeAmount: cumulative / 100,
-      limitAmount: limitCents / 100,
-      remainingAmount: Math.max(0, limitCents / 100 - cumulative / 100),
-      periodName,
-    };
-  }
-
-  /** Whether this tenant has acknowledged residency settings and may accept donations (fail-closed).
-   * Used by the public donation page to gate rendering before showing a live donation form. */
-  public mayAcceptDonations(tenantId: string): Promise<boolean> {
-    return tenantMayAcceptDonations(this.settingsLookup, tenantId);
-  }
-
-  /**
-   * Context the donation UI needs to show the right residency disclaimer and Stripe affordances:
-   * the tenant's country, whether residency has been acknowledged (the fail-closed gate), and
-   * Connect readiness. Shape is depended on by the frontend — keep name/fields stable.
-   */
-  public async getResidencyContext(tenantId: string): Promise<{
-    country: string | null;
-    residencyAcknowledged: boolean;
-    stripeConnected: boolean;
-  }> {
-    // `tenants` is looked up by primary id (it's on the tenant-scope allow-list — scoping the tenant
-    // table by tenant_id would be circular).
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .select('country')
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
-    const residencyAcknowledged = await tenantMayAcceptDonations(this.settingsLookup, tenantId);
-    // Connect readiness (cached; mock mode reads as connected) — lets the fundraising editor gate
-    // "connect Stripe first" without a second round-trip.
-    const connectState = await getCachedConnectState(tenantId);
-    return {
-      country: tenant?.country != null ? String(tenant.country) : null,
-      residencyAcknowledged,
-      stripeConnected: connectState.chargesEnabled,
-    };
-  }
-
-  // ── One-time Checkout ────────────────────────────────────────────────────────
-
-  public async createCheckoutSession(
-    auth: { tenant_id: string; user_id: string },
-    personId: string,
-    amountCents: number,
-    address: { country?: string; state?: string },
-    customUrls?: { successUrl?: string; cancelUrl?: string },
-  ): Promise<{ url: string | null }> {
-    // Fail-closed residency gate FIRST — an org that hasn't confirmed residency can't take money.
-    await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
-
-    const eligibility = await this.checkEligibility(auth.tenant_id, personId, amountCents, address);
-    if (!eligibility.eligible) {
-      throw new BadRequestError(eligibility.reason);
-    }
-
-    // Connect gate: fails closed unless onboarding is complete (mock mode passes with no account).
-    const accountId = await assertStripeConnectReady(auth.tenant_id);
-    const processor = new StripeDonationProcessor({ accountId, feePercent: env.donationsPlatformFeePercent });
-    return processor.createOneTimeCheckout({
-      tenantId: auth.tenant_id,
-      userId: auth.user_id,
-      personId,
-      amountCents,
-      address,
-      customUrls,
-    });
-  }
-
-  // ── Recurring Subscription Checkout ─────────────────────────────────────────
-
-  /**
-   * Calculate remaining months in the active donation period from today.
-   * Returns null if the period is open-ended.
-   */
-  private getRemainingMonths(endDate: Date | null): number | null {
-    if (!endDate) return null;
-    const now = new Date();
-    const diffMs = endDate.getTime() - now.getTime();
-    if (diffMs <= 0) return 0;
-    return Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 30));
-  }
-
-  public async createRecurringCheckoutSession(
-    auth: { tenant_id: string; user_id: string },
-    personId: string,
-    monthlyAmountCents: number,
-    address: { country?: string; state?: string },
-    customUrls?: { successUrl?: string; cancelUrl?: string },
-  ) {
-    // Fail-closed residency gate FIRST (same as one-time).
-    await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
-
-    // Determine remaining months for limit enforcement
-    const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);
-    const remainingMonths = activePeriod?.end_date ? this.getRemainingMonths(new Date(activePeriod.end_date)) : null;
-
-    const eligibility = await this.checkEligibility(auth.tenant_id, personId, monthlyAmountCents, address, {
-      isRecurring: true,
-      remainingMonths: remainingMonths ?? 12,
-    });
-    if (!eligibility.eligible) {
-      throw new BadRequestError(eligibility.reason);
-    }
-
-    // Connect gate: fails closed unless onboarding is complete (mock mode passes with no account).
-    const accountId = await assertStripeConnectReady(auth.tenant_id);
-
-    if (isMockMode) {
-      const mockSubId = 'sub_mock_' + Math.random().toString(36).substring(7);
-      const mockSessionId = 'cs_mock_rec_' + Math.random().toString(36).substring(7);
-
-      let successUrl = customUrls?.successUrl
-        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
-        : `${env.appUrl}/people/${personId}?mock_pledge_success=true&monthly_amount=${monthlyAmountCents / 100}&session_id=${mockSessionId}`;
-
-      if (customUrls?.successUrl) {
-        const sep = successUrl.includes('?') ? '&' : '?';
-        successUrl += `${sep}is_mock=true&person_id=${personId}&monthly_amount_cents=${monthlyAmountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}&mock_sub_id=${mockSubId}`;
-      }
-
-      return { url: successUrl, mock: true };
-    }
-
-    // Create a one-off price for this amount (monthly) — a Connect direct charge on the tenant's
-    // account; the platform fee on recurring gifts is percent-only (application_fee_percent).
-    const session = await getStripe().checkout.sessions.create(
-      {
-        payment_method_types: ['card'],
-        line_items: [
-          {
-            price_data: {
-              currency: 'cad',
-              product_data: { name: 'Monthly Campaign Donation' },
-              unit_amount: monthlyAmountCents,
-              recurring: { interval: 'month' },
-            },
-            quantity: 1,
-          },
-        ],
-        mode: 'subscription',
-        success_url:
-          customUrls?.successUrl ||
-          `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
-        subscription_data: {
-          ...(env.donationsPlatformFeePercent > 0 ? { application_fee_percent: env.donationsPlatformFeePercent } : {}),
-          metadata: {
-            tenantId: auth.tenant_id,
-            personId,
-            monthlyAmount: String(monthlyAmountCents),
-            residencyProvince: address.state || '',
-            residencyCountry: address.country || '',
-            createdBy: auth.user_id,
-          },
-        },
-        metadata: {
-          tenantId: auth.tenant_id,
-          personId,
-          monthlyAmount: String(monthlyAmountCents),
-          residencyProvince: address.state || '',
-          residencyCountry: address.country || '',
-          createdBy: auth.user_id,
-          isRecurring: 'true',
-        },
-      },
-      { stripeAccount: accountId },
-    );
-
-    return { url: session.url };
-  }
-
-  // ── Confirm Flows ────────────────────────────────────────────────────────────
-
-  public async confirmDonation(tenantId: string, userId: string, sessionId: string) {
-    const existing = await this.getRepo()
-      .db.selectFrom('donations')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('stripe_session_id', '=', sessionId)
-      .executeTakeFirst();
-
-    if (existing) {
-      return { success: true, donation: existing };
-    }
-
-    if (sessionId.startsWith('cs_mock_')) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Mock sessions must be confirmed via the confirmMockDonation endpoint.',
-      });
-    }
-
-    const accountId = await getConnectedAccountId(tenantId);
-    if (isMockMode || !accountId) {
-      throw new PreconditionFailedError('Stripe is not connected for this tenant.');
-    }
-
-    const session = await getStripe().checkout.sessions.retrieve(sessionId, {}, { stripeAccount: accountId });
-    if (session.payment_status !== 'paid') {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Session has not been paid.' });
-    }
-
-    const personId = String(session.metadata?.['personId']);
-    const amountCents = Number(session.metadata?.['amount']);
-    const province = String(session.metadata?.['residencyProvince'] || '');
-    const country = String(session.metadata?.['residencyCountry'] || '');
-
-    const record = await this.recordSuccessfulDonation(
-      tenantId,
-      personId,
-      amountCents,
-      sessionId,
-      province,
-      country,
-      userId,
-    );
-    return { success: true, donation: record };
-  }
-
-  public async confirmMockDonation(
-    tenantId: string,
-    userId: string,
-    personId: string,
-    amountCents: number,
-    sessionId: string,
-    province: string,
-    country: string,
-  ) {
-    const existing = await this.getRepo()
-      .db.selectFrom('donations')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('stripe_session_id', '=', sessionId)
-      .executeTakeFirst();
-
-    if (existing) {
-      return { success: true, donation: existing };
-    }
-
-    const record = await this.recordSuccessfulDonation(
-      tenantId,
-      personId,
-      amountCents,
-      sessionId,
-      province,
-      country,
-      userId,
-    );
-    return { success: true, donation: record };
-  }
-
-  /**
-   * Confirm a mock recurring pledge from the frontend (no real Stripe).
-   */
-  public async confirmMockPledge(
-    tenantId: string,
-    userId: string,
-    personId: string,
-    monthlyAmountCents: number,
-    mockSubId: string,
-    province: string,
-    country: string,
-  ) {
-    return this.recordNewPledge(tenantId, personId, monthlyAmountCents, mockSubId, null, province, country, userId);
-  }
-
-  // ── Internal Write Helpers ───────────────────────────────────────────────────
-
-  public async recordNewPledge(
-    tenantId: string,
-    personId: string,
-    monthlyAmountCents: number,
-    stripeSubscriptionId: string,
-    stripeCustomerId: string | null,
-    province: string,
-    country: string,
-    userId: string,
-    campaignId?: string,
-  ): Promise<Selectable<Models['donation_pledges']>> {
-    const existing = await this.pledgesRepo.db
-      .selectFrom('donation_pledges')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('stripe_subscription_id', '=', stripeSubscriptionId)
-      .executeTakeFirst();
-
-    if (existing) return existing;
-
-    // Which fund the pledge belongs to (§15); Stripe-path pledges without an
-    // explicit campaign land in the office context.
-    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-    });
-
-    const person = await this.pledgesRepo.db
-      .selectFrom('persons')
-      .select(['first_name', 'last_name', 'email'])
-      .where('id', '=', personId)
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    const pledge = await this.pledgesRepo.db.transaction().execute(async (trx) => {
-      const inserted = (await trx
-        .insertInto('donation_pledges')
-        .values({
-          tenant_id: tenantId,
-          campaign_id: resolvedCampaignId,
-          person_id: personId,
-          stripe_subscription_id: stripeSubscriptionId,
-          stripe_customer_id: stripeCustomerId,
-          monthly_amount: monthlyAmountCents,
-          status: 'active',
-          first_name: person?.first_name ?? null,
-          last_name: person?.last_name ?? null,
-          email: person?.email ?? null,
-          state: province || null,
-          country: country || null,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow()) as Selectable<Models['donation_pledges']>;
-
-      // "Donor" is derived from donations/pledges data (§15) — no tag to maintain.
-
-      await trx
-        .insertInto('user_activity')
-        .values({
-          tenant_id: tenantId,
-          user_id: userId,
-          activity: `Started a monthly pledge of $${monthlyAmountCents / 100}/month`,
-          entity: 'persons',
-          entity_id: personId,
-          quantity: 1,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .execute();
-
-      return inserted;
-    });
-
-    return pledge;
-  }
-
-  /** Record an offline gift (spec §12, Fig. 15 "Record donation" dialog) — cash, check, or bank
-   * transfer collected outside the Stripe checkout flow. Shares the tagging/activity-log/workflow
-   * wiring with the Stripe path so offline and online gifts show up identically on the person's
-   * Donations tab and Activity log. */
-  public async recordManualDonation(
-    auth: { tenant_id: string; user_id: string },
-    personId: string,
-    amountCents: number,
-    method: 'card' | 'check' | 'cash' | 'bank_transfer',
-    campaignId?: string,
-  ): Promise<Selectable<Models['donations']>> {
-    const person = await this.getRepo()
-      .db.selectFrom('persons')
-      .select(['id'])
-      .where('id', '=', personId)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    if (!person) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Choose who gave this gift. Receipts need a name.' });
-    }
-
-    return this.recordSuccessfulDonation(
-      auth.tenant_id,
-      personId,
-      amountCents,
-      null,
-      '',
-      '',
-      auth.user_id,
-      undefined,
-      method,
-      campaignId,
-    );
-  }
-
-  public async recordSuccessfulDonation(
-    tenantId: string,
-    personId: string,
-    amountCents: number,
-    sessionId: string | null,
-    province: string,
-    country: string,
-    userId: string,
-    pledgeId?: string,
-    method: 'card' | 'check' | 'cash' | 'bank_transfer' = 'card',
-    campaignId?: string,
-    stripePaymentIntentId?: string | null,
-  ): Promise<Selectable<Models['donations']>> {
-    // Which fund the gift belongs to (§15); Stripe-path gifts without an
-    // explicit campaign land in the office context.
-    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-    });
-
-    const person = await this.getRepo()
-      .db.selectFrom('persons')
-      .select(['first_name', 'last_name', 'email'])
-      .where('id', '=', personId)
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    const record = await this.getRepo()
-      .db.transaction()
-      .execute(async (trx) => {
-        const inserted = (await trx
-          .insertInto('donations')
-          .values({
-            tenant_id: tenantId,
-            campaign_id: resolvedCampaignId,
-            person_id: personId,
-            first_name: person?.first_name ?? null,
-            last_name: person?.last_name ?? null,
-            email: person?.email ?? null,
-            amount: amountCents,
-            status: 'succeeded',
-            stripe_session_id: sessionId,
-            stripe_payment_intent_id: stripePaymentIntentId ?? null,
-            state: province || null,
-            country: country || null,
-            pledge_id: pledgeId ? pledgeId : null,
-            method,
-            receipt_sent: true,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
-
-        // "Donor" is derived from donations data (§15) — no tag to maintain.
-
-        try {
-          await trx
-            .insertInto('user_activity')
-            .values({
-              tenant_id: tenantId,
-              user_id: userId,
-              activity: `Collected a donation of $${amountCents / 100}`,
-              entity: 'persons',
-              entity_id: personId,
-              quantity: 1,
-              createdby_id: userId,
-              updatedby_id: userId,
-            })
-            .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to write audit activity log for donation');
-        }
-
-        return inserted;
-      });
-
-    try {
-      const workflowsController = new WorkflowsController();
-      // 'donation_recorded' is the canonical trigger name (the Zod enum + UI card). The old
-      // 'donation_received' string never matched a saveable workflow, so this trigger was dead.
-      await workflowsController.triggerWorkflow(tenantId, personId, 'donation_recorded', null);
-    } catch (workflowErr) {
-      logger.error({ err: workflowErr }, 'Failed to trigger workflow on donation_recorded');
-    }
-
-    return record;
-  }
-
-  /**
-   * Reverse a donation because Stripe reported a full refund or a lost chargeback. Flips the status
-   * to a terminal reversed state (so it drops out of contribution totals, which count only
-   * 'succeeded'), stamps refunded_at, and records an activity entry. Idempotent — a duplicate or
-   * retried webhook for the same reversal is a no-op. Returns true when a donation matched.
-   */
-  public async reverseDonation(
-    tenantId: string,
-    userId: string,
-    opts: { paymentIntentId: string | null; invoiceId: string | null; status: ReversedStatus },
-  ): Promise<boolean> {
-    const donation = await this.getRepo().findByPaymentIntentOrInvoice(tenantId, opts.paymentIntentId, opts.invoiceId);
-    if (!donation) {
-      logger.warn(
-        { tenantId, paymentIntentId: opts.paymentIntentId, invoiceId: opts.invoiceId, status: opts.status },
-        'Refund/dispute webhook did not match any donation; nothing to reverse',
-      );
-      return false;
-    }
-    if (donation.status === opts.status) return true; // already reversed — idempotent
-
-    await this.getRepo()
-      .db.transaction()
-      .execute(async (trx) => {
-        await trx
-          .updateTable('donations')
-          .set({ status: opts.status, refunded_at: new Date(), updated_at: new Date() })
-          .where('id', '=', donation.id)
-          .where('tenant_id', '=', tenantId)
-          .execute();
-
-        if (donation.person_id) {
-          const verb = opts.status === DONATION_STATUS.refunded ? 'refunded' : 'disputed (chargeback)';
-          try {
-            await trx
-              .insertInto('user_activity')
-              .values({
-                tenant_id: tenantId,
-                user_id: userId,
-                activity: `Donation of $${donation.amount / 100} ${verb}`,
-                entity: 'persons',
-                entity_id: donation.person_id,
-                quantity: 1,
-                createdby_id: userId,
-                updatedby_id: userId,
-              })
-              .execute();
-          } catch (err) {
-            logger.error({ err }, 'Failed to write audit activity log for donation reversal');
-          }
-        }
-      });
-    return true;
-  }
-
-  /**
-   * Restore a donation whose chargeback the tenant won: Stripe returned the funds, so a gift we
-   * had marked 'disputed' counts again. Only un-reverses a still-disputed row (never resurrects a
-   * genuine refund). Returns true when a donation matched.
-   */
-  public async restoreDisputedDonation(
-    tenantId: string,
-    userId: string,
-    opts: { paymentIntentId: string | null; invoiceId: string | null },
-  ): Promise<boolean> {
-    const donation = await this.getRepo().findByPaymentIntentOrInvoice(tenantId, opts.paymentIntentId, opts.invoiceId);
-    if (!donation) return false;
-    if (donation.status !== DONATION_STATUS.disputed) return true; // nothing to restore — idempotent
-
-    await this.getRepo()
-      .db.transaction()
-      .execute(async (trx) => {
-        await trx
-          .updateTable('donations')
-          .set({ status: DONATION_STATUS.succeeded, refunded_at: null, updated_at: new Date() })
-          .where('id', '=', donation.id)
-          .where('tenant_id', '=', tenantId)
-          .execute();
-
-        if (donation.person_id) {
-          try {
-            await trx
-              .insertInto('user_activity')
-              .values({
-                tenant_id: tenantId,
-                user_id: userId,
-                activity: `Donation of $${donation.amount / 100} chargeback resolved in your favour`,
-                entity: 'persons',
-                entity_id: donation.person_id,
-                quantity: 1,
-                createdby_id: userId,
-                updatedby_id: userId,
-              })
-              .execute();
-          } catch (err) {
-            logger.error({ err }, 'Failed to write audit activity log for donation restore');
-          }
-        }
-      });
-    return true;
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/events/controller.ts
 ````typescript
 import { TRPCError } from '@trpc/server';
@@ -67801,6 +67806,899 @@ export async function applyAutomationTripwires(db: Db, tenantId: string): Promis
       '[abuse-tripwire] Automation hard-bounce rate exceeded — tenant sending paused',
     );
     await pauseTenantSending(db, tenantId, 'automation_hard_bounce_rate');
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/settings/controller.ts
+````typescript
+import { TRPCError } from '@trpc/server';
+import { createSigner, createVerifier } from 'fast-jwt';
+import type { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
+import { env } from '../../../env';
+
+interface VerifiedDomainEntry {
+  domain: string;
+  domainAuthId?: string | number;
+  linkBrandingId?: string | number;
+  spf?: boolean;
+  dkim?: boolean;
+  dmarc?: boolean;
+  linkBranded?: boolean;
+  status?: string;
+  domainAuthDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
+  linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
+  /** Platform-key mode only: whether the parent-level records were associated with the
+   * subuser the tenant sends through. Retried on verify until true — subuser sends are
+   * unsigned without it. */
+  subuserAssociated?: boolean;
+}
+
+import { randomInt, timingSafeEqual } from 'crypto';
+
+import { BaseController } from '../../lib/base.controller';
+import { BadRequestError, TooManyRequestsError } from '../../errors/app-errors';
+import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { maskPhone, normalizeE164 } from '../../lib/sms/phone';
+import { SmsService } from '../../lib/sms/sms.service';
+import { hashToken } from '../../lib/token-hash';
+import { getPlanDef } from '@common';
+import { assertNotDemoMode } from '../demo/demo-guard';
+import { DEMO_MANIFEST_SETTINGS_KEY } from '../demo/demo-seed';
+import { STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY } from '../donations/stripe-connect';
+
+/** Server-managed settings keys that must never be written via the public upsert: the
+ * verified sender/domain lists back the newsletter send guards, the Stripe Connect account
+ * id/status back the donations fail-closed gate, and the demo manifest drives demo-data
+ * deletion. A direct write to any of them is a guard bypass or data corruption. */
+const SERVER_MANAGED_SETTINGS_MESSAGES: Record<string, string> = {
+  'communications.verified_emails': 'Verified emails list cannot be modified directly.',
+  'communications.verified_domains': 'Verified domains list cannot be modified directly.',
+  [STRIPE_ACCOUNT_ID_KEY]: 'Stripe connection settings cannot be modified directly.',
+  [STRIPE_ACCOUNT_STATUS_KEY]: 'Stripe connection settings cannot be modified directly.',
+  [DEMO_MANIFEST_SETTINGS_KEY]: 'This setting is managed by pplCRM and cannot be modified directly.',
+};
+import { SettingsRepo } from './repositories/settings.repo';
+
+const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
+const PHONE_CODE_MAX_ATTEMPTS = 5;
+
+// Rate limiting in-memory storage to prevent verification spam/abuse
+const verificationRequestTimestamps = new Map<string, number>(); // key: `${tenant_id}:${email}`, value: timestamp
+const tenantVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
+const domainVerificationTimestamps = new Map<string, number>(); // key: `${tenant_id}:${domain}`, value: timestamp
+const tenantDomainVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
+
+export class SettingsController extends BaseController<'settings', SettingsRepo> {
+  private mailService = new TransactionalEmailService();
+
+  constructor() {
+    super(new SettingsRepo());
+  }
+
+  public async getCurrentCampaignId(auth: IAuthKeyPayload) {
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'current_campaign',
+    });
+
+    if (!row) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Current campaign setting not found.',
+      });
+    }
+
+    const value = row.value;
+
+    if (typeof value === 'number' || typeof value === 'string') {
+      return String(value);
+    }
+
+    if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+      const id = (value as Record<string, unknown>)['id'];
+      if (typeof id === 'number' || typeof id === 'string') {
+        return String(id);
+      }
+    }
+
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Current campaign setting is malformed.',
+    });
+  }
+
+  public async getSnapshot(auth: IAuthKeyPayload) {
+    const rows = await this.getRepo().getAllForTenant(auth.tenant_id);
+
+    return rows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+  }
+
+  public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
+    // 1. Block direct updates to server-managed keys (SERVER_MANAGED_SETTINGS_MESSAGES).
+    //    Ordinary workspace settings are deliberately NOT demo-gated — the demo guard covers
+    //    only outward-facing actions (verification, sync, sending, invites, Stripe Connect).
+    for (const entry of entries) {
+      const blockedMessage = SERVER_MANAGED_SETTINGS_MESSAGES[entry.key];
+      if (blockedMessage) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: blockedMessage });
+      }
+    }
+
+    // 2. Validate default from and reply-to emails
+    const defaultFromEntry = entries.find((e) => e.key === 'communications.default_from_email');
+    const replyToEntry = entries.find((e) => e.key === 'communications.reply_to');
+
+    if (defaultFromEntry || replyToEntry) {
+      const snapshot = await this.getSnapshot(auth);
+      const verifiedEmailsRaw = snapshot['communications.verified_emails'];
+      const verifiedEmails = Array.isArray(verifiedEmailsRaw)
+        ? verifiedEmailsRaw.map((e) => String(e).toLowerCase().trim())
+        : [];
+
+      if (defaultFromEntry && typeof defaultFromEntry.value === 'string') {
+        const val = defaultFromEntry.value.toLowerCase().trim();
+        if (val && !verifiedEmails.includes(val)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Email address must be verified before it can be configured as a Default From Email.',
+          });
+        }
+      }
+
+      if (replyToEntry && typeof replyToEntry.value === 'string') {
+        const val = replyToEntry.value.toLowerCase().trim();
+        if (val && !verifiedEmails.includes(val)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Email address must be verified before it can be configured as a Reply-to Email.',
+          });
+        }
+      }
+    }
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: entries.map((entry) => ({
+        key: entry.key,
+        value: entry.value,
+      })),
+    });
+
+    return this.getSnapshot(auth);
+  }
+
+  /**
+   * Sending-phone verification (anti-abuse): Free-plan tenants must verify a mobile number by
+   * SMS before their first newsletter send (send-guards enforces it). One number per tenant;
+   * the 6-digit code is stored hashed on the tenant row — never in settings, whose snapshot is
+   * client-readable.
+   */
+  public async getPhoneVerificationStatus(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['sending_phone', 'sending_phone_verified_at', 'pending_phone', 'subscription_plan'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    return {
+      verified: tenant?.sending_phone_verified_at != null,
+      verifiedAt: tenant?.sending_phone_verified_at ?? null,
+      phone: tenant?.sending_phone ? maskPhone(tenant.sending_phone) : null,
+      pendingPhone: tenant?.pending_phone ? maskPhone(tenant.pending_phone) : null,
+      // Whether a send is currently gated on it (Free plan; unknown/legacy values resolve to free).
+      required: (getPlanDef(tenant?.subscription_plan)?.key ?? 'free') === 'free',
+    };
+  }
+
+  public async requestPhoneVerification(auth: IAuthKeyPayload, phone: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const normalized = normalizeE164(phone);
+    if (!normalized) {
+      throw new BadRequestError('Enter a valid mobile number, including the country code for non-US numbers.');
+    }
+    // Throttle per tenant (code farming) and per destination number (SMS-bombing a victim).
+    checkRateLimit(`phoneVerifyRequest:${auth.tenant_id}`, 3, 60 * 60 * 1000);
+    checkRateLimit(`phoneVerifyRequest:${normalized}`, 3, 60 * 60 * 1000);
+
+    const code = String(randomInt(100000, 1000000));
+    const smsService = new SmsService();
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await trx
+          .updateTable('tenants')
+          .set({
+            pending_phone: normalized,
+            phone_verification_code_hash: hashToken(code),
+            phone_verification_expires_at: new Date(Date.now() + PHONE_CODE_TTL_MS),
+            phone_verification_attempts: 0,
+          })
+          .where('id', '=', auth.tenant_id)
+          .execute();
+        await smsService.enqueueSms(
+          {
+            to: normalized,
+            body: `Your pplCRM verification code is ${code}. It expires in 10 minutes.`,
+            tenant_id: auth.tenant_id,
+          },
+          trx,
+        );
+      });
+
+    return { success: true, phone: maskPhone(normalized) };
+  }
+
+  public async confirmPhoneVerification(auth: IAuthKeyPayload, code: string) {
+    checkRateLimit(`phoneVerifyConfirm:${auth.tenant_id}`, 10, 15 * 60 * 1000);
+    const db = this.getRepo().db;
+    const tenant = await db
+      .selectFrom('tenants')
+      .select([
+        'pending_phone',
+        'phone_verification_code_hash',
+        'phone_verification_expires_at',
+        'phone_verification_attempts',
+      ])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!tenant?.pending_phone || !tenant.phone_verification_code_hash) {
+      throw new BadRequestError('No phone verification is in progress. Request a new code first.');
+    }
+    if (Number(tenant.phone_verification_attempts) >= PHONE_CODE_MAX_ATTEMPTS) {
+      throw new TooManyRequestsError('Too many incorrect codes. Request a new code and try again.');
+    }
+    const expiresAt = tenant.phone_verification_expires_at ? new Date(tenant.phone_verification_expires_at) : null;
+    if (!expiresAt || expiresAt.getTime() < Date.now()) {
+      throw new BadRequestError('That code has expired. Request a new one.');
+    }
+
+    const expected = Buffer.from(tenant.phone_verification_code_hash, 'hex');
+    const actual = Buffer.from(hashToken(code.trim()), 'hex');
+    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+      await db
+        .updateTable('tenants')
+        .set((eb) => ({ phone_verification_attempts: eb('phone_verification_attempts', '+', 1) }))
+        .where('id', '=', auth.tenant_id)
+        .execute();
+      throw new BadRequestError('Incorrect code. Check the SMS and try again.');
+    }
+
+    await db
+      .updateTable('tenants')
+      .set({
+        sending_phone: tenant.pending_phone,
+        sending_phone_verified_at: new Date(),
+        pending_phone: null,
+        phone_verification_code_hash: null,
+        phone_verification_expires_at: null,
+        phone_verification_attempts: 0,
+      })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'update',
+      entity: 'settings',
+      metadata: { action: 'sending_phone_verified', phone: maskPhone(tenant.pending_phone) },
+    });
+
+    return { success: true, phone: maskPhone(tenant.pending_phone) };
+  }
+
+  public async requestEmailVerification(auth: IAuthKeyPayload, email: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const normalized = email.toLowerCase().trim();
+    const rateLimitKey = `${auth.tenant_id}:${normalized}`;
+    const now = Date.now();
+
+    // 1. Per-email verification limit: max once per minute
+    const lastRequest = verificationRequestTimestamps.get(rateLimitKey);
+    if (lastRequest && now - lastRequest < 60000) {
+      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Please wait ${remainingSeconds} seconds before requesting verification again for this email.`,
+      });
+    }
+
+    // 2. Tenant-wide verification limit: max 5 requests per minute
+    let tenantRequests = tenantVerificationTimestamps.get(auth.tenant_id) || [];
+    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
+    if (tenantRequests.length >= 5) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message:
+          'Rate limit exceeded. You can only request up to 5 verification emails per minute across your campaign.',
+      });
+    }
+
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const signer = createSigner({
+      algorithm: 'HS256',
+      key,
+      expiresIn: '24h',
+    });
+
+    const token = signer({
+      tenant_id: auth.tenant_id,
+      email: normalized,
+      purpose: 'verify-sender-email',
+    });
+
+    const verificationLink = `${env.appUrl}/verify-sender-email?token=${token}`;
+
+    await this.mailService.enqueueMail({
+      to: normalized,
+      tenant_id: auth.tenant_id,
+      subject: 'Verify your sender email address',
+      text: `Hi,\n\nWe need to verify this email address before your pplCRM campaign can send from it. Verify it using this link: ${verificationLink}\n\nThis link expires in 24 hours.`,
+      html: `<h2>Verify your sender email address</h2>
+<p>We need to verify this email address before your pplCRM campaign can send from it. Click the button below to verify it:</p>
+<div class="btn-container">
+  <a href="${verificationLink}" class="btn">Verify sender email</a>
+</div>
+<p class="warning">For security, this link expires in 24 hours.</p>`,
+    });
+
+    // Record timestamps if successful
+    tenantRequests.push(now);
+    tenantVerificationTimestamps.set(auth.tenant_id, tenantRequests);
+    verificationRequestTimestamps.set(rateLimitKey, now);
+
+    return { success: true };
+  }
+
+  public async verifySenderEmail(token: string) {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({
+      algorithms: ['HS256'],
+      key,
+      ignoreExpiration: false,
+    });
+
+    try {
+      const payload = await verifier(token);
+      if (!payload || payload.purpose !== 'verify-sender-email' || !payload.tenant_id || !payload.email) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Invalid verification token.',
+        });
+      }
+
+      const tenantId = String(payload.tenant_id);
+      const email = String(payload.email).toLowerCase().trim();
+
+      const row = await this.getRepo().getByKey({
+        tenant_id: tenantId,
+        key: 'communications.verified_emails',
+      });
+
+      let currentList: string[] = [];
+      if (row && Array.isArray(row.value)) {
+        currentList = row.value.map((e) => String(e).toLowerCase().trim());
+      }
+
+      if (!currentList.includes(email)) {
+        currentList.push(email);
+
+        const tenant = await this.getRepo()
+          .db.selectFrom('tenants')
+          .select('admin_id')
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+        const adminId = tenant?.admin_id ? String(tenant.admin_id) : '1';
+
+        await this.getRepo().upsertMany({
+          tenant_id: tenantId,
+          user_id: adminId,
+          entries: [{ key: 'communications.verified_emails', value: currentList }],
+        });
+      }
+
+      return { success: true, email };
+    } catch (err) {
+      if (err instanceof TRPCError) throw err;
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Invalid or expired verification token.',
+      });
+    }
+  }
+
+  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .selectAll()
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!tenant) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Tenant not found.',
+      });
+    }
+
+    if (String(tenant.admin_id) !== String(auth.user_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Only the organization administrator can schedule deletion.',
+      });
+    }
+
+    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await this.getRepo()
+      .db.updateTable('tenants')
+      .set({ deletion_scheduled_at: deletionDate })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    const admin = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', auth.user_id)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await this.mailService.sendMail({
+        to: admin.email,
+        tenant_id: auth.tenant_id,
+        subject: 'Your organization is scheduled for deletion',
+        text: `Hi ${admin.first_name || 'there'},\n\nYour organization ${tenant.name} has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nTo cancel, open your organization settings: ${env.appUrl}/settings`,
+        html: `<h2>Organization scheduled for deletion</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>The organization <strong>${tenant.name}</strong> has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>All data under this organization, including campaigns, contacts, lists, workflows, and user accounts, will be permanently deleted. To cancel the deletion, click the button below:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/settings" class="btn">Open organization settings</a>
+</div>
+<p class="warning">If you did not schedule this deletion, please contact support immediately.</p>`,
+      });
+    }
+
+    return { success: true, deletion_scheduled_at: deletionDate };
+  }
+
+  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .selectAll()
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!tenant) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Tenant not found.',
+      });
+    }
+
+    if (String(tenant.admin_id) !== String(auth.user_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Only the organization administrator can cancel deletion.',
+      });
+    }
+
+    await this.getRepo()
+      .db.updateTable('tenants')
+      .set({ deletion_scheduled_at: null })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    const admin = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', auth.user_id)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await this.mailService.sendMail({
+        to: admin.email,
+        tenant_id: auth.tenant_id,
+        subject: 'Your organization deletion was canceled',
+        text: `Your request to delete organization ${tenant.name} has been canceled, and your organization is fully restored.`,
+        html: `<h2>Organization deletion canceled</h2>
+<p>Your request to delete organization <strong>${tenant.name}</strong> has been canceled. Your organization and all associated campaign data are fully restored.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Resolve the SendGrid credentials the domain-whitelabel operations must run under,
+   * mirroring the newsletter send path (lib/jobs/handlers/newsletter.handlers.ts): a
+   * tenant-owned API key always wins, with operations running on-behalf-of the tenant's own
+   * subuser. Without one, operations run on the PLATFORM key at the parent level — so every
+   * tenant, including Free, gets real SendGrid DNS records and real DKIM instead of mock
+   * records that can never authenticate their mail. `associateSubuser` is then the subuser
+   * the tenant's mail actually flows through (their whitelabel subuser, or the shared
+   * free-tier subuser on the Free plan); the created records must be associated with it or
+   * subuser sends stay unsigned.
+   */
+  private async resolveWhitelabelCredentials(tenantId: string): Promise<{
+    apiKey: string | undefined;
+    subuser: string | undefined;
+    associateSubuser: string | undefined;
+  }> {
+    const db = this.getRepo().db;
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenantId)
+      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
+      .execute();
+
+    const settingsMap: Record<string, unknown> = {};
+    for (const row of settingsRows) {
+      settingsMap[row.key] = row.value;
+    }
+
+    const rawKey = settingsMap['communications.sendgrid_api_key'];
+    const rawSubuser = settingsMap['communications.sendgrid_subuser_username'];
+    const ownApiKey = typeof rawKey === 'string' && rawKey.trim() !== '' ? rawKey : undefined;
+    const ownSubuser = typeof rawSubuser === 'string' && rawSubuser.trim() !== '' ? rawSubuser : undefined;
+
+    if (ownApiKey) {
+      return { apiKey: ownApiKey, subuser: ownSubuser, associateSubuser: undefined };
+    }
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['subscription_plan'])
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    const planKey = getPlanDef(tenant?.subscription_plan)?.key ?? 'free';
+    const associateSubuser = ownSubuser ?? (planKey === 'free' ? env.sendgridFreeTierSubuser : undefined);
+
+    return { apiKey: env.sendgridApiKey, subuser: undefined, associateSubuser };
+  }
+
+  public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'communications.verified_domains',
+    });
+    const currentList: VerifiedDomainEntry[] = Array.isArray(row?.value)
+      ? (row?.value as unknown as VerifiedDomainEntry[])
+      : [];
+
+    if (currentList.some((d) => d.domain === domainVal)) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This domain is already added.',
+      });
+    }
+
+    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
+    const sendgridSvc = new SendGridWhitelabelService();
+    const domainAuth = await sendgridSvc.createDomainAuthentication(domainVal, creds.apiKey, creds.subuser);
+    const linkBranding = await sendgridSvc.createLinkBranding(domainVal, creds.apiKey, creds.subuser);
+
+    // Platform-key mode: the records live at the parent level but the tenant's mail is sent
+    // on-behalf-of a subuser — associate both with it. Failures are recorded and retried on
+    // every verify, and verification never succeeds until the association holds.
+    let subuserAssociated = false;
+    if (creds.associateSubuser) {
+      const domainOk = await sendgridSvc.associateDomainWithSubuser(
+        domainAuth.id,
+        creds.associateSubuser,
+        creds.apiKey,
+      );
+      const linkOk = await sendgridSvc.associateLinkWithSubuser(linkBranding.id, creds.associateSubuser, creds.apiKey);
+      subuserAssociated = domainOk && linkOk;
+    }
+
+    const newEntry = {
+      domain: domainVal,
+      status: 'pending',
+      spf: false,
+      dkim: false,
+      dmarc: false,
+      domainAuthId: domainAuth.id,
+      linkBrandingId: linkBranding.id,
+      domainAuthDns: domainAuth.dns,
+      linkBrandingDns: linkBranding.dns,
+      linkBranded: false,
+      ...(creds.associateSubuser ? { subuserAssociated } : {}),
+    };
+
+    const updatedList = [...currentList, newEntry];
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: [{ key: 'communications.verified_domains', value: updatedList }],
+    });
+
+    return updatedList;
+  }
+
+  public async verifyVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+    const rateLimitKey = `${auth.tenant_id}:${domainVal}`;
+    const now = Date.now();
+
+    // 1. Per-domain verification check limit: max once per minute
+    const lastRequest = domainVerificationTimestamps.get(rateLimitKey);
+    if (lastRequest && now - lastRequest < 60000) {
+      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Please wait ${remainingSeconds} seconds before verifying this domain again.`,
+      });
+    }
+
+    // 2. Tenant-wide domain verification limit: max 5 checks per minute
+    let tenantRequests = tenantDomainVerificationTimestamps.get(auth.tenant_id) || [];
+    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
+    if (tenantRequests.length >= 5) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. You can only verify up to 5 domains per minute across your campaign.',
+      });
+    }
+
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'communications.verified_domains',
+    });
+
+    if (!row || !Array.isArray(row.value)) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Domain configuration not found.',
+      });
+    }
+
+    const currentList = row.value as unknown as VerifiedDomainEntry[];
+    const domainEntry = currentList.find((d) => d.domain === domainVal);
+
+    if (!domainEntry) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Domain ${domainVal} not found in verified domains list.`,
+      });
+    }
+
+    // Record timestamps if validation can proceed
+    tenantRequests.push(now);
+    tenantDomainVerificationTimestamps.set(auth.tenant_id, tenantRequests);
+    domainVerificationTimestamps.set(rateLimitKey, now);
+
+    // Resolve credentials the same way the send path does (tenant key, else platform key).
+    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
+    const apiKey = creds.apiKey;
+    const subuser = creds.subuser;
+    const hasValidKey = !!apiKey && apiKey.trim().startsWith('SG.') && apiKey.trim().length > 20;
+
+    const sendgridSvc = new SendGridWhitelabelService();
+
+    // Platform-key mode: if the add-time subuser association failed (SendGrid hiccup), retry
+    // it here — the domain must not verify while subuser sends would go out unsigned.
+    let subuserAssociated = domainEntry.subuserAssociated === true;
+    if (hasValidKey && creds.associateSubuser && !subuserAssociated) {
+      const domainOk = domainEntry.domainAuthId
+        ? await sendgridSvc.associateDomainWithSubuser(Number(domainEntry.domainAuthId), creds.associateSubuser, apiKey)
+        : false;
+      const linkOk = domainEntry.linkBrandingId
+        ? await sendgridSvc.associateLinkWithSubuser(Number(domainEntry.linkBrandingId), creds.associateSubuser, apiKey)
+        : false;
+      subuserAssociated = domainOk && linkOk;
+    }
+    // Association is only load-bearing in platform-key mode with a real key; elsewhere the
+    // records already live where the mail is sent from.
+    const subuserOk = !hasValidKey || !creds.associateSubuser || subuserAssociated;
+
+    let spfVerified = false;
+    let dkimVerified = false;
+    let linkBranded = false;
+    let dmarcVerified = false;
+
+    // Check with SendGrid if IDs are present
+    if (domainEntry.domainAuthId) {
+      const authRes = await sendgridSvc.validateDomainAuthentication(Number(domainEntry.domainAuthId), apiKey, subuser);
+      spfVerified = !!authRes.validationResults?.['mail_cname'];
+      dkimVerified = !!authRes.validationResults?.['dkim1'] && !!authRes.validationResults?.['dkim2'];
+    }
+
+    if (domainEntry.linkBrandingId) {
+      linkBranded = await sendgridSvc.validateLinkBranding(Number(domainEntry.linkBrandingId), apiKey, subuser);
+    }
+
+    // Check DMARC via live DNS check
+    dmarcVerified = await sendgridSvc.verifyDmarc(domainVal);
+
+    // No valid SendGrid key: fall back to live CNAME checks so a correctly configured domain
+    // can still verify against real DNS. Auto-passing every check is a local-dev convenience
+    // behind an EXPLICIT opt-in (ALLOW_MOCK_DOMAIN_VERIFICATION=true) — a missing or
+    // misconfigured key in a real deploy must not silently mark domains verified and open
+    // the send guards (fail closed, same rule as ALLOW_MOCK_PAYMENTS).
+    if (!hasValidKey) {
+      const realSpf = await sendgridSvc.verifyCname(
+        domainEntry.domainAuthDns?.['mail_cname']?.host || '',
+        domainEntry.domainAuthDns?.['mail_cname']?.data,
+      );
+      const realDkim1 = await sendgridSvc.verifyCname(
+        domainEntry.domainAuthDns?.['dkim1']?.host || '',
+        domainEntry.domainAuthDns?.['dkim1']?.data,
+      );
+      const realDkim2 = await sendgridSvc.verifyCname(
+        domainEntry.domainAuthDns?.['dkim2']?.host || '',
+        domainEntry.domainAuthDns?.['dkim2']?.data,
+      );
+      const realLink = await sendgridSvc.verifyCname(
+        domainEntry.linkBrandingDns?.['domain']?.host || '',
+        domainEntry.linkBrandingDns?.['domain']?.data,
+      );
+
+      const mockPass = env.allowMockDomainVerification;
+      spfVerified = realSpf || mockPass;
+      dkimVerified = (realDkim1 && realDkim2) || mockPass;
+      linkBranded = realLink || mockPass;
+      dmarcVerified = dmarcVerified || mockPass;
+    }
+
+    const updatedList = currentList.map((d) => {
+      if (d.domain === domainVal) {
+        // DMARC is recommended but not required for verified status: the sending records
+        // (SPF + DKIM + link branding) authenticate the mail; DMARC is the tenant's own
+        // anti-spoofing policy and must not block their ability to send. The subuser
+        // association IS required (platform-key mode) — without it the DNS can be perfect
+        // and the tenant's mail still goes out unsigned.
+        const isVerified = spfVerified && dkimVerified && linkBranded && subuserOk;
+        return {
+          ...d,
+          spf: spfVerified,
+          dkim: dkimVerified,
+          dmarc: dmarcVerified,
+          linkBranded,
+          ...(creds.associateSubuser ? { subuserAssociated } : {}),
+          status: isVerified ? 'verified' : 'pending',
+          domainAuthDns: {
+            ...d.domainAuthDns,
+            mail_cname: d.domainAuthDns?.['mail_cname']
+              ? { ...d.domainAuthDns['mail_cname'], valid: spfVerified }
+              : undefined,
+            dkim1: d.domainAuthDns?.['dkim1'] ? { ...d.domainAuthDns['dkim1'], valid: dkimVerified } : undefined,
+            dkim2: d.domainAuthDns?.['dkim2'] ? { ...d.domainAuthDns['dkim2'], valid: dkimVerified } : undefined,
+          },
+          linkBrandingDns: {
+            ...d.linkBrandingDns,
+            domain: d.linkBrandingDns?.['domain'] ? { ...d.linkBrandingDns['domain'], valid: linkBranded } : undefined,
+          },
+        };
+      }
+      return d;
+    });
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: [{ key: 'communications.verified_domains', value: updatedList }],
+    });
+
+    return updatedList;
+  }
+
+  public async deleteVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'communications.verified_domains',
+    });
+
+    if (!row || !Array.isArray(row.value)) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Domain configuration not found.',
+      });
+    }
+
+    const currentList = row.value as unknown as VerifiedDomainEntry[];
+    const domainEntry = currentList.find((d) => d.domain === domainVal);
+
+    if (!domainEntry) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Domain ${domainVal} not found in verified domains list.`,
+      });
+    }
+
+    // Resolve credentials the same way add/verify do, so the delete reaches the SendGrid
+    // account the records were actually created under.
+    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
+
+    const sendgridSvc = new SendGridWhitelabelService();
+
+    // Delete from SendGrid
+    if (domainEntry.domainAuthId) {
+      await sendgridSvc.deleteDomainAuthentication(Number(domainEntry.domainAuthId), creds.apiKey, creds.subuser);
+    }
+    if (domainEntry.linkBrandingId) {
+      await sendgridSvc.deleteLinkBranding(Number(domainEntry.linkBrandingId), creds.apiKey, creds.subuser);
+    }
+
+    const updatedList = currentList.filter((d) => d.domain !== domainVal);
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: [{ key: 'communications.verified_domains', value: updatedList }],
+    });
+
+    return updatedList;
+  }
+
+  public async generateApiKey(auth: IAuthKeyPayload) {
+    const { generateApiKey, hashApiKey, getKeyPreview } = await import('../../lib/api-key');
+    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
+    const repo = new workspaceApiKeysRepo();
+
+    // Generate new key
+    const rawKey = generateApiKey();
+    const keyHash = hashApiKey(rawKey);
+    const keyPreview = getKeyPreview(rawKey);
+
+    // Store in database (will overwrite existing key if present)
+    await repo.create(auth.tenant_id, keyHash, keyPreview);
+
+    // Return the full key only once — it's never retrievable again, only the preview
+    return {
+      key: rawKey,
+      preview: keyPreview,
+    };
+  }
+
+  public async getApiKeyPreview(auth: IAuthKeyPayload) {
+    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
+    const repo = new workspaceApiKeysRepo();
+
+    const row = await repo.getByTenantId(auth.tenant_id);
+    if (!row) {
+      return null;
+    }
+
+    return {
+      preview: row.key_preview,
+      createdAt: row.created_at,
+      lastUsedAt: row.last_used_at,
+    };
+  }
+
+  public async regenerateApiKey(auth: IAuthKeyPayload) {
+    // Regenerate is just generate with replace semantics — the repo's
+    // ON CONFLICT handling automatically replaces the old key
+    return this.generateApiKey(auth);
   }
 }
 ````
@@ -70950,6 +71848,864 @@ export class TransactionalEmailService {
         max_attempts: 5,
       })
       .execute();
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/billing/controller.ts
+````typescript
+import { sql } from 'kysely';
+import type Stripe from 'stripe';
+import {
+  BILLING_INTERVALS,
+  bracketIndexForSubscribers,
+  getPlanDef,
+  maxQuantity,
+  PLANS_BY_KEY,
+  PURCHASABLE_PLAN_KEYS,
+  type BillingInterval,
+  type PlanKey,
+  type PurchasablePlanKey,
+} from '@common';
+import { env } from '../../../env';
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { logger } from '../../logger';
+import { TenantsRepo } from '../auth/repositories/tenants.repo';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { WorkflowsController } from '../workflows/controller';
+import { WebhookEventsRepo } from './repositories/webhook-events.repo';
+import { getStripe, isMockMode, stripe } from '../../lib/stripe-platform-client';
+import { syncSubscriptionQuantity } from './subscription-sync';
+import { countEmailableSubscribers, getPlanLimits } from './usage-limits';
+
+/** Stripe price ID configured for each self-serve plan × billing interval (undefined in mock
+ * mode / when unset). The annual prices are exactly 10× the monthly unit amounts — see the
+ * Stripe ops comment in libs/common/src/lib/billing/plans.ts. */
+const PRICE_ID_BY_PLAN: Record<PurchasablePlanKey, Record<BillingInterval, string | undefined>> = {
+  grassroots: { month: env.stripePlanGrassrootsPriceId, year: env.stripePlanGrassrootsAnnualPriceId },
+  movement: { month: env.stripePlanMovementPriceId, year: env.stripePlanMovementAnnualPriceId },
+};
+
+/** Reverse-map a Stripe price ID back to our internal plan key + billing interval. */
+function planForPriceId(
+  priceId: string | undefined | null,
+): { plan: PurchasablePlanKey; interval: BillingInterval } | null {
+  if (!priceId) return null;
+  for (const plan of PURCHASABLE_PLAN_KEYS) {
+    for (const interval of BILLING_INTERVALS) {
+      const id = PRICE_ID_BY_PLAN[plan][interval];
+      if (id && id === priceId) return { plan, interval };
+    }
+  }
+  return null;
+}
+
+/** Narrow a stored `tenants.subscription_interval` value (or any unknown) to a BillingInterval. */
+function asBillingInterval(value: unknown): BillingInterval {
+  return value === 'year' ? 'year' : 'month';
+}
+
+/**
+ * The Stripe API version stripe-node v22 targets (2025 "basil" and later) removed
+ * `current_period_end` from the top-level Subscription object — it now lives on each
+ * subscription item. Read it from the first item, and fall back to null on an unexpected
+ * shape rather than throwing, so a webhook can never fail to activate a paid plan over a
+ * missing timestamp (previously `new Date(undefined * 1000)` threw and left the tenant on
+ * the free tier despite a successful charge).
+ */
+function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
+  const periodEnd = subscription.items.data[0]?.current_period_end;
+  return typeof periodEnd === 'number' ? new Date(periodEnd * 1000).toISOString() : null;
+}
+
+const tenantsRepo = new TenantsRepo();
+const settingsRepo = new SettingsRepo();
+const webhookEventsRepo = new WebhookEventsRepo();
+
+/** Dedup flag prefix shared with `usage-limits.ts`'s notify-then-adjust bracket alerts — cleared
+ * here once a cycle-boundary downgrade lands, so a future re-growth past the same bracket sends
+ * a fresh notice instead of staying suppressed forever. */
+const BRACKET_FLAG_PREFIX = 'bracket_';
+
+async function clearBracketFlags(tenantId: string, adminUserId: string): Promise<void> {
+  const row = await settingsRepo.getByKey({ tenant_id: tenantId, key: 'billing.limit_alerts_sent' });
+  if (!row?.value) return;
+
+  const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+  if (!parsed || typeof parsed !== 'object') return;
+
+  const alertSettings: Record<string, boolean> = { ...parsed };
+  let changed = false;
+  for (const key of Object.keys(alertSettings)) {
+    if (key.startsWith(BRACKET_FLAG_PREFIX) && alertSettings[key]) {
+      alertSettings[key] = false;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+
+  await settingsRepo.upsertMany({
+    tenant_id: tenantId,
+    user_id: adminUserId,
+    entries: [{ key: 'billing.limit_alerts_sent', value: alertSettings }],
+  });
+}
+
+/** The subset of `tenants` columns the webhook/reconciliation paths read — `getOneBy` selects
+ * every column (no subset requested), so narrowing to just these is honest, not a type lie; see
+ * pplcrm-any-exceptions §2. */
+interface TenantBillingRow {
+  id: string;
+  admin_id: string | null;
+  subscription_plan: string | null;
+  subscription_quantity: number | null;
+  subscription_interval: BillingInterval;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+}
+
+function asTenantBillingRow(row: unknown): TenantBillingRow | undefined {
+  if (!row || typeof row !== 'object') return undefined;
+  const r = row as Record<string, unknown>;
+  if (typeof r['id'] !== 'string') return undefined;
+  return {
+    id: r['id'],
+    admin_id: typeof r['admin_id'] === 'string' ? r['admin_id'] : null,
+    subscription_plan: typeof r['subscription_plan'] === 'string' ? r['subscription_plan'] : null,
+    subscription_quantity: typeof r['subscription_quantity'] === 'number' ? r['subscription_quantity'] : null,
+    subscription_interval: asBillingInterval(r['subscription_interval']),
+    stripe_customer_id: typeof r['stripe_customer_id'] === 'string' ? r['stripe_customer_id'] : null,
+    stripe_subscription_id: typeof r['stripe_subscription_id'] === 'string' ? r['stripe_subscription_id'] : null,
+  };
+}
+
+/**
+ * Cycle-boundary downgrade reconciliation (base plan §4): notify-then-adjust only ever moves the
+ * billed quantity *up* mid-cycle (see `usage-limits.checkTenantUsage`) — a shrink in emailable
+ * subscribers is applied here instead, on `invoice.paid`, which proves we've just crossed a
+ * billing-cycle boundary. No-ops for free/enterprise (no Stripe quantity to reconcile).
+ */
+async function reconcileDowngradeOnInvoicePaid(dbTenant: TenantBillingRow): Promise<void> {
+  const plan = getPlanDef(dbTenant.subscription_plan) ?? PLANS_BY_KEY.free;
+  if (!plan.purchasable) return;
+
+  const billedQuantity = dbTenant.subscription_quantity ?? 1;
+  const subscribers = await countEmailableSubscribers(dbTenant.id, tenantsRepo.db);
+  const targetQuantity = bracketIndexForSubscribers(plan.key, subscribers);
+
+  if (targetQuantity !== null && targetQuantity < billedQuantity) {
+    await syncSubscriptionQuantity(dbTenant.id, targetQuantity);
+    await clearBracketFlags(dbTenant.id, dbTenant.admin_id ?? dbTenant.id);
+  }
+}
+
+export class BillingController {
+  constructor() {
+    if (isMockMode) {
+      logger.info('[BillingController] Running in Mock Mode (no Stripe secret key provided)');
+    }
+  }
+
+  private getFrontendUrl(): string {
+    return env.appUrl.replace(/\/+$/, '');
+  }
+
+  public async getBillingDetails(auth: { tenant_id: string }) {
+    const tenant = (await tenantsRepo.getOneBy('id', {
+      tenant_id: auth.tenant_id,
+      value: auth.tenant_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+    })) as any;
+
+    if (!tenant) {
+      throw new Error('Tenant not found');
+    }
+
+    return {
+      plan: tenant.subscription_plan || 'free',
+      status: tenant.subscription_status || 'inactive',
+      interval: asBillingInterval(tenant.subscription_interval),
+      endsAt: tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at) : null,
+      stripeCustomerId: tenant.stripe_customer_id || null,
+      stripeSubscriptionId: tenant.stripe_subscription_id || null,
+      hasActiveSubscription: ['active', 'trialing'].includes(tenant.subscription_status || ''),
+      isMockMode,
+    };
+  }
+
+  /** Live usage snapshot for the billing page: emailable-subscriber count against the tenant's
+   * currently billed bracket. Enterprise (no pricing ladder) reports Infinity caps / $0 price —
+   * the frontend special-cases 'enterprise' to not render the bracket clause. */
+  public async getUsage(auth: { tenant_id: string }): Promise<{
+    subscribers: number;
+    billedQuantity: number;
+    subscriberCap: number;
+    emailCap: number;
+    monthlyPrice: number;
+    interval: BillingInterval;
+    tierMax: number;
+  }> {
+    const tenant = asTenantBillingRow(
+      await tenantsRepo.getOneBy('id', {
+        tenant_id: auth.tenant_id,
+        value: auth.tenant_id,
+      }),
+    );
+    if (!tenant) {
+      throw new NotFoundError('Tenant not found');
+    }
+
+    const plan = getPlanDef(tenant.subscription_plan) ?? PLANS_BY_KEY.free;
+    const billedQuantity = tenant.subscription_quantity ?? 1;
+    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
+    const limits = getPlanLimits(plan.key, billedQuantity);
+
+    return {
+      subscribers,
+      billedQuantity,
+      subscriberCap: limits.subscribers,
+      emailCap: limits.emails,
+      monthlyPrice: plan.pricing ? (plan.pricing.brackets[billedQuantity - 1]?.price ?? 0) : 0,
+      interval: tenant.subscription_interval,
+      tierMax: plan.pricing ? maxQuantity(plan.key) : Number.POSITIVE_INFINITY,
+    };
+  }
+
+  public async createCheckoutSession(
+    auth: { tenant_id: string; user_id: string },
+    plan: PurchasablePlanKey,
+    interval: BillingInterval = 'month',
+  ) {
+    const tenant = (await tenantsRepo.getOneBy('id', {
+      tenant_id: auth.tenant_id,
+      value: auth.tenant_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+    })) as any;
+
+    if (!tenant) {
+      throw new NotFoundError('Tenant not found');
+    }
+
+    const frontendUrl = this.getFrontendUrl();
+
+    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
+    const quantity = bracketIndexForSubscribers(plan, subscribers);
+    if (quantity === null) {
+      throw new BadRequestError('Your list is too large for this tier — contact us so we can find a plan that fits.');
+    }
+
+    if (isMockMode) {
+      // In Mock Mode, direct them to a simulated callback
+      const mockSuccessUrl = `${frontendUrl}/workspace/billing?mock_checkout_success=true&plan=${plan}&qty=${quantity}&interval=${interval}`;
+      return { url: mockSuccessUrl };
+    }
+
+    // Live Stripe Mode
+    let stripeCustomerId = tenant.stripe_customer_id as string | undefined;
+    if (!stripeCustomerId) {
+      const customer = await getStripe().customers.create({
+        email: (tenant.email as string) || undefined,
+        name: tenant.name as string,
+        metadata: {
+          tenantId: auth.tenant_id,
+        },
+      });
+      stripeCustomerId = customer.id;
+
+      // Update tenant in DB with customer ID
+      await tenantsRepo.update({
+        tenant_id: auth.tenant_id,
+        id: auth.tenant_id,
+        row: { stripe_customer_id: stripeCustomerId },
+      });
+    }
+
+    // Determine Stripe Price ID
+    const priceId = PRICE_ID_BY_PLAN[plan][interval];
+
+    if (!priceId) {
+      throw new Error(`Stripe Price ID is not configured for plan: ${plan} (${interval})`);
+    }
+
+    // Stripe Tax: `customer_update.address: 'auto'` saves the checkout billing address onto the
+    // Customer (we always pass an existing `customer`, so Checkout needs explicit permission to
+    // write it back) — renewal invoices reuse it as the tax location. `name: 'auto'` is required
+    // by Stripe for tax_id_collection with an existing customer. Tax is only charged in
+    // jurisdictions with an active registration in the Dashboard; elsewhere it computes to zero.
+    const session = await getStripe().checkout.sessions.create({
+      customer: stripeCustomerId,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity,
+        },
+      ],
+      mode: 'subscription',
+      automatic_tax: { enabled: true },
+      billing_address_collection: 'required',
+      customer_update: { address: 'auto', name: 'auto' },
+      tax_id_collection: { enabled: true },
+      success_url: `${frontendUrl}/workspace/billing?checkout_success=true`,
+      cancel_url: `${frontendUrl}/workspace/billing`,
+      subscription_data: {
+        metadata: {
+          tenantId: auth.tenant_id,
+        },
+      },
+      metadata: {
+        tenantId: auth.tenant_id,
+      },
+    });
+
+    return { url: session.url };
+  }
+
+  public async createPortalSession(auth: { tenant_id: string }) {
+    const tenant = (await tenantsRepo.getOneBy('id', {
+      tenant_id: auth.tenant_id,
+      value: auth.tenant_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+    })) as any;
+
+    if (!tenant) {
+      throw new Error('Tenant not found');
+    }
+
+    const frontendUrl = this.getFrontendUrl();
+
+    if (isMockMode) {
+      return { url: `${frontendUrl}/workspace/billing?mock_portal_success=true` };
+    }
+
+    const stripeCustomerId = tenant.stripe_customer_id;
+    if (!stripeCustomerId) {
+      throw new Error('No active billing history found. Please subscribe to a plan first.');
+    }
+
+    const session = await getStripe().billingPortal.sessions.create({
+      customer: stripeCustomerId,
+      // `portal_return` tells the billing page to pull the live subscription state from Stripe
+      // (syncSubscriptionFromStripe) — a plan switched in the Portal is reflected immediately
+      // instead of waiting on webhook delivery.
+      return_url: `${frontendUrl}/workspace/billing?portal_return=true`,
+    });
+
+    return { url: session.url };
+  }
+
+  /**
+   * Mirror the tenant's live Stripe subscription onto the `tenants` row — the same write
+   * `customer.subscription.updated` performs, minus the notification email (the webhook stays
+   * the authoritative sender, so a later-delivered event never duplicates it).
+   *
+   * Called by the billing page when the user returns from Checkout (`checkout_success`) or the
+   * Billing Portal (`portal_return`), so a plan change takes effect immediately even when
+   * webhook delivery is delayed or not configured for the active Stripe mode (e.g. sandbox keys
+   * without a sandbox webhook endpoint). No-ops in mock mode and for tenants with no Stripe
+   * customer.
+   */
+  public async syncSubscriptionFromStripe(auth: { tenant_id: string }): Promise<{ synced: boolean; plan: string }> {
+    const tenant = asTenantBillingRow(
+      await tenantsRepo.getOneBy('id', {
+        tenant_id: auth.tenant_id,
+        value: auth.tenant_id,
+      }),
+    );
+    if (!tenant) {
+      throw new NotFoundError('Tenant not found');
+    }
+
+    const currentPlan = tenant.subscription_plan ?? 'free';
+    if (isMockMode || !tenant.stripe_customer_id) {
+      return { synced: false, plan: currentPlan };
+    }
+
+    const subscriptions = await getStripe().subscriptions.list({
+      customer: tenant.stripe_customer_id,
+      status: 'all',
+      limit: 10,
+    });
+    const live = subscriptions.data.find((s) => ['active', 'trialing', 'past_due'].includes(s.status));
+
+    if (!live) {
+      // Nothing billable on the customer. Only mirror a cancellation if we previously stored a
+      // subscription — a tenant that never subscribed stays untouched.
+      if (!tenant.stripe_subscription_id) {
+        return { synced: false, plan: currentPlan };
+      }
+      await tenantsRepo.update({
+        tenant_id: tenant.id,
+        id: tenant.id,
+        row: {
+          subscription_status: 'canceled',
+          subscription_plan: 'free',
+          subscription_ends_at: new Date().toISOString(),
+          subscription_quantity: 1,
+          subscription_interval: 'month',
+        },
+      });
+      logger.info(`[syncSubscriptionFromStripe] No live subscription — tenant ${tenant.id} set to free`);
+      return { synced: true, plan: 'free' };
+    }
+
+    const item = live.items.data[0];
+    const priceMatch = planForPriceId(item?.price.id);
+    if (item && !priceMatch) {
+      logger.warn(
+        `[syncSubscriptionFromStripe] Price ${item.price.id} matches no configured STRIPE_PLAN_*_PRICE_ID — ` +
+          `tenant ${tenant.id} keeps plan '${currentPlan}'. Check that the env price IDs belong to the active Stripe mode.`,
+      );
+    }
+    const planName: string = priceMatch?.plan ?? currentPlan;
+    const interval: BillingInterval = priceMatch?.interval ?? tenant.subscription_interval;
+
+    await tenantsRepo.update({
+      tenant_id: tenant.id,
+      id: tenant.id,
+      row: {
+        stripe_subscription_id: live.id,
+        subscription_plan: planName,
+        subscription_status: live.status,
+        subscription_ends_at: subscriptionPeriodEnd(live),
+        subscription_quantity: item?.quantity ?? 1,
+        subscription_interval: interval,
+      },
+    });
+    logger.info(`[syncSubscriptionFromStripe] Tenant ${tenant.id} synced to plan '${planName}' (${live.status})`);
+    return { synced: true, plan: planName };
+  }
+
+  public async handleWebhook(payload: string, signature: string) {
+    if (isMockMode || !stripe || !env.stripeWebhookSecret) {
+      logger.info('[BillingController] Webhook received, but ignored due to mock mode or missing secret');
+      return;
+    }
+
+    let event: Stripe.Event;
+
+    try {
+      event = stripe.webhooks.constructEvent(payload, signature, env.stripeWebhookSecret);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error(`Webhook signature verification failed: ${errMsg}`);
+      throw new Error(`Webhook Error: ${errMsg}`);
+    }
+
+    logger.info(`Persisting webhook event: ${event.id} (${event.type})`);
+
+    // Persist event for background worker processing.
+    // Handles idempotency: duplicate events will trigger unique constraint
+    // violation on `stripe_event_id` and be ignored, returning 200 OK.
+    await webhookEventsRepo.db
+      .insertInto('webhook_events')
+      .values({
+        stripe_event_id: event.id,
+        type: event.type,
+        payload: JSON.stringify(event),
+        status: 'pending',
+      })
+      .onConflict((oc) => oc.column('stripe_event_id').doNothing())
+      .execute();
+  }
+
+  public async processWebhookEvent(event: Stripe.Event) {
+    logger.info(`Processing webhook event: ${event.id} (${event.type})`);
+
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const tenantId = session.metadata?.['tenantId'];
+        const subscriptionId = session.subscription as string;
+        const customerId = session.customer as string;
+
+        if (tenantId && subscriptionId) {
+          const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+          const item = subscription.items.data[0];
+          const priceMatch = planForPriceId(item?.price.id);
+          const planName: PlanKey = priceMatch?.plan ?? 'free';
+          const interval: BillingInterval = priceMatch?.interval ?? 'month';
+          const quantity = item?.quantity ?? 1;
+
+          await tenantsRepo.update({
+            tenant_id: tenantId,
+            id: tenantId,
+            row: {
+              stripe_customer_id: customerId,
+              stripe_subscription_id: subscriptionId,
+              subscription_plan: planName,
+              subscription_status: subscription.status,
+              subscription_ends_at: subscriptionPeriodEnd(subscription),
+              subscription_quantity: quantity,
+              subscription_interval: interval,
+            },
+          });
+          logger.info(`Plan activated successfully for Tenant ID: ${tenantId}`);
+          try {
+            await this.handleSubscriptionChange(tenantId, planName, quantity, false, interval);
+          } catch (mailErr) {
+            logger.error({ err: mailErr }, 'Failed to send subscription changed email on checkout.session.completed');
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const subscriptionId = subscription.id;
+        const customerId = subscription.customer as string;
+
+        // Search Kysely database for the tenant with matching customer id
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
+          tenant_id: '1',
+          value: customerId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+        })) as any;
+
+        if (dbTenant) {
+          const item = subscription.items.data[0];
+          const priceMatch = planForPriceId(item?.price.id);
+          const planName: string = priceMatch?.plan ?? dbTenant.subscription_plan;
+          const interval: BillingInterval = priceMatch?.interval ?? asBillingInterval(dbTenant.subscription_interval);
+          const quantity = item?.quantity ?? 1;
+
+          await tenantsRepo.update({
+            tenant_id: dbTenant.id,
+            id: dbTenant.id,
+            row: {
+              stripe_subscription_id: subscriptionId,
+              subscription_plan: planName,
+              subscription_status: subscription.status,
+              subscription_ends_at: subscriptionPeriodEnd(subscription),
+              subscription_quantity: quantity,
+              subscription_interval: interval,
+            },
+          });
+          logger.info(`Subscription updated for Tenant ID: ${dbTenant.id}`);
+          try {
+            await this.handleSubscriptionChange(dbTenant.id, planName, quantity, false, interval);
+          } catch (mailErr) {
+            logger.error(
+              { err: mailErr },
+              'Failed to send subscription changed email on customer.subscription.updated',
+            );
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
+
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
+          tenant_id: '1',
+          value: customerId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+        })) as any;
+
+        if (dbTenant) {
+          await tenantsRepo.update({
+            tenant_id: dbTenant.id,
+            id: dbTenant.id,
+            row: {
+              subscription_status: 'canceled',
+              subscription_plan: 'free',
+              subscription_ends_at: new Date().toISOString(),
+              subscription_quantity: 1,
+              subscription_interval: 'month',
+            },
+          });
+          logger.info(`Subscription canceled for Tenant ID: ${dbTenant.id}`);
+          try {
+            await this.handleSubscriptionChange(dbTenant.id, 'free', 1);
+          } catch (mailErr) {
+            logger.error(
+              { err: mailErr },
+              'Failed to send subscription cancellation email on customer.subscription.deleted',
+            );
+          }
+        }
+        break;
+      }
+
+      case 'invoice.paid': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        const dbTenant = asTenantBillingRow(
+          await tenantsRepo.getOneBy('stripe_customer_id', {
+            tenant_id: '1',
+            value: customerId,
+          }),
+        );
+
+        if (dbTenant) {
+          try {
+            await reconcileDowngradeOnInvoicePaid(dbTenant);
+          } catch (err) {
+            logger.error({ err }, 'Failed to reconcile bracket downgrade on invoice.paid');
+          }
+
+          const admin = await tenantsRepo.db
+            .selectFrom('authusers')
+            .select(['email', 'first_name'])
+            .where('id', '=', dbTenant.admin_id)
+            .executeTakeFirst();
+
+          if (admin && admin.email) {
+            // Find person matching admin email
+            const person = await tenantsRepo.db
+              .selectFrom('persons')
+              .select('id')
+              .where('tenant_id', '=', dbTenant.id)
+              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
+              .executeTakeFirst();
+            if (person) {
+              try {
+                const workflowsController = new WorkflowsController();
+                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
+              } catch (err) {
+                logger.error({ err }, 'Failed to trigger billing workflow on invoice.paid');
+              }
+            }
+
+            const mailService = new TransactionalEmailService();
+            const amountPaid = invoice.amount_paid / 100;
+            const pdfUrl = invoice.hosted_invoice_url || '';
+
+            // Tax total: on the basil-era API versions stripe-node v22 targets, the invoice tax
+            // total lives in the `total_taxes` array (the legacy top-level `invoice.tax` is gone).
+            // Omitted when absent or zero so a receipt can never fail over a tax field.
+            const totalTax = Array.isArray(invoice.total_taxes)
+              ? invoice.total_taxes.reduce((sum, tax) => sum + (tax?.amount || 0), 0)
+              : 0;
+            const taxLineText = totalTax > 0 ? `\n- Tax: $${(totalTax / 100).toFixed(2)}` : '';
+            const taxLineHtml = totalTax > 0 ? `<li><strong>Tax</strong>: $${(totalTax / 100).toFixed(2)}</li>` : '';
+
+            // Build charges summary
+            let summaryOfCharges = '';
+            let summaryOfChargesHtml = '';
+            if (invoice.lines && Array.isArray(invoice.lines.data)) {
+              summaryOfCharges =
+                '\nSummary of Charges:\n' +
+                invoice.lines.data
+                  .map((line) => {
+                    const lineAmt = (line.amount || 0) / 100;
+                    return `- ${line.description || 'Subscription item'}: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}`;
+                  })
+                  .join('\n') +
+                taxLineText;
+
+              summaryOfChargesHtml =
+                '<div class="panel"><p><strong>Summary of charges:</strong></p><ul>' +
+                invoice.lines.data
+                  .map((line) => {
+                    const lineAmt = (line.amount || 0) / 100;
+                    return `<li><strong>${line.description || 'Subscription item'}</strong>: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}</li>`;
+                  })
+                  .join('') +
+                taxLineHtml +
+                '</ul></div>';
+            }
+
+            await mailService.sendMail({
+              to: admin.email,
+              subject: `Receipt for your pplCRM subscription`,
+              text: `Hi ${admin.first_name || 'there'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was processed.\n\n${summaryOfCharges}\n\nView invoice: ${pdfUrl}`,
+              html: `<h2>Payment received</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was processed.</p>${summaryOfChargesHtml}
+<div class="btn-container">
+  <a href="${pdfUrl}" class="btn">View invoice</a>
+</div>`,
+            });
+          }
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
+          tenant_id: '1',
+          value: customerId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+        })) as any;
+
+        if (dbTenant) {
+          const admin = await tenantsRepo.db
+            .selectFrom('authusers')
+            .select(['email', 'first_name'])
+            .where('id', '=', dbTenant.admin_id)
+            .executeTakeFirst();
+
+          if (admin && admin.email) {
+            // Find person matching admin email
+            const person = await tenantsRepo.db
+              .selectFrom('persons')
+              .select('id')
+              .where('tenant_id', '=', dbTenant.id)
+              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
+              .executeTakeFirst();
+            if (person) {
+              try {
+                const workflowsController = new WorkflowsController();
+                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
+              } catch (err) {
+                logger.error({ err }, 'Failed to trigger billing workflow on invoice.payment_failed');
+              }
+            }
+
+            const mailService = new TransactionalEmailService();
+            const billingPageUrl = `${env.appUrl}/workspace/billing`;
+            const amountDue = (invoice.amount_due || 0) / 100;
+            await mailService.sendMail({
+              to: admin.email,
+              subject: `Action needed: your pplCRM subscription payment failed`,
+              text: `Hi ${admin.first_name || 'there'},\n\nWe were unable to process the subscription payment of $${amountDue.toFixed(2)} for your organization.\n\nPlease update your payment card to prevent suspension of your organization's account.\n\nUpdate billing information here: ${billingPageUrl}`,
+              html: `<h2>Payment failed</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>We were unable to process the subscription payment of <strong>$${amountDue.toFixed(2)}</strong> for your organization.</p>
+<p>Please update your payment card to prevent suspension of your organization's account.</p>
+<div class="btn-container">
+  <a href="${billingPageUrl}" class="btn">Update payment method</a>
+</div>`,
+            });
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  public async activateMockPlan(
+    auth: { tenant_id: string },
+    plan: PurchasablePlanKey,
+    quantity = 1,
+    interval: BillingInterval = 'month',
+  ) {
+    if (!isMockMode) {
+      throw new Error('This helper is only available in local Mock Mode');
+    }
+
+    const expiry = new Date();
+    if (interval === 'year') {
+      expiry.setFullYear(expiry.getFullYear() + 1); // 1 year from now
+    } else {
+      expiry.setMonth(expiry.getMonth() + 1); // 1 month from now
+    }
+    const clampedQuantity = Math.min(Math.max(Math.trunc(quantity) || 1, 1), maxQuantity(plan));
+
+    await tenantsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: auth.tenant_id,
+      row: {
+        stripe_customer_id: 'cus_mock_' + Math.random().toString(36).substring(7),
+        stripe_subscription_id: 'sub_mock_' + Math.random().toString(36).substring(7),
+        subscription_plan: plan,
+        subscription_status: 'active',
+        subscription_ends_at: expiry.toISOString(),
+        subscription_quantity: clampedQuantity,
+        subscription_interval: interval,
+      },
+    });
+
+    try {
+      await this.handleSubscriptionChange(auth.tenant_id, plan, clampedQuantity, true, interval);
+    } catch (mailErr) {
+      logger.error({ err: mailErr }, 'Failed to send mock subscription update email');
+    }
+
+    return { success: true, plan };
+  }
+
+  public async cancelMockPlan(auth: { tenant_id: string }) {
+    if (!isMockMode) {
+      throw new Error('This helper is only available in local Mock Mode');
+    }
+
+    await tenantsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: auth.tenant_id,
+      row: {
+        stripe_subscription_id: null,
+        subscription_plan: 'free',
+        subscription_status: 'inactive',
+        subscription_ends_at: null,
+        subscription_quantity: 1,
+        subscription_interval: 'month',
+      },
+    });
+
+    try {
+      await this.handleSubscriptionChange(auth.tenant_id, 'free', 1, true);
+    } catch (mailErr) {
+      logger.error({ err: mailErr }, 'Failed to send mock subscription cancellation email');
+    }
+
+    return { success: true };
+  }
+
+  private async handleSubscriptionChange(
+    tenantId: string,
+    planName: string,
+    quantity: number,
+    isMock = false,
+    interval: BillingInterval = 'month',
+  ): Promise<void> {
+    const tenant = (await tenantsRepo.getOneBy('id', {
+      tenant_id: tenantId,
+      value: tenantId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+    })) as any;
+
+    if (!tenant) return;
+
+    // 1. Reset limit alert settings
+    await tenantsRepo.db
+      .deleteFrom('settings')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'billing.limit_alerts_sent')
+      .execute();
+
+    // 2. Fetch admin user (Organization Owner)
+    if (!tenant.admin_id) return;
+    const admin = await tenantsRepo.db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', String(tenant.admin_id))
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      const planLimits = getPlanLimits(planName, quantity, interval);
+      const billingPageUrl = `${env.appUrl}/workspace/billing`;
+      const mockPrefix = isMock ? '[MOCK] ' : '';
+      const fmt = (n: number): string => (Number.isFinite(n) ? n.toLocaleString() : 'Unlimited');
+
+      const mailService = new TransactionalEmailService();
+      const planLabel = planName.charAt(0).toUpperCase() + planName.slice(1);
+      await mailService.sendMail({
+        to: admin.email,
+        subject: `${mockPrefix}Welcome to the ${planLabel} plan`,
+        text: `Hi ${admin.first_name || 'there'},\n\n${mockPrefix}Your subscription has been updated.\n\nNew plan: ${planLabel}\nPrice: ${planLimits.price}\n\nPlan limits:\n- Email subscribers: ${fmt(planLimits.subscribers)}\n- User seats: ${fmt(planLimits.seats)}\n- Monthly emails: ${fmt(planLimits.emails)} outbound emails\n\nManage your billing here: ${billingPageUrl}`,
+        html: `<h2>Subscription updated</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>${mockPrefix}Your subscription has been updated. Welcome to the <strong>${planLabel}</strong> plan.</p>
+<div class="panel">
+<p><strong>Price:</strong> ${planLimits.price}</p>
+<ul>
+  <li><strong>Email subscribers:</strong> up to ${fmt(planLimits.subscribers)}</li>
+  <li><strong>User seats:</strong> up to ${fmt(planLimits.seats)}</li>
+  <li><strong>Monthly emails:</strong> up to ${fmt(planLimits.emails)} outbound emails</li>
+</ul>
+</div>
+<div class="btn-container">
+  <a href="${billingPageUrl}" class="btn">Manage billing</a>
+</div>`,
+      });
+    }
   }
 }
 ````
@@ -75586,899 +77342,6 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
 }
 ````
 
-## File: apps/backend/src/app/modules/settings/controller.ts
-````typescript
-import { TRPCError } from '@trpc/server';
-import { createSigner, createVerifier } from 'fast-jwt';
-import type { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
-import { env } from '../../../env';
-
-interface VerifiedDomainEntry {
-  domain: string;
-  domainAuthId?: string | number;
-  linkBrandingId?: string | number;
-  spf?: boolean;
-  dkim?: boolean;
-  dmarc?: boolean;
-  linkBranded?: boolean;
-  status?: string;
-  domainAuthDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
-  linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
-  /** Platform-key mode only: whether the parent-level records were associated with the
-   * subuser the tenant sends through. Retried on verify until true — subuser sends are
-   * unsigned without it. */
-  subuserAssociated?: boolean;
-}
-
-import { randomInt, timingSafeEqual } from 'crypto';
-
-import { BaseController } from '../../lib/base.controller';
-import { BadRequestError, TooManyRequestsError } from '../../errors/app-errors';
-import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import { maskPhone, normalizeE164 } from '../../lib/sms/phone';
-import { SmsService } from '../../lib/sms/sms.service';
-import { hashToken } from '../../lib/token-hash';
-import { getPlanDef } from '@common';
-import { assertNotDemoMode } from '../demo/demo-guard';
-import { DEMO_MANIFEST_SETTINGS_KEY } from '../demo/demo-seed';
-import { STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY } from '../donations/stripe-connect';
-
-/** Server-managed settings keys that must never be written via the public upsert: the
- * verified sender/domain lists back the newsletter send guards, the Stripe Connect account
- * id/status back the donations fail-closed gate, and the demo manifest drives demo-data
- * deletion. A direct write to any of them is a guard bypass or data corruption. */
-const SERVER_MANAGED_SETTINGS_MESSAGES: Record<string, string> = {
-  'communications.verified_emails': 'Verified emails list cannot be modified directly.',
-  'communications.verified_domains': 'Verified domains list cannot be modified directly.',
-  [STRIPE_ACCOUNT_ID_KEY]: 'Stripe connection settings cannot be modified directly.',
-  [STRIPE_ACCOUNT_STATUS_KEY]: 'Stripe connection settings cannot be modified directly.',
-  [DEMO_MANIFEST_SETTINGS_KEY]: 'This setting is managed by pplCRM and cannot be modified directly.',
-};
-import { SettingsRepo } from './repositories/settings.repo';
-
-const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
-const PHONE_CODE_MAX_ATTEMPTS = 5;
-
-// Rate limiting in-memory storage to prevent verification spam/abuse
-const verificationRequestTimestamps = new Map<string, number>(); // key: `${tenant_id}:${email}`, value: timestamp
-const tenantVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
-const domainVerificationTimestamps = new Map<string, number>(); // key: `${tenant_id}:${domain}`, value: timestamp
-const tenantDomainVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
-
-export class SettingsController extends BaseController<'settings', SettingsRepo> {
-  private mailService = new TransactionalEmailService();
-
-  constructor() {
-    super(new SettingsRepo());
-  }
-
-  public async getCurrentCampaignId(auth: IAuthKeyPayload) {
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'current_campaign',
-    });
-
-    if (!row) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Current campaign setting not found.',
-      });
-    }
-
-    const value = row.value;
-
-    if (typeof value === 'number' || typeof value === 'string') {
-      return String(value);
-    }
-
-    if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-      const id = (value as Record<string, unknown>)['id'];
-      if (typeof id === 'number' || typeof id === 'string') {
-        return String(id);
-      }
-    }
-
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: 'Current campaign setting is malformed.',
-    });
-  }
-
-  public async getSnapshot(auth: IAuthKeyPayload) {
-    const rows = await this.getRepo().getAllForTenant(auth.tenant_id);
-
-    return rows.reduce<Record<string, unknown>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-  }
-
-  public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
-    // 1. Block direct updates to server-managed keys (SERVER_MANAGED_SETTINGS_MESSAGES).
-    //    Ordinary workspace settings are deliberately NOT demo-gated — the demo guard covers
-    //    only outward-facing actions (verification, sync, sending, invites, Stripe Connect).
-    for (const entry of entries) {
-      const blockedMessage = SERVER_MANAGED_SETTINGS_MESSAGES[entry.key];
-      if (blockedMessage) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: blockedMessage });
-      }
-    }
-
-    // 2. Validate default from and reply-to emails
-    const defaultFromEntry = entries.find((e) => e.key === 'communications.default_from_email');
-    const replyToEntry = entries.find((e) => e.key === 'communications.reply_to');
-
-    if (defaultFromEntry || replyToEntry) {
-      const snapshot = await this.getSnapshot(auth);
-      const verifiedEmailsRaw = snapshot['communications.verified_emails'];
-      const verifiedEmails = Array.isArray(verifiedEmailsRaw)
-        ? verifiedEmailsRaw.map((e) => String(e).toLowerCase().trim())
-        : [];
-
-      if (defaultFromEntry && typeof defaultFromEntry.value === 'string') {
-        const val = defaultFromEntry.value.toLowerCase().trim();
-        if (val && !verifiedEmails.includes(val)) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Email address must be verified before it can be configured as a Default From Email.',
-          });
-        }
-      }
-
-      if (replyToEntry && typeof replyToEntry.value === 'string') {
-        const val = replyToEntry.value.toLowerCase().trim();
-        if (val && !verifiedEmails.includes(val)) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Email address must be verified before it can be configured as a Reply-to Email.',
-          });
-        }
-      }
-    }
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: entries.map((entry) => ({
-        key: entry.key,
-        value: entry.value,
-      })),
-    });
-
-    return this.getSnapshot(auth);
-  }
-
-  /**
-   * Sending-phone verification (anti-abuse): Free-plan tenants must verify a mobile number by
-   * SMS before their first newsletter send (send-guards enforces it). One number per tenant;
-   * the 6-digit code is stored hashed on the tenant row — never in settings, whose snapshot is
-   * client-readable.
-   */
-  public async getPhoneVerificationStatus(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .select(['sending_phone', 'sending_phone_verified_at', 'pending_phone', 'subscription_plan'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    return {
-      verified: tenant?.sending_phone_verified_at != null,
-      verifiedAt: tenant?.sending_phone_verified_at ?? null,
-      phone: tenant?.sending_phone ? maskPhone(tenant.sending_phone) : null,
-      pendingPhone: tenant?.pending_phone ? maskPhone(tenant.pending_phone) : null,
-      // Whether a send is currently gated on it (Free plan; unknown/legacy values resolve to free).
-      required: (getPlanDef(tenant?.subscription_plan)?.key ?? 'free') === 'free',
-    };
-  }
-
-  public async requestPhoneVerification(auth: IAuthKeyPayload, phone: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const normalized = normalizeE164(phone);
-    if (!normalized) {
-      throw new BadRequestError('Enter a valid mobile number, including the country code for non-US numbers.');
-    }
-    // Throttle per tenant (code farming) and per destination number (SMS-bombing a victim).
-    checkRateLimit(`phoneVerifyRequest:${auth.tenant_id}`, 3, 60 * 60 * 1000);
-    checkRateLimit(`phoneVerifyRequest:${normalized}`, 3, 60 * 60 * 1000);
-
-    const code = String(randomInt(100000, 1000000));
-    const smsService = new SmsService();
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        await trx
-          .updateTable('tenants')
-          .set({
-            pending_phone: normalized,
-            phone_verification_code_hash: hashToken(code),
-            phone_verification_expires_at: new Date(Date.now() + PHONE_CODE_TTL_MS),
-            phone_verification_attempts: 0,
-          })
-          .where('id', '=', auth.tenant_id)
-          .execute();
-        await smsService.enqueueSms(
-          {
-            to: normalized,
-            body: `Your pplCRM verification code is ${code}. It expires in 10 minutes.`,
-            tenant_id: auth.tenant_id,
-          },
-          trx,
-        );
-      });
-
-    return { success: true, phone: maskPhone(normalized) };
-  }
-
-  public async confirmPhoneVerification(auth: IAuthKeyPayload, code: string) {
-    checkRateLimit(`phoneVerifyConfirm:${auth.tenant_id}`, 10, 15 * 60 * 1000);
-    const db = this.getRepo().db;
-    const tenant = await db
-      .selectFrom('tenants')
-      .select([
-        'pending_phone',
-        'phone_verification_code_hash',
-        'phone_verification_expires_at',
-        'phone_verification_attempts',
-      ])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!tenant?.pending_phone || !tenant.phone_verification_code_hash) {
-      throw new BadRequestError('No phone verification is in progress. Request a new code first.');
-    }
-    if (Number(tenant.phone_verification_attempts) >= PHONE_CODE_MAX_ATTEMPTS) {
-      throw new TooManyRequestsError('Too many incorrect codes. Request a new code and try again.');
-    }
-    const expiresAt = tenant.phone_verification_expires_at ? new Date(tenant.phone_verification_expires_at) : null;
-    if (!expiresAt || expiresAt.getTime() < Date.now()) {
-      throw new BadRequestError('That code has expired. Request a new one.');
-    }
-
-    const expected = Buffer.from(tenant.phone_verification_code_hash, 'hex');
-    const actual = Buffer.from(hashToken(code.trim()), 'hex');
-    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
-      await db
-        .updateTable('tenants')
-        .set((eb) => ({ phone_verification_attempts: eb('phone_verification_attempts', '+', 1) }))
-        .where('id', '=', auth.tenant_id)
-        .execute();
-      throw new BadRequestError('Incorrect code. Check the SMS and try again.');
-    }
-
-    await db
-      .updateTable('tenants')
-      .set({
-        sending_phone: tenant.pending_phone,
-        sending_phone_verified_at: new Date(),
-        pending_phone: null,
-        phone_verification_code_hash: null,
-        phone_verification_expires_at: null,
-        phone_verification_attempts: 0,
-      })
-      .where('id', '=', auth.tenant_id)
-      .execute();
-
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'update',
-      entity: 'settings',
-      metadata: { action: 'sending_phone_verified', phone: maskPhone(tenant.pending_phone) },
-    });
-
-    return { success: true, phone: maskPhone(tenant.pending_phone) };
-  }
-
-  public async requestEmailVerification(auth: IAuthKeyPayload, email: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const normalized = email.toLowerCase().trim();
-    const rateLimitKey = `${auth.tenant_id}:${normalized}`;
-    const now = Date.now();
-
-    // 1. Per-email verification limit: max once per minute
-    const lastRequest = verificationRequestTimestamps.get(rateLimitKey);
-    if (lastRequest && now - lastRequest < 60000) {
-      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: `Please wait ${remainingSeconds} seconds before requesting verification again for this email.`,
-      });
-    }
-
-    // 2. Tenant-wide verification limit: max 5 requests per minute
-    let tenantRequests = tenantVerificationTimestamps.get(auth.tenant_id) || [];
-    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
-    if (tenantRequests.length >= 5) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message:
-          'Rate limit exceeded. You can only request up to 5 verification emails per minute across your campaign.',
-      });
-    }
-
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const signer = createSigner({
-      algorithm: 'HS256',
-      key,
-      expiresIn: '24h',
-    });
-
-    const token = signer({
-      tenant_id: auth.tenant_id,
-      email: normalized,
-      purpose: 'verify-sender-email',
-    });
-
-    const verificationLink = `${env.appUrl}/verify-sender-email?token=${token}`;
-
-    await this.mailService.enqueueMail({
-      to: normalized,
-      tenant_id: auth.tenant_id,
-      subject: 'Verify your sender email address',
-      text: `Hi,\n\nWe need to verify this email address before your pplCRM campaign can send from it. Verify it using this link: ${verificationLink}\n\nThis link expires in 24 hours.`,
-      html: `<h2>Verify your sender email address</h2>
-<p>We need to verify this email address before your pplCRM campaign can send from it. Click the button below to verify it:</p>
-<div class="btn-container">
-  <a href="${verificationLink}" class="btn">Verify sender email</a>
-</div>
-<p class="warning">For security, this link expires in 24 hours.</p>`,
-    });
-
-    // Record timestamps if successful
-    tenantRequests.push(now);
-    tenantVerificationTimestamps.set(auth.tenant_id, tenantRequests);
-    verificationRequestTimestamps.set(rateLimitKey, now);
-
-    return { success: true };
-  }
-
-  public async verifySenderEmail(token: string) {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const verifier = createVerifier({
-      algorithms: ['HS256'],
-      key,
-      ignoreExpiration: false,
-    });
-
-    try {
-      const payload = await verifier(token);
-      if (!payload || payload.purpose !== 'verify-sender-email' || !payload.tenant_id || !payload.email) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Invalid verification token.',
-        });
-      }
-
-      const tenantId = String(payload.tenant_id);
-      const email = String(payload.email).toLowerCase().trim();
-
-      const row = await this.getRepo().getByKey({
-        tenant_id: tenantId,
-        key: 'communications.verified_emails',
-      });
-
-      let currentList: string[] = [];
-      if (row && Array.isArray(row.value)) {
-        currentList = row.value.map((e) => String(e).toLowerCase().trim());
-      }
-
-      if (!currentList.includes(email)) {
-        currentList.push(email);
-
-        const tenant = await this.getRepo()
-          .db.selectFrom('tenants')
-          .select('admin_id')
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-        const adminId = tenant?.admin_id ? String(tenant.admin_id) : '1';
-
-        await this.getRepo().upsertMany({
-          tenant_id: tenantId,
-          user_id: adminId,
-          entries: [{ key: 'communications.verified_emails', value: currentList }],
-        });
-      }
-
-      return { success: true, email };
-    } catch (err) {
-      if (err instanceof TRPCError) throw err;
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Invalid or expired verification token.',
-      });
-    }
-  }
-
-  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .selectAll()
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    if (!tenant) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Tenant not found.',
-      });
-    }
-
-    if (String(tenant.admin_id) !== String(auth.user_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Only the organization administrator can schedule deletion.',
-      });
-    }
-
-    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    await this.getRepo()
-      .db.updateTable('tenants')
-      .set({ deletion_scheduled_at: deletionDate })
-      .where('id', '=', auth.tenant_id)
-      .execute();
-
-    const admin = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('id', '=', auth.user_id)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await this.mailService.sendMail({
-        to: admin.email,
-        tenant_id: auth.tenant_id,
-        subject: 'Your organization is scheduled for deletion',
-        text: `Hi ${admin.first_name || 'there'},\n\nYour organization ${tenant.name} has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nTo cancel, open your organization settings: ${env.appUrl}/settings`,
-        html: `<h2>Organization scheduled for deletion</h2>
-<p>Hi ${admin.first_name || 'there'},</p>
-<p>The organization <strong>${tenant.name}</strong> has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
-<p>All data under this organization, including campaigns, contacts, lists, workflows, and user accounts, will be permanently deleted. To cancel the deletion, click the button below:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/settings" class="btn">Open organization settings</a>
-</div>
-<p class="warning">If you did not schedule this deletion, please contact support immediately.</p>`,
-      });
-    }
-
-    return { success: true, deletion_scheduled_at: deletionDate };
-  }
-
-  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .selectAll()
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    if (!tenant) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Tenant not found.',
-      });
-    }
-
-    if (String(tenant.admin_id) !== String(auth.user_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Only the organization administrator can cancel deletion.',
-      });
-    }
-
-    await this.getRepo()
-      .db.updateTable('tenants')
-      .set({ deletion_scheduled_at: null })
-      .where('id', '=', auth.tenant_id)
-      .execute();
-
-    const admin = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('id', '=', auth.user_id)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await this.mailService.sendMail({
-        to: admin.email,
-        tenant_id: auth.tenant_id,
-        subject: 'Your organization deletion was canceled',
-        text: `Your request to delete organization ${tenant.name} has been canceled, and your organization is fully restored.`,
-        html: `<h2>Organization deletion canceled</h2>
-<p>Your request to delete organization <strong>${tenant.name}</strong> has been canceled. Your organization and all associated campaign data are fully restored.</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Resolve the SendGrid credentials the domain-whitelabel operations must run under,
-   * mirroring the newsletter send path (lib/jobs/handlers/newsletter.handlers.ts): a
-   * tenant-owned API key always wins, with operations running on-behalf-of the tenant's own
-   * subuser. Without one, operations run on the PLATFORM key at the parent level — so every
-   * tenant, including Free, gets real SendGrid DNS records and real DKIM instead of mock
-   * records that can never authenticate their mail. `associateSubuser` is then the subuser
-   * the tenant's mail actually flows through (their whitelabel subuser, or the shared
-   * free-tier subuser on the Free plan); the created records must be associated with it or
-   * subuser sends stay unsigned.
-   */
-  private async resolveWhitelabelCredentials(tenantId: string): Promise<{
-    apiKey: string | undefined;
-    subuser: string | undefined;
-    associateSubuser: string | undefined;
-  }> {
-    const db = this.getRepo().db;
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenantId)
-      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
-      .execute();
-
-    const settingsMap: Record<string, unknown> = {};
-    for (const row of settingsRows) {
-      settingsMap[row.key] = row.value;
-    }
-
-    const rawKey = settingsMap['communications.sendgrid_api_key'];
-    const rawSubuser = settingsMap['communications.sendgrid_subuser_username'];
-    const ownApiKey = typeof rawKey === 'string' && rawKey.trim() !== '' ? rawKey : undefined;
-    const ownSubuser = typeof rawSubuser === 'string' && rawSubuser.trim() !== '' ? rawSubuser : undefined;
-
-    if (ownApiKey) {
-      return { apiKey: ownApiKey, subuser: ownSubuser, associateSubuser: undefined };
-    }
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['subscription_plan'])
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
-    const planKey = getPlanDef(tenant?.subscription_plan)?.key ?? 'free';
-    const associateSubuser = ownSubuser ?? (planKey === 'free' ? env.sendgridFreeTierSubuser : undefined);
-
-    return { apiKey: env.sendgridApiKey, subuser: undefined, associateSubuser };
-  }
-
-  public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
-
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'communications.verified_domains',
-    });
-    const currentList: VerifiedDomainEntry[] = Array.isArray(row?.value)
-      ? (row?.value as unknown as VerifiedDomainEntry[])
-      : [];
-
-    if (currentList.some((d) => d.domain === domainVal)) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This domain is already added.',
-      });
-    }
-
-    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
-    const sendgridSvc = new SendGridWhitelabelService();
-    const domainAuth = await sendgridSvc.createDomainAuthentication(domainVal, creds.apiKey, creds.subuser);
-    const linkBranding = await sendgridSvc.createLinkBranding(domainVal, creds.apiKey, creds.subuser);
-
-    // Platform-key mode: the records live at the parent level but the tenant's mail is sent
-    // on-behalf-of a subuser — associate both with it. Failures are recorded and retried on
-    // every verify, and verification never succeeds until the association holds.
-    let subuserAssociated = false;
-    if (creds.associateSubuser) {
-      const domainOk = await sendgridSvc.associateDomainWithSubuser(
-        domainAuth.id,
-        creds.associateSubuser,
-        creds.apiKey,
-      );
-      const linkOk = await sendgridSvc.associateLinkWithSubuser(linkBranding.id, creds.associateSubuser, creds.apiKey);
-      subuserAssociated = domainOk && linkOk;
-    }
-
-    const newEntry = {
-      domain: domainVal,
-      status: 'pending',
-      spf: false,
-      dkim: false,
-      dmarc: false,
-      domainAuthId: domainAuth.id,
-      linkBrandingId: linkBranding.id,
-      domainAuthDns: domainAuth.dns,
-      linkBrandingDns: linkBranding.dns,
-      linkBranded: false,
-      ...(creds.associateSubuser ? { subuserAssociated } : {}),
-    };
-
-    const updatedList = [...currentList, newEntry];
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: [{ key: 'communications.verified_domains', value: updatedList }],
-    });
-
-    return updatedList;
-  }
-
-  public async verifyVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
-    const rateLimitKey = `${auth.tenant_id}:${domainVal}`;
-    const now = Date.now();
-
-    // 1. Per-domain verification check limit: max once per minute
-    const lastRequest = domainVerificationTimestamps.get(rateLimitKey);
-    if (lastRequest && now - lastRequest < 60000) {
-      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: `Please wait ${remainingSeconds} seconds before verifying this domain again.`,
-      });
-    }
-
-    // 2. Tenant-wide domain verification limit: max 5 checks per minute
-    let tenantRequests = tenantDomainVerificationTimestamps.get(auth.tenant_id) || [];
-    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
-    if (tenantRequests.length >= 5) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. You can only verify up to 5 domains per minute across your campaign.',
-      });
-    }
-
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'communications.verified_domains',
-    });
-
-    if (!row || !Array.isArray(row.value)) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Domain configuration not found.',
-      });
-    }
-
-    const currentList = row.value as unknown as VerifiedDomainEntry[];
-    const domainEntry = currentList.find((d) => d.domain === domainVal);
-
-    if (!domainEntry) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: `Domain ${domainVal} not found in verified domains list.`,
-      });
-    }
-
-    // Record timestamps if validation can proceed
-    tenantRequests.push(now);
-    tenantDomainVerificationTimestamps.set(auth.tenant_id, tenantRequests);
-    domainVerificationTimestamps.set(rateLimitKey, now);
-
-    // Resolve credentials the same way the send path does (tenant key, else platform key).
-    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
-    const apiKey = creds.apiKey;
-    const subuser = creds.subuser;
-    const hasValidKey = !!apiKey && apiKey.trim().startsWith('SG.') && apiKey.trim().length > 20;
-
-    const sendgridSvc = new SendGridWhitelabelService();
-
-    // Platform-key mode: if the add-time subuser association failed (SendGrid hiccup), retry
-    // it here — the domain must not verify while subuser sends would go out unsigned.
-    let subuserAssociated = domainEntry.subuserAssociated === true;
-    if (hasValidKey && creds.associateSubuser && !subuserAssociated) {
-      const domainOk = domainEntry.domainAuthId
-        ? await sendgridSvc.associateDomainWithSubuser(Number(domainEntry.domainAuthId), creds.associateSubuser, apiKey)
-        : false;
-      const linkOk = domainEntry.linkBrandingId
-        ? await sendgridSvc.associateLinkWithSubuser(Number(domainEntry.linkBrandingId), creds.associateSubuser, apiKey)
-        : false;
-      subuserAssociated = domainOk && linkOk;
-    }
-    // Association is only load-bearing in platform-key mode with a real key; elsewhere the
-    // records already live where the mail is sent from.
-    const subuserOk = !hasValidKey || !creds.associateSubuser || subuserAssociated;
-
-    let spfVerified = false;
-    let dkimVerified = false;
-    let linkBranded = false;
-    let dmarcVerified = false;
-
-    // Check with SendGrid if IDs are present
-    if (domainEntry.domainAuthId) {
-      const authRes = await sendgridSvc.validateDomainAuthentication(Number(domainEntry.domainAuthId), apiKey, subuser);
-      spfVerified = !!authRes.validationResults?.['mail_cname'];
-      dkimVerified = !!authRes.validationResults?.['dkim1'] && !!authRes.validationResults?.['dkim2'];
-    }
-
-    if (domainEntry.linkBrandingId) {
-      linkBranded = await sendgridSvc.validateLinkBranding(Number(domainEntry.linkBrandingId), apiKey, subuser);
-    }
-
-    // Check DMARC via live DNS check
-    dmarcVerified = await sendgridSvc.verifyDmarc(domainVal);
-
-    // No valid SendGrid key: fall back to live CNAME checks so a correctly configured domain
-    // can still verify against real DNS. Auto-passing every check is a local-dev convenience
-    // behind an EXPLICIT opt-in (ALLOW_MOCK_DOMAIN_VERIFICATION=true) — a missing or
-    // misconfigured key in a real deploy must not silently mark domains verified and open
-    // the send guards (fail closed, same rule as ALLOW_MOCK_PAYMENTS).
-    if (!hasValidKey) {
-      const realSpf = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.['mail_cname']?.host || '',
-        domainEntry.domainAuthDns?.['mail_cname']?.data,
-      );
-      const realDkim1 = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.['dkim1']?.host || '',
-        domainEntry.domainAuthDns?.['dkim1']?.data,
-      );
-      const realDkim2 = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.['dkim2']?.host || '',
-        domainEntry.domainAuthDns?.['dkim2']?.data,
-      );
-      const realLink = await sendgridSvc.verifyCname(
-        domainEntry.linkBrandingDns?.['domain']?.host || '',
-        domainEntry.linkBrandingDns?.['domain']?.data,
-      );
-
-      const mockPass = env.allowMockDomainVerification;
-      spfVerified = realSpf || mockPass;
-      dkimVerified = (realDkim1 && realDkim2) || mockPass;
-      linkBranded = realLink || mockPass;
-      dmarcVerified = dmarcVerified || mockPass;
-    }
-
-    const updatedList = currentList.map((d) => {
-      if (d.domain === domainVal) {
-        // DMARC is recommended but not required for verified status: the sending records
-        // (SPF + DKIM + link branding) authenticate the mail; DMARC is the tenant's own
-        // anti-spoofing policy and must not block their ability to send. The subuser
-        // association IS required (platform-key mode) — without it the DNS can be perfect
-        // and the tenant's mail still goes out unsigned.
-        const isVerified = spfVerified && dkimVerified && linkBranded && subuserOk;
-        return {
-          ...d,
-          spf: spfVerified,
-          dkim: dkimVerified,
-          dmarc: dmarcVerified,
-          linkBranded,
-          ...(creds.associateSubuser ? { subuserAssociated } : {}),
-          status: isVerified ? 'verified' : 'pending',
-          domainAuthDns: {
-            ...d.domainAuthDns,
-            mail_cname: d.domainAuthDns?.['mail_cname']
-              ? { ...d.domainAuthDns['mail_cname'], valid: spfVerified }
-              : undefined,
-            dkim1: d.domainAuthDns?.['dkim1'] ? { ...d.domainAuthDns['dkim1'], valid: dkimVerified } : undefined,
-            dkim2: d.domainAuthDns?.['dkim2'] ? { ...d.domainAuthDns['dkim2'], valid: dkimVerified } : undefined,
-          },
-          linkBrandingDns: {
-            ...d.linkBrandingDns,
-            domain: d.linkBrandingDns?.['domain'] ? { ...d.linkBrandingDns['domain'], valid: linkBranded } : undefined,
-          },
-        };
-      }
-      return d;
-    });
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: [{ key: 'communications.verified_domains', value: updatedList }],
-    });
-
-    return updatedList;
-  }
-
-  public async deleteVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
-
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'communications.verified_domains',
-    });
-
-    if (!row || !Array.isArray(row.value)) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Domain configuration not found.',
-      });
-    }
-
-    const currentList = row.value as unknown as VerifiedDomainEntry[];
-    const domainEntry = currentList.find((d) => d.domain === domainVal);
-
-    if (!domainEntry) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: `Domain ${domainVal} not found in verified domains list.`,
-      });
-    }
-
-    // Resolve credentials the same way add/verify do, so the delete reaches the SendGrid
-    // account the records were actually created under.
-    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
-
-    const sendgridSvc = new SendGridWhitelabelService();
-
-    // Delete from SendGrid
-    if (domainEntry.domainAuthId) {
-      await sendgridSvc.deleteDomainAuthentication(Number(domainEntry.domainAuthId), creds.apiKey, creds.subuser);
-    }
-    if (domainEntry.linkBrandingId) {
-      await sendgridSvc.deleteLinkBranding(Number(domainEntry.linkBrandingId), creds.apiKey, creds.subuser);
-    }
-
-    const updatedList = currentList.filter((d) => d.domain !== domainVal);
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: [{ key: 'communications.verified_domains', value: updatedList }],
-    });
-
-    return updatedList;
-  }
-
-  public async generateApiKey(auth: IAuthKeyPayload) {
-    const { generateApiKey, hashApiKey, getKeyPreview } = await import('../../lib/api-key');
-    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
-    const repo = new workspaceApiKeysRepo();
-
-    // Generate new key
-    const rawKey = generateApiKey();
-    const keyHash = hashApiKey(rawKey);
-    const keyPreview = getKeyPreview(rawKey);
-
-    // Store in database (will overwrite existing key if present)
-    await repo.create(auth.tenant_id, keyHash, keyPreview);
-
-    // Return the full key only once — it's never retrievable again, only the preview
-    return {
-      key: rawKey,
-      preview: keyPreview,
-    };
-  }
-
-  public async getApiKeyPreview(auth: IAuthKeyPayload) {
-    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
-    const repo = new workspaceApiKeysRepo();
-
-    const row = await repo.getByTenantId(auth.tenant_id);
-    if (!row) {
-      return null;
-    }
-
-    return {
-      preview: row.key_preview,
-      createdAt: row.created_at,
-      lastUsedAt: row.last_used_at,
-    };
-  }
-
-  public async regenerateApiKey(auth: IAuthKeyPayload) {
-    // Regenerate is just generate with replace semantics — the repo's
-    // ON CONFLICT handling automatically replaces the old key
-    return this.generateApiKey(auth);
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
 ````typescript
 import type { FastifyPluginCallback } from 'fastify';
@@ -77497,6 +78360,231 @@ const renderFormHtml = (
 };
 ````
 
+## File: apps/backend/src/env.ts
+````typescript
+import { z } from 'zod';
+
+const envSchema = z.object({
+  HOST: z.string().default('localhost'),
+  PORT: z.coerce.number().default(3000),
+  DB_USER: z.string().min(1, 'DB_USER is required'),
+  DB_NAME: z.string().min(1, 'DB_NAME is required'),
+  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
+  DB_PORT: z.coerce.number().default(5432),
+  DB_HOST: z.string().default('localhost'),
+  // S-2 (schema review 2026-07-06): least-privilege role split. DB_USER is the
+  // runtime role (CRUD only, not an object owner, cannot bypass RLS). Migrations
+  // need DDL and object ownership, so they connect as DB_MIGRATION_USER (the
+  // owner role). When these are unset they fall back to DB_USER/DB_PASSWORD, so
+  // a single-role setup keeps working unchanged.
+  DB_MIGRATION_USER: z.string().optional(),
+  DB_MIGRATION_PASSWORD: z.string().optional(),
+  // Whether the serve process runs pending migrations at boot. Convenient in dev
+  // (default true); set to false in production, where migrations are a separate
+  // deploy step run as the owner role and the runtime role has no DDL rights.
+  MIGRATE_ON_BOOT: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((val) => val !== 'false'),
+  DB_SSL: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  API_URL: z.string().url().default('http://localhost:3000'),
+  APP_URL: z.string().url().default('http://localhost:4200'),
+  // Public origin of the volunteer companion app (/t and /r links). Prod: https://go.pplcrm.com —
+  // must match the frontend's environment.companionOrigin or emailed links 404.
+  COMPANION_URL: z.string().url().default('http://localhost:4300'),
+  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
+  MS_CLIENT_ID: z.string().optional(),
+  MS_CLIENT_SECRET: z.string().optional(),
+  MS_TENANT_ID: z.string().optional().default('common'),
+  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
+  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
+  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
+  STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
+  // Annual (interval = year) graduated prices — unit amounts are exactly 10× the monthly ones
+  // ("2 months free"; see libs/common/src/lib/billing/plans.ts → Stripe ops).
+  STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID: z.string().optional(),
+  STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID: z.string().optional(),
+  // Signing secret of the platform's CONNECT webhook endpoint ("Listen to events on connected
+  // accounts") — routes donation events for every tenant's connected account; tenants no longer
+  // hold webhook secrets of their own.
+  STRIPE_CONNECT_WEBHOOK_SECRET: z.string().optional(),
+  // Platform application fee on Stripe card donations, as a percent of the gift (decided
+  // 2026-07-16: 1%; campaign pays Stripe's own processing fees directly on top). Percent-only
+  // because recurring donations support only `application_fee_percent`.
+  DONATIONS_PLATFORM_FEE_PERCENT: z.coerce.number().min(0).max(100).default(1),
+  POSTMARK_SERVER_TOKEN: z.string().optional(),
+  POSTMARK_FROM_EMAIL: z.string().email().default('hello@pplcrm.com'),
+  // Display name on transactional email; without it, clients fall back to the Postmark
+  // sender-signature name (a personal name), which reads wrong on product email.
+  POSTMARK_FROM_NAME: z.string().min(1).default('pplCRM'),
+  SENDGRID_API_KEY: z.string().optional(),
+  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
+  // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
+  // is used and the tenant has no whitelabel subuser of its own. Isolates free-tier sending
+  // reputation (IP pool) from paying customers'.
+  SENDGRID_FREE_TIER_SUBUSER: z.string().optional(),
+  // Shared secret Postmark is configured to send in the X-Postmark-Webhook-Token header of
+  // bounce/complaint webhooks. The webhook rejects requests without it.
+  POSTMARK_WEBHOOK_TOKEN: z.string().optional(),
+  // Where the ops watchdog cron emails its failed-jobs/backlog digest (via Postmark, directly —
+  // not through the job queue). Unset = digest is logged but not emailed.
+  OPS_ALERT_EMAIL: z.string().email().optional(),
+  // Sentry error tracking. Unset = Sentry disabled entirely (no startup cost, no traffic).
+  // NOTE: instrument.ts reads this from process.env directly (it must run before this file's
+  // parse); it is declared here so the schema stays the single inventory of backend config.
+  SENTRY_DSN: z.string().optional(),
+  // Anthropic Claude API key for the newsletter preflight's AI content review. Optional — when
+  // unset the preflight scores from the deterministic lint alone (fail-open, layer skipped).
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
+  // Twilio SMS (companion verification codes). All optional — the SMS service
+  // logs a dev mock instead of sending when these are unset.
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
+  WEBAUTHN_RP_NAME: z.string().optional().default('pplCRM'),
+  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
+  // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
+  // Dev default is 'localhost' so `<slug>.localhost` works.
+  PUBLIC_BASE_DOMAIN: z.string().optional().default('localhost'),
+  // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
+  // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
+  //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
+  //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
+  //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
+  TRUST_PROXY: z.string().optional().default('false'),
+  // How many background jobs the worker may process concurrently. One slow job (a large sync or
+  // import) must not block latency-sensitive mail behind it, so we run a small bounded pool of
+  // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
+  // this comfortably below the Postgres pool size. Default 4.
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+  // Max real Google Geocoding API calls per tenant per calendar day. A large voter-file import is
+  // spread across days at this rate instead of geocoding the whole list in one night (see
+  // lib/gis/geocode-queue.ts). Caps daily Google spend per tenant; only bites very large imports.
+  GEOCODE_DAILY_BUDGET: z.coerce.number().int().min(1).default(25000),
+  // Max connections in the shared pg pool. The API server, the job worker (up to
+  // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
+  // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
+  // and well under Postgres max_connections. Default 20 (pg's own default is 10).
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
+  // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
+  // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
+  // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
+  ALLOW_MOCK_PAYMENTS: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  // Auto-passing domain verification when no valid SendGrid key is configured requires an
+  // EXPLICIT opt-in, never merely "key is missing" — a misconfigured key in a real deploy
+  // must not silently mark sending domains verified and open the send guards. Only ever
+  // set this in local dev.
+  ALLOW_MOCK_DOMAIN_VERIFICATION: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
+  // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
+  // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
+  // unset, tokens are stored as plaintext (the pre-encryption behavior), so this
+  // MUST be set in any environment that connects real mailboxes. Rotating it
+  // invalidates existing encrypted tokens (users just re-consent).
+  OAUTH_TOKEN_ENC_KEY: z.string().optional(),
+});
+
+/** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
+function parseTrustProxy(raw: string): boolean | number | string {
+  const value = raw.trim();
+  if (value === '' || value.toLowerCase() === 'false') return false;
+  if (value.toLowerCase() === 'true') return true;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
+}
+
+const parsedEnv = envSchema.parse(process.env);
+
+export const env = {
+  host: parsedEnv.HOST,
+  port: parsedEnv.PORT,
+  db: {
+    user: parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
+  },
+  // Same target database, but connecting as the owner role for DDL/migrations.
+  // Falls back to the runtime credentials when the migration role is unset.
+  migrationDb: {
+    user: parsedEnv.DB_MIGRATION_USER ?? parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_MIGRATION_PASSWORD ?? parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
+  },
+  migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
+  apiUrl: parsedEnv.API_URL,
+  appUrl: parsedEnv.APP_URL,
+  companionUrl: parsedEnv.COMPANION_URL,
+  publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
+  trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
+  workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
+  geocodeDailyBudget: parsedEnv.GEOCODE_DAILY_BUDGET,
+  dbPoolMax: parsedEnv.DB_POOL_MAX,
+  allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
+  allowMockDomainVerification: parsedEnv.ALLOW_MOCK_DOMAIN_VERIFICATION,
+  oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
+  sharedSecret: parsedEnv.SHARED_SECRET,
+  msClientId: parsedEnv.MS_CLIENT_ID,
+  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
+  msTenantId: parsedEnv.MS_TENANT_ID,
+  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
+  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
+  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
+  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
+  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
+  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
+  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
+  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
+  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
+  stripePlanMovementPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_PRICE_ID,
+  stripePlanGrassrootsAnnualPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID,
+  stripePlanMovementAnnualPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID,
+  stripeConnectWebhookSecret: parsedEnv.STRIPE_CONNECT_WEBHOOK_SECRET,
+  donationsPlatformFeePercent: parsedEnv.DONATIONS_PLATFORM_FEE_PERCENT,
+  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
+  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
+  postmarkFromName: parsedEnv.POSTMARK_FROM_NAME,
+  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
+  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
+  sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
+  postmarkWebhookToken: parsedEnv.POSTMARK_WEBHOOK_TOKEN,
+  opsAlertEmail: parsedEnv.OPS_ALERT_EMAIL,
+  sentryDsn: parsedEnv.SENTRY_DSN,
+  anthropicApiKey: parsedEnv.ANTHROPIC_API_KEY,
+  anthropicModel: parsedEnv.ANTHROPIC_MODEL,
+  twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
+  twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
+  twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
+  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
+  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
+};
+````
+
 ## File: apps/website/src/app/pricing/pricing-page.ts
 ````typescript
 import { Component, computed, inject, signal } from '@angular/core';
@@ -77669,864 +78757,6 @@ export class PricingPage {
   /** One matrix cell: true = included, false = not included, string = text value. */
   protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
     return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
-  }
-}
-````
-
-## File: apps/backend/src/app/modules/billing/controller.ts
-````typescript
-import { sql } from 'kysely';
-import type Stripe from 'stripe';
-import {
-  BILLING_INTERVALS,
-  bracketIndexForSubscribers,
-  getPlanDef,
-  maxQuantity,
-  PLANS_BY_KEY,
-  PURCHASABLE_PLAN_KEYS,
-  type BillingInterval,
-  type PlanKey,
-  type PurchasablePlanKey,
-} from '@common';
-import { env } from '../../../env';
-import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { logger } from '../../logger';
-import { TenantsRepo } from '../auth/repositories/tenants.repo';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-import { WorkflowsController } from '../workflows/controller';
-import { WebhookEventsRepo } from './repositories/webhook-events.repo';
-import { getStripe, isMockMode, stripe } from '../../lib/stripe-platform-client';
-import { syncSubscriptionQuantity } from './subscription-sync';
-import { countEmailableSubscribers, getPlanLimits } from './usage-limits';
-
-/** Stripe price ID configured for each self-serve plan × billing interval (undefined in mock
- * mode / when unset). The annual prices are exactly 10× the monthly unit amounts — see the
- * Stripe ops comment in libs/common/src/lib/billing/plans.ts. */
-const PRICE_ID_BY_PLAN: Record<PurchasablePlanKey, Record<BillingInterval, string | undefined>> = {
-  grassroots: { month: env.stripePlanGrassrootsPriceId, year: env.stripePlanGrassrootsAnnualPriceId },
-  movement: { month: env.stripePlanMovementPriceId, year: env.stripePlanMovementAnnualPriceId },
-};
-
-/** Reverse-map a Stripe price ID back to our internal plan key + billing interval. */
-function planForPriceId(
-  priceId: string | undefined | null,
-): { plan: PurchasablePlanKey; interval: BillingInterval } | null {
-  if (!priceId) return null;
-  for (const plan of PURCHASABLE_PLAN_KEYS) {
-    for (const interval of BILLING_INTERVALS) {
-      const id = PRICE_ID_BY_PLAN[plan][interval];
-      if (id && id === priceId) return { plan, interval };
-    }
-  }
-  return null;
-}
-
-/** Narrow a stored `tenants.subscription_interval` value (or any unknown) to a BillingInterval. */
-function asBillingInterval(value: unknown): BillingInterval {
-  return value === 'year' ? 'year' : 'month';
-}
-
-/**
- * The Stripe API version stripe-node v22 targets (2025 "basil" and later) removed
- * `current_period_end` from the top-level Subscription object — it now lives on each
- * subscription item. Read it from the first item, and fall back to null on an unexpected
- * shape rather than throwing, so a webhook can never fail to activate a paid plan over a
- * missing timestamp (previously `new Date(undefined * 1000)` threw and left the tenant on
- * the free tier despite a successful charge).
- */
-function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
-  const periodEnd = subscription.items.data[0]?.current_period_end;
-  return typeof periodEnd === 'number' ? new Date(periodEnd * 1000).toISOString() : null;
-}
-
-const tenantsRepo = new TenantsRepo();
-const settingsRepo = new SettingsRepo();
-const webhookEventsRepo = new WebhookEventsRepo();
-
-/** Dedup flag prefix shared with `usage-limits.ts`'s notify-then-adjust bracket alerts — cleared
- * here once a cycle-boundary downgrade lands, so a future re-growth past the same bracket sends
- * a fresh notice instead of staying suppressed forever. */
-const BRACKET_FLAG_PREFIX = 'bracket_';
-
-async function clearBracketFlags(tenantId: string, adminUserId: string): Promise<void> {
-  const row = await settingsRepo.getByKey({ tenant_id: tenantId, key: 'billing.limit_alerts_sent' });
-  if (!row?.value) return;
-
-  const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-  if (!parsed || typeof parsed !== 'object') return;
-
-  const alertSettings: Record<string, boolean> = { ...parsed };
-  let changed = false;
-  for (const key of Object.keys(alertSettings)) {
-    if (key.startsWith(BRACKET_FLAG_PREFIX) && alertSettings[key]) {
-      alertSettings[key] = false;
-      changed = true;
-    }
-  }
-  if (!changed) return;
-
-  await settingsRepo.upsertMany({
-    tenant_id: tenantId,
-    user_id: adminUserId,
-    entries: [{ key: 'billing.limit_alerts_sent', value: alertSettings }],
-  });
-}
-
-/** The subset of `tenants` columns the webhook/reconciliation paths read — `getOneBy` selects
- * every column (no subset requested), so narrowing to just these is honest, not a type lie; see
- * pplcrm-any-exceptions §2. */
-interface TenantBillingRow {
-  id: string;
-  admin_id: string | null;
-  subscription_plan: string | null;
-  subscription_quantity: number | null;
-  subscription_interval: BillingInterval;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-}
-
-function asTenantBillingRow(row: unknown): TenantBillingRow | undefined {
-  if (!row || typeof row !== 'object') return undefined;
-  const r = row as Record<string, unknown>;
-  if (typeof r['id'] !== 'string') return undefined;
-  return {
-    id: r['id'],
-    admin_id: typeof r['admin_id'] === 'string' ? r['admin_id'] : null,
-    subscription_plan: typeof r['subscription_plan'] === 'string' ? r['subscription_plan'] : null,
-    subscription_quantity: typeof r['subscription_quantity'] === 'number' ? r['subscription_quantity'] : null,
-    subscription_interval: asBillingInterval(r['subscription_interval']),
-    stripe_customer_id: typeof r['stripe_customer_id'] === 'string' ? r['stripe_customer_id'] : null,
-    stripe_subscription_id: typeof r['stripe_subscription_id'] === 'string' ? r['stripe_subscription_id'] : null,
-  };
-}
-
-/**
- * Cycle-boundary downgrade reconciliation (base plan §4): notify-then-adjust only ever moves the
- * billed quantity *up* mid-cycle (see `usage-limits.checkTenantUsage`) — a shrink in emailable
- * subscribers is applied here instead, on `invoice.paid`, which proves we've just crossed a
- * billing-cycle boundary. No-ops for free/enterprise (no Stripe quantity to reconcile).
- */
-async function reconcileDowngradeOnInvoicePaid(dbTenant: TenantBillingRow): Promise<void> {
-  const plan = getPlanDef(dbTenant.subscription_plan) ?? PLANS_BY_KEY.free;
-  if (!plan.purchasable) return;
-
-  const billedQuantity = dbTenant.subscription_quantity ?? 1;
-  const subscribers = await countEmailableSubscribers(dbTenant.id, tenantsRepo.db);
-  const targetQuantity = bracketIndexForSubscribers(plan.key, subscribers);
-
-  if (targetQuantity !== null && targetQuantity < billedQuantity) {
-    await syncSubscriptionQuantity(dbTenant.id, targetQuantity);
-    await clearBracketFlags(dbTenant.id, dbTenant.admin_id ?? dbTenant.id);
-  }
-}
-
-export class BillingController {
-  constructor() {
-    if (isMockMode) {
-      logger.info('[BillingController] Running in Mock Mode (no Stripe secret key provided)');
-    }
-  }
-
-  private getFrontendUrl(): string {
-    return env.appUrl.replace(/\/+$/, '');
-  }
-
-  public async getBillingDetails(auth: { tenant_id: string }) {
-    const tenant = (await tenantsRepo.getOneBy('id', {
-      tenant_id: auth.tenant_id,
-      value: auth.tenant_id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-    })) as any;
-
-    if (!tenant) {
-      throw new Error('Tenant not found');
-    }
-
-    return {
-      plan: tenant.subscription_plan || 'free',
-      status: tenant.subscription_status || 'inactive',
-      interval: asBillingInterval(tenant.subscription_interval),
-      endsAt: tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at) : null,
-      stripeCustomerId: tenant.stripe_customer_id || null,
-      stripeSubscriptionId: tenant.stripe_subscription_id || null,
-      hasActiveSubscription: ['active', 'trialing'].includes(tenant.subscription_status || ''),
-      isMockMode,
-    };
-  }
-
-  /** Live usage snapshot for the billing page: emailable-subscriber count against the tenant's
-   * currently billed bracket. Enterprise (no pricing ladder) reports Infinity caps / $0 price —
-   * the frontend special-cases 'enterprise' to not render the bracket clause. */
-  public async getUsage(auth: { tenant_id: string }): Promise<{
-    subscribers: number;
-    billedQuantity: number;
-    subscriberCap: number;
-    emailCap: number;
-    monthlyPrice: number;
-    interval: BillingInterval;
-    tierMax: number;
-  }> {
-    const tenant = asTenantBillingRow(
-      await tenantsRepo.getOneBy('id', {
-        tenant_id: auth.tenant_id,
-        value: auth.tenant_id,
-      }),
-    );
-    if (!tenant) {
-      throw new NotFoundError('Tenant not found');
-    }
-
-    const plan = getPlanDef(tenant.subscription_plan) ?? PLANS_BY_KEY.free;
-    const billedQuantity = tenant.subscription_quantity ?? 1;
-    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
-    const limits = getPlanLimits(plan.key, billedQuantity);
-
-    return {
-      subscribers,
-      billedQuantity,
-      subscriberCap: limits.subscribers,
-      emailCap: limits.emails,
-      monthlyPrice: plan.pricing ? (plan.pricing.brackets[billedQuantity - 1]?.price ?? 0) : 0,
-      interval: tenant.subscription_interval,
-      tierMax: plan.pricing ? maxQuantity(plan.key) : Number.POSITIVE_INFINITY,
-    };
-  }
-
-  public async createCheckoutSession(
-    auth: { tenant_id: string; user_id: string },
-    plan: PurchasablePlanKey,
-    interval: BillingInterval = 'month',
-  ) {
-    const tenant = (await tenantsRepo.getOneBy('id', {
-      tenant_id: auth.tenant_id,
-      value: auth.tenant_id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-    })) as any;
-
-    if (!tenant) {
-      throw new NotFoundError('Tenant not found');
-    }
-
-    const frontendUrl = this.getFrontendUrl();
-
-    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
-    const quantity = bracketIndexForSubscribers(plan, subscribers);
-    if (quantity === null) {
-      throw new BadRequestError('Your list is too large for this tier — contact us so we can find a plan that fits.');
-    }
-
-    if (isMockMode) {
-      // In Mock Mode, direct them to a simulated callback
-      const mockSuccessUrl = `${frontendUrl}/workspace/billing?mock_checkout_success=true&plan=${plan}&qty=${quantity}&interval=${interval}`;
-      return { url: mockSuccessUrl };
-    }
-
-    // Live Stripe Mode
-    let stripeCustomerId = tenant.stripe_customer_id as string | undefined;
-    if (!stripeCustomerId) {
-      const customer = await getStripe().customers.create({
-        email: (tenant.email as string) || undefined,
-        name: tenant.name as string,
-        metadata: {
-          tenantId: auth.tenant_id,
-        },
-      });
-      stripeCustomerId = customer.id;
-
-      // Update tenant in DB with customer ID
-      await tenantsRepo.update({
-        tenant_id: auth.tenant_id,
-        id: auth.tenant_id,
-        row: { stripe_customer_id: stripeCustomerId },
-      });
-    }
-
-    // Determine Stripe Price ID
-    const priceId = PRICE_ID_BY_PLAN[plan][interval];
-
-    if (!priceId) {
-      throw new Error(`Stripe Price ID is not configured for plan: ${plan} (${interval})`);
-    }
-
-    // Stripe Tax: `customer_update.address: 'auto'` saves the checkout billing address onto the
-    // Customer (we always pass an existing `customer`, so Checkout needs explicit permission to
-    // write it back) — renewal invoices reuse it as the tax location. `name: 'auto'` is required
-    // by Stripe for tax_id_collection with an existing customer. Tax is only charged in
-    // jurisdictions with an active registration in the Dashboard; elsewhere it computes to zero.
-    const session = await getStripe().checkout.sessions.create({
-      customer: stripeCustomerId,
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity,
-        },
-      ],
-      mode: 'subscription',
-      automatic_tax: { enabled: true },
-      billing_address_collection: 'required',
-      customer_update: { address: 'auto', name: 'auto' },
-      tax_id_collection: { enabled: true },
-      success_url: `${frontendUrl}/workspace/billing?checkout_success=true`,
-      cancel_url: `${frontendUrl}/workspace/billing`,
-      subscription_data: {
-        metadata: {
-          tenantId: auth.tenant_id,
-        },
-      },
-      metadata: {
-        tenantId: auth.tenant_id,
-      },
-    });
-
-    return { url: session.url };
-  }
-
-  public async createPortalSession(auth: { tenant_id: string }) {
-    const tenant = (await tenantsRepo.getOneBy('id', {
-      tenant_id: auth.tenant_id,
-      value: auth.tenant_id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-    })) as any;
-
-    if (!tenant) {
-      throw new Error('Tenant not found');
-    }
-
-    const frontendUrl = this.getFrontendUrl();
-
-    if (isMockMode) {
-      return { url: `${frontendUrl}/workspace/billing?mock_portal_success=true` };
-    }
-
-    const stripeCustomerId = tenant.stripe_customer_id;
-    if (!stripeCustomerId) {
-      throw new Error('No active billing history found. Please subscribe to a plan first.');
-    }
-
-    const session = await getStripe().billingPortal.sessions.create({
-      customer: stripeCustomerId,
-      // `portal_return` tells the billing page to pull the live subscription state from Stripe
-      // (syncSubscriptionFromStripe) — a plan switched in the Portal is reflected immediately
-      // instead of waiting on webhook delivery.
-      return_url: `${frontendUrl}/workspace/billing?portal_return=true`,
-    });
-
-    return { url: session.url };
-  }
-
-  /**
-   * Mirror the tenant's live Stripe subscription onto the `tenants` row — the same write
-   * `customer.subscription.updated` performs, minus the notification email (the webhook stays
-   * the authoritative sender, so a later-delivered event never duplicates it).
-   *
-   * Called by the billing page when the user returns from Checkout (`checkout_success`) or the
-   * Billing Portal (`portal_return`), so a plan change takes effect immediately even when
-   * webhook delivery is delayed or not configured for the active Stripe mode (e.g. sandbox keys
-   * without a sandbox webhook endpoint). No-ops in mock mode and for tenants with no Stripe
-   * customer.
-   */
-  public async syncSubscriptionFromStripe(auth: { tenant_id: string }): Promise<{ synced: boolean; plan: string }> {
-    const tenant = asTenantBillingRow(
-      await tenantsRepo.getOneBy('id', {
-        tenant_id: auth.tenant_id,
-        value: auth.tenant_id,
-      }),
-    );
-    if (!tenant) {
-      throw new NotFoundError('Tenant not found');
-    }
-
-    const currentPlan = tenant.subscription_plan ?? 'free';
-    if (isMockMode || !tenant.stripe_customer_id) {
-      return { synced: false, plan: currentPlan };
-    }
-
-    const subscriptions = await getStripe().subscriptions.list({
-      customer: tenant.stripe_customer_id,
-      status: 'all',
-      limit: 10,
-    });
-    const live = subscriptions.data.find((s) => ['active', 'trialing', 'past_due'].includes(s.status));
-
-    if (!live) {
-      // Nothing billable on the customer. Only mirror a cancellation if we previously stored a
-      // subscription — a tenant that never subscribed stays untouched.
-      if (!tenant.stripe_subscription_id) {
-        return { synced: false, plan: currentPlan };
-      }
-      await tenantsRepo.update({
-        tenant_id: tenant.id,
-        id: tenant.id,
-        row: {
-          subscription_status: 'canceled',
-          subscription_plan: 'free',
-          subscription_ends_at: new Date().toISOString(),
-          subscription_quantity: 1,
-          subscription_interval: 'month',
-        },
-      });
-      logger.info(`[syncSubscriptionFromStripe] No live subscription — tenant ${tenant.id} set to free`);
-      return { synced: true, plan: 'free' };
-    }
-
-    const item = live.items.data[0];
-    const priceMatch = planForPriceId(item?.price.id);
-    if (item && !priceMatch) {
-      logger.warn(
-        `[syncSubscriptionFromStripe] Price ${item.price.id} matches no configured STRIPE_PLAN_*_PRICE_ID — ` +
-          `tenant ${tenant.id} keeps plan '${currentPlan}'. Check that the env price IDs belong to the active Stripe mode.`,
-      );
-    }
-    const planName: string = priceMatch?.plan ?? currentPlan;
-    const interval: BillingInterval = priceMatch?.interval ?? tenant.subscription_interval;
-
-    await tenantsRepo.update({
-      tenant_id: tenant.id,
-      id: tenant.id,
-      row: {
-        stripe_subscription_id: live.id,
-        subscription_plan: planName,
-        subscription_status: live.status,
-        subscription_ends_at: subscriptionPeriodEnd(live),
-        subscription_quantity: item?.quantity ?? 1,
-        subscription_interval: interval,
-      },
-    });
-    logger.info(`[syncSubscriptionFromStripe] Tenant ${tenant.id} synced to plan '${planName}' (${live.status})`);
-    return { synced: true, plan: planName };
-  }
-
-  public async handleWebhook(payload: string, signature: string) {
-    if (isMockMode || !stripe || !env.stripeWebhookSecret) {
-      logger.info('[BillingController] Webhook received, but ignored due to mock mode or missing secret');
-      return;
-    }
-
-    let event: Stripe.Event;
-
-    try {
-      event = stripe.webhooks.constructEvent(payload, signature, env.stripeWebhookSecret);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logger.error(`Webhook signature verification failed: ${errMsg}`);
-      throw new Error(`Webhook Error: ${errMsg}`);
-    }
-
-    logger.info(`Persisting webhook event: ${event.id} (${event.type})`);
-
-    // Persist event for background worker processing.
-    // Handles idempotency: duplicate events will trigger unique constraint
-    // violation on `stripe_event_id` and be ignored, returning 200 OK.
-    await webhookEventsRepo.db
-      .insertInto('webhook_events')
-      .values({
-        stripe_event_id: event.id,
-        type: event.type,
-        payload: JSON.stringify(event),
-        status: 'pending',
-      })
-      .onConflict((oc) => oc.column('stripe_event_id').doNothing())
-      .execute();
-  }
-
-  public async processWebhookEvent(event: Stripe.Event) {
-    logger.info(`Processing webhook event: ${event.id} (${event.type})`);
-
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const tenantId = session.metadata?.['tenantId'];
-        const subscriptionId = session.subscription as string;
-        const customerId = session.customer as string;
-
-        if (tenantId && subscriptionId) {
-          const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
-          const item = subscription.items.data[0];
-          const priceMatch = planForPriceId(item?.price.id);
-          const planName: PlanKey = priceMatch?.plan ?? 'free';
-          const interval: BillingInterval = priceMatch?.interval ?? 'month';
-          const quantity = item?.quantity ?? 1;
-
-          await tenantsRepo.update({
-            tenant_id: tenantId,
-            id: tenantId,
-            row: {
-              stripe_customer_id: customerId,
-              stripe_subscription_id: subscriptionId,
-              subscription_plan: planName,
-              subscription_status: subscription.status,
-              subscription_ends_at: subscriptionPeriodEnd(subscription),
-              subscription_quantity: quantity,
-              subscription_interval: interval,
-            },
-          });
-          logger.info(`Plan activated successfully for Tenant ID: ${tenantId}`);
-          try {
-            await this.handleSubscriptionChange(tenantId, planName, quantity, false, interval);
-          } catch (mailErr) {
-            logger.error({ err: mailErr }, 'Failed to send subscription changed email on checkout.session.completed');
-          }
-        }
-        break;
-      }
-
-      case 'customer.subscription.updated': {
-        const subscription = event.data.object as Stripe.Subscription;
-        const subscriptionId = subscription.id;
-        const customerId = subscription.customer as string;
-
-        // Search Kysely database for the tenant with matching customer id
-        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1',
-          value: customerId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-        })) as any;
-
-        if (dbTenant) {
-          const item = subscription.items.data[0];
-          const priceMatch = planForPriceId(item?.price.id);
-          const planName: string = priceMatch?.plan ?? dbTenant.subscription_plan;
-          const interval: BillingInterval = priceMatch?.interval ?? asBillingInterval(dbTenant.subscription_interval);
-          const quantity = item?.quantity ?? 1;
-
-          await tenantsRepo.update({
-            tenant_id: dbTenant.id,
-            id: dbTenant.id,
-            row: {
-              stripe_subscription_id: subscriptionId,
-              subscription_plan: planName,
-              subscription_status: subscription.status,
-              subscription_ends_at: subscriptionPeriodEnd(subscription),
-              subscription_quantity: quantity,
-              subscription_interval: interval,
-            },
-          });
-          logger.info(`Subscription updated for Tenant ID: ${dbTenant.id}`);
-          try {
-            await this.handleSubscriptionChange(dbTenant.id, planName, quantity, false, interval);
-          } catch (mailErr) {
-            logger.error(
-              { err: mailErr },
-              'Failed to send subscription changed email on customer.subscription.updated',
-            );
-          }
-        }
-        break;
-      }
-
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription;
-        const customerId = subscription.customer as string;
-
-        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1',
-          value: customerId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-        })) as any;
-
-        if (dbTenant) {
-          await tenantsRepo.update({
-            tenant_id: dbTenant.id,
-            id: dbTenant.id,
-            row: {
-              subscription_status: 'canceled',
-              subscription_plan: 'free',
-              subscription_ends_at: new Date().toISOString(),
-              subscription_quantity: 1,
-              subscription_interval: 'month',
-            },
-          });
-          logger.info(`Subscription canceled for Tenant ID: ${dbTenant.id}`);
-          try {
-            await this.handleSubscriptionChange(dbTenant.id, 'free', 1);
-          } catch (mailErr) {
-            logger.error(
-              { err: mailErr },
-              'Failed to send subscription cancellation email on customer.subscription.deleted',
-            );
-          }
-        }
-        break;
-      }
-
-      case 'invoice.paid': {
-        const invoice = event.data.object as Stripe.Invoice;
-        const customerId = invoice.customer as string;
-        const dbTenant = asTenantBillingRow(
-          await tenantsRepo.getOneBy('stripe_customer_id', {
-            tenant_id: '1',
-            value: customerId,
-          }),
-        );
-
-        if (dbTenant) {
-          try {
-            await reconcileDowngradeOnInvoicePaid(dbTenant);
-          } catch (err) {
-            logger.error({ err }, 'Failed to reconcile bracket downgrade on invoice.paid');
-          }
-
-          const admin = await tenantsRepo.db
-            .selectFrom('authusers')
-            .select(['email', 'first_name'])
-            .where('id', '=', dbTenant.admin_id)
-            .executeTakeFirst();
-
-          if (admin && admin.email) {
-            // Find person matching admin email
-            const person = await tenantsRepo.db
-              .selectFrom('persons')
-              .select('id')
-              .where('tenant_id', '=', dbTenant.id)
-              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
-              .executeTakeFirst();
-            if (person) {
-              try {
-                const workflowsController = new WorkflowsController();
-                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
-              } catch (err) {
-                logger.error({ err }, 'Failed to trigger billing workflow on invoice.paid');
-              }
-            }
-
-            const mailService = new TransactionalEmailService();
-            const amountPaid = invoice.amount_paid / 100;
-            const pdfUrl = invoice.hosted_invoice_url || '';
-
-            // Tax total: on the basil-era API versions stripe-node v22 targets, the invoice tax
-            // total lives in the `total_taxes` array (the legacy top-level `invoice.tax` is gone).
-            // Omitted when absent or zero so a receipt can never fail over a tax field.
-            const totalTax = Array.isArray(invoice.total_taxes)
-              ? invoice.total_taxes.reduce((sum, tax) => sum + (tax?.amount || 0), 0)
-              : 0;
-            const taxLineText = totalTax > 0 ? `\n- Tax: $${(totalTax / 100).toFixed(2)}` : '';
-            const taxLineHtml = totalTax > 0 ? `<li><strong>Tax</strong>: $${(totalTax / 100).toFixed(2)}</li>` : '';
-
-            // Build charges summary
-            let summaryOfCharges = '';
-            let summaryOfChargesHtml = '';
-            if (invoice.lines && Array.isArray(invoice.lines.data)) {
-              summaryOfCharges =
-                '\nSummary of Charges:\n' +
-                invoice.lines.data
-                  .map((line) => {
-                    const lineAmt = (line.amount || 0) / 100;
-                    return `- ${line.description || 'Subscription item'}: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}`;
-                  })
-                  .join('\n') +
-                taxLineText;
-
-              summaryOfChargesHtml =
-                '<div class="panel"><p><strong>Summary of charges:</strong></p><ul>' +
-                invoice.lines.data
-                  .map((line) => {
-                    const lineAmt = (line.amount || 0) / 100;
-                    return `<li><strong>${line.description || 'Subscription item'}</strong>: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}</li>`;
-                  })
-                  .join('') +
-                taxLineHtml +
-                '</ul></div>';
-            }
-
-            await mailService.sendMail({
-              to: admin.email,
-              subject: `Receipt for your pplCRM subscription`,
-              text: `Hi ${admin.first_name || 'there'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was processed.\n\n${summaryOfCharges}\n\nView invoice: ${pdfUrl}`,
-              html: `<h2>Payment received</h2>
-<p>Hi ${admin.first_name || 'there'},</p>
-<p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was processed.</p>${summaryOfChargesHtml}
-<div class="btn-container">
-  <a href="${pdfUrl}" class="btn">View invoice</a>
-</div>`,
-            });
-          }
-        }
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object as Stripe.Invoice;
-        const customerId = invoice.customer as string;
-        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1',
-          value: customerId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-        })) as any;
-
-        if (dbTenant) {
-          const admin = await tenantsRepo.db
-            .selectFrom('authusers')
-            .select(['email', 'first_name'])
-            .where('id', '=', dbTenant.admin_id)
-            .executeTakeFirst();
-
-          if (admin && admin.email) {
-            // Find person matching admin email
-            const person = await tenantsRepo.db
-              .selectFrom('persons')
-              .select('id')
-              .where('tenant_id', '=', dbTenant.id)
-              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
-              .executeTakeFirst();
-            if (person) {
-              try {
-                const workflowsController = new WorkflowsController();
-                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
-              } catch (err) {
-                logger.error({ err }, 'Failed to trigger billing workflow on invoice.payment_failed');
-              }
-            }
-
-            const mailService = new TransactionalEmailService();
-            const billingPageUrl = `${env.appUrl}/workspace/billing`;
-            const amountDue = (invoice.amount_due || 0) / 100;
-            await mailService.sendMail({
-              to: admin.email,
-              subject: `Action needed: your pplCRM subscription payment failed`,
-              text: `Hi ${admin.first_name || 'there'},\n\nWe were unable to process the subscription payment of $${amountDue.toFixed(2)} for your organization.\n\nPlease update your payment card to prevent suspension of your organization's account.\n\nUpdate billing information here: ${billingPageUrl}`,
-              html: `<h2>Payment failed</h2>
-<p>Hi ${admin.first_name || 'there'},</p>
-<p>We were unable to process the subscription payment of <strong>$${amountDue.toFixed(2)}</strong> for your organization.</p>
-<p>Please update your payment card to prevent suspension of your organization's account.</p>
-<div class="btn-container">
-  <a href="${billingPageUrl}" class="btn">Update payment method</a>
-</div>`,
-            });
-          }
-        }
-        break;
-      }
-    }
-  }
-
-  public async activateMockPlan(
-    auth: { tenant_id: string },
-    plan: PurchasablePlanKey,
-    quantity = 1,
-    interval: BillingInterval = 'month',
-  ) {
-    if (!isMockMode) {
-      throw new Error('This helper is only available in local Mock Mode');
-    }
-
-    const expiry = new Date();
-    if (interval === 'year') {
-      expiry.setFullYear(expiry.getFullYear() + 1); // 1 year from now
-    } else {
-      expiry.setMonth(expiry.getMonth() + 1); // 1 month from now
-    }
-    const clampedQuantity = Math.min(Math.max(Math.trunc(quantity) || 1, 1), maxQuantity(plan));
-
-    await tenantsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: auth.tenant_id,
-      row: {
-        stripe_customer_id: 'cus_mock_' + Math.random().toString(36).substring(7),
-        stripe_subscription_id: 'sub_mock_' + Math.random().toString(36).substring(7),
-        subscription_plan: plan,
-        subscription_status: 'active',
-        subscription_ends_at: expiry.toISOString(),
-        subscription_quantity: clampedQuantity,
-        subscription_interval: interval,
-      },
-    });
-
-    try {
-      await this.handleSubscriptionChange(auth.tenant_id, plan, clampedQuantity, true, interval);
-    } catch (mailErr) {
-      logger.error({ err: mailErr }, 'Failed to send mock subscription update email');
-    }
-
-    return { success: true, plan };
-  }
-
-  public async cancelMockPlan(auth: { tenant_id: string }) {
-    if (!isMockMode) {
-      throw new Error('This helper is only available in local Mock Mode');
-    }
-
-    await tenantsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: auth.tenant_id,
-      row: {
-        stripe_subscription_id: null,
-        subscription_plan: 'free',
-        subscription_status: 'inactive',
-        subscription_ends_at: null,
-        subscription_quantity: 1,
-        subscription_interval: 'month',
-      },
-    });
-
-    try {
-      await this.handleSubscriptionChange(auth.tenant_id, 'free', 1, true);
-    } catch (mailErr) {
-      logger.error({ err: mailErr }, 'Failed to send mock subscription cancellation email');
-    }
-
-    return { success: true };
-  }
-
-  private async handleSubscriptionChange(
-    tenantId: string,
-    planName: string,
-    quantity: number,
-    isMock = false,
-    interval: BillingInterval = 'month',
-  ): Promise<void> {
-    const tenant = (await tenantsRepo.getOneBy('id', {
-      tenant_id: tenantId,
-      value: tenantId,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-    })) as any;
-
-    if (!tenant) return;
-
-    // 1. Reset limit alert settings
-    await tenantsRepo.db
-      .deleteFrom('settings')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'billing.limit_alerts_sent')
-      .execute();
-
-    // 2. Fetch admin user (Organization Owner)
-    if (!tenant.admin_id) return;
-    const admin = await tenantsRepo.db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('id', '=', String(tenant.admin_id))
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      const planLimits = getPlanLimits(planName, quantity, interval);
-      const billingPageUrl = `${env.appUrl}/workspace/billing`;
-      const mockPrefix = isMock ? '[MOCK] ' : '';
-      const fmt = (n: number): string => (Number.isFinite(n) ? n.toLocaleString() : 'Unlimited');
-
-      const mailService = new TransactionalEmailService();
-      const planLabel = planName.charAt(0).toUpperCase() + planName.slice(1);
-      await mailService.sendMail({
-        to: admin.email,
-        subject: `${mockPrefix}Welcome to the ${planLabel} plan`,
-        text: `Hi ${admin.first_name || 'there'},\n\n${mockPrefix}Your subscription has been updated.\n\nNew plan: ${planLabel}\nPrice: ${planLimits.price}\n\nPlan limits:\n- Email subscribers: ${fmt(planLimits.subscribers)}\n- User seats: ${fmt(planLimits.seats)}\n- Monthly emails: ${fmt(planLimits.emails)} outbound emails\n\nManage your billing here: ${billingPageUrl}`,
-        html: `<h2>Subscription updated</h2>
-<p>Hi ${admin.first_name || 'there'},</p>
-<p>${mockPrefix}Your subscription has been updated. Welcome to the <strong>${planLabel}</strong> plan.</p>
-<div class="panel">
-<p><strong>Price:</strong> ${planLimits.price}</p>
-<ul>
-  <li><strong>Email subscribers:</strong> up to ${fmt(planLimits.subscribers)}</li>
-  <li><strong>User seats:</strong> up to ${fmt(planLimits.seats)}</li>
-  <li><strong>Monthly emails:</strong> up to ${fmt(planLimits.emails)} outbound emails</li>
-</ul>
-</div>
-<div class="btn-container">
-  <a href="${billingPageUrl}" class="btn">Manage billing</a>
-</div>`,
-      });
-    }
   }
 }
 ````
@@ -79371,231 +79601,6 @@ export const PRIVACY_DOC: LegalDoc = {
       text: 'Privacy questions, requests and complaints all go to hello@pplcrm.com. A human reads every one.',
     },
   ],
-};
-````
-
-## File: apps/backend/src/env.ts
-````typescript
-import { z } from 'zod';
-
-const envSchema = z.object({
-  HOST: z.string().default('localhost'),
-  PORT: z.coerce.number().default(3000),
-  DB_USER: z.string().min(1, 'DB_USER is required'),
-  DB_NAME: z.string().min(1, 'DB_NAME is required'),
-  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
-  DB_PORT: z.coerce.number().default(5432),
-  DB_HOST: z.string().default('localhost'),
-  // S-2 (schema review 2026-07-06): least-privilege role split. DB_USER is the
-  // runtime role (CRUD only, not an object owner, cannot bypass RLS). Migrations
-  // need DDL and object ownership, so they connect as DB_MIGRATION_USER (the
-  // owner role). When these are unset they fall back to DB_USER/DB_PASSWORD, so
-  // a single-role setup keeps working unchanged.
-  DB_MIGRATION_USER: z.string().optional(),
-  DB_MIGRATION_PASSWORD: z.string().optional(),
-  // Whether the serve process runs pending migrations at boot. Convenient in dev
-  // (default true); set to false in production, where migrations are a separate
-  // deploy step run as the owner role and the runtime role has no DDL rights.
-  MIGRATE_ON_BOOT: z
-    .string()
-    .optional()
-    .default('true')
-    .transform((val) => val !== 'false'),
-  DB_SSL: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  API_URL: z.string().url().default('http://localhost:3000'),
-  APP_URL: z.string().url().default('http://localhost:4200'),
-  // Public origin of the volunteer companion app (/t and /r links). Prod: https://go.pplcrm.com —
-  // must match the frontend's environment.companionOrigin or emailed links 404.
-  COMPANION_URL: z.string().url().default('http://localhost:4300'),
-  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
-  MS_CLIENT_ID: z.string().optional(),
-  MS_CLIENT_SECRET: z.string().optional(),
-  MS_TENANT_ID: z.string().optional().default('common'),
-  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
-  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
-  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
-  STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
-  // Annual (interval = year) graduated prices — unit amounts are exactly 10× the monthly ones
-  // ("2 months free"; see libs/common/src/lib/billing/plans.ts → Stripe ops).
-  STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID: z.string().optional(),
-  STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID: z.string().optional(),
-  // Signing secret of the platform's CONNECT webhook endpoint ("Listen to events on connected
-  // accounts") — routes donation events for every tenant's connected account; tenants no longer
-  // hold webhook secrets of their own.
-  STRIPE_CONNECT_WEBHOOK_SECRET: z.string().optional(),
-  // Platform application fee on Stripe card donations, as a percent of the gift (decided
-  // 2026-07-16: 1%; campaign pays Stripe's own processing fees directly on top). Percent-only
-  // because recurring donations support only `application_fee_percent`.
-  DONATIONS_PLATFORM_FEE_PERCENT: z.coerce.number().min(0).max(100).default(1),
-  POSTMARK_SERVER_TOKEN: z.string().optional(),
-  POSTMARK_FROM_EMAIL: z.string().email().default('hello@pplcrm.com'),
-  // Display name on transactional email; without it, clients fall back to the Postmark
-  // sender-signature name (a personal name), which reads wrong on product email.
-  POSTMARK_FROM_NAME: z.string().min(1).default('pplCRM'),
-  SENDGRID_API_KEY: z.string().optional(),
-  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
-  // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
-  // is used and the tenant has no whitelabel subuser of its own. Isolates free-tier sending
-  // reputation (IP pool) from paying customers'.
-  SENDGRID_FREE_TIER_SUBUSER: z.string().optional(),
-  // Shared secret Postmark is configured to send in the X-Postmark-Webhook-Token header of
-  // bounce/complaint webhooks. The webhook rejects requests without it.
-  POSTMARK_WEBHOOK_TOKEN: z.string().optional(),
-  // Where the ops watchdog cron emails its failed-jobs/backlog digest (via Postmark, directly —
-  // not through the job queue). Unset = digest is logged but not emailed.
-  OPS_ALERT_EMAIL: z.string().email().optional(),
-  // Sentry error tracking. Unset = Sentry disabled entirely (no startup cost, no traffic).
-  // NOTE: instrument.ts reads this from process.env directly (it must run before this file's
-  // parse); it is declared here so the schema stays the single inventory of backend config.
-  SENTRY_DSN: z.string().optional(),
-  // Anthropic Claude API key for the newsletter preflight's AI content review. Optional — when
-  // unset the preflight scores from the deterministic lint alone (fail-open, layer skipped).
-  ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
-  // Twilio SMS (companion verification codes). All optional — the SMS service
-  // logs a dev mock instead of sending when these are unset.
-  TWILIO_ACCOUNT_SID: z.string().optional(),
-  TWILIO_AUTH_TOKEN: z.string().optional(),
-  TWILIO_FROM_NUMBER: z.string().optional(),
-  GOOGLE_MAPS_API_KEY: z.string().optional(),
-  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
-  WEBAUTHN_RP_NAME: z.string().optional().default('pplCRM'),
-  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
-  // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
-  // Dev default is 'localhost' so `<slug>.localhost` works.
-  PUBLIC_BASE_DOMAIN: z.string().optional().default('localhost'),
-  // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
-  // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
-  //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
-  //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
-  //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
-  TRUST_PROXY: z.string().optional().default('false'),
-  // How many background jobs the worker may process concurrently. One slow job (a large sync or
-  // import) must not block latency-sensitive mail behind it, so we run a small bounded pool of
-  // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
-  // this comfortably below the Postgres pool size. Default 4.
-  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
-  // Max real Google Geocoding API calls per tenant per calendar day. A large voter-file import is
-  // spread across days at this rate instead of geocoding the whole list in one night (see
-  // lib/gis/geocode-queue.ts). Caps daily Google spend per tenant; only bites very large imports.
-  GEOCODE_DAILY_BUDGET: z.coerce.number().int().min(1).default(25000),
-  // Max connections in the shared pg pool. The API server, the job worker (up to
-  // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
-  // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
-  // and well under Postgres max_connections. Default 20 (pg's own default is 10).
-  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
-  // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
-  // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
-  // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
-  ALLOW_MOCK_PAYMENTS: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  // Auto-passing domain verification when no valid SendGrid key is configured requires an
-  // EXPLICIT opt-in, never merely "key is missing" — a misconfigured key in a real deploy
-  // must not silently mark sending domains verified and open the send guards. Only ever
-  // set this in local dev.
-  ALLOW_MOCK_DOMAIN_VERIFICATION: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
-  // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
-  // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
-  // unset, tokens are stored as plaintext (the pre-encryption behavior), so this
-  // MUST be set in any environment that connects real mailboxes. Rotating it
-  // invalidates existing encrypted tokens (users just re-consent).
-  OAUTH_TOKEN_ENC_KEY: z.string().optional(),
-});
-
-/** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
-function parseTrustProxy(raw: string): boolean | number | string {
-  const value = raw.trim();
-  if (value === '' || value.toLowerCase() === 'false') return false;
-  if (value.toLowerCase() === 'true') return true;
-  if (/^\d+$/.test(value)) return Number(value);
-  return value;
-}
-
-const parsedEnv = envSchema.parse(process.env);
-
-export const env = {
-  host: parsedEnv.HOST,
-  port: parsedEnv.PORT,
-  db: {
-    user: parsedEnv.DB_USER,
-    database: parsedEnv.DB_NAME,
-    password: parsedEnv.DB_PASSWORD,
-    port: parsedEnv.DB_PORT,
-    host: parsedEnv.DB_HOST,
-    ssl: parsedEnv.DB_SSL,
-  },
-  // Same target database, but connecting as the owner role for DDL/migrations.
-  // Falls back to the runtime credentials when the migration role is unset.
-  migrationDb: {
-    user: parsedEnv.DB_MIGRATION_USER ?? parsedEnv.DB_USER,
-    database: parsedEnv.DB_NAME,
-    password: parsedEnv.DB_MIGRATION_PASSWORD ?? parsedEnv.DB_PASSWORD,
-    port: parsedEnv.DB_PORT,
-    host: parsedEnv.DB_HOST,
-    ssl: parsedEnv.DB_SSL,
-  },
-  migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
-  apiUrl: parsedEnv.API_URL,
-  appUrl: parsedEnv.APP_URL,
-  companionUrl: parsedEnv.COMPANION_URL,
-  publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
-  trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
-  workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
-  geocodeDailyBudget: parsedEnv.GEOCODE_DAILY_BUDGET,
-  dbPoolMax: parsedEnv.DB_POOL_MAX,
-  allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
-  allowMockDomainVerification: parsedEnv.ALLOW_MOCK_DOMAIN_VERIFICATION,
-  oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
-  sharedSecret: parsedEnv.SHARED_SECRET,
-  msClientId: parsedEnv.MS_CLIENT_ID,
-  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
-  msTenantId: parsedEnv.MS_TENANT_ID,
-  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
-  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
-  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
-  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
-  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
-  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
-  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
-  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
-  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
-  stripePlanMovementPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_PRICE_ID,
-  stripePlanGrassrootsAnnualPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID,
-  stripePlanMovementAnnualPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID,
-  stripeConnectWebhookSecret: parsedEnv.STRIPE_CONNECT_WEBHOOK_SECRET,
-  donationsPlatformFeePercent: parsedEnv.DONATIONS_PLATFORM_FEE_PERCENT,
-  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
-  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
-  postmarkFromName: parsedEnv.POSTMARK_FROM_NAME,
-  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
-  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
-  sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
-  postmarkWebhookToken: parsedEnv.POSTMARK_WEBHOOK_TOKEN,
-  opsAlertEmail: parsedEnv.OPS_ALERT_EMAIL,
-  sentryDsn: parsedEnv.SENTRY_DSN,
-  anthropicApiKey: parsedEnv.ANTHROPIC_API_KEY,
-  anthropicModel: parsedEnv.ANTHROPIC_MODEL,
-  twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
-  twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
-  twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
-  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
-  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
 };
 ````
 

@@ -1,6 +1,6 @@
 export interface EmailBlock {
   id: string;
-  type: 'heading' | 'text' | 'image' | 'button' | 'divider' | 'spacer' | 'social' | 'footer';
+  type: 'heading' | 'text' | 'image' | 'button' | 'divider' | 'spacer' | 'social';
   content?: string;
   styles?: {
     color?: string;
@@ -19,9 +19,6 @@ export interface EmailBlock {
   imageAlt?: string;
   imageWidth?: string;
   socials?: Array<{ platform: 'facebook' | 'twitter' | 'linkedin' | 'instagram' | 'youtube'; url: string }>;
-  footerCompany?: string;
-  footerAddress?: string;
-  footerUnsubscribeUrl?: string;
   socialIconStyle?: 'circular-solid' | 'circular-gray' | 'simple-color' | 'simple-gray';
 }
 
@@ -139,14 +136,6 @@ export function getTemplateBlocks(preset: 'welcome' | 'product' | 'newsletter' |
         ],
         styles: { textAlign: 'center', paddingTop: '10', paddingBottom: '10' },
       },
-      {
-        id: 'w8',
-        type: 'footer',
-        footerCompany: 'Our Community Inc.',
-        footerAddress: '123 Innovation Ave, Suite 400, New York, NY 10001',
-        footerUnsubscribeUrl: 'https://example.com/unsubscribe',
-        styles: { backgroundColor: '#f9fafb', color: '#9ca3af', paddingTop: '24', paddingBottom: '24' },
-      },
     ];
   } else if (preset === 'product') {
     return [
@@ -190,14 +179,6 @@ export function getTemplateBlocks(preset: 'welcome' | 'product' | 'newsletter' |
           paddingTop: '15',
           paddingBottom: '15',
         },
-      },
-      {
-        id: 'p6',
-        type: 'footer',
-        footerCompany: 'VisualBuilder Inc.',
-        footerAddress: '123 Innovation Ave, Suite 400, New York, NY 10001',
-        footerUnsubscribeUrl: 'https://example.com/unsubscribe',
-        styles: { backgroundColor: '#f9fafb', color: '#9ca3af', paddingTop: '24', paddingBottom: '24' },
       },
     ];
   } else if (preset === 'newsletter') {
@@ -277,14 +258,6 @@ export function getTemplateBlocks(preset: 'welcome' | 'product' | 'newsletter' |
           { platform: 'linkedin', url: 'https://linkedin.com' },
         ],
         styles: { textAlign: 'center', paddingTop: '10', paddingBottom: '10' },
-      },
-      {
-        id: 'n4',
-        type: 'footer',
-        footerCompany: 'Weekly Digest Inc.',
-        footerAddress: '123 Innovation Ave, Suite 400, New York, NY 10001',
-        footerUnsubscribeUrl: 'https://example.com/unsubscribe',
-        styles: { backgroundColor: '#f9fafb', color: '#9ca3af', paddingTop: '24', paddingBottom: '24' },
       },
     ];
   } else {
@@ -441,26 +414,6 @@ export function compileBlocksToHtml(blockList: EmailBlock[]): string {
             </td>
           </tr>
         </table>`;
-    } else if (block.type === 'footer') {
-      const footerCompany = block.footerCompany || '';
-      const footerAddress = (block.footerAddress || '').replace(/\n/g, '<br />');
-      const unsubLink = block.footerUnsubscribeUrl || '#';
-
-      blocksHtml += `
-        <!-- Block: Footer -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="${bg}">
-          <tr>
-            <td style="padding: ${pTop}px 24px ${pBottom}px 24px; color: ${color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 12px; text-align: center; line-height: 1.5;">
-              <p style="margin: 0 0 4px 0; font-weight: bold;">${footerCompany}</p>
-              <p style="margin: 0 0 12px 0;">${footerAddress}</p>
-              <p style="margin: 0;">
-                You are receiving this email because you opted in on our website.
-                <br />
-                <a href="${unsubLink}" target="_blank" style="color: ${color}; text-decoration: underline;">Unsubscribe</a>
-              </p>
-            </td>
-          </tr>
-        </table>`;
     }
   }
 
@@ -535,8 +488,6 @@ export function compileBlocksToPlainText(blockList: EmailBlock[]): string {
         text += `${social.platform.toUpperCase()}: ${social.url || ''} | `;
       }
       text += '\n';
-    } else if (block.type === 'footer') {
-      text += `\n\n${block.footerCompany || ''}\n${block.footerAddress || ''}\nUnsubscribe: ${block.footerUnsubscribeUrl || ''}\n`;
     }
   }
 

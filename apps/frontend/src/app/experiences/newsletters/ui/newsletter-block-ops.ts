@@ -11,7 +11,6 @@ export const EMAIL_BLOCK_TYPES = [
   'divider',
   'spacer',
   'social',
-  'footer',
 ] as const satisfies readonly EmailBlockType[];
 
 /** Type guard for untyped drag data arriving from a CDK drop event. */
@@ -94,12 +93,6 @@ export function createBlock(type: EmailBlockType): EmailBlock {
       { platform: 'linkedin', url: 'https://linkedin.com' },
       { platform: 'instagram', url: 'https://instagram.com' },
     ];
-  } else if (type === 'footer') {
-    newBlock.footerCompany = 'pplCRM Inc.';
-    newBlock.footerAddress = '123 Main St, Suite 400, San Francisco, CA 94105';
-    newBlock.footerUnsubscribeUrl = 'https://example.com/unsubscribe';
-    styles.backgroundColor = '#f9fafb';
-    styles.color = '#9ca3af';
   }
 
   return newBlock;

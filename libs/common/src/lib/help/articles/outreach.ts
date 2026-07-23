@@ -108,7 +108,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'Every newsletter goes out with a compliance footer — your organization’s address, your footer disclaimer and an unsubscribe link — added automatically at send time. It is not a block in the design editor and cannot be removed. Administrators set the disclaimer text under **Workspace → Communications**.',
           'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
           'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
         ],

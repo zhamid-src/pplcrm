@@ -14,16 +14,7 @@ describe('newsletter-templates', () => {
   describe('getTemplateBlocks', () => {
     it('should return the welcome template blocks in order', () => {
       const blocks = getTemplateBlocks('welcome');
-      expect(blocks.map((b) => b.type)).toEqual([
-        'spacer',
-        'heading',
-        'image',
-        'text',
-        'button',
-        'divider',
-        'social',
-        'footer',
-      ]);
+      expect(blocks.map((b) => b.type)).toEqual(['spacer', 'heading', 'image', 'text', 'button', 'divider', 'social']);
     });
 
     it('should return the product template blocks', () => {
@@ -116,22 +107,6 @@ describe('newsletter-templates', () => {
       const html = compileBlocksToHtml(blocks);
       expect(html).toContain('https://facebook.com/x');
       expect(html).toContain('#1877f2');
-    });
-
-    it('should render footer content and unsubscribe link', () => {
-      const blocks: EmailBlock[] = [
-        {
-          id: '1',
-          type: 'footer',
-          footerCompany: 'Acme Inc.',
-          footerAddress: '123 Main St',
-          footerUnsubscribeUrl: 'https://example.com/unsub',
-        },
-      ];
-      const html = compileBlocksToHtml(blocks);
-      expect(html).toContain('Acme Inc.');
-      expect(html).toContain('123 Main St');
-      expect(html).toContain('https://example.com/unsub');
     });
 
     it('should embed the block list as a recoverable JSON comment', () => {

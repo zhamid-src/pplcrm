@@ -50,19 +50,19 @@ const TEMPLATE_OPTIONS: ReadonlyArray<{
   {
     id: 'welcome',
     name: 'Welcome email',
-    description: 'Warm greeting, hero image, social links & footer.',
+    description: 'Warm greeting, hero image & social links.',
     icon: 'envelope',
   },
   {
     id: 'product',
     name: 'Announcement',
-    description: 'Hero, list of updates, CTA button & footer.',
+    description: 'Hero, list of updates & CTA button.',
     icon: 'megaphone',
   },
   {
     id: 'newsletter',
     name: 'Weekly digest',
-    description: 'Heading divider, digest content & footer.',
+    description: 'Heading divider & digest content.',
     icon: 'queue-list',
   },
   {

@@ -51,7 +51,6 @@ export class VisualNewsletterEditorComponent implements OnInit {
     { type: 'divider', label: 'Divider', icon: 'bars-3', iconClass: 'text-neutral-content' },
     { type: 'spacer', label: 'Spacer', icon: 'arrows-pointing-out', iconClass: '' },
     { type: 'social', label: 'Social Links', icon: 'user-group', iconClass: 'text-primary' },
-    { type: 'footer', label: 'Email Footer', icon: 'home', iconClass: 'text-secondary' },
   ];
 
   protected readonly panelTabs: PcTabOption[] = [
@@ -106,19 +105,8 @@ export class VisualNewsletterEditorComponent implements OnInit {
     });
   }
 
-  protected insertVariable(
-    block: EmailBlock,
-    variableName: string,
-    field: 'content' | 'footerCompany' | 'footerAddress' = 'content',
-  ): void {
-    const placeholder = `{${variableName}}`;
-    if (field === 'content') {
-      block.content = (block.content || '') + placeholder;
-    } else if (field === 'footerCompany') {
-      block.footerCompany = (block.footerCompany || '') + placeholder;
-    } else if (field === 'footerAddress') {
-      block.footerAddress = (block.footerAddress || '') + placeholder;
-    }
+  protected insertVariable(block: EmailBlock, variableName: string): void {
+    block.content = (block.content || '') + `{${variableName}}`;
     this.updateBlocks();
   }
 
@@ -141,9 +129,12 @@ export class VisualNewsletterEditorComponent implements OnInit {
         const decoded = decodeURIComponent(matched[1].trim());
         const parsed = JSON.parse(decoded);
         if (Array.isArray(parsed)) {
-          this.blocks.set(parsed);
-          if (parsed.length > 0) {
-            this.selectedBlockId.set(parsed[0].id);
+          // Older drafts may carry a removable 'footer' block; the compliance footer is
+          // appended server-side at send time now, so drop it from the design.
+          const blockList = parsed.filter((b) => b?.type !== 'footer');
+          this.blocks.set(blockList);
+          if (blockList.length > 0) {
+            this.selectedBlockId.set(blockList[0].id);
             this.activeTab.set('edit');
           }
           return;
@@ -355,15 +346,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
 }
 
 /** Block fields that are edited as free text in the Customize panel. */
-type EditableBlockTextField =
-  | 'content'
-  | 'linkUrl'
-  | 'imageUrl'
-  | 'imageAlt'
-  | 'imageWidth'
-  | 'footerCompany'
-  | 'footerAddress'
-  | 'footerUnsubscribeUrl';
+type EditableBlockTextField = 'content' | 'linkUrl' | 'imageUrl' | 'imageAlt' | 'imageWidth';
 
 /** Style keys typed as plain strings on EmailBlock['styles'] (textAlign is handled separately). */
 type StringStyleKey =

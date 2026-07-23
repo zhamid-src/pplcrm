@@ -137,15 +137,6 @@ describe('createBlock', () => {
     expect(block.socialIconStyle).toBe('circular-solid');
     expect(block.socials?.map((s) => s.platform)).toEqual(['facebook', 'twitter', 'linkedin', 'instagram']);
   });
-
-  it('should create a footer with company, address, and unsubscribe defaults', () => {
-    const block = createBlock('footer');
-    expect(block.footerCompany).toBe('pplCRM Inc.');
-    expect(block.footerAddress).toContain('123 Main St');
-    expect(block.footerUnsubscribeUrl).toBe('https://example.com/unsubscribe');
-    expect(block.styles?.backgroundColor).toBe('#f9fafb');
-    expect(block.styles?.color).toBe('#9ca3af');
-  });
 });
 
 describe('isEmailBlockType', () => {

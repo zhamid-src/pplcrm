@@ -346,50 +346,6 @@
                 </tr>
               </table>
               }
-
-              <!-- FOOTER BLOCK -->
-              @if (block.type === 'footer') {
-              <table
-                border="0"
-                cellpadding="0"
-                cellspacing="0"
-                width="100%"
-                [style.background-color]="block.styles?.backgroundColor || '#f9fafb'"
-              >
-                <tr>
-                  <td
-                    [style.color]="block.styles?.color || '#9ca3af'"
-                    [style.padding-top.px]="block.styles?.paddingTop || 24"
-                    [style.padding-bottom.px]="block.styles?.paddingBottom || 24"
-                    class="font-sans px-6 text-xs text-center leading-normal"
-                  >
-                    <p
-                      class="font-bold mb-1"
-                      [innerHTML]="
-                                              resolveVariablesForPreview(
-                                                block.footerCompany || 'Company Name Inc.',
-                                                false
-                                              )
-                                            "
-                    ></p>
-                    <p
-                      class="mb-3 whitespace-pre-wrap"
-                      [innerHTML]="
-                                              resolveVariablesForPreview(
-                                                block.footerAddress || '123 Address Rd, City, State',
-                                                false
-                                              )
-                                            "
-                    ></p>
-                    <p>
-                      You are receiving this email because you opted in on our website.
-                      <br />
-                      <span class="underline text-primary">Unsubscribe</span>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-              }
             </div>
             } }
           </div>
@@ -507,7 +463,7 @@
               <button
                 type="button"
                 class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'FirstName', 'content')"
+                (click)="insertVariable(block, 'FirstName')"
                 title="Click to insert First Name placeholder"
               >
                 + First Name
@@ -515,7 +471,7 @@
               <button
                 type="button"
                 class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'LastName', 'content')"
+                (click)="insertVariable(block, 'LastName')"
                 title="Click to insert Last Name placeholder"
               >
                 + Last Name
@@ -523,7 +479,7 @@
               <button
                 type="button"
                 class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Email', 'content')"
+                (click)="insertVariable(block, 'Email')"
                 title="Click to insert Email placeholder"
               >
                 + Email
@@ -531,7 +487,7 @@
               <button
                 type="button"
                 class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Company', 'content')"
+                (click)="insertVariable(block, 'Company')"
                 title="Click to insert Company placeholder"
               >
                 + Company
@@ -539,7 +495,7 @@
               <button
                 type="button"
                 class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'JobTitle', 'content')"
+                (click)="insertVariable(block, 'JobTitle')"
                 title="Click to insert Job Title placeholder"
               >
                 + Job Title
@@ -547,7 +503,7 @@
               <button
                 type="button"
                 class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Phone', 'content')"
+                (click)="insertVariable(block, 'Phone')"
                 title="Click to insert Phone placeholder"
               >
                 + Phone
@@ -694,7 +650,7 @@
               <button
                 type="button"
                 class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'FirstName', 'content')"
+                (click)="insertVariable(block, 'FirstName')"
                 title="Click to insert First Name placeholder"
               >
                 + First Name
@@ -702,7 +658,7 @@
               <button
                 type="button"
                 class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'LastName', 'content')"
+                (click)="insertVariable(block, 'LastName')"
                 title="Click to insert Last Name placeholder"
               >
                 + Last Name
@@ -710,7 +666,7 @@
               <button
                 type="button"
                 class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Email', 'content')"
+                (click)="insertVariable(block, 'Email')"
                 title="Click to insert Email placeholder"
               >
                 + Email
@@ -864,91 +820,6 @@
               <option value="center">Center</option>
               <option value="right">Right</option>
             </select>
-          </div>
-        </div>
-        }
-
-        <!-- FOOTER EDIT FIELDS -->
-        @if (block.type === 'footer') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Company Name</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [value]="block.footerCompany ?? ''"
-            (input)="setBlockText(block, 'footerCompany', $event)"
-          />
-          <div class="mt-1 flex flex-wrap gap-1">
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
-              (click)="insertVariable(block, 'Company', 'footerCompany')"
-            >
-              + Company
-            </button>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Address Info</label>
-          <textarea
-            class="textarea textarea-bordered w-full textarea-sm min-h-16"
-            [value]="block.footerAddress ?? ''"
-            (input)="setBlockText(block, 'footerAddress', $event)"
-          ></textarea>
-          <div class="mt-1 flex flex-wrap gap-1">
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
-              (click)="insertVariable(block, 'Company', 'footerAddress')"
-            >
-              + Company
-            </button>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
-              (click)="insertVariable(block, 'Phone', 'footerAddress')"
-            >
-              + Phone
-            </button>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
-              (click)="insertVariable(block, 'Email', 'footerAddress')"
-            >
-              + Email
-            </button>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Unsubscribe Link</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [value]="block.footerUnsubscribeUrl ?? ''"
-            (input)="setBlockText(block, 'footerUnsubscribeUrl', $event)"
-          />
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Bg Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [value]="block.styles?.backgroundColor ?? ''"
-              (input)="setBlockStyle(block, 'backgroundColor', $event)"
-            />
-          </div>
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Text Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [value]="block.styles?.color ?? ''"
-              (input)="setBlockStyle(block, 'color', $event)"
-            />
           </div>
         </div>
         }
