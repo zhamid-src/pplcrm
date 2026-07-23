@@ -16,7 +16,7 @@ and `npm exec nx serve frontend`. HMR picks up edits — no restart needed after
 No global install; import straight from the repo:
 
 ```js
-import { chromium } from '/Users/dev/Coding/pplcrm/node_modules/@playwright/test/index.mjs';
+import { chromium } from '<absolute-repo-root>/node_modules/@playwright/test/index.mjs';
 ```
 
 **Trap — Vite error overlay:** any TS error anywhere in the watched workspace (including

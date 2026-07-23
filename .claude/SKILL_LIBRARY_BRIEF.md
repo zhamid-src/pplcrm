@@ -21,7 +21,7 @@ description: "<what it does, one sentence>. USE WHEN <concrete trigger scenarios
 ```
 
 Model the description on the `nx-workspace` skill at
-`/Users/dev/.claude/plugins/marketplaces/nx-claude-plugins/skills/nx-workspace/SKILL.md` — it's
+`~/.claude/plugins/marketplaces/nx-claude-plugins/skills/nx-workspace/SKILL.md` — it's
 the reference example already in this environment. The description is the _only_ thing used to
 decide whether the skill fires, so it must contain the actual trigger words a user or a
 lint/test failure message would contain, not just a topic label.
@@ -74,7 +74,7 @@ derivable by a generic tool: naming conventions, the multi-tenant safety net, th
   pattern — use them as the primary source for `pplcrm-page-layout-ux`, not older experience files
   that predate the refactor.
 - The user keeps a private memory store outside the repo at
-  `/Users/dev/.claude/projects/-Users-dev-Coding-pplcrm/memory/`, with `feedback-design-principles.md`
+  `~/.claude/projects/<this-project>/memory/`, with `feedback-design-principles.md`
   and `project-design-track.md` holding UX judgment calls that aren't written down anywhere in the
   repo (three-orientation-questions rule, disclosure-over-suppression, semantic-tokens-only, no
   hover-only affordances). The `pplcrm-page-layout-ux` author should read those two files and fold

@@ -2,7 +2,7 @@
 
 **Source spec:** claude.ai/design project → `Companion Apps Spec.dc.html` (July 11, 2026). The spec's §3 (Canvass companion) and §4 (Deliveries companion) are the functional targets; its §5 API sketch is adapted below. **Ignore the spec's colors/typography — use the CRM's DaisyUI semantic tokens** (`pplcrm-design-principles` skill).
 
-**Decisions already made (by the owner,2026-07-12):**
+**Decisions already made (by the owner, 2026-07-12):**
 
 1. Verification channel: **email + SMS (Twilio) now**, both in v1.
 2. Admin approval: **once per volunteer** — first verified sign-in creates one pending approval; once approved, all current and future assignments work. Admin can revoke anytime.

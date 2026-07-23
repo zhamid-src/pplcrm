@@ -155,8 +155,9 @@ Verify each is registered in the respective **live** dashboard and its signing s
 
 ## 8. Data hygiene before real launch
 
-- [ ] Decide whether to **wipe test data**. There's a test owner (user id 1, tenant 1, `hello@pplcrm.com`,
-      manually verified) plus any test forms/donations/jobs created during the smoke test. The DB has no
+- [ ] Decide whether to **wipe test data**. There's a test owner account (user id 1, tenant 1, manually
+      verified — re-point it to `hello@pplcrm.com` if kept) plus any test forms/donations/jobs created
+      during the smoke test. The DB has no
       real users yet, so a clean reset is cheap and avoids test artifacts in production.
       _Snapshot 2026-07-21: 2 tenants, 8 authusers, 121 persons, 20 form_submissions, 30 donations._
 - [x] Clear failed `background_jobs` rows — **done 2026-07-21** (38 exhausted test-period rows deleted;
@@ -196,26 +197,26 @@ update` has no probe flags, so YAML is the only path. Liveness must stay on `GET
       outage; readiness on `GET /healthz` correctly pulls it from ingress instead. For reference
       (probes survive image deploys; this only ever needs re-doing on an app re-create):
 
-            ```bash
-            az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml
-            # edit: under properties.template.containers[0] add
-            #   probes:
-            #   - type: Startup
-            #     httpGet: { path: /, port: 3000 }
-            #     periodSeconds: 5
-            #     failureThreshold: 30
-            #   - type: Liveness
-            #     httpGet: { path: /, port: 3000 }
-            #     periodSeconds: 30
-            #     failureThreshold: 3
-            #   - type: Readiness
-            #     httpGet: { path: /healthz, port: 3000 }
-            #     periodSeconds: 30
-            #     failureThreshold: 3
-            az containerapp update -n pplcrm-api -g pplcrm-cad-prod --yaml /tmp/pplcrm-api.yaml
-            ```
+              ```bash
+              az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml
+              # edit: under properties.template.containers[0] add
+              #   probes:
+              #   - type: Startup
+              #     httpGet: { path: /, port: 3000 }
+              #     periodSeconds: 5
+              #     failureThreshold: 30
+              #   - type: Liveness
+              #     httpGet: { path: /, port: 3000 }
+              #     periodSeconds: 30
+              #     failureThreshold: 3
+              #   - type: Readiness
+              #     httpGet: { path: /healthz, port: 3000 }
+              #     periodSeconds: 30
+              #     failureThreshold: 3
+              az containerapp update -n pplcrm-api -g pplcrm-cad-prod --yaml /tmp/pplcrm-api.yaml
+              ```
 
-            One-time op — later `az containerapp update --image` deploys don't touch probes.
+              One-time op — later `az containerapp update --image` deploys don't touch probes.
 
 - [x] Review backups/retention on Postgres and Blob; confirm they match the retention windows the marketing
       site claims (see `pplcrm-website-claims`). **Verified 2026-07-21:** PG Flexible Server = 7-day

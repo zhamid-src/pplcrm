@@ -175,7 +175,7 @@ toast if there's a result worth reporting.**
 
 ## Review checklist (run before shipping a page change)
 
-the owner's bar: a first-time user should think the page is beautiful, because sloppy UI reads as broken.
+The owner's bar: a first-time user should think the page is beautiful, because sloppy UI reads as broken.
 Every page must answer three orientation questions:
 
 - [ ] **Where am I?** Title is the record's real name (not a template label); entity type is the
