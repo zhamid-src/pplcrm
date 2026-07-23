@@ -77,13 +77,13 @@
     >
       <span class="flex-1 min-w-0">
         @if (isEffectivelyNarrow()) {
-        <hr class="text-neutral w-6" />
+        <hr class="text-neutral my-2 w-6" />
         } @else { {{ item.name }} }
       </span>
       @if (item.children?.length) {
       <pc-swap
-        class="invisible mr-2"
-        [class.visible]="!isEffectivelyNarrow()"
+        class="mr-2"
+        [class.hidden]="isEffectivelyNarrow()"
         swapOnIcon="chevron-right"
         swapOffIcon="chevron-down"
         animation="rotate"

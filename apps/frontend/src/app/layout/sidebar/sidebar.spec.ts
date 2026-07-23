@@ -84,6 +84,17 @@ describe('Sidebar Component', () => {
     expect(component['isMobileOpen']()).toBe(true);
   });
 
+  it('should hide adminOnly sections from editors', () => {
+    mockAuthService.getUser.mockReturnValue({ role: 'user' });
+    mockSidebarSvc.getItems.mockReturnValue(
+      signal([
+        { name: 'ADMIN', type: 'subheading', adminOnly: true, children: [] },
+        { name: 'People', route: '/people' },
+      ]),
+    );
+    expect(component['items']().map((item: { name: string }) => item.name)).toEqual(['People']);
+  });
+
   it('should honor collapse state when the sidebar is expanded', () => {
     mockSidebarSvc.isCollapsed.mockReturnValue(true);
     // isMobileOpen is true in the default mock, so the sidebar is not effectively narrow

@@ -110,15 +110,17 @@ export class Sidebar {
     const allItems = this.sidebarSvc.getItems()();
     const withBadges = this.applyBadges(allItems);
     if (role === 'user') {
-      return withBadges.map((item) => {
-        if (item.children) {
-          return {
-            ...item,
-            children: item.children.filter((child) => !child.adminOnly),
-          };
-        }
-        return item;
-      });
+      return withBadges
+        .filter((item) => !item.adminOnly)
+        .map((item) => {
+          if (item.children) {
+            return {
+              ...item,
+              children: item.children.filter((child) => !child.adminOnly),
+            };
+          }
+          return item;
+        });
     }
     return withBadges;
   });
