@@ -26,6 +26,8 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
   }
 
   protected readonly status = signal<{
+    /** False when the server has no Google OAuth credentials (sync is optional per deployment). */
+    configured?: boolean;
     connected: boolean;
     googleEmail: string | null;
     syncedAt: Date | string | null;

@@ -4,6 +4,7 @@ import { GoogleOAuthService, NEEDS_FULL_SYNC } from './google-oauth.service';
 import { GoogleSyncService } from './google-sync.service';
 import { BaseRepository } from '../../lib/base.repo';
 import { decodeOAuthState } from '../../lib/oauth-state';
+import { env } from '../../../env';
 
 /**
  * The router reads `(BaseRepository as any)['_db']` directly (not the
@@ -47,14 +48,44 @@ const CAMPAIGN = '30';
 
 describe('GoogleSyncRouter', () => {
   let originalDb: unknown;
+  let originalCreds: { id: string | undefined; secret: string | undefined };
 
   beforeEach(() => {
     vi.restoreAllMocks();
     originalDb = (BaseRepository as any)._db;
+    // The router refuses to run unconfigured; give it fake credentials for the
+    // happy-path tests (no real Google calls are made — the services are mocked).
+    originalCreds = { id: env.googleClientId, secret: env.googleClientSecret };
+    (env as { googleClientId?: string }).googleClientId = 'test-google-client-id';
+    (env as { googleClientSecret?: string }).googleClientSecret = 'test-google-client-secret';
   });
 
   afterEach(() => {
     (BaseRepository as any)._db = originalDb;
+    (env as { googleClientId?: string }).googleClientId = originalCreds.id;
+    (env as { googleClientSecret?: string }).googleClientSecret = originalCreds.secret;
+  });
+
+  it('getConnectionStatus reports configured=false without touching Google when credentials are absent', async () => {
+    installMockDb();
+    (env as { googleClientId?: string }).googleClientId = undefined;
+    (env as { googleClientSecret?: string }).googleClientSecret = undefined;
+    const statusSpy = vi.spyOn(GoogleOAuthService.prototype, 'getConnectionStatus');
+
+    const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
+    const result = await caller.getConnectionStatus({ campaignId: CAMPAIGN });
+
+    expect(result).toMatchObject({ configured: false, connected: false, syncing: false });
+    expect(statusSpy).not.toHaveBeenCalled();
+  });
+
+  it('getAuthUrl fails with user-facing copy when credentials are absent', async () => {
+    installMockDb();
+    (env as { googleClientId?: string }).googleClientId = undefined;
+    (env as { googleClientSecret?: string }).googleClientSecret = undefined;
+
+    const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
+    await expect(caller.getAuthUrl({ campaignId: CAMPAIGN })).rejects.toThrow(/not configured on this server/);
   });
 
   it('rejects unauthenticated callers', async () => {

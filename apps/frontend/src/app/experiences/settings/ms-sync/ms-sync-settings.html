@@ -59,7 +59,16 @@
 
   @if (lastSyncResult()) {
   <p class="text-xs text-base-content/60">✓ Sync complete. {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
-  } } @else {
+  } } @else if (status()?.configured === false) {
+  <!-- Server has no Microsoft OAuth credentials: a Connect button would mislead (§2), so explain instead -->
+  <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4 flex items-start gap-3">
+    <pc-icon name="information-circle" [size]="5" class="mt-0.5 shrink-0 text-info"></pc-icon>
+    <p class="text-xs text-base-content/70">
+      Microsoft email sync isn't set up on this server, so Office 365 mailboxes can't be connected. Ask whoever runs
+      your pplCRM deployment to add the Microsoft OAuth credentials.
+    </p>
+  </div>
+  } @else {
   <!-- Disconnected state -->
   <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
     <p class="text-xs text-base-content/70">
