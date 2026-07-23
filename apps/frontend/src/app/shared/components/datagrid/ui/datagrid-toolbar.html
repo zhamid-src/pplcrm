@@ -2,8 +2,11 @@
 <!-- z-40: the toolbar's stacking context must clear the table's sticky
      headers (z-30, later in DOM) so an open dropdown sheet paints above them. -->
 <ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-40 gap-0.5">
+  <!-- Below sm the whole toolbar folds into the single ⋮ menu at the end
+       ([phoneCollapsed]); sm–lg keeps this icon row. -->
   <pc-grid-tool-btn
     [touch]="true"
+    [phoneCollapsed]="true"
     [enabled]="!!grid.addRoute()"
     [tip]="addLabel()"
     [icon]="grid.plusIcon()"
@@ -11,6 +14,7 @@
   />
   <pc-grid-tool-btn
     [touch]="true"
+    [phoneCollapsed]="true"
     [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
     [tip]="'Delete selected row(s)'"
     icon="trash"
@@ -18,6 +22,7 @@
   />
   <pc-grid-tool-btn
     [touch]="true"
+    [phoneCollapsed]="true"
     [enabled]="!!grid.canUndo()"
     [tip]="'Undo'"
     icon="arrow-uturn-left"
@@ -25,6 +30,7 @@
   />
   <pc-grid-tool-btn
     [touch]="true"
+    [phoneCollapsed]="true"
     [enabled]="!!grid.canRedo()"
     [tip]="'Redo'"
     icon="arrow-uturn-right"
@@ -35,7 +41,9 @@
   @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
   grid.showListFilter()) {
   <pc-grid-tool-btn
+    #filtersBtn
     [touch]="true"
+    [phoneCollapsed]="true"
     icon="funnel"
     tip="Filters"
     [hasDropdown]="true"
@@ -57,59 +65,65 @@
       class="dropdown-content pc-dropdown-sheet bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg sm:static sm:w-72 sm:rounded-box sm:pb-3"
     >
       <h3 class="pc-eyebrow mb-2 px-1 sm:hidden">Filters</h3>
-      @if (grid.showTagFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Tags'"
-        [active]="grid.selectedTags().length > 0"
-        [open]="grid.selectedTags().length > 0"
-        (clear)="grid.clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="grid.filteredAvailableTags()"
-          [selected]="grid.selectedTags()"
-          [searchQuery]="grid.tagSearchQuery()"
-          (searchQueryChange)="grid.tagSearchQuery.set($event)"
-          (selectAll)="grid.selectAllTags()"
-          (clearVisible)="grid.clearAllTagsVisible()"
-          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showIssueFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Issues'"
-        [active]="grid.selectedIssues().length > 0"
-        [open]="grid.selectedIssues().length > 0"
-        (clear)="grid.clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="grid.filteredAvailableIssues()"
-          [selected]="grid.selectedIssues()"
-          [searchQuery]="grid.issueSearchQuery()"
-          (searchQueryChange)="grid.issueSearchQuery.set($event)"
-          (selectAll)="grid.selectAllIssues()"
-          (clearVisible)="grid.clearAllIssuesVisible()"
-          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showListFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by List'"
-        [active]="grid.selectedListId() !== null"
-        [open]="grid.selectedListId() !== null"
-        (clear)="grid.clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="grid.selectedListId()"
-          [radioName]="'selectedListMobile'"
-          (select)="grid.selectListFilter($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
+      <!-- Hidden on phones: the dashed chip-row pills (Tags / Issues / Lists)
+           already offer these pickers, so the sheet keeps only the advanced
+           tools that exist nowhere else. -->
+      <div class="max-sm:hidden sm:contents">
+        @if (grid.showTagFilter()) {
+        <pc-dg-filter-section
+          [title]="'Filter by Tags'"
+          [active]="grid.selectedTags().length > 0"
+          [open]="grid.selectedTags().length > 0"
+          (clear)="grid.clearTagsFilter()"
+        >
+          <pc-multiselect-filter
+            [label]="'Tags'"
+            [options]="grid.filteredAvailableTags()"
+            [selected]="grid.selectedTags()"
+            [searchQuery]="grid.tagSearchQuery()"
+            (searchQueryChange)="grid.tagSearchQuery.set($event)"
+            (selectAll)="grid.selectAllTags()"
+            (clearVisible)="grid.clearAllTagsVisible()"
+            (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+          />
+        </pc-dg-filter-section>
+        } @if (grid.showIssueFilter()) {
+        <pc-dg-filter-section
+          [title]="'Filter by Issues'"
+          [active]="grid.selectedIssues().length > 0"
+          [open]="grid.selectedIssues().length > 0"
+          (clear)="grid.clearIssuesFilter()"
+        >
+          <pc-multiselect-filter
+            [label]="'Issues'"
+            [options]="grid.filteredAvailableIssues()"
+            [selected]="grid.selectedIssues()"
+            [searchQuery]="grid.issueSearchQuery()"
+            (searchQueryChange)="grid.issueSearchQuery.set($event)"
+            (selectAll)="grid.selectAllIssues()"
+            (clearVisible)="grid.clearAllIssuesVisible()"
+            (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+          />
+        </pc-dg-filter-section>
+        } @if (grid.showListFilter()) {
+        <pc-dg-filter-section
+          [title]="'Filter by List'"
+          [active]="grid.selectedListId() !== null"
+          [open]="grid.selectedListId() !== null"
+          (clear)="grid.clearListFilter()"
+        >
+          <pc-singleselect-filter
+            [label]="'List'"
+            [options]="listOptions()"
+            [selected]="grid.selectedListId()"
+            [radioName]="'selectedListMobile'"
+            (select)="grid.selectListFilter($event)"
+          />
+        </pc-dg-filter-section>
+        }
+      </div>
+      @if (grid.allowFilter()) {
+      <div class="sm:border-t border-base-200 sm:pt-1 flex flex-col">
         <button
           class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
           [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
@@ -131,23 +145,59 @@
     </div>
   </pc-grid-tool-btn>
   }
-  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true" [hideCaret]="true">
+  <pc-grid-tool-btn
+    #columnsBtn
+    [touch]="true"
+    [phoneCollapsed]="true"
+    [icon]="'view-column'"
+    [tip]="'Columns'"
+    [hasDropdown]="true"
+    [hideCaret]="true"
+  >
     <pc-dg-columns-dropdown [grid]="grid" />
   </pc-grid-tool-btn>
 
-  <!-- Overflow: secondary actions -->
+  <!-- Overflow: secondary actions on sm–lg; the ENTIRE toolbar as one menu below sm.
+       Any row click closes the menu (opening Filters/Columns closes it via the
+       shared details[name] group anyway). -->
   <pc-grid-tool-btn
+    #moreBtn
     [touch]="true"
     icon="ellipsis-vertical"
     tip="More"
+    phoneLabel="Actions"
     [hasDropdown]="true"
     [hideCaret]="true"
     [dropdownEnd]="true"
   >
     <ul
       tabindex="0"
+      (click)="moreBtn.closeDropdown()"
       class="dropdown-content pc-dropdown-sheet menu bg-base-100 sm:rounded-box z-[50] sm:w-52 p-2 shadow"
     >
+      <!-- Phone-only rows: the collapsed toolbar actions -->
+      @if (grid.addRoute()) {
+      <li class="sm:hidden">
+        <a (click)="onAdd()"><pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon> {{ addLabel() }}</a>
+      </li>
+      }
+      <li
+        class="sm:hidden"
+        [class.disabled]="!grid.canUndo()"
+        [class.text-neutral-400]="!grid.canUndo()"
+        [class.pointer-events-none]="!grid.canUndo()"
+      >
+        <a (click)="onUndo()"><pc-icon name="arrow-uturn-left" [size]="4"></pc-icon> Undo</a>
+      </li>
+      <li
+        class="sm:hidden"
+        [class.disabled]="!grid.canRedo()"
+        [class.text-neutral-400]="!grid.canRedo()"
+        [class.pointer-events-none]="!grid.canRedo()"
+      >
+        <a (click)="onRedo()"><pc-icon name="arrow-uturn-right" [size]="4"></pc-icon> Redo</a>
+      </li>
+      <div class="divider my-0 sm:hidden"></div>
       <li
         [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
         [class.cursor-not-allowed]="grid.disableRefresh()"
@@ -208,6 +258,51 @@
       <li>
         <a (click)="onToggleArchive()">
           <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+
+      <!-- Phone-only rows: the collapsed picker panels, then Delete demoted last (§4) -->
+      @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+      grid.showListFilter()) {
+      <div class="divider my-0 sm:hidden"></div>
+      <li class="sm:hidden">
+        <!-- stopPropagation: the bubbled click would reach the picker button's
+             document-level outside-click handler and instantly close the panel
+             we just opened. The details[name] group still closes this menu. -->
+        <a (click)="openFiltersPanel(); $event.stopPropagation()">
+          <pc-icon name="funnel" [size]="4"></pc-icon> Filters…
+        </a>
+      </li>
+      } @else {
+      <div class="divider my-0 sm:hidden"></div>
+      }
+      <li class="sm:hidden">
+        <a (click)="openColumnsPanel(); $event.stopPropagation()">
+          <pc-icon name="view-column" [size]="4"></pc-icon> Columns…
+        </a>
+      </li>
+      @if (!grid.disableDelete()) {
+      <div class="divider my-0 sm:hidden"></div>
+      <li
+        class="sm:hidden"
+        [class.disabled]="!grid.hasSelectionState()"
+        [class.text-neutral-400]="!grid.hasSelectionState()"
+        [class.pointer-events-none]="!grid.hasSelectionState()"
+      >
+        <a class="flex items-start gap-2 py-2" (click)="onDeleteSelected()">
+          <pc-icon
+            name="trash"
+            [size]="4"
+            class="mt-0.5 shrink-0"
+            [class.text-error]="grid.hasSelectionState()"
+          ></pc-icon>
+          <span class="flex flex-col">
+            <span [class.text-error]="grid.hasSelectionState()">Delete selected</span>
+            @if (!grid.hasSelectionState()) {
+            <span class="text-base-content/50 text-[11px]">Select rows to delete first</span>
+            }
+          </span>
         </a>
       </li>
       }

@@ -151,22 +151,25 @@ describe('DetailHeader', () => {
       Object.defineProperty(window, 'matchMedia', { writable: true, value: originalMatchMedia });
     });
 
-    it('collapses the action cluster into the overflow menu instead of rendering it inline', () => {
+    it('keeps Save/Cancel inline and out of the overflow menu (§2: never hide the critical path)', () => {
       const mobileFixture = createMobileFixture();
       mobileFixture.detectChanges();
 
-      // The overflow dropdown renders even without showDelete, and form-actions lives inside it.
-      const inMenu = mobileFixture.debugElement.query(By.css('.dropdown-content pc-form-actions'));
-      expect(inMenu).not.toBeNull();
+      // Exactly one form-actions instance, rendered inline — NOT inside the dropdown.
       expect(mobileFixture.debugElement.queryAll(By.directive(FormActions)).length).toBe(1);
+      expect(mobileFixture.debugElement.query(By.css('.dropdown-content pc-form-actions'))).toBeNull();
+      const inline = mobileFixture.debugElement.query(By.css('pc-form-actions'));
+      expect(inline).not.toBeNull();
     });
 
-    it('keeps the delete item below the collapsed actions when showDelete is true', () => {
+    it('labels the overflow trigger and keeps the delete item in the menu when showDelete is true', () => {
       const mobileFixture = createMobileFixture();
       mobileFixture.componentRef.setInput('showDelete', true);
       mobileFixture.detectChanges();
 
-      expect(mobileFixture.debugElement.query(By.css('.dropdown-content pc-form-actions'))).not.toBeNull();
+      // Labeled "Actions" trigger on phones (a bare ⋮ does not read as a menu).
+      const trigger = mobileFixture.debugElement.query(By.css('.dropdown > button'));
+      expect(trigger.nativeElement.textContent).toContain('Actions');
       expect(mobileFixture.debugElement.query(By.css('.dropdown-content button.text-error'))).not.toBeNull();
     });
   });

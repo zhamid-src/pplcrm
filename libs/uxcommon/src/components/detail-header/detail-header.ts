@@ -84,10 +84,12 @@ const MOBILE_ACTIONS_QUERY = '(max-width: 639.98px)';
             </div>
           }
           <!-- Single source for the action cluster: stamped inline on ≥sm, or inside
-               the overflow menu on mobile where the header has no room for buttons. -->
-          <ng-template #actionCluster>
+               the overflow menu on mobile where the header has no room for buttons.
+               includeForm lets the mobile branch pull pc-form-actions OUT of the menu:
+               Save/Cancel must stay visible (§2 — never hide the critical path). -->
+          <ng-template #actionCluster let-includeForm="includeForm">
             <ng-content select="[pc-actions-prefix]"></ng-content>
-            @if (showActions()) {
+            @if (includeForm && showActions()) {
               <pc-form-actions
                 size="sm"
                 [isLoading]="isLoading()"
@@ -106,14 +108,43 @@ const MOBILE_ACTIONS_QUERY = '(max-width: 639.98px)';
           </ng-template>
 
           @if (!isMobile()) {
-            <ng-container [ngTemplateOutlet]="actionCluster"></ng-container>
+            <ng-container [ngTemplateOutlet]="actionCluster" [ngTemplateOutletContext]="{ includeForm: true }" />
+          } @else if (showActions()) {
+            <!-- Mobile: Save/Cancel stay inline — a user must never have to discover
+                 the overflow menu to save their edits. -->
+            <pc-form-actions
+              size="sm"
+              [isLoading]="isLoading()"
+              [signalForm]="form()"
+              [disabled]="disabled()"
+              [saveAlwaysEnabled]="saveAlwaysEnabled()"
+              [buttonsToShow]="formActionsButtons()"
+              [btn1Text]="btn1Text()"
+              [btn1Icon]="btn1Icon()"
+              [showDelete]="false"
+              [showCancel]="showCancel()"
+              (btn1Clicked)="save.emit($event)"
+            ></pc-form-actions>
           }
           @if (isMobile() || showDelete()) {
             <!-- Self-hides when the menu would be empty (a page with no actions at all). -->
             <div class="dropdown dropdown-end [&:not(:has(.dropdown-content_li,.dropdown-content_.btn))]:hidden">
-              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
-                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
-              </button>
+              @if (isMobile()) {
+                <!-- Labeled trigger on phones: a bare ⋮ does not read as a menu. -->
+                <button
+                  type="button"
+                  tabindex="0"
+                  class="btn btn-outline btn-secondary btn-sm gap-1"
+                  aria-label="More actions"
+                >
+                  <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+                  Actions
+                </button>
+              } @else {
+                <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
+                  <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
+                </button>
+              }
               <div
                 tabindex="0"
                 class="dropdown-content pc-dropdown-sheet z-30 border border-base-200 bg-base-100 p-2 shadow-lg sm:w-56 sm:rounded-box"
@@ -126,7 +157,10 @@ const MOBILE_ACTIONS_QUERY = '(max-width: 639.98px)';
                   <div
                     class="flex flex-col items-stretch gap-2 empty:hidden [&_.btn]:w-full [&_.btn]:justify-start [&_.btn]:min-h-11 [&_.btn]:text-sm [&_.dropdown]:w-full [&_pc-form-actions>div]:flex-col [&_div[pc-actions-prefix]]:flex-col [&_div[pc-actions-prefix]]:items-stretch [&_div[pc-actions-suffix]]:flex-col [&_div[pc-actions-suffix]]:items-stretch"
                   >
-                    <ng-container [ngTemplateOutlet]="actionCluster"></ng-container>
+                    <ng-container
+                      [ngTemplateOutlet]="actionCluster"
+                      [ngTemplateOutletContext]="{ includeForm: false }"
+                    />
                   </div>
                 }
                 <ul class="menu w-full p-0 max-sm:mt-1 max-sm:border-t max-sm:border-base-200 max-sm:pt-1">

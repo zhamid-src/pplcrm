@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, viewChild } from '@angular/core';
 import { DataGrid } from '../datagrid';
 import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
 import { DataGridFilterSectionComponent } from './datagrid-filter-section';
@@ -23,6 +23,21 @@ export class DataGridToolbarComponent {
   public readonly grid = inject(DataGrid);
 
   private readonly countFormatter = new Intl.NumberFormat();
+
+  // viewChild (not template refs) because #filtersBtn sits inside an @if block,
+  // out of scope for the phone menu's rows in the sibling subtree.
+  private readonly filtersBtn = viewChild<GridActionComponent>('filtersBtn');
+  private readonly columnsBtn = viewChild<GridActionComponent>('columnsBtn');
+
+  /** Phone menu rows: open the (trigger-hidden) Filters/Columns picker sheet.
+   *  The shared details[name] group closes the menu itself automatically. */
+  public openFiltersPanel() {
+    this.filtersBtn()?.openDropdown();
+  }
+
+  public openColumnsPanel() {
+    this.columnsBtn()?.openDropdown();
+  }
 
   readonly listOptions = computed<SingleSelectOption[]>(() =>
     this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),

@@ -12,6 +12,7 @@ import { PcIconNameType } from '@icons/icons.index';
       [class.tooltip-top]="placement() === 'top'"
       [class.tooltip-bottom]="placement() === 'bottom'"
       [class.hidden]="hidden()"
+      [class.pc-phone-collapsed]="phoneCollapsed() && !hasDropdown()"
       [class.disabled]="!enabled() || spinning()"
       [class.cursor-not-allowed]="!enabled() || spinning()"
       [class.text-neutral-400]="!enabled() || spinning()"
@@ -28,10 +29,18 @@ import { PcIconNameType } from '@icons/icons.index';
           <summary
             class="list-none cursor-pointer"
             [class.pc-no-caret]="hideCaret()"
+            [class.pc-phone-collapsed]="phoneCollapsed()"
             [class.touch-target]="touch()"
             (click)="onSummaryClick($event)"
           >
-            <div class="flex h-full items-center justify-center ">
+            @if (phoneLabel()) {
+              <!-- Labeled trigger on phones: a bare icon does not read as a menu. -->
+              <span class="btn btn-outline btn-secondary btn-sm gap-1 pointer-events-none sm:hidden">
+                <pc-icon [name]="icon()" [size]="4"></pc-icon>
+                {{ phoneLabel() }}
+              </span>
+            }
+            <div class="flex h-full items-center justify-center" [class.pc-phone-collapsed]="!!phoneLabel()">
               <a role="button" class="relative pointer-events-none ">
                 <pc-icon
                   [name]="icon()"
@@ -78,6 +87,17 @@ import { PcIconNameType } from '@icons/icons.index';
       li.tooltip:has(details[open])::after {
         display: none;
       }
+      /* [phoneCollapsed] buttons fold into the toolbar's single phone menu
+         below sm. Plain action buttons hide entirely; dropdown buttons hide
+         only their trigger so openDropdown() can still show their sheet.
+         (Also reused to swap a [phoneLabel] trigger's icon for its label.) */
+      @media (width < 40rem) {
+        li.pc-phone-collapsed,
+        summary.pc-phone-collapsed,
+        div.pc-phone-collapsed {
+          display: none;
+        }
+      }
     `,
   ],
 })
@@ -97,6 +117,10 @@ export class GridActionComponent {
   public dropdownEnd = input(true);
   /** Enlarge the tap surface to the 44×44px minimum touch target (mobile toolbar). */
   public touch = input(false);
+  /** Fold this button into the toolbar's single phone menu below sm (see styles). */
+  public phoneCollapsed = input(false);
+  /** Below sm, render the trigger as a labeled outline button instead of a bare icon. */
+  public phoneLabel = input<string | null>(null);
   /** Hide the DaisyUI accordion caret for icon-only dropdown triggers. */
   public hideCaret = input(false);
   public badge = input<number | undefined>(undefined);
@@ -126,5 +150,18 @@ export class GridActionComponent {
     if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
       detailsEl.removeAttribute('open');
     }
+  }
+
+  /** Open this button's dropdown programmatically (e.g. from the phone menu's
+   *  "Filters…" row). The shared details[name] group closes any other open
+   *  grid dropdown automatically. */
+  public openDropdown() {
+    const detailsEl = this.el.nativeElement.querySelector('details');
+    if (detailsEl) detailsEl.setAttribute('open', '');
+  }
+
+  /** Close this button's dropdown (called after a menu row's action fires). */
+  public closeDropdown() {
+    this.el.nativeElement.querySelector('details')?.removeAttribute('open');
   }
 }
