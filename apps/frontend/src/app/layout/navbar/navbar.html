@@ -10,7 +10,10 @@
       [attr.aria-label]="isMobileOpen() ? 'Close navigation menu' : 'Open navigation menu'"
       i18n-aria-label="@@navbar.menu.toggleAriaLabel"
     >
+      <!-- pointer-events-none: pc-swap's label stops click propagation, which would
+           swallow taps before they reach this button's (click) handler -->
       <pc-swap
+        class="pointer-events-none"
         swapOnIcon="x-mark"
         swapOffIcon="bars-4"
         [checked]="isMobileOpen()"
@@ -74,8 +77,10 @@
       ></pc-icon>
     </span>
 
+    <!-- Fullscreen + pin have no use on a phone (no fullscreen API, sidebar pins
+         are a desktop affordance) — hidden below sm -->
     <pc-swap
-      class="hover:text-primary text-base-400 cursor-pointer"
+      class="hover:text-primary text-base-400 cursor-pointer max-sm:hidden"
       swapOnIcon="arrows-pointing-out"
       swapOffIcon="arrows-pointing-in"
       [checked]="!isFullScreenMode()"
@@ -85,7 +90,7 @@
     ></pc-swap>
 
     <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
-    <pc-favourite-toggle></pc-favourite-toggle>
+    <pc-favourite-toggle class="max-sm:hidden"></pc-favourite-toggle>
 
     <!-- light / dark theme switcher -->
     <pc-swap

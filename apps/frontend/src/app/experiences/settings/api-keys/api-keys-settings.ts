@@ -1,12 +1,11 @@
-import { Component, signal, computed, inject, OnInit } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DatePipe } from '@angular/common';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-import { DatePipe, NgIf } from '@angular/common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { SettingsService } from '../services/settings-service';
 
 interface ApiKeyInfo {
   preview: string;
@@ -16,7 +15,7 @@ interface ApiKeyInfo {
 
 @Component({
   selector: 'pc-api-keys-settings',
-  imports: [EmptyState, Icon, DatePipe, NgIf],
+  imports: [Icon, DatePipe],
   template: `
     <div class="api-keys-container">
       @if (!loaded()) {

@@ -16152,6 +16152,330 @@ export class FormRenderComponent {
 </pc-detail-layout>
 ```
 
+## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
+```typescript
+import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { FormsService } from '../services/forms-service';
+import { ListsService } from '../../lists/services/lists-service';
+import { UserService } from '../../../services/user.service';
+import type { IAuthUser } from '@common';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { donationPageUrl, publicPageUrl } from '../../../shared/public-pages';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+
+@Component({
+  selector: 'pc-form-view',
+  imports: [
+    StatusBadge,
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailRow,
+  ],
+  templateUrl: './form-view.html',
+})
+export class FormViewComponent {
+  private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  readonly id = input.required<string>();
+  protected readonly recordNav = injectRecordNavigation('form', this.id);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly formRecord = signal<any | null>(null);
+  protected readonly submissionsCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Forms', route: '/forms' },
+    { label: this.formRecord()?.name || 'Form' },
+  ]);
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private readonly router = inject(Router);
+  private usersById = new Map<string, IAuthUser>();
+
+  // Active tab state
+  protected activeTab = signal<string>('targetActions');
+
+  protected readonly formTabs = computed<PcTabOption[]>(() => [
+    { id: 'targetActions', label: 'Target lists & actions' },
+    { id: 'fieldsPreview', label: 'Fields & layout' },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity' },
+  ]);
+
+  protected readonly selectedFields = computed(() => {
+    const record = this.formRecord();
+    if (!record) return [];
+    if (record.fields) {
+      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
+    }
+    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+  });
+
+  protected readonly fieldsCount = computed(() => {
+    const fields = this.selectedFields();
+    // Email is always required and present
+    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
+    return standardFieldsCount + 1;
+  });
+
+  protected readonly targetListsNames = computed(() => {
+    const record = this.formRecord();
+    if (!record || !record.target_lists) return [];
+    const listIds: string[] = Array.isArray(record.target_lists)
+      ? record.target_lists
+      : JSON.parse(record.target_lists || '[]');
+
+    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
+  });
+
+  protected readonly embedSnippet = computed(() => {
+    const record = this.formRecord();
+    if (!record || !this.id()) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const fields = this.selectedFields();
+    const isDonation = record.form_type === 'donation';
+    const isRecurring = record.form_type === 'recurring_donation';
+    const isAnyDonation = isDonation || isRecurring;
+
+    const addressFields = isAnyDonation
+      ? `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
+      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
+      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
+      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>`
+      : '';
+
+    const amountField = isDonation
+      ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
+    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : isRecurring
+        ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
+    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
+  </div>`
+        : '';
+
+    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
+
+    return `<!-- pplCRM Embeddable Form -->
+<form action="${apiOrigin}/api/forms/submit/${this.formRecord()?.slug ?? ''}?t=${encodeURIComponent(this.auth.getUser()?.tenant_slug ?? '')}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+${
+  fields.includes('first_name') || isAnyDonation
+    ? `  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+    : ''
+}${
+      fields.includes('last_name') || isAnyDonation
+        ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+        : ''
+    }
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${
+    !isAnyDonation && fields.includes('mobile')
+      ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
+    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    !isAnyDonation && fields.includes('notes')
+      ? `\n  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
+    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+  </div>`
+      : ''
+  }${addressFields}${amountField}
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    const record = this.formRecord();
+    if (!record?.slug) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug;
+    // Donation forms keep the server-rendered page (Stripe checkout); standard forms live on the
+    // /f/:slug SPA page on the tenant subdomain.
+    if (record.form_type === 'donation' || record.form_type === 'recurring_donation') {
+      return donationPageUrl(tenantSlug, record.slug);
+    }
+    return publicPageUrl(tenantSlug, `f/${record.slug}`);
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    // Load users
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load Form details
+      const record = await this.formsSvc.getById(id);
+      this.formRecord.set(record);
+
+      // 2. Load available Lists to resolve list names
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
+
+      // 3. Load submissions count
+      const subCount = await this.formsSvc.getSubmissionsCount(id);
+      this.submissionsCount.set(subCount);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the form. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editForm() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteForm() {
+    if (!this.id()) return;
+    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Web Form',
+      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.formsSvc.delete(this.id());
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Web form deleted');
+      await this.router.navigate([backRoute]);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete web form';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected getCreatedAt(): Date | null {
+    const date = this.formRecord()?.created_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUpdatedAt(): Date | null {
+    const date = this.formRecord()?.updated_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/forms/ui/public-form.ts
 ```typescript
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
@@ -45074,16 +45398,18 @@ export class EmailClient {
   protected mobileView = this.stateStore.mobilePanelView;
 
   protected folderPanelClass = computed(() =>
-    this.mobileView() === 'folders' ? 'flex-1 md:flex-none' : 'hidden md:block',
+    this.mobileView() === 'folders' ? 'flex-1 min-w-0 md:flex-none' : 'hidden md:block',
   );
 
   protected listPanelClass = computed(() =>
-    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 md:flex-none' : 'hidden md:flex md:flex-col md:h-full',
+    this.mobileView() === 'list'
+      ? 'flex flex-col h-full flex-1 min-w-0 md:flex-none'
+      : 'hidden md:flex md:flex-col md:h-full',
   );
 
   protected detailPanelClass = computed(() =>
     this.mobileView() === 'detail'
-      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10 bg-base-100'
+      ? 'flex flex-col flex-1 min-w-0 h-full p-4 pt-2 relative z-10 bg-base-100'
       : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10 bg-base-100',
   );
 
@@ -47116,330 +47442,6 @@ export class DonationFormRenderComponent {
     const parts = name.split(/\s+/).slice(0, 2);
     return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
   });
-}
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
-```typescript
-import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { FormsService } from '../services/forms-service';
-import { ListsService } from '../../lists/services/lists-service';
-import { UserService } from '../../../services/user.service';
-import type { IAuthUser } from '@common';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
-import { AuthService } from '../../../auth/auth-service';
-import { donationPageUrl, publicPageUrl } from '../../../shared/public-pages';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-
-@Component({
-  selector: 'pc-form-view',
-  imports: [
-    StatusBadge,
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailRow,
-  ],
-  templateUrl: './form-view.html',
-})
-export class FormViewComponent {
-  private readonly alertSvc = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  readonly id = input.required<string>();
-  protected readonly recordNav = injectRecordNavigation('form', this.id);
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly formRecord = signal<any | null>(null);
-  protected readonly submissionsCount = signal(0);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Forms', route: '/forms' },
-    { label: this.formRecord()?.name || 'Form' },
-  ]);
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private readonly router = inject(Router);
-  private usersById = new Map<string, IAuthUser>();
-
-  // Active tab state
-  protected activeTab = signal<string>('targetActions');
-
-  protected readonly formTabs = computed<PcTabOption[]>(() => [
-    { id: 'targetActions', label: 'Target lists & actions' },
-    { id: 'fieldsPreview', label: 'Fields & layout' },
-    // Activity is the record's history — last tab in every view.
-    { id: 'activity', label: 'Activity' },
-  ]);
-
-  protected readonly selectedFields = computed(() => {
-    const record = this.formRecord();
-    if (!record) return [];
-    if (record.fields) {
-      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
-    }
-    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-  });
-
-  protected readonly fieldsCount = computed(() => {
-    const fields = this.selectedFields();
-    // Email is always required and present
-    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
-    return standardFieldsCount + 1;
-  });
-
-  protected readonly targetListsNames = computed(() => {
-    const record = this.formRecord();
-    if (!record || !record.target_lists) return [];
-    const listIds: string[] = Array.isArray(record.target_lists)
-      ? record.target_lists
-      : JSON.parse(record.target_lists || '[]');
-
-    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
-  });
-
-  protected readonly embedSnippet = computed(() => {
-    const record = this.formRecord();
-    if (!record || !this.id()) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
-    const fields = this.selectedFields();
-    const isDonation = record.form_type === 'donation';
-    const isRecurring = record.form_type === 'recurring_donation';
-    const isAnyDonation = isDonation || isRecurring;
-
-    const addressFields = isAnyDonation
-      ? `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
-      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
-      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
-      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>`
-      : '';
-
-    const amountField = isDonation
-      ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
-    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : isRecurring
-        ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
-    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
-  </div>`
-        : '';
-
-    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
-
-    return `<!-- pplCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.formRecord()?.slug ?? ''}?t=${encodeURIComponent(this.auth.getUser()?.tenant_slug ?? '')}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-${
-  fields.includes('first_name') || isAnyDonation
-    ? `  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-    : ''
-}${
-      fields.includes('last_name') || isAnyDonation
-        ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-        : ''
-    }
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${
-    !isAnyDonation && fields.includes('mobile')
-      ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
-    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    !isAnyDonation && fields.includes('notes')
-      ? `\n  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
-    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>`
-      : ''
-  }${addressFields}${amountField}
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    const record = this.formRecord();
-    if (!record?.slug) return '';
-    const tenantSlug = this.auth.getUser()?.tenant_slug;
-    // Donation forms keep the server-rendered page (Stripe checkout); standard forms live on the
-    // /f/:slug SPA page on the tenant subdomain.
-    if (record.form_type === 'donation' || record.form_type === 'recurring_donation') {
-      return donationPageUrl(tenantSlug, record.slug);
-    }
-    return publicPageUrl(tenantSlug, `f/${record.slug}`);
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load Form details
-      const record = await this.formsSvc.getById(id);
-      this.formRecord.set(record);
-
-      // 2. Load available Lists to resolve list names
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-
-      // 3. Load submissions count
-      const subCount = await this.formsSvc.getSubmissionsCount(id);
-      this.submissionsCount.set(subCount);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the form. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editForm() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteForm() {
-    if (!this.id()) return;
-    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Web Form',
-      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.formsSvc.delete(this.id());
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Web form deleted');
-      await this.router.navigate([backRoute]);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete web form';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.formRecord()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.formRecord()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -65919,17 +65921,405 @@ export class EmailAssign {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.ts
+```typescript
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AddWebFormObj } from '../../../../../../../libs/common/src';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { FormsService } from '@experiences/forms/services/forms-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Tags } from '@experiences/tags/ui/tags';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { Icon } from '@icons/icon';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { DonationsService } from '../../../services/api/donations-service';
+import { environment } from '../../../../environments/environment';
+import { donationPageUrl } from '../../../shared/public-pages';
+import { AuthService } from '../../../auth/auth-service';
+
+@Component({
+  selector: 'pc-fundraising-form',
+  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard],
+  templateUrl: './fundraising-form.html',
+})
+export class FundraisingFormComponent implements OnInit {
+  private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly donationsSvc = inject(DonationsService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly isInitialized = signal(false);
+  protected readonly saving = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly isNew = signal(true);
+  protected readonly formId = signal<string | null>(null);
+  // Public lookups are keyed (tenant, slug) — the UUID is internal only.
+  protected readonly formSlug = signal<string | null>(null);
+
+  protected setType(type: 'donation' | 'recurring_donation') {
+    this.payload.update((p) => ({ ...p, form_type: type }));
+  }
+
+  // Connect readiness comes from the residency context (defaults true to avoid a banner flash
+  // before it loads); tenants no longer hold Stripe keys.
+  protected readonly stripeConnected = signal(true);
+
+  // Donations are paused until the tenant confirms residency restrictions in Workspace → Donations.
+  // Defaults to true so no false "paused" banner flashes before the context loads.
+  protected readonly residencyAcknowledged = signal(true);
+
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
+  protected readonly selectedLists = signal<string[]>([]);
+  protected readonly selectedTags = signal<string[]>([]);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    redirect_url: '',
+    status: 'active' as 'active' | 'archived',
+    send_confirmation: true,
+    send_alert: true,
+    form_type: 'donation' as 'donation' | 'recurring_donation',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddWebFormObj);
+  });
+
+  protected readonly isRecurring = computed(() => this.payload().form_type === 'recurring_donation');
+
+  protected readonly embedSnippet = computed(() => {
+    const slug = this.formSlug();
+    if (!slug) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
+    const recurring = this.isRecurring();
+
+    const amountField = recurring
+      ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
+    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
+  </div>`
+      : `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($ CAD) *</label>
+    <input type="number" name="amount" min="1" step="any" placeholder="E.g. 50.00" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`;
+
+    const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
+
+    return `<!-- pplCRM Embeddable Donation Form -->
+<form action="${apiOrigin}/api/forms/submit/${slug}?t=${encodeURIComponent(tenantSlug)}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name *</label>
+    <input type="text" name="first_name" placeholder="John" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name *</label>
+    <input type="text" name="last_name" placeholder="Doe" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="E.g. 123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+    <input type="text" name="city" placeholder="E.g. Toronto" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country of Residence *</label>
+    <select name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+      <option value="CA">Canada</option>
+      <option value="US">United States</option>
+      <option value="GB">United Kingdom</option>
+      <option value="AU">Australia</option>
+    </select>
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
+    <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code *</label>
+    <input type="text" name="zip" placeholder="E.g. M5V 2T6" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${amountField}
+
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    const slug = this.formSlug();
+    if (!slug) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
+    return donationPageUrl(tenantSlug, slug);
+  });
+
+  public ngOnInit(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id && id !== 'add') {
+      this.isNew.set(false);
+      this.formId.set(id);
+    }
+    void this.loadLists();
+    void this.settingsSvc.load();
+    void this.loadResidencyContext();
+  }
+
+  private async loadResidencyContext(): Promise<void> {
+    try {
+      const ctx = await this.donationsSvc.getResidencyContext();
+      this.residencyAcknowledged.set(ctx.residencyAcknowledged);
+      this.stripeConnected.set(ctx.stripeConnected);
+    } catch {
+      // non-fatal — leave the banners hidden if the context can't be read
+    }
+  }
+
+  protected listName(id: string): string {
+    const match = this.availableLists().find((list) => list.id === id);
+    return match?.name ?? 'List';
+  }
+
+  protected handleListSelect(event: Event): void {
+    const select = event.target as HTMLSelectElement | null;
+    if (!select) return;
+    const value = select.value;
+    if (!value) return;
+    const current = new Set(this.selectedLists());
+    if (!current.has(value)) {
+      current.add(value);
+      this.selectedLists.set(Array.from(current));
+    }
+    select.value = '';
+  }
+
+  protected removeList(listId: string): void {
+    this.selectedLists.set(this.selectedLists().filter((id) => id !== listId));
+  }
+
+  protected handleTagsChange(tags: string[]): void {
+    this.selectedTags.set(Array.isArray(tags) ? [...tags] : []);
+  }
+
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Donation page snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected copyUrl(): void {
+    const url = this.formUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Donation page URL copied!'),
+      () => this.alertSvc.showError('Failed to copy URL.'),
+    );
+  }
+
+  protected async deleteForm() {
+    const id = this.formId();
+    if (!id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Donation Page',
+      message: 'Are you sure you want to delete this donation page? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      await this.formsSvc.delete(id);
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Donation page deleted');
+      await this.router.navigate(['/donations']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete donation page';
+      this.alertSvc.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      this.alertSvc.showError('Please check your inputs.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    await submit(this.form, {
+      action: async () => {
+        const values = this.payload();
+
+        try {
+          if (this.isNew()) {
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+              form_type: values.form_type,
+            };
+            const result = (await this.formsSvc.add(payload)) as { id: string };
+            this.alertSvc.showSuccess('Donation page created successfully!');
+            void this.router.navigate(['/donation-pages', result.id]);
+          } else {
+            const id = this.formId()!;
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+            };
+            await this.formsSvc.update(id, payload);
+            this.alertSvc.showSuccess('Donation page updated successfully!');
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.router.navigate(['/donation-pages', id]);
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving.';
+          this.error.set(msg);
+          this.alertSvc.showError(msg);
+        } finally {
+          this.saving.set(false);
+        }
+        return null;
+      },
+    });
+  }
+
+  private async loadLists(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
+      if (!this.isNew()) {
+        await this.loadPageDetails();
+      }
+    } catch (err) {
+      console.error('Failed to load lists', err);
+    } finally {
+      this.isInitialized.set(true);
+      end();
+    }
+  }
+
+  private async loadPageDetails(): Promise<void> {
+    const id = this.formId();
+    if (!id) return;
+    const end = this._loading.begin();
+    try {
+      const record = (await this.formsSvc.getById(id)) as any;
+      if (record) {
+        this.formSlug.set(record.slug ?? null);
+        this.payload.set({
+          name: record.name ?? '',
+          description: record.description ?? '',
+          redirect_url: record.redirect_url ?? '',
+          status: (record.status as 'active' | 'archived') ?? 'active',
+          send_confirmation: record.send_confirmation !== false,
+          send_alert: record.send_alert !== false,
+          form_type: (record.form_type as 'donation' | 'recurring_donation') ?? 'donation',
+        });
+        this.form().reset();
+        this.selectedTags.set(Array.isArray(record.target_tags) ? record.target_tags : []);
+        this.selectedLists.set(Array.isArray(record.target_lists) ? record.target_lists : []);
+        if (record.fields) {
+          const fields = Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
+          this.selectedFields.set(fields);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load page details', err);
+      this.error.set('Failed to load page details.');
+    } finally {
+      end();
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/api-keys/api-keys-settings.ts
 ```typescript
-import { Component, signal, computed, inject, OnInit } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DatePipe } from '@angular/common';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-import { DatePipe, NgIf } from '@angular/common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { SettingsService } from '../services/settings-service';
 
 interface ApiKeyInfo {
   preview: string;
@@ -65939,7 +66329,7 @@ interface ApiKeyInfo {
 
 @Component({
   selector: 'pc-api-keys-settings',
-  imports: [EmptyState, Icon, DatePipe, NgIf],
+  imports: [Icon, DatePipe],
   template: `
     <div class="api-keys-container">
       @if (!loaded()) {
@@ -69801,7 +70191,10 @@ function relativeTime(date: Date): string {
       [attr.aria-label]="isMobileOpen() ? 'Close navigation menu' : 'Open navigation menu'"
       i18n-aria-label="@@navbar.menu.toggleAriaLabel"
     >
+      <!-- pointer-events-none: pc-swap's label stops click propagation, which would
+           swallow taps before they reach this button's (click) handler -->
       <pc-swap
+        class="pointer-events-none"
         swapOnIcon="x-mark"
         swapOffIcon="bars-4"
         [checked]="isMobileOpen()"
@@ -70220,6 +70613,107 @@ export class DonationsService extends TRPCService<'donations'> {
   public disconnectStripe() {
     return this.api.donations.disconnectStripe.mutate();
   }
+}
+```
+
+## File: apps/frontend/src/app/shared/public-pages.ts
+```typescript
+import { environment } from '../../environments/environment';
+
+/**
+ * Helpers for the tenant-subdomain public page model. Every public surface (forms /f/:slug,
+ * event RSVP /e/:slug, volunteer /volunteer + /v/:slug, donations) lives on
+ * `https://<tenantSlug>.<publicBaseDomain>/<path>`; the SPA passes its own subdomain to the API as
+ * `?t=` so tenant resolution works on any host (including dev, where the Host header is enough in
+ * Chrome via `<slug>.localhost` but not guaranteed elsewhere).
+ */
+
+/**
+ * Base for public-page API calls (unauthenticated `fetch` to REST `/api/*`).
+ *
+ * In production these pages are served on the dedicated public origin `<org>.pplforms.com`, whose
+ * reverse proxy forwards `/api` and `/d` to the backend. So public calls must be **same-origin**
+ * (origin-relative `''`) — hitting the absolute `api.pplcrm.com` origin would be cross-origin and
+ * CORS-blocked (CORS is deliberately locked to the CRM origin only). In dev we keep the absolute
+ * `apiUrl`, which the backend CORS already allows for `localhost:4200`.
+ */
+export function apiBase(): string {
+  return environment.production ? '' : environment.apiUrl.replace(/\/$/, '');
+}
+
+/**
+ * The tenant subdomain the current page is being served on
+ * (`riverton.mydomain.com` → `riverton`), or null on the bare app host.
+ */
+export function tenantFromHost(): string | null {
+  const host = window.location.hostname.toLowerCase();
+  const base = environment.publicBaseDomain.toLowerCase();
+  if (!host || host === base) return null;
+  const suffix = `.${base}`;
+  if (!host.endsWith(suffix)) return null;
+  const label = host.slice(0, -suffix.length);
+  if (!label || label.includes('.')) return null;
+  return label;
+}
+
+/** `?t=<tenant>` query suffix for public API calls made from a public page. */
+export function tenantQuery(): string {
+  const tenant = tenantFromHost();
+  return tenant ? `?t=${encodeURIComponent(tenant)}` : '';
+}
+
+/**
+ * Shareable public URL for authenticated admin UI: `https://<tenantSlug>.<base>/<path>`, falling
+ * back to the current origin when no tenant subdomain is configured (dev without wildcard DNS).
+ * `path` must not start with a slash.
+ */
+export function publicPageUrl(tenantSlug: string | null | undefined, path: string): string {
+  const base = environment.publicBaseDomain;
+  if (tenantSlug && base) {
+    return `https://${tenantSlug}.${base}/${path}`;
+  }
+  return `${window.location.origin}/${path}`;
+}
+
+/**
+ * Public URL for a donation page. Donation pages are **server-rendered by the backend** (they carry
+ * the Stripe checkout), not an SPA route. In production they're served at
+ * `<org>.pplforms.com/d/:slug` — the pplforms edge Worker rewrites `/d/*` → the backend's
+ * `/api/forms/d/*` and injects `?t=<org>` from the subdomain. In dev there's no Worker, so hit the
+ * backend directly with an explicit `?t=`.
+ */
+export function donationPageUrl(tenantSlug: string | null | undefined, slug: string): string {
+  if (environment.production) {
+    return publicPageUrl(tenantSlug, `d/${slug}`);
+  }
+  const t = tenantSlug ? `?t=${encodeURIComponent(tenantSlug)}` : '';
+  return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${slug}${t}`;
+}
+
+/**
+ * Absolute URL to a volunteer companion surface (canvass `/t/:token`, deliveries `/r/:token`). In
+ * production the companion apps are path-routed on the CRM's own domain, so we use the current
+ * origin; in dev they run on a separate port, so `environment.companionOrigin` overrides it —
+ * otherwise a copied link would point back at the CRM host and 404. `path` must start with a slash.
+ */
+export function companionUrl(path: string): string {
+  return `${environment.companionOrigin || window.location.origin}${path}`;
+}
+
+/** Which channels the backend sent a volunteer's personal link through on assignment. */
+export interface VolunteerLinkSent {
+  email: boolean;
+  sms: boolean;
+}
+
+/**
+ * Human phrasing for the assignment toast: 'link sent by email and text', or null when
+ * nothing could be sent (no contacts on file) — callers warn and point at Copy link.
+ */
+export function volunteerLinkSentPhrase(sent: VolunteerLinkSent | null | undefined): string | null {
+  if (!sent || (!sent.email && !sent.sms)) return null;
+  const channels = [sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ');
+  return `link sent by ${channels}`;
 }
 ```
 
@@ -72512,395 +73006,6 @@ function toNum(n: unknown): number | undefined {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.ts
-```typescript
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AddWebFormObj } from '../../../../../../../libs/common/src';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { FormsService } from '@experiences/forms/services/forms-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Tags } from '@experiences/tags/ui/tags';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { Icon } from '@icons/icon';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { SettingsService } from '@experiences/settings/services/settings-service';
-import { DonationsService } from '../../../services/api/donations-service';
-import { environment } from '../../../../environments/environment';
-import { donationPageUrl } from '../../../shared/public-pages';
-import { AuthService } from '../../../auth/auth-service';
-
-@Component({
-  selector: 'pc-fundraising-form',
-  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard],
-  templateUrl: './fundraising-form.html',
-})
-export class FundraisingFormComponent implements OnInit {
-  private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly donationsSvc = inject(DonationsService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly isInitialized = signal(false);
-  protected readonly saving = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly isNew = signal(true);
-  protected readonly formId = signal<string | null>(null);
-  // Public lookups are keyed (tenant, slug) — the UUID is internal only.
-  protected readonly formSlug = signal<string | null>(null);
-
-  protected setType(type: 'donation' | 'recurring_donation') {
-    this.payload.update((p) => ({ ...p, form_type: type }));
-  }
-
-  // Connect readiness comes from the residency context (defaults true to avoid a banner flash
-  // before it loads); tenants no longer hold Stripe keys.
-  protected readonly stripeConnected = signal(true);
-
-  // Donations are paused until the tenant confirms residency restrictions in Workspace → Donations.
-  // Defaults to true so no false "paused" banner flashes before the context loads.
-  protected readonly residencyAcknowledged = signal(true);
-
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly selectedLists = signal<string[]>([]);
-  protected readonly selectedTags = signal<string[]>([]);
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    redirect_url: '',
-    status: 'active' as 'active' | 'archived',
-    send_confirmation: true,
-    send_alert: true,
-    form_type: 'donation' as 'donation' | 'recurring_donation',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddWebFormObj);
-  });
-
-  protected readonly isRecurring = computed(() => this.payload().form_type === 'recurring_donation');
-
-  protected readonly embedSnippet = computed(() => {
-    const slug = this.formSlug();
-    if (!slug) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
-    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
-    const recurring = this.isRecurring();
-
-    const amountField = recurring
-      ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
-    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
-  </div>`
-      : `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($ CAD) *</label>
-    <input type="number" name="amount" min="1" step="any" placeholder="E.g. 50.00" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`;
-
-    const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
-
-    return `<!-- pplCRM Embeddable Donation Form -->
-<form action="${apiOrigin}/api/forms/submit/${slug}?t=${encodeURIComponent(tenantSlug)}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name *</label>
-    <input type="text" name="first_name" placeholder="John" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name *</label>
-    <input type="text" name="last_name" placeholder="Doe" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="E.g. 123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-    <input type="text" name="city" placeholder="E.g. Toronto" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country of Residence *</label>
-    <select name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
-      <option value="CA">Canada</option>
-      <option value="US">United States</option>
-      <option value="GB">United Kingdom</option>
-      <option value="AU">Australia</option>
-    </select>
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
-    <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code *</label>
-    <input type="text" name="zip" placeholder="E.g. M5V 2T6" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${amountField}
-
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    const slug = this.formSlug();
-    if (!slug) return '';
-    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
-    return donationPageUrl(tenantSlug, slug);
-  });
-
-  public ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id');
-    if (id && id !== 'add') {
-      this.isNew.set(false);
-      this.formId.set(id);
-    }
-    void this.loadLists();
-    void this.settingsSvc.load();
-    void this.loadResidencyContext();
-  }
-
-  private async loadResidencyContext(): Promise<void> {
-    try {
-      const ctx = await this.donationsSvc.getResidencyContext();
-      this.residencyAcknowledged.set(ctx.residencyAcknowledged);
-      this.stripeConnected.set(ctx.stripeConnected);
-    } catch {
-      // non-fatal — leave the banners hidden if the context can't be read
-    }
-  }
-
-  protected listName(id: string): string {
-    const match = this.availableLists().find((list) => list.id === id);
-    return match?.name ?? 'List';
-  }
-
-  protected handleListSelect(event: Event): void {
-    const select = event.target as HTMLSelectElement | null;
-    if (!select) return;
-    const value = select.value;
-    if (!value) return;
-    const current = new Set(this.selectedLists());
-    if (!current.has(value)) {
-      current.add(value);
-      this.selectedLists.set(Array.from(current));
-    }
-    select.value = '';
-  }
-
-  protected removeList(listId: string): void {
-    this.selectedLists.set(this.selectedLists().filter((id) => id !== listId));
-  }
-
-  protected handleTagsChange(tags: string[]): void {
-    this.selectedTags.set(Array.isArray(tags) ? [...tags] : []);
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Donation page snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected copyUrl(): void {
-    const url = this.formUrl();
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
-      () => this.alertSvc.showSuccess('Donation page URL copied!'),
-      () => this.alertSvc.showError('Failed to copy URL.'),
-    );
-  }
-
-  protected async deleteForm() {
-    const id = this.formId();
-    if (!id) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Donation Page',
-      message: 'Are you sure you want to delete this donation page? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      await this.formsSvc.delete(id);
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Donation page deleted');
-      await this.router.navigate(['/donations']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete donation page';
-      this.alertSvc.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      this.alertSvc.showError('Please check your inputs.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    await submit(this.form, {
-      action: async () => {
-        const values = this.payload();
-
-        try {
-          if (this.isNew()) {
-            const payload = {
-              name: values.name?.trim() ?? '',
-              description: values.description?.trim() || null,
-              redirect_url: values.redirect_url?.trim() || null,
-              target_tags: this.selectedTags().length ? this.selectedTags() : null,
-              target_lists: this.selectedLists().length ? this.selectedLists() : null,
-              status: values.status,
-              fields: this.selectedFields(),
-              send_confirmation: !!values.send_confirmation,
-              send_alert: !!values.send_alert,
-              form_type: values.form_type,
-            };
-            const result = (await this.formsSvc.add(payload)) as { id: string };
-            this.alertSvc.showSuccess('Donation page created successfully!');
-            void this.router.navigate(['/donation-pages', result.id]);
-          } else {
-            const id = this.formId()!;
-            const payload = {
-              name: values.name?.trim() ?? '',
-              description: values.description?.trim() || null,
-              redirect_url: values.redirect_url?.trim() || null,
-              target_tags: this.selectedTags().length ? this.selectedTags() : null,
-              target_lists: this.selectedLists().length ? this.selectedLists() : null,
-              status: values.status,
-              fields: this.selectedFields(),
-              send_confirmation: !!values.send_confirmation,
-              send_alert: !!values.send_alert,
-            };
-            await this.formsSvc.update(id, payload);
-            this.alertSvc.showSuccess('Donation page updated successfully!');
-            if (typeof done === 'function') {
-              done();
-            } else {
-              void this.router.navigate(['/donation-pages', id]);
-            }
-          }
-        } catch (err) {
-          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving.';
-          this.error.set(msg);
-          this.alertSvc.showError(msg);
-        } finally {
-          this.saving.set(false);
-        }
-        return null;
-      },
-    });
-  }
-
-  private async loadLists(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-      if (!this.isNew()) {
-        await this.loadPageDetails();
-      }
-    } catch (err) {
-      console.error('Failed to load lists', err);
-    } finally {
-      this.isInitialized.set(true);
-      end();
-    }
-  }
-
-  private async loadPageDetails(): Promise<void> {
-    const id = this.formId();
-    if (!id) return;
-    const end = this._loading.begin();
-    try {
-      const record = (await this.formsSvc.getById(id)) as any;
-      if (record) {
-        this.formSlug.set(record.slug ?? null);
-        this.payload.set({
-          name: record.name ?? '',
-          description: record.description ?? '',
-          redirect_url: record.redirect_url ?? '',
-          status: (record.status as 'active' | 'archived') ?? 'active',
-          send_confirmation: record.send_confirmation !== false,
-          send_alert: record.send_alert !== false,
-          form_type: (record.form_type as 'donation' | 'recurring_donation') ?? 'donation',
-        });
-        this.form().reset();
-        this.selectedTags.set(Array.isArray(record.target_tags) ? record.target_tags : []);
-        this.selectedLists.set(Array.isArray(record.target_lists) ? record.target_lists : []);
-        if (record.fields) {
-          const fields = Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
-          this.selectedFields.set(fields);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load page details', err);
-      this.error.set('Failed to load page details.');
-    } finally {
-      end();
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
 ```html
 <div class="space-y-8">
@@ -74462,425 +74567,6 @@ export const SidebarItems: ISidebarItem[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar.html
-```html
-<ng-template #navLink let-nav>
-  <a
-    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
-    [class.animate-up]="nav.justPinned"
-    [class.tooltip]="isEffectivelyNarrow()"
-    [class.tooltip-right]="isEffectivelyNarrow()"
-    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
-    (click)="this.closeMobile()"
-    [routerLink]="nav.route"
-    [class.!font-semibold]="isNavActive(nav)"
-    [class.!text-primary]="isNavActive(nav)"
-  >
-    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span
-      class="indicator whitespace-nowrap pl-2 text-[13px] tracking-[0.03em]"
-      [class.invisible]="isEffectivelyNarrow()"
-    >
-      {{ nav.name }} @if (nav.indicator) {
-      <span class="indicator-item status status-primary"></span>
-      } @if (nav.badgeCount) {
-      <span
-        class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
-        [attr.title]="
-          nav.badgeCount +
-          (nav.route === '/tasks' ? ' breaching SLA' : nav.route === '/inbox' ? ' open assigned to you' : ' waiting')
-        "
-        >{{ nav.badgeCount }}</span
-      >
-      }
-    </span>
-    @if (nav.shortcut && !isEffectivelyNarrow()) {
-    <span
-      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
-      aria-hidden="true"
-    >
-      <kbd class="kbd kbd-xs">g</kbd>
-      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
-    </span>
-    }
-  </a>
-</ng-template>
-
-<div
-  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
-  [class.hidden]="!this.isMobileOpen()"
-  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
-  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
->
-  <a
-    [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
-    (click)="this.closeMobile()"
-  >
-    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </a>
-
-  <a
-    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
-    routerLink="/dashboard"
-    aria-label="Go to dashboard"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
-    (click)="this.closeMobile()"
-  >
-    <span aria-hidden="true">pC</span>
-  </a>
-
-  @for (item of items(); track item.name) {
-  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
-    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
-    <div
-      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em]"
-      [class.hover:cursor-pointer]="!isEffectivelyNarrow()"
-      (click)="!isEffectivelyNarrow() && toggleCollapse(item.name)"
-    >
-      <span class="flex-1 min-w-0">
-        @if (isEffectivelyNarrow()) {
-        <hr class="text-neutral my-2 w-6" />
-        } @else { {{ item.name }} }
-      </span>
-      @if (item.children?.length) {
-      <pc-swap
-        class="mr-2"
-        [class.hidden]="isEffectivelyNarrow()"
-        swapOnIcon="chevron-right"
-        swapOffIcon="chevron-down"
-        animation="rotate"
-        [size]="4"
-        [checked]="isCollapsed(item.name)"
-        (click)="toggleCollapse(item.name)"
-        aria-label="Toggle section"
-        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
-      ></pc-swap>
-      }
-    </div>
-
-    @if (item.children && !isVisuallyCollapsed(item.name)) {
-    <div class="flex flex-col space-y-1">
-      @for (child of item.children; track child.name) {
-      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
-      }
-    </div>
-    } } @else {
-    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
-    }
-  </div>
-  }
-
-  <div class="hidden flex-auto grow items-start flex-col sm:flex">
-    <span class="min-h-full grow"></span>
-    <pc-swap
-      class="hover:text-primary text-base-content/40 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="arrow-right-end-on-rectangle"
-      swapOnIcon="arrow-left-start-on-rectangle"
-      [checked]="isDrawerFull()"
-      animation="flip"
-      (click)="toggleDrawer()"
-      aria-label="Toggle drawer"
-      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
-    ></pc-swap>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
-```typescript
-import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { NgTemplateOutlet } from '@angular/common';
-import { NavigationCancel, NavigationEnd, NavigationError, NavigationStart, Router, RouterLink } from '@angular/router';
-import { filter, map } from 'rxjs';
-import { Icon } from '@icons/icon';
-import { Swap } from '@uxcommon/components/swap/swap';
-
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { DuplicatesService } from '@experiences/duplicates/services/duplicates-service';
-import { ISidebarItem, isSidebarRouteActive } from './sidebar-items';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
-import { VolunteerAccessService } from '@experiences/volunteer-access/services/volunteer-access-service';
-import { EmailsService } from '@experiences/emails/services/emails-service';
-import { EmailFoldersStore } from '@experiences/emails/services/store/email-folders.store';
-
-@Component({
-  selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, Swap, AnimateIfDirective],
-  templateUrl: './sidebar.html',
-  styles: [
-    `
-      .tooltip:before {
-        z-index: 100 !important;
-      }
-    `,
-  ],
-})
-export class Sidebar {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly tasksSvc = inject(TasksService);
-  private readonly duplicatesSvc = inject(DuplicatesService);
-  private readonly deliveriesSvc = inject(DeliveriesRequestsService);
-  private readonly volunteerAccessSvc = inject(VolunteerAccessService);
-  private readonly emailsSvc = inject(EmailsService);
-  private readonly emailFoldersStore = inject(EmailFoldersStore);
-
-  /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
-   *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
-  protected readonly taskSlaBreaches = signal<number | null>(null);
-
-  /** Live merge-queue size for the Duplicates sidebar badge (spec §9.3). Same one-shot-per-
-   *  session loading shape as `taskSlaBreaches` above. */
-  protected readonly duplicatesQueueCount = signal<number | null>(null);
-
-  /** Live approved-and-ready delivery request count for the Deliveries sidebar badge (spec §14).
-   *  Same one-shot-per-session loading shape as the badges above. */
-  protected readonly deliveriesReadyCount = signal<number | null>(null);
-
-  /** Volunteers awaiting companion-access approval, for the Volunteer access badge.
-   *  Same one-shot-per-session loading shape as the badges above. */
-  protected readonly volunteerAccessPending = signal<number | null>(null);
-
-  /** One-shot fetched fallback for the Inbox badge — covers sessions where the Inbox page
-   *  (and thus its folders store) never loads. */
-  private readonly inboxAssignedOpenFetched = signal<number | null>(null);
-
-  /** Open Inbox conversations assigned to the current user, for the Inbox badge. Prefers the
-   *  live "Mine" count from the email folders store — refreshed on every assign/close/delete —
-   *  so reassignments in the Inbox move the badge immediately; falls back to the one-shot
-   *  fetch until the store has counts. */
-  protected readonly inboxAssignedOpen = computed(
-    () => this.emailFoldersStore.assignedOpenCount() ?? this.inboxAssignedOpenFetched(),
-  );
-
-  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
-  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
-  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
-
-  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
-  protected readonly isEffectivelyNarrow = computed(
-    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
-  );
-
-  /** Target URL of an in-flight navigation, null once it settles (End/Cancel/Error). Lets the
-   *  clicked item light up immediately instead of waiting for resolvers/lazy chunks. */
-  private readonly pendingRoute = toSignal(
-    this.router.events.pipe(
-      filter(
-        (e) =>
-          e instanceof NavigationStart ||
-          e instanceof NavigationEnd ||
-          e instanceof NavigationCancel ||
-          e instanceof NavigationError,
-      ),
-      map((e) => (e instanceof NavigationStart ? e.url : null)),
-    ),
-    { initialValue: null },
-  );
-
-  /** URL of the last settled navigation. */
-  private readonly currentUrl = toSignal(
-    this.router.events.pipe(
-      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
-      map((e) => e.urlAfterRedirects),
-    ),
-    { initialValue: this.router.url },
-  );
-
-  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
-
-  protected readonly items = computed(() => {
-    const role = this.auth.getUser()?.role;
-    const allItems = this.sidebarSvc.getItems()();
-    const withBadges = this.applyBadges(allItems);
-    if (role === 'user') {
-      return withBadges
-        .filter((item) => !item.adminOnly)
-        .map((item) => {
-          if (item.children) {
-            return {
-              ...item,
-              children: item.children.filter((child) => !child.adminOnly),
-            };
-          }
-          return item;
-        });
-    }
-    return withBadges;
-  });
-
-  constructor() {
-    if (this._mql) {
-      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
-      this._mql.addEventListener('change', handler);
-      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
-    }
-
-    effect(() => {
-      const flatItems = this.flattenItems(this.items());
-      for (const item of flatItems) {
-        const key = this.getItemKey(item);
-        const visible = !item.hidden && !item.hiddenByFavourite;
-        const existing = this.visibilitySignals.get(key);
-        if (existing) {
-          existing.set(visible);
-        } else {
-          this.visibilitySignals.set(key, signal(visible));
-        }
-      }
-    });
-
-    void this.loadTaskSlaBreaches();
-    void this.loadDuplicatesQueueCount();
-    void this.loadDeliveriesReadyCount();
-    void this.loadVolunteerAccessPending();
-    void this.loadInboxAssignedOpen();
-  }
-
-  /** Inbox badge fallback = open conversations assigned to the current user. One fetch per
-   *  session; superseded by the folders store's live count once the Inbox loads. */
-  private async loadInboxAssignedOpen(): Promise<void> {
-    try {
-      this.inboxAssignedOpenFetched.set(await this.emailsSvc.countAssignedOpen());
-    } catch {
-      // Badge just stays unset — never show a stale or fabricated count.
-    }
-  }
-
-  /** Volunteer access badge = volunteers awaiting approval. One fetch per session. */
-  private async loadVolunteerAccessPending(): Promise<void> {
-    try {
-      this.volunteerAccessPending.set(await this.volunteerAccessSvc.pendingCount());
-    } catch {
-      // Badge just stays unset — never show a stale or fabricated count.
-    }
-  }
-
-  /** Deliveries badge = live approved-and-ready request count (spec §14). One fetch per session. */
-  private async loadDeliveriesReadyCount(): Promise<void> {
-    try {
-      this.deliveriesReadyCount.set(await this.deliveriesSvc.getReadyCount());
-    } catch {
-      // Badge just stays unset — never show a stale or fabricated count.
-    }
-  }
-
-  private async loadTaskSlaBreaches(): Promise<void> {
-    try {
-      this.taskSlaBreaches.set(await this.tasksSvc.countSlaBreaches());
-    } catch {
-      // Badge just stays unset — never show a stale or fabricated count.
-    }
-  }
-
-  /** Duplicates badge = merge-queue size (spec §9.3). One fetch per session — the queue only
-   *  meaningfully changes after a nightly sweep or a merge, so it isn't polled. */
-  private async loadDuplicatesQueueCount(): Promise<void> {
-    try {
-      this.duplicatesQueueCount.set(await this.duplicatesSvc.countQueue());
-    } catch {
-      // Badge just stays unset — never show a stale or fabricated count.
-    }
-  }
-
-  /** Stamps the live `badgeCount` onto the badge-bearing entries (Inbox, Tasks, Duplicates,
-   *  Deliveries, Volunteer access) — every other item is untouched. */
-  private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
-    const breaches = this.taskSlaBreaches();
-    const duplicatesQueue = this.duplicatesQueueCount();
-    const deliveriesReady = this.deliveriesReadyCount();
-    const volunteerPending = this.volunteerAccessPending();
-    const inboxAssigned = this.inboxAssignedOpen();
-    return items.map((item) => {
-      const children = item.children ? this.applyBadges(item.children) : undefined;
-      if (item.route === '/inbox') {
-        return { ...item, ...(children ? { children } : {}), badgeCount: inboxAssigned };
-      }
-      if (item.route === '/tasks') {
-        return { ...item, ...(children ? { children } : {}), badgeCount: breaches };
-      }
-      if (item.route === '/duplicates') {
-        return { ...item, ...(children ? { children } : {}), badgeCount: duplicatesQueue };
-      }
-      if (item.route === '/deliveries') {
-        return { ...item, ...(children ? { children } : {}), badgeCount: deliveriesReady };
-      }
-      if (item.route === '/volunteer-access') {
-        return { ...item, ...(children ? { children } : {}), badgeCount: volunteerPending };
-      }
-      return children ? { ...item, children } : item;
-    });
-  }
-
-  protected closeMobile() {
-    this.sidebarSvc.closeMobile();
-  }
-
-  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
-    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
-  }
-
-  private getItemKey(item: ISidebarItem): string {
-    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
-    return prefix + item.name + (item.route ?? '');
-  }
-
-  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
-    const key = this.getItemKey(item);
-    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
-  }
-
-  protected isCollapsed(name: string): boolean {
-    return this.sidebarSvc.isCollapsed(name);
-  }
-
-  /** Collapse is a text-density preference that only applies to the expanded sidebar. The
-   *  narrow icon rail always shows every section's icons — a collapsed section there has no
-   *  visible header, so its items would be unreachable. */
-  protected isVisuallyCollapsed(name: string): boolean {
-    return !this.isEffectivelyNarrow() && this.isCollapsed(name);
-  }
-
-  protected isDrawerFull() {
-    return this.sidebarSvc.isFull();
-  }
-
-  protected isDrawerHalf() {
-    return this.sidebarSvc.isHalf();
-  }
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-
-  /** Single source of truth for the highlighted nav item — the in-flight target while navigating,
-   *  the settled URL otherwise. Deliberately not routerLinkActive: its renderer-added classes and
-   *  a `[class.x]` binding on the same class fight over ownership, and the binding's stale `false`
-   *  wins when navigating deeper (e.g. /people -> /people/:id), un-highlighting the section. */
-  protected isNavActive(nav: ISidebarItem): boolean {
-    return isSidebarRouteActive(this.pendingRoute() ?? this.currentUrl(), nav);
-  }
-
-  protected toggleCollapse(name: string) {
-    this.sidebarSvc.toggleCollapsed(name);
-  }
-
-  protected toggleDrawer() {
-    return this.sidebarSvc.toggleDrawer();
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
 ```html
 <!-- pb-2, not p-6 all around: the pagination row is pinned as the page's last element, so a
@@ -75864,107 +75550,6 @@ export class Sidebar {
     </div>
   </div>
 </pc-modal-shell>
-}
-```
-
-## File: apps/frontend/src/app/shared/public-pages.ts
-```typescript
-import { environment } from '../../environments/environment';
-
-/**
- * Helpers for the tenant-subdomain public page model. Every public surface (forms /f/:slug,
- * event RSVP /e/:slug, volunteer /volunteer + /v/:slug, donations) lives on
- * `https://<tenantSlug>.<publicBaseDomain>/<path>`; the SPA passes its own subdomain to the API as
- * `?t=` so tenant resolution works on any host (including dev, where the Host header is enough in
- * Chrome via `<slug>.localhost` but not guaranteed elsewhere).
- */
-
-/**
- * Base for public-page API calls (unauthenticated `fetch` to REST `/api/*`).
- *
- * In production these pages are served on the dedicated public origin `<org>.pplforms.com`, whose
- * reverse proxy forwards `/api` and `/d` to the backend. So public calls must be **same-origin**
- * (origin-relative `''`) — hitting the absolute `api.pplcrm.com` origin would be cross-origin and
- * CORS-blocked (CORS is deliberately locked to the CRM origin only). In dev we keep the absolute
- * `apiUrl`, which the backend CORS already allows for `localhost:4200`.
- */
-export function apiBase(): string {
-  return environment.production ? '' : environment.apiUrl.replace(/\/$/, '');
-}
-
-/**
- * The tenant subdomain the current page is being served on
- * (`riverton.mydomain.com` → `riverton`), or null on the bare app host.
- */
-export function tenantFromHost(): string | null {
-  const host = window.location.hostname.toLowerCase();
-  const base = environment.publicBaseDomain.toLowerCase();
-  if (!host || host === base) return null;
-  const suffix = `.${base}`;
-  if (!host.endsWith(suffix)) return null;
-  const label = host.slice(0, -suffix.length);
-  if (!label || label.includes('.')) return null;
-  return label;
-}
-
-/** `?t=<tenant>` query suffix for public API calls made from a public page. */
-export function tenantQuery(): string {
-  const tenant = tenantFromHost();
-  return tenant ? `?t=${encodeURIComponent(tenant)}` : '';
-}
-
-/**
- * Shareable public URL for authenticated admin UI: `https://<tenantSlug>.<base>/<path>`, falling
- * back to the current origin when no tenant subdomain is configured (dev without wildcard DNS).
- * `path` must not start with a slash.
- */
-export function publicPageUrl(tenantSlug: string | null | undefined, path: string): string {
-  const base = environment.publicBaseDomain;
-  if (tenantSlug && base) {
-    return `https://${tenantSlug}.${base}/${path}`;
-  }
-  return `${window.location.origin}/${path}`;
-}
-
-/**
- * Public URL for a donation page. Donation pages are **server-rendered by the backend** (they carry
- * the Stripe checkout), not an SPA route. In production they're served at
- * `<org>.pplforms.com/d/:slug` — the pplforms edge Worker rewrites `/d/*` → the backend's
- * `/api/forms/d/*` and injects `?t=<org>` from the subdomain. In dev there's no Worker, so hit the
- * backend directly with an explicit `?t=`.
- */
-export function donationPageUrl(tenantSlug: string | null | undefined, slug: string): string {
-  if (environment.production) {
-    return publicPageUrl(tenantSlug, `d/${slug}`);
-  }
-  const t = tenantSlug ? `?t=${encodeURIComponent(tenantSlug)}` : '';
-  return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${slug}${t}`;
-}
-
-/**
- * Absolute URL to a volunteer companion surface (canvass `/t/:token`, deliveries `/r/:token`). In
- * production the companion apps are path-routed on the CRM's own domain, so we use the current
- * origin; in dev they run on a separate port, so `environment.companionOrigin` overrides it —
- * otherwise a copied link would point back at the CRM host and 404. `path` must start with a slash.
- */
-export function companionUrl(path: string): string {
-  return `${environment.companionOrigin || window.location.origin}${path}`;
-}
-
-/** Which channels the backend sent a volunteer's personal link through on assignment. */
-export interface VolunteerLinkSent {
-  email: boolean;
-  sms: boolean;
-}
-
-/**
- * Human phrasing for the assignment toast: 'link sent by email and text', or null when
- * nothing could be sent (no contacts on file) — callers warn and point at Copy link.
- */
-export function volunteerLinkSentPhrase(sent: VolunteerLinkSent | null | undefined): string | null {
-  if (!sent || (!sent.email && !sent.sms)) return null;
-  const channels = [sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ');
-  return `link sent by ${channels}`;
 }
 ```
 
@@ -79976,6 +79561,425 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     ],
   },
 ];
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar.html
+```html
+<ng-template #navLink let-nav>
+  <a
+    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
+    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
+    [class.animate-up]="nav.justPinned"
+    [class.tooltip]="isEffectivelyNarrow()"
+    [class.tooltip-right]="isEffectivelyNarrow()"
+    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
+    (click)="this.closeMobile()"
+    [routerLink]="nav.route"
+    [class.!font-semibold]="isNavActive(nav)"
+    [class.!text-primary]="isNavActive(nav)"
+  >
+    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
+    <span
+      class="indicator whitespace-nowrap pl-2 text-[13px] tracking-[0.03em]"
+      [class.invisible]="isEffectivelyNarrow()"
+    >
+      {{ nav.name }} @if (nav.indicator) {
+      <span class="indicator-item status status-primary"></span>
+      } @if (nav.badgeCount) {
+      <span
+        class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
+        [attr.title]="
+          nav.badgeCount +
+          (nav.route === '/tasks' ? ' breaching SLA' : nav.route === '/inbox' ? ' open assigned to you' : ' waiting')
+        "
+        >{{ nav.badgeCount }}</span
+      >
+      }
+    </span>
+    @if (nav.shortcut && !isEffectivelyNarrow()) {
+    <span
+      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
+      aria-hidden="true"
+    >
+      <kbd class="kbd kbd-xs">g</kbd>
+      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
+    </span>
+    }
+  </a>
+</ng-template>
+
+<div
+  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
+  [class.hidden]="!this.isMobileOpen()"
+  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
+  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
+>
+  <a
+    [class.hidden]="isEffectivelyNarrow()"
+    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
+    (click)="this.closeMobile()"
+  >
+    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
+  </a>
+
+  <a
+    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
+    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
+    routerLink="/dashboard"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
+    (click)="this.closeMobile()"
+  >
+    <span aria-hidden="true">pC</span>
+  </a>
+
+  @for (item of items(); track item.name) {
+  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
+    <div
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em]"
+      [class.hover:cursor-pointer]="!isEffectivelyNarrow()"
+      (click)="!isEffectivelyNarrow() && toggleCollapse(item.name)"
+    >
+      <span class="flex-1 min-w-0">
+        @if (isEffectivelyNarrow()) {
+        <hr class="text-neutral my-2 w-6" />
+        } @else { {{ item.name }} }
+      </span>
+      @if (item.children?.length) {
+      <pc-swap
+        class="mr-2"
+        [class.hidden]="isEffectivelyNarrow()"
+        swapOnIcon="chevron-right"
+        swapOffIcon="chevron-down"
+        animation="rotate"
+        [size]="4"
+        [checked]="isCollapsed(item.name)"
+        (click)="toggleCollapse(item.name)"
+        aria-label="Toggle section"
+        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
+      ></pc-swap>
+      }
+    </div>
+
+    @if (item.children && !isVisuallyCollapsed(item.name)) {
+    <div class="flex flex-col space-y-1">
+      @for (child of item.children; track child.name) {
+      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
+      }
+    </div>
+    } } @else {
+    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
+    }
+  </div>
+  }
+
+  <div class="hidden flex-auto grow items-start flex-col sm:flex">
+    <span class="min-h-full grow"></span>
+    <pc-swap
+      class="hover:text-primary text-base-content/40 group-hover:visible hidden lg:inline-flex"
+      swapOffIcon="arrow-right-end-on-rectangle"
+      swapOnIcon="arrow-left-start-on-rectangle"
+      [checked]="isDrawerFull()"
+      animation="flip"
+      (click)="toggleDrawer()"
+      aria-label="Toggle drawer"
+      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
+    ></pc-swap>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
+```typescript
+import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
+import { NavigationCancel, NavigationEnd, NavigationError, NavigationStart, Router, RouterLink } from '@angular/router';
+import { filter, map } from 'rxjs';
+import { Icon } from '@icons/icon';
+import { Swap } from '@uxcommon/components/swap/swap';
+
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { DuplicatesService } from '@experiences/duplicates/services/duplicates-service';
+import { ISidebarItem, isSidebarRouteActive } from './sidebar-items';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
+import { VolunteerAccessService } from '@experiences/volunteer-access/services/volunteer-access-service';
+import { EmailsService } from '@experiences/emails/services/emails-service';
+import { EmailFoldersStore } from '@experiences/emails/services/store/email-folders.store';
+
+@Component({
+  selector: 'pc-sidebar',
+  imports: [NgTemplateOutlet, Icon, RouterLink, Swap, AnimateIfDirective],
+  templateUrl: './sidebar.html',
+  styles: [
+    `
+      .tooltip:before {
+        z-index: 100 !important;
+      }
+    `,
+  ],
+})
+export class Sidebar {
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly duplicatesSvc = inject(DuplicatesService);
+  private readonly deliveriesSvc = inject(DeliveriesRequestsService);
+  private readonly volunteerAccessSvc = inject(VolunteerAccessService);
+  private readonly emailsSvc = inject(EmailsService);
+  private readonly emailFoldersStore = inject(EmailFoldersStore);
+
+  /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
+   *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
+  protected readonly taskSlaBreaches = signal<number | null>(null);
+
+  /** Live merge-queue size for the Duplicates sidebar badge (spec §9.3). Same one-shot-per-
+   *  session loading shape as `taskSlaBreaches` above. */
+  protected readonly duplicatesQueueCount = signal<number | null>(null);
+
+  /** Live approved-and-ready delivery request count for the Deliveries sidebar badge (spec §14).
+   *  Same one-shot-per-session loading shape as the badges above. */
+  protected readonly deliveriesReadyCount = signal<number | null>(null);
+
+  /** Volunteers awaiting companion-access approval, for the Volunteer access badge.
+   *  Same one-shot-per-session loading shape as the badges above. */
+  protected readonly volunteerAccessPending = signal<number | null>(null);
+
+  /** One-shot fetched fallback for the Inbox badge — covers sessions where the Inbox page
+   *  (and thus its folders store) never loads. */
+  private readonly inboxAssignedOpenFetched = signal<number | null>(null);
+
+  /** Open Inbox conversations assigned to the current user, for the Inbox badge. Prefers the
+   *  live "Mine" count from the email folders store — refreshed on every assign/close/delete —
+   *  so reassignments in the Inbox move the badge immediately; falls back to the one-shot
+   *  fetch until the store has counts. */
+  protected readonly inboxAssignedOpen = computed(
+    () => this.emailFoldersStore.assignedOpenCount() ?? this.inboxAssignedOpenFetched(),
+  );
+
+  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
+  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
+  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
+
+  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
+  protected readonly isEffectivelyNarrow = computed(
+    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
+  );
+
+  /** Target URL of an in-flight navigation, null once it settles (End/Cancel/Error). Lets the
+   *  clicked item light up immediately instead of waiting for resolvers/lazy chunks. */
+  private readonly pendingRoute = toSignal(
+    this.router.events.pipe(
+      filter(
+        (e) =>
+          e instanceof NavigationStart ||
+          e instanceof NavigationEnd ||
+          e instanceof NavigationCancel ||
+          e instanceof NavigationError,
+      ),
+      map((e) => (e instanceof NavigationStart ? e.url : null)),
+    ),
+    { initialValue: null },
+  );
+
+  /** URL of the last settled navigation. */
+  private readonly currentUrl = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map((e) => e.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
+
+  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
+
+  protected readonly items = computed(() => {
+    const role = this.auth.getUser()?.role;
+    const allItems = this.sidebarSvc.getItems()();
+    const withBadges = this.applyBadges(allItems);
+    if (role === 'user') {
+      return withBadges
+        .filter((item) => !item.adminOnly)
+        .map((item) => {
+          if (item.children) {
+            return {
+              ...item,
+              children: item.children.filter((child) => !child.adminOnly),
+            };
+          }
+          return item;
+        });
+    }
+    return withBadges;
+  });
+
+  constructor() {
+    if (this._mql) {
+      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
+      this._mql.addEventListener('change', handler);
+      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
+    }
+
+    effect(() => {
+      const flatItems = this.flattenItems(this.items());
+      for (const item of flatItems) {
+        const key = this.getItemKey(item);
+        const visible = !item.hidden && !item.hiddenByFavourite;
+        const existing = this.visibilitySignals.get(key);
+        if (existing) {
+          existing.set(visible);
+        } else {
+          this.visibilitySignals.set(key, signal(visible));
+        }
+      }
+    });
+
+    void this.loadTaskSlaBreaches();
+    void this.loadDuplicatesQueueCount();
+    void this.loadDeliveriesReadyCount();
+    void this.loadVolunteerAccessPending();
+    void this.loadInboxAssignedOpen();
+  }
+
+  /** Inbox badge fallback = open conversations assigned to the current user. One fetch per
+   *  session; superseded by the folders store's live count once the Inbox loads. */
+  private async loadInboxAssignedOpen(): Promise<void> {
+    try {
+      this.inboxAssignedOpenFetched.set(await this.emailsSvc.countAssignedOpen());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Volunteer access badge = volunteers awaiting approval. One fetch per session. */
+  private async loadVolunteerAccessPending(): Promise<void> {
+    try {
+      this.volunteerAccessPending.set(await this.volunteerAccessSvc.pendingCount());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Deliveries badge = live approved-and-ready request count (spec §14). One fetch per session. */
+  private async loadDeliveriesReadyCount(): Promise<void> {
+    try {
+      this.deliveriesReadyCount.set(await this.deliveriesSvc.getReadyCount());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  private async loadTaskSlaBreaches(): Promise<void> {
+    try {
+      this.taskSlaBreaches.set(await this.tasksSvc.countSlaBreaches());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Duplicates badge = merge-queue size (spec §9.3). One fetch per session — the queue only
+   *  meaningfully changes after a nightly sweep or a merge, so it isn't polled. */
+  private async loadDuplicatesQueueCount(): Promise<void> {
+    try {
+      this.duplicatesQueueCount.set(await this.duplicatesSvc.countQueue());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Stamps the live `badgeCount` onto the badge-bearing entries (Inbox, Tasks, Duplicates,
+   *  Deliveries, Volunteer access) — every other item is untouched. */
+  private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
+    const breaches = this.taskSlaBreaches();
+    const duplicatesQueue = this.duplicatesQueueCount();
+    const deliveriesReady = this.deliveriesReadyCount();
+    const volunteerPending = this.volunteerAccessPending();
+    const inboxAssigned = this.inboxAssignedOpen();
+    return items.map((item) => {
+      const children = item.children ? this.applyBadges(item.children) : undefined;
+      if (item.route === '/inbox') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: inboxAssigned };
+      }
+      if (item.route === '/tasks') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: breaches };
+      }
+      if (item.route === '/duplicates') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: duplicatesQueue };
+      }
+      if (item.route === '/deliveries') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: deliveriesReady };
+      }
+      if (item.route === '/volunteer-access') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: volunteerPending };
+      }
+      return children ? { ...item, children } : item;
+    });
+  }
+
+  protected closeMobile() {
+    this.sidebarSvc.closeMobile();
+  }
+
+  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
+    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
+  }
+
+  private getItemKey(item: ISidebarItem): string {
+    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
+    return prefix + item.name + (item.route ?? '');
+  }
+
+  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
+    const key = this.getItemKey(item);
+    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
+  }
+
+  protected isCollapsed(name: string): boolean {
+    return this.sidebarSvc.isCollapsed(name);
+  }
+
+  /** Collapse is a text-density preference that only applies to the expanded sidebar. The
+   *  narrow icon rail always shows every section's icons — a collapsed section there has no
+   *  visible header, so its items would be unreachable. */
+  protected isVisuallyCollapsed(name: string): boolean {
+    return !this.isEffectivelyNarrow() && this.isCollapsed(name);
+  }
+
+  protected isDrawerFull() {
+    return this.sidebarSvc.isFull();
+  }
+
+  protected isDrawerHalf() {
+    return this.sidebarSvc.isHalf();
+  }
+
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
+
+  /** Single source of truth for the highlighted nav item — the in-flight target while navigating,
+   *  the settled URL otherwise. Deliberately not routerLinkActive: its renderer-added classes and
+   *  a `[class.x]` binding on the same class fight over ownership, and the binding's stale `false`
+   *  wins when navigating deeper (e.g. /people -> /people/:id), un-highlighting the section. */
+  protected isNavActive(nav: ISidebarItem): boolean {
+    return isSidebarRouteActive(this.pendingRoute() ?? this.currentUrl(), nav);
+  }
+
+  protected toggleCollapse(name: string) {
+    this.sidebarSvc.toggleCollapsed(name);
+  }
+
+  protected toggleDrawer() {
+    return this.sidebarSvc.toggleDrawer();
+  }
+}
 ```
 
 ## File: apps/website/src/app/pricing/pricing-page.html

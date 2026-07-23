@@ -65,11 +65,16 @@
       "configurations": {
         "development": {
           "buildTarget": "backend:build:development",
-          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
+          "runtimeArgs": [
+            "--inspect=9229",
+            "--enable-source-maps",
+            "--env-file=.env.development",
+            "--disable-warning=DEP0205"
+          ]
         },
         "production": {
           "buildTarget": "backend:build:production",
-          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
+          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production", "--disable-warning=DEP0205"]
         }
       }
     },

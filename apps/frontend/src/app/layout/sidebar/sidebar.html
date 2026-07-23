@@ -41,8 +41,11 @@
   </a>
 </ng-template>
 
+<!-- max-sm: when the mobile menu is open this becomes a full-screen overlay pinned
+     below the navbar (top-16 = the navbar's 4rem min-height), keeping the navbar's
+     X button reachable to close it. Inert at sm+ and when closed (hidden wins). -->
 <div
-  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
+  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50 max-sm:fixed max-sm:inset-x-0 max-sm:top-16 max-sm:bottom-0 max-sm:z-40 max-sm:min-h-0 max-sm:w-full max-sm:overflow-y-auto"
   [class.hidden]="!this.isMobileOpen()"
   [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
   [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
