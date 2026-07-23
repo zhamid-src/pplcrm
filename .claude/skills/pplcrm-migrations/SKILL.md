@@ -28,7 +28,8 @@ Every file must export `up(db: Kysely<any>)` and `down(db: Kysely<any>)`.
 ## How migrations run
 
 - Registered via `BaseRepository.migrator` — `Migrator` + `FileMigrationProvider` pointed at `apps/backend/src/app/_migrations`, resolved from `process.cwd()` (`apps/backend/src/app/lib/base.repo.ts`).
-- Applied automatically on backend startup: `apps/backend/src/main.ts` calls `migrateToLatest()` from `kyselyinit.ts`. Starting the backend brings the DB to latest.
+- **Dev:** applied automatically on backend startup — `apps/backend/src/main.ts` calls `migrateToLatest()` from `kyselyinit.ts` when `MIGRATE_ON_BOOT` is true (the default). Starting the backend brings the DB to latest.
+- **Prod:** `MIGRATE_ON_BOOT=false` — startup does NOT migrate. The `migrate` job in `.github/workflows/deploy.yml` runs `kyselyinit.ts` (as the owner role, via the `PROD_DB_*` secrets) before the backend rolls to the new image; a migration failure blocks the deploy. Added after the 2026-07-23 outage, where code reading `authusers.campaign_id` deployed without its migration and every authenticated request 500'd while health probes stayed green. Manual fallback command: `deploy/GO-LIVE-CHECKLIST.md` §9.
 - State is tracked in the Kysely-managed tables `kysely_migration` and `kysely_migration_lock`. Never write to these by hand except through the existing rename shim.
 
 ### Data backfills on FORCE-RLS tables just work — but always test a fresh bootstrap

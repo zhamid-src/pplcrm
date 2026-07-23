@@ -348,6 +348,37 @@
               }
             </div>
             } }
+
+            <!-- COMPLIANCE FOOTER PREVIEW — appended by the server to every send; not a block, not editable.
+                 Slate palette on purpose: the email canvas is theme-independent white, like its neighbors above. -->
+            <div
+              class="border-t border-dashed border-slate-200 select-none cursor-default"
+              title="This footer is added to every newsletter automatically and can't be removed. Administrators set the address and disclaimer under Workspace settings."
+            >
+              <div class="flex justify-center pt-3">
+                <span
+                  class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-300"
+                >
+                  <pc-icon name="lock-closed" [size]="3"></pc-icon>
+                  Added to every send
+                </span>
+              </div>
+              <div class="px-6 pt-2 pb-6 text-center text-xs text-slate-400 leading-normal">
+                @if (footerOrgName()) {
+                <p class="font-bold">{{ footerOrgName() }}</p>
+                } @if (footerAddress()) {
+                <p class="whitespace-pre-line">{{ footerAddress() }}</p>
+                } @else {
+                <p class="italic">
+                  Your organization's mailing address — an administrator sets it in Workspace settings
+                </p>
+                } @if (footerDisclaimer()) {
+                <p class="mt-1 whitespace-pre-line">{{ footerDisclaimer() }}</p>
+                }
+                <p class="mt-2"><span class="underline">Unsubscribe</span></p>
+                <p class="mt-2 text-slate-300">powered by <span class="underline">pplCRM</span></p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -43071,98 +43071,6 @@ export function ref<TTable extends keyof Models, TColumn extends keyof Models[TT
 }
 ````
 
-## File: apps/backend/src/app/lib/public-tenant.ts
-````typescript
-import { RESERVED_SUBDOMAINS } from '@common';
-
-import { BaseRepository } from './base.repo';
-import { env } from '../../env';
-
-/**
- * Tenant resolution for unauthenticated public pages (forms /f/:slug, event RSVP /e/:slug,
- * volunteer signup /v/:slug, donations). Every public lookup is keyed (tenant, slug); the tenant
- * is identified by its subdomain — from the explicit `?t=` param (the SPA passes its own
- * subdomain, robust across hosts) or the request Host — never by a cross-tenant record query.
- */
-
-/**
- * Extract a tenant subdomain label from a request Host. `riverton.mydomain.com` → `riverton` when
- * the base domain is `mydomain.com`. Returns null for the bare/app host, reserved labels, or a
- * mismatch.
- */
-export function tenantSlugFromHost(hostname: string | undefined): string | null {
-  if (!hostname) return null;
-  const host = hostname.split(':')[0]?.toLowerCase();
-  const base = env.publicBaseDomain.toLowerCase();
-  if (!host || host === base) return null;
-  const suffix = `.${base}`;
-  if (!host.endsWith(suffix)) return null;
-  const label = host.slice(0, -suffix.length);
-  // Only a single left-most label maps to a tenant (no nested subdomains).
-  if (!label || label.includes('.') || RESERVED_SUBDOMAINS.has(label)) return null;
-  return label;
-}
-
-export interface PublicTenant {
-  id: string;
-  slug: string;
-}
-
-/**
- * Resolve a tenant from its public subdomain slug. The `tenants` table is tenant-safety
- * allow-listed (you look it up *by* its own key).
- */
-export async function resolveTenantBySlug(tenantSlug: string): Promise<PublicTenant | null> {
-  const row = await BaseRepository.dbInstance
-    .selectFrom('tenants')
-    .select('id')
-    .where('slug', '=', tenantSlug)
-    .executeTakeFirst();
-  return row ? { id: String(row.id), slug: tenantSlug } : null;
-}
-
-/**
- * Resolve a tenant by id — the workspace-API-key path, where the key (not the Host/`?t=`)
- * already identifies the tenant. Same allow-listed `tenants` self-lookup as above.
- */
-export async function resolveTenantById(tenantId: string): Promise<PublicTenant | null> {
-  const row = await BaseRepository.dbInstance
-    .selectFrom('tenants')
-    .select('slug')
-    .where('id', '=', tenantId)
-    .executeTakeFirst();
-  return row?.slug ? { id: tenantId, slug: String(row.slug) } : null;
-}
-
-/** Org display name for public pages (same source as the /f/:slug page header). */
-export async function publicOrgName(tenantId: string): Promise<string> {
-  const row = await BaseRepository.dbInstance
-    .selectFrom('settings')
-    .select('value')
-    .where('tenant_id', '=', tenantId)
-    .where('key', '=', 'organization.name')
-    .executeTakeFirst();
-  const value = row?.value;
-  return typeof value === 'string' && value.trim() ? value : 'Our organization';
-}
-
-/**
- * Resolve the tenant for a public request: `?t=<tenantSlug>` first, then the Host subdomain.
- * Returns null when neither identifies a known tenant — callers should 404 without revealing
- * whether the slug or the tenant was the miss.
- */
-export async function resolveTenantFromRequest(req: {
-  query?: unknown;
-  hostname?: string;
-}): Promise<PublicTenant | null> {
-  const query = req.query as Record<string, unknown> | undefined;
-  const t = typeof query?.['t'] === 'string' ? query['t'].trim() : '';
-  const tenantSlug = t || tenantSlugFromHost(req.hostname);
-  if (!tenantSlug) return null;
-  return resolveTenantBySlug(tenantSlug);
-}
-````
-
 ## File: apps/backend/src/app/modules/campaigns/controller.ts
 ````typescript
 import { sql } from 'kysely';
@@ -45031,470 +44939,6 @@ function convexHull(points: LatLng[]): LatLng[] {
   };
 
   return half(pts).concat(half([...pts].reverse()));
-}
-````
-
-## File: apps/backend/src/app/modules/companion-access/controller.ts
-````typescript
-import { randomInt } from 'node:crypto';
-
-import type { Transaction } from 'kysely';
-
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type {
-  CompanionAccessPayload,
-  CompanionContact,
-  CompanionLinkKind,
-  CompanionVerifyChannel,
-  CompanionVerifyConfirmResult,
-  CompanionVolunteerRow,
-  IAuthKeyPayload,
-} from '../../../../../../libs/common/src';
-import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { SmsService } from '../../lib/sms/sms.service';
-import { maskEmail, maskPhone, normalizeE164 } from '../../lib/sms/phone';
-import { generateToken, hashToken } from '../../lib/token-hash';
-import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
-import { env } from '../../../env';
-import { TurfAssignmentsRepo } from '../canvassing/repositories/turf-assignments.repo';
-import { DeliveryRoutesRepo } from '../deliveries/repositories/delivery-routes.repo';
-import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
-import { CompanionSessionsRepo } from './repositories/companion-sessions.repo';
-import { CompanionVolunteersRepo, type CompanionVolunteer } from './repositories/companion-volunteers.repo';
-
-const CODE_TTL_MS = 10 * 60 * 1000;
-const CODE_MAX_ATTEMPTS = 5;
-const SESSION_TTL_DAYS = 30;
-const VERIFY_START_LIMIT = 3; // sends per token per window
-const VERIFY_START_WINDOW_MS = 15 * 60 * 1000;
-const VERIFY_CONFIRM_LIMIT = 15; // confirms per token per window (attempt lockout is per code)
-const VERIFY_CONFIRM_WINDOW_MS = 15 * 60 * 1000;
-
-/** What a capability link resolves to, whichever app it belongs to. */
-interface ResolvedLink {
-  tenant_id: string;
-  /** Person the link was assigned to; null = staff never attached one. */
-  volunteer_person_id: string | null;
-  /** The staff account behind the link — actor for activity attribution. */
-  organizer_id: string;
-}
-
-interface PersonContacts {
-  first_name: string | null;
-  email: string | null;
-  /** E.164, already normalized — null when the mobile on file can't be normalized. */
-  sms: string | null;
-}
-
-/**
- * The companion access layer (COMPANION-APPS-PLAN.md §2). The capability token
- * says WHAT may be touched (one turf / one route); the companion session says
- * WHO is touching it. Both are required on every companion data request —
- * `requireSession()` is the guard the canvass/deliveries public controllers
- * call. Nothing here ever reveals whether a contact exists beyond masked
- * values for the link's own volunteer.
- */
-export class CompanionAccessController {
-  private activityRepo = new UserActivityRepo();
-  private mailService = new TransactionalEmailService();
-  private notificationsRepo = new NotificationsRepo();
-  private routesRepo = new DeliveryRoutesRepo();
-  private sessionsRepo = new CompanionSessionsRepo();
-  private smsService = new SmsService();
-  private turfAssignmentsRepo = new TurfAssignmentsRepo();
-  private volunteersRepo = new CompanionVolunteersRepo();
-
-  /** GET /api/companion/access — tell the gate UI what to render. */
-  public async getAccess(
-    kind: CompanionLinkKind,
-    token: string,
-    sessionToken: string | null,
-  ): Promise<CompanionAccessPayload> {
-    const link = await this.resolveLink(kind, token);
-    if (!link) return { state: 'dead' };
-
-    const organizationName = await this.organizationName(link.tenant_id);
-    const organizerName = await this.organizerFirstName(link.tenant_id, link.organizer_id);
-    if (!link.volunteer_person_id) return { state: 'unassigned', organizerName, organizationName };
-
-    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
-    if (!person) return { state: 'unassigned', organizerName, organizationName };
-
-    const volunteer = await this.volunteersRepo.findByPerson({
-      tenant_id: link.tenant_id,
-      person_id: link.volunteer_person_id,
-    });
-    if (volunteer?.status === 'revoked') return { state: 'dead' };
-
-    const base = {
-      volunteerName: person.first_name ?? undefined,
-      organizerName,
-      organizationName,
-    };
-
-    const session = await this.findUsableSession(sessionToken, link.tenant_id, volunteer);
-    if (session) {
-      return volunteer?.status === 'approved' ? { state: 'ready', ...base } : { state: 'pending_approval', ...base };
-    }
-
-    return { state: 'need_verification', ...base, contacts: this.contactsOf(person) };
-  }
-
-  /** POST /api/companion/verify/start — send a one-time code to a contact on file. */
-  public async verifyStart(
-    kind: CompanionLinkKind,
-    token: string,
-    channel: CompanionVerifyChannel,
-  ): Promise<{ masked: string }> {
-    checkRateLimit(`companion-verify-start:${token}`, VERIFY_START_LIMIT, VERIFY_START_WINDOW_MS);
-
-    const link = await this.resolveLink(kind, token);
-    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
-
-    // A suspended organization (under abuse review) must not be able to burn verification SMS/email
-    // cost. Companion codes sit outside the newsletter send-guard chain, so this path needs its own
-    // check — otherwise a suspended tenant keeps emitting outbound SMS/email here.
-    const org = await this.volunteersRepo.db
-      .selectFrom('tenants')
-      .select('suspended_at')
-      .where('id', '=', link.tenant_id)
-      .executeTakeFirst();
-    if (org?.suspended_at) {
-      throw new ForbiddenError('This organization is temporarily unavailable. Please contact your organizer.');
-    }
-
-    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
-    if (!person) throw new NotFoundError('This link is not active.');
-
-    const destination = channel === 'email' ? person.email : person.sms;
-    if (!destination) throw new BadRequestError('That contact method is not on file for this link.');
-
-    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    const orgName = await this.organizationName(link.tenant_id);
-
-    await this.volunteersRepo.transaction().execute(async (trx) => {
-      const volunteer = await this.volunteersRepo.ensureForPerson(
-        { tenant_id: link.tenant_id, person_id: String(link.volunteer_person_id), created_by: link.organizer_id },
-        trx,
-      );
-      if (volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
-      await this.volunteersRepo.setVerifyCode(
-        {
-          tenant_id: link.tenant_id,
-          id: volunteer.id,
-          code_hash: hashToken(code),
-          expires_at: new Date(Date.now() + CODE_TTL_MS),
-          channel,
-        },
-        trx,
-      );
-      if (channel === 'email') {
-        await this.mailService.enqueueMail(
-          {
-            to: destination,
-            subject: `Your ${orgName} verification code`,
-            text: `Your verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
-            html: `<h2>Verify it's you</h2><p>Enter this code on the volunteer page to continue. It expires in 10 minutes.</p><div class="otp-container"><span class="otp-code">${code}</span></div><p class="warning">If you didn't request this code, you can ignore this message.</p>`,
-            tenant_id: link.tenant_id,
-          },
-          trx,
-        );
-      } else {
-        await this.smsService.enqueueSms(
-          {
-            to: destination,
-            body: `${orgName} code: ${code}. Expires in 10 minutes.`,
-            tenant_id: link.tenant_id,
-          },
-          trx,
-        );
-      }
-    });
-
-    return { masked: channel === 'email' ? maskEmail(destination) : maskPhone(destination) };
-  }
-
-  /** POST /api/companion/verify/confirm — check the code, mint a device session. */
-  public async verifyConfirm(
-    kind: CompanionLinkKind,
-    token: string,
-    code: string,
-    userAgent: string | null,
-  ): Promise<CompanionVerifyConfirmResult> {
-    checkRateLimit(`companion-verify-confirm:${token}`, VERIFY_CONFIRM_LIMIT, VERIFY_CONFIRM_WINDOW_MS);
-
-    const link = await this.resolveLink(kind, token);
-    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
-
-    const volunteer = await this.volunteersRepo.findByPerson({
-      tenant_id: link.tenant_id,
-      person_id: link.volunteer_person_id,
-    });
-    if (!volunteer || volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
-    if (!volunteer.verify_code_hash || !volunteer.verify_code_expires_at) {
-      throw new BadRequestError('Request a new code first.');
-    }
-    if (volunteer.verify_code_expires_at < new Date()) {
-      throw new BadRequestError('That code has expired. Request a new one.');
-    }
-    if (volunteer.verify_attempts >= CODE_MAX_ATTEMPTS) {
-      await this.volunteersRepo.clearVerifyCode({ tenant_id: link.tenant_id, id: volunteer.id });
-      throw new BadRequestError('Too many attempts. Request a new code.');
-    }
-    if (hashToken(code) !== volunteer.verify_code_hash) {
-      await this.volunteersRepo.bumpVerifyAttempts({ tenant_id: link.tenant_id, id: volunteer.id });
-      throw new BadRequestError("That code didn't match. Check it and try again.");
-    }
-
-    const wasApproved = volunteer.status === 'approved';
-    const sessionToken = generateToken();
-    const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
-
-    await this.volunteersRepo.transaction().execute(async (trx) => {
-      await this.volunteersRepo.markVerified({ tenant_id: link.tenant_id, id: volunteer.id }, trx);
-      await this.sessionsRepo.create(
-        {
-          tenant_id: link.tenant_id,
-          volunteer_id: volunteer.id,
-          token_hash: hashToken(sessionToken),
-          expires_at: expiresAt,
-          user_agent: userAgent,
-        },
-        trx,
-      );
-      if (!wasApproved) {
-        await this.notifyAdminsOfPendingVolunteer(link, trx);
-      }
-      await this.activityRepo.log(
-        {
-          tenant_id: link.tenant_id,
-          user_id: link.organizer_id,
-          activity: 'update',
-          entity: 'companion_volunteers',
-          entity_id: volunteer.id,
-          metadata: {
-            action: 'volunteer_verified',
-            message: wasApproved
-              ? 'Volunteer verified a new device via companion link'
-              : 'Volunteer verified their contact and is waiting for approval',
-            via: 'companion link',
-          },
-        },
-        trx,
-      );
-    });
-
-    return {
-      status: wasApproved ? 'ready' : 'pending_approval',
-      sessionToken,
-      expiresAt: expiresAt.toISOString(),
-    };
-  }
-
-  /**
-   * The guard every companion data endpoint calls: validates the device
-   * session, that it belongs to the link's volunteer, and that the volunteer
-   * is approved. Throws UnauthorizedError (no/invalid session — the gate
-   * re-verifies) or ForbiddenError (valid session, not approved).
-   */
-  public async requireSession(
-    sessionToken: string | null | undefined,
-    link: { tenant_id: string; volunteer_person_id: string | null },
-  ): Promise<void> {
-    if (!link.volunteer_person_id) throw new UnauthorizedError('This link needs to be re-sent by your organizer.');
-    if (!sessionToken) throw new UnauthorizedError('Verification required.');
-
-    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
-    if (!session || session.tenant_id !== link.tenant_id) throw new UnauthorizedError('Verification required.');
-    if (session.revoked_at || session.expires_at < new Date()) throw new UnauthorizedError('Verification required.');
-
-    const volunteer = await this.volunteersRepo.findById({ tenant_id: link.tenant_id, id: session.volunteer_id });
-    if (!volunteer || volunteer.person_id !== link.volunteer_person_id) {
-      throw new UnauthorizedError('Verification required.');
-    }
-    if (volunteer.status !== 'approved') throw new ForbiddenError('Waiting for organizer approval.');
-
-    await this.sessionsRepo.touchLastUsed({ tenant_id: link.tenant_id, id: session.id });
-  }
-
-  // ---------------------------------------------------------------- admin API
-
-  public async getAllVolunteers(tenant_id: string): Promise<CompanionVolunteerRow[]> {
-    return this.volunteersRepo.getAllWithPerson(tenant_id);
-  }
-
-  public async pendingCount(tenant_id: string): Promise<number> {
-    return this.volunteersRepo.pendingCount(tenant_id);
-  }
-
-  public async approveVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
-    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
-    if (!volunteer) throw new NotFoundError('Volunteer not found.');
-    await this.volunteersRepo.transaction().execute(async (trx) => {
-      await this.volunteersRepo.approve({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
-      await this.activityRepo.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'update',
-          entity: 'companion_volunteers',
-          entity_id: id,
-          metadata: { action: 'volunteer_approved', message: 'Approved companion app access' },
-        },
-        trx,
-      );
-    });
-  }
-
-  public async revokeVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
-    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
-    if (!volunteer) throw new NotFoundError('Volunteer not found.');
-    await this.volunteersRepo.transaction().execute(async (trx) => {
-      await this.volunteersRepo.revoke({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
-      await this.sessionsRepo.revokeForVolunteer({ tenant_id: auth.tenant_id, volunteer_id: id }, trx);
-      await this.activityRepo.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'update',
-          entity: 'companion_volunteers',
-          entity_id: id,
-          metadata: { action: 'volunteer_revoked', message: 'Revoked companion app access' },
-        },
-        trx,
-      );
-    });
-  }
-
-  // ------------------------------------------------------------------ helpers
-
-  /** Resolve either kind of capability token to its tenant + volunteer. */
-  public async resolveLink(kind: CompanionLinkKind, token: string): Promise<ResolvedLink | null> {
-    if (kind === 'turf') {
-      const assignment = await this.turfAssignmentsRepo.resolveByToken(token);
-      if (!assignment) return null;
-      if (assignment.expires_at && assignment.expires_at < new Date()) return null;
-      return {
-        tenant_id: assignment.tenant_id,
-        volunteer_person_id: assignment.volunteer_person_id,
-        organizer_id: assignment.created_by,
-      };
-    }
-
-    // kind === 'route' — mirrors DeliveriesController.isTokenUsable (uniform
-    // dead-link semantics: canceled always fails; missing/past expiry fails only
-    // while the workspace enforces link expiry — a live policy, Workspace → App).
-    const route = await this.routesRepo.findByTokenHash(hashToken(token));
-    if (!route) return null;
-    if (String(route.status) === 'canceled') return null;
-    if (await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id))) {
-      const exp = route.share_token_expires_at;
-      if (!exp || new Date(String(exp)) <= new Date()) return null;
-    }
-    return {
-      tenant_id: String(route.tenant_id),
-      volunteer_person_id: route.volunteer_person_id == null ? null : String(route.volunteer_person_id),
-      organizer_id: String(route.createdby_id),
-    };
-  }
-
-  private contactsOf(person: PersonContacts): CompanionContact[] {
-    const contacts: CompanionContact[] = [];
-    if (person.email) contacts.push({ channel: 'email', masked: maskEmail(person.email) });
-    if (person.sms) contacts.push({ channel: 'sms', masked: maskPhone(person.sms) });
-    return contacts;
-  }
-
-  private async findUsableSession(
-    sessionToken: string | null,
-    tenant_id: string,
-    volunteer: CompanionVolunteer | null,
-  ): Promise<boolean> {
-    if (!sessionToken || !volunteer) return false;
-    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
-    if (!session || session.tenant_id !== tenant_id) return false;
-    if (session.volunteer_id !== volunteer.id) return false;
-    if (session.revoked_at || session.expires_at < new Date()) return false;
-    return true;
-  }
-
-  private async notifyAdminsOfPendingVolunteer(link: ResolvedLink, trx: Transaction<Models>): Promise<void> {
-    const person = await this.personContacts(link.tenant_id, String(link.volunteer_person_id));
-    const volunteerName = person?.first_name ?? 'A volunteer';
-    const admins = await this.volunteersRepo.db
-      .selectFrom('authusers')
-      .select(['id', 'email', 'first_name'])
-      .where('tenant_id', '=', link.tenant_id)
-      .where('role', 'in', ['admin', 'owner'])
-      .where('deactivated_at', 'is', null)
-      .execute();
-    const approvePath = '/volunteer-access';
-    const approveUrl = `${env.appUrl}${approvePath}`;
-    for (const admin of admins) {
-      await this.mailService.enqueueMail(
-        {
-          to: admin.email,
-          subject: `${volunteerName} is waiting for companion app approval`,
-          text: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link. Approve them at ${approveUrl}`,
-          html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in pplCRM</a></div>`,
-          tenant_id: link.tenant_id,
-        },
-        trx,
-      );
-      // In-app bell notification — links straight to the Volunteer access page.
-      await this.notificationsRepo.pushNotification(
-        {
-          tenant_id: link.tenant_id,
-          user_id: String(admin.id),
-          title: 'Volunteer waiting for approval',
-          message: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link.`,
-          type: 'info',
-          link: approvePath,
-        },
-        trx,
-      );
-    }
-  }
-
-  private async organizationName(tenant_id: string): Promise<string> {
-    const row = await this.volunteersRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenant_id)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    if (typeof value === 'string' && value.trim()) return value.trim().replace(/^"|"$/g, '');
-    return 'pplCRM';
-  }
-
-  private async organizerFirstName(tenant_id: string, user_id: string): Promise<string | undefined> {
-    const row = await this.volunteersRepo.db
-      .selectFrom('authusers')
-      .select('first_name')
-      .where('tenant_id', '=', tenant_id)
-      .where('id', '=', user_id)
-      .executeTakeFirst();
-    return row?.first_name ?? undefined;
-  }
-
-  private async personContacts(tenant_id: string, person_id: string): Promise<PersonContacts | null> {
-    const row = await this.volunteersRepo.db
-      .selectFrom('persons')
-      .select(['first_name', 'email', 'mobile'])
-      .where('tenant_id', '=', tenant_id)
-      .where('id', '=', person_id)
-      .executeTakeFirst();
-    if (!row) return null;
-    return {
-      first_name: row.first_name,
-      email: row.email,
-      sms: normalizeE164(row.mobile),
-    };
-  }
 }
 ````
 
@@ -55201,6 +54645,110 @@ export function getKeyPreview(key: string): string {
 }
 ````
 
+## File: apps/backend/src/app/lib/public-tenant.ts
+````typescript
+import { RESERVED_SUBDOMAINS } from '@common';
+
+import { BaseRepository } from './base.repo';
+import { env } from '../../env';
+
+/**
+ * Tenant resolution for unauthenticated public pages (forms /f/:slug, event RSVP /e/:slug,
+ * volunteer signup /v/:slug, donations). Every public lookup is keyed (tenant, slug); the tenant
+ * is identified by its subdomain — from the explicit `?t=` param (the SPA passes its own
+ * subdomain, robust across hosts) or the request Host — never by a cross-tenant record query.
+ */
+
+/**
+ * Extract a tenant subdomain label from a request Host. `riverton.mydomain.com` → `riverton` when
+ * the base domain is `mydomain.com`. Returns null for the bare/app host, reserved labels, or a
+ * mismatch.
+ */
+export function tenantSlugFromHost(hostname: string | undefined): string | null {
+  if (!hostname) return null;
+  const host = hostname.split(':')[0]?.toLowerCase();
+  const base = env.publicBaseDomain.toLowerCase();
+  if (!host || host === base) return null;
+  const suffix = `.${base}`;
+  if (!host.endsWith(suffix)) return null;
+  const label = host.slice(0, -suffix.length);
+  // Only a single left-most label maps to a tenant (no nested subdomains).
+  if (!label || label.includes('.') || RESERVED_SUBDOMAINS.has(label)) return null;
+  return label;
+}
+
+export interface PublicTenant {
+  id: string;
+  slug: string;
+}
+
+/**
+ * Resolve a tenant from its public subdomain slug. The `tenants` table is tenant-safety
+ * allow-listed (you look it up *by* its own key).
+ */
+export async function resolveTenantBySlug(tenantSlug: string): Promise<PublicTenant | null> {
+  const row = await BaseRepository.dbInstance
+    .selectFrom('tenants')
+    .select('id')
+    .where('slug', '=', tenantSlug)
+    .executeTakeFirst();
+  return row ? { id: String(row.id), slug: tenantSlug } : null;
+}
+
+/**
+ * Resolve a tenant by id — the workspace-API-key path, where the key (not the Host/`?t=`)
+ * already identifies the tenant. Same allow-listed `tenants` self-lookup as above.
+ */
+export async function resolveTenantById(tenantId: string): Promise<PublicTenant | null> {
+  const row = await BaseRepository.dbInstance
+    .selectFrom('tenants')
+    .select('slug')
+    .where('id', '=', tenantId)
+    .executeTakeFirst();
+  return row?.slug ? { id: tenantId, slug: String(row.slug) } : null;
+}
+
+/**
+ * Org display name for public pages and outbound volunteer email/SMS (same source as the
+ * /f/:slug page header). Falls back to the tenant's signup name when the Workspace
+ * organization.name setting was never filled in — never the generic "Our organization"
+ * unless both are somehow blank.
+ */
+export async function publicOrgName(tenantId: string): Promise<string> {
+  const row = await BaseRepository.dbInstance
+    .selectFrom('settings')
+    .select('value')
+    .where('tenant_id', '=', tenantId)
+    .where('key', '=', 'organization.name')
+    .executeTakeFirst();
+  const value = row?.value;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  const tenant = await BaseRepository.dbInstance
+    .selectFrom('tenants')
+    .select('name')
+    .where('id', '=', tenantId)
+    .executeTakeFirst();
+  const name = tenant?.name;
+  return typeof name === 'string' && name.trim() ? name.trim() : 'Our organization';
+}
+
+/**
+ * Resolve the tenant for a public request: `?t=<tenantSlug>` first, then the Host subdomain.
+ * Returns null when neither identifies a known tenant — callers should 404 without revealing
+ * whether the slug or the tenant was the miss.
+ */
+export async function resolveTenantFromRequest(req: {
+  query?: unknown;
+  hostname?: string;
+}): Promise<PublicTenant | null> {
+  const query = req.query as Record<string, unknown> | undefined;
+  const t = typeof query?.['t'] === 'string' ? query['t'].trim() : '';
+  const tenantSlug = t || tenantSlugFromHost(req.hostname);
+  if (!tenantSlug) return null;
+  return resolveTenantBySlug(tenantSlug);
+}
+````
+
 ## File: apps/backend/src/app/lib/validate-api-key.ts
 ````typescript
 import { TRPCError } from '@trpc/server';
@@ -55403,6 +54951,459 @@ export const BillingRouter = router({
 
   cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),
 });
+````
+
+## File: apps/backend/src/app/modules/companion-access/controller.ts
+````typescript
+import { randomInt } from 'node:crypto';
+
+import type { Transaction } from 'kysely';
+
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type {
+  CompanionAccessPayload,
+  CompanionContact,
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+  IAuthKeyPayload,
+} from '../../../../../../libs/common/src';
+import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
+import { publicOrgName } from '../../lib/public-tenant';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { SmsService } from '../../lib/sms/sms.service';
+import { maskEmail, maskPhone, normalizeE164 } from '../../lib/sms/phone';
+import { generateToken, hashToken } from '../../lib/token-hash';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
+import { env } from '../../../env';
+import { TurfAssignmentsRepo } from '../canvassing/repositories/turf-assignments.repo';
+import { DeliveryRoutesRepo } from '../deliveries/repositories/delivery-routes.repo';
+import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
+import { CompanionSessionsRepo } from './repositories/companion-sessions.repo';
+import { CompanionVolunteersRepo, type CompanionVolunteer } from './repositories/companion-volunteers.repo';
+
+const CODE_TTL_MS = 10 * 60 * 1000;
+const CODE_MAX_ATTEMPTS = 5;
+const SESSION_TTL_DAYS = 30;
+const VERIFY_START_LIMIT = 3; // sends per token per window
+const VERIFY_START_WINDOW_MS = 15 * 60 * 1000;
+const VERIFY_CONFIRM_LIMIT = 15; // confirms per token per window (attempt lockout is per code)
+const VERIFY_CONFIRM_WINDOW_MS = 15 * 60 * 1000;
+
+/** What a capability link resolves to, whichever app it belongs to. */
+interface ResolvedLink {
+  tenant_id: string;
+  /** Person the link was assigned to; null = staff never attached one. */
+  volunteer_person_id: string | null;
+  /** The staff account behind the link — actor for activity attribution. */
+  organizer_id: string;
+}
+
+interface PersonContacts {
+  first_name: string | null;
+  email: string | null;
+  /** E.164, already normalized — null when the mobile on file can't be normalized. */
+  sms: string | null;
+}
+
+/**
+ * The companion access layer (COMPANION-APPS-PLAN.md §2). The capability token
+ * says WHAT may be touched (one turf / one route); the companion session says
+ * WHO is touching it. Both are required on every companion data request —
+ * `requireSession()` is the guard the canvass/deliveries public controllers
+ * call. Nothing here ever reveals whether a contact exists beyond masked
+ * values for the link's own volunteer.
+ */
+export class CompanionAccessController {
+  private activityRepo = new UserActivityRepo();
+  private mailService = new TransactionalEmailService();
+  private notificationsRepo = new NotificationsRepo();
+  private routesRepo = new DeliveryRoutesRepo();
+  private sessionsRepo = new CompanionSessionsRepo();
+  private smsService = new SmsService();
+  private turfAssignmentsRepo = new TurfAssignmentsRepo();
+  private volunteersRepo = new CompanionVolunteersRepo();
+
+  /** GET /api/companion/access — tell the gate UI what to render. */
+  public async getAccess(
+    kind: CompanionLinkKind,
+    token: string,
+    sessionToken: string | null,
+  ): Promise<CompanionAccessPayload> {
+    const link = await this.resolveLink(kind, token);
+    if (!link) return { state: 'dead' };
+
+    const organizationName = await publicOrgName(link.tenant_id);
+    const organizerName = await this.organizerFirstName(link.tenant_id, link.organizer_id);
+    if (!link.volunteer_person_id) return { state: 'unassigned', organizerName, organizationName };
+
+    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
+    if (!person) return { state: 'unassigned', organizerName, organizationName };
+
+    const volunteer = await this.volunteersRepo.findByPerson({
+      tenant_id: link.tenant_id,
+      person_id: link.volunteer_person_id,
+    });
+    if (volunteer?.status === 'revoked') return { state: 'dead' };
+
+    const base = {
+      volunteerName: person.first_name ?? undefined,
+      organizerName,
+      organizationName,
+    };
+
+    const session = await this.findUsableSession(sessionToken, link.tenant_id, volunteer);
+    if (session) {
+      return volunteer?.status === 'approved' ? { state: 'ready', ...base } : { state: 'pending_approval', ...base };
+    }
+
+    return { state: 'need_verification', ...base, contacts: this.contactsOf(person) };
+  }
+
+  /** POST /api/companion/verify/start — send a one-time code to a contact on file. */
+  public async verifyStart(
+    kind: CompanionLinkKind,
+    token: string,
+    channel: CompanionVerifyChannel,
+  ): Promise<{ masked: string }> {
+    checkRateLimit(`companion-verify-start:${token}`, VERIFY_START_LIMIT, VERIFY_START_WINDOW_MS);
+
+    const link = await this.resolveLink(kind, token);
+    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
+
+    // A suspended organization (under abuse review) must not be able to burn verification SMS/email
+    // cost. Companion codes sit outside the newsletter send-guard chain, so this path needs its own
+    // check — otherwise a suspended tenant keeps emitting outbound SMS/email here.
+    const org = await this.volunteersRepo.db
+      .selectFrom('tenants')
+      .select('suspended_at')
+      .where('id', '=', link.tenant_id)
+      .executeTakeFirst();
+    if (org?.suspended_at) {
+      throw new ForbiddenError('This organization is temporarily unavailable. Please contact your organizer.');
+    }
+
+    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
+    if (!person) throw new NotFoundError('This link is not active.');
+
+    const destination = channel === 'email' ? person.email : person.sms;
+    if (!destination) throw new BadRequestError('That contact method is not on file for this link.');
+
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const orgName = await publicOrgName(link.tenant_id);
+
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      const volunteer = await this.volunteersRepo.ensureForPerson(
+        { tenant_id: link.tenant_id, person_id: String(link.volunteer_person_id), created_by: link.organizer_id },
+        trx,
+      );
+      if (volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
+      await this.volunteersRepo.setVerifyCode(
+        {
+          tenant_id: link.tenant_id,
+          id: volunteer.id,
+          code_hash: hashToken(code),
+          expires_at: new Date(Date.now() + CODE_TTL_MS),
+          channel,
+        },
+        trx,
+      );
+      if (channel === 'email') {
+        await this.mailService.enqueueMail(
+          {
+            to: destination,
+            subject: `Your ${orgName} verification code`,
+            text: `Your verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
+            html: `<h2>Verify it's you</h2><p>Enter this code on the volunteer page to continue. It expires in 10 minutes.</p><div class="otp-container"><span class="otp-code">${code}</span></div><p class="warning">If you didn't request this code, you can ignore this message.</p>`,
+            tenant_id: link.tenant_id,
+          },
+          trx,
+        );
+      } else {
+        await this.smsService.enqueueSms(
+          {
+            to: destination,
+            body: `${orgName} code: ${code}. Expires in 10 minutes.`,
+            tenant_id: link.tenant_id,
+          },
+          trx,
+        );
+      }
+    });
+
+    return { masked: channel === 'email' ? maskEmail(destination) : maskPhone(destination) };
+  }
+
+  /** POST /api/companion/verify/confirm — check the code, mint a device session. */
+  public async verifyConfirm(
+    kind: CompanionLinkKind,
+    token: string,
+    code: string,
+    userAgent: string | null,
+  ): Promise<CompanionVerifyConfirmResult> {
+    checkRateLimit(`companion-verify-confirm:${token}`, VERIFY_CONFIRM_LIMIT, VERIFY_CONFIRM_WINDOW_MS);
+
+    const link = await this.resolveLink(kind, token);
+    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
+
+    const volunteer = await this.volunteersRepo.findByPerson({
+      tenant_id: link.tenant_id,
+      person_id: link.volunteer_person_id,
+    });
+    if (!volunteer || volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
+    if (!volunteer.verify_code_hash || !volunteer.verify_code_expires_at) {
+      throw new BadRequestError('Request a new code first.');
+    }
+    if (volunteer.verify_code_expires_at < new Date()) {
+      throw new BadRequestError('That code has expired. Request a new one.');
+    }
+    if (volunteer.verify_attempts >= CODE_MAX_ATTEMPTS) {
+      await this.volunteersRepo.clearVerifyCode({ tenant_id: link.tenant_id, id: volunteer.id });
+      throw new BadRequestError('Too many attempts. Request a new code.');
+    }
+    if (hashToken(code) !== volunteer.verify_code_hash) {
+      await this.volunteersRepo.bumpVerifyAttempts({ tenant_id: link.tenant_id, id: volunteer.id });
+      throw new BadRequestError("That code didn't match. Check it and try again.");
+    }
+
+    const wasApproved = volunteer.status === 'approved';
+    const sessionToken = generateToken();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      await this.volunteersRepo.markVerified({ tenant_id: link.tenant_id, id: volunteer.id }, trx);
+      await this.sessionsRepo.create(
+        {
+          tenant_id: link.tenant_id,
+          volunteer_id: volunteer.id,
+          token_hash: hashToken(sessionToken),
+          expires_at: expiresAt,
+          user_agent: userAgent,
+        },
+        trx,
+      );
+      if (!wasApproved) {
+        await this.notifyAdminsOfPendingVolunteer(link, trx);
+      }
+      await this.activityRepo.log(
+        {
+          tenant_id: link.tenant_id,
+          user_id: link.organizer_id,
+          activity: 'update',
+          entity: 'companion_volunteers',
+          entity_id: volunteer.id,
+          metadata: {
+            action: 'volunteer_verified',
+            message: wasApproved
+              ? 'Volunteer verified a new device via companion link'
+              : 'Volunteer verified their contact and is waiting for approval',
+            via: 'companion link',
+          },
+        },
+        trx,
+      );
+    });
+
+    return {
+      status: wasApproved ? 'ready' : 'pending_approval',
+      sessionToken,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * The guard every companion data endpoint calls: validates the device
+   * session, that it belongs to the link's volunteer, and that the volunteer
+   * is approved. Throws UnauthorizedError (no/invalid session — the gate
+   * re-verifies) or ForbiddenError (valid session, not approved).
+   */
+  public async requireSession(
+    sessionToken: string | null | undefined,
+    link: { tenant_id: string; volunteer_person_id: string | null },
+  ): Promise<void> {
+    if (!link.volunteer_person_id) throw new UnauthorizedError('This link needs to be re-sent by your organizer.');
+    if (!sessionToken) throw new UnauthorizedError('Verification required.');
+
+    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
+    if (!session || session.tenant_id !== link.tenant_id) throw new UnauthorizedError('Verification required.');
+    if (session.revoked_at || session.expires_at < new Date()) throw new UnauthorizedError('Verification required.');
+
+    const volunteer = await this.volunteersRepo.findById({ tenant_id: link.tenant_id, id: session.volunteer_id });
+    if (!volunteer || volunteer.person_id !== link.volunteer_person_id) {
+      throw new UnauthorizedError('Verification required.');
+    }
+    if (volunteer.status !== 'approved') throw new ForbiddenError('Waiting for organizer approval.');
+
+    await this.sessionsRepo.touchLastUsed({ tenant_id: link.tenant_id, id: session.id });
+  }
+
+  // ---------------------------------------------------------------- admin API
+
+  public async getAllVolunteers(tenant_id: string): Promise<CompanionVolunteerRow[]> {
+    return this.volunteersRepo.getAllWithPerson(tenant_id);
+  }
+
+  public async pendingCount(tenant_id: string): Promise<number> {
+    return this.volunteersRepo.pendingCount(tenant_id);
+  }
+
+  public async approveVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
+    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
+    if (!volunteer) throw new NotFoundError('Volunteer not found.');
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      await this.volunteersRepo.approve({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
+      await this.activityRepo.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'companion_volunteers',
+          entity_id: id,
+          metadata: { action: 'volunteer_approved', message: 'Approved companion app access' },
+        },
+        trx,
+      );
+    });
+  }
+
+  public async revokeVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
+    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
+    if (!volunteer) throw new NotFoundError('Volunteer not found.');
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      await this.volunteersRepo.revoke({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
+      await this.sessionsRepo.revokeForVolunteer({ tenant_id: auth.tenant_id, volunteer_id: id }, trx);
+      await this.activityRepo.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'companion_volunteers',
+          entity_id: id,
+          metadata: { action: 'volunteer_revoked', message: 'Revoked companion app access' },
+        },
+        trx,
+      );
+    });
+  }
+
+  // ------------------------------------------------------------------ helpers
+
+  /** Resolve either kind of capability token to its tenant + volunteer. */
+  public async resolveLink(kind: CompanionLinkKind, token: string): Promise<ResolvedLink | null> {
+    if (kind === 'turf') {
+      const assignment = await this.turfAssignmentsRepo.resolveByToken(token);
+      if (!assignment) return null;
+      if (assignment.expires_at && assignment.expires_at < new Date()) return null;
+      return {
+        tenant_id: assignment.tenant_id,
+        volunteer_person_id: assignment.volunteer_person_id,
+        organizer_id: assignment.created_by,
+      };
+    }
+
+    // kind === 'route' — mirrors DeliveriesController.isTokenUsable (uniform
+    // dead-link semantics: canceled always fails; missing/past expiry fails only
+    // while the workspace enforces link expiry — a live policy, Workspace → App).
+    const route = await this.routesRepo.findByTokenHash(hashToken(token));
+    if (!route) return null;
+    if (String(route.status) === 'canceled') return null;
+    if (await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id))) {
+      const exp = route.share_token_expires_at;
+      if (!exp || new Date(String(exp)) <= new Date()) return null;
+    }
+    return {
+      tenant_id: String(route.tenant_id),
+      volunteer_person_id: route.volunteer_person_id == null ? null : String(route.volunteer_person_id),
+      organizer_id: String(route.createdby_id),
+    };
+  }
+
+  private contactsOf(person: PersonContacts): CompanionContact[] {
+    const contacts: CompanionContact[] = [];
+    if (person.email) contacts.push({ channel: 'email', masked: maskEmail(person.email) });
+    if (person.sms) contacts.push({ channel: 'sms', masked: maskPhone(person.sms) });
+    return contacts;
+  }
+
+  private async findUsableSession(
+    sessionToken: string | null,
+    tenant_id: string,
+    volunteer: CompanionVolunteer | null,
+  ): Promise<boolean> {
+    if (!sessionToken || !volunteer) return false;
+    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
+    if (!session || session.tenant_id !== tenant_id) return false;
+    if (session.volunteer_id !== volunteer.id) return false;
+    if (session.revoked_at || session.expires_at < new Date()) return false;
+    return true;
+  }
+
+  private async notifyAdminsOfPendingVolunteer(link: ResolvedLink, trx: Transaction<Models>): Promise<void> {
+    const person = await this.personContacts(link.tenant_id, String(link.volunteer_person_id));
+    const volunteerName = person?.first_name ?? 'A volunteer';
+    const admins = await this.volunteersRepo.db
+      .selectFrom('authusers')
+      .select(['id', 'email', 'first_name'])
+      .where('tenant_id', '=', link.tenant_id)
+      .where('role', 'in', ['admin', 'owner'])
+      .where('deactivated_at', 'is', null)
+      .execute();
+    const approvePath = '/volunteer-access';
+    const approveUrl = `${env.appUrl}${approvePath}`;
+    for (const admin of admins) {
+      await this.mailService.enqueueMail(
+        {
+          to: admin.email,
+          subject: `${volunteerName} is waiting for companion app approval`,
+          text: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link. Approve them at ${approveUrl}`,
+          html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in pplCRM</a></div>`,
+          tenant_id: link.tenant_id,
+        },
+        trx,
+      );
+      // In-app bell notification — links straight to the Volunteer access page.
+      await this.notificationsRepo.pushNotification(
+        {
+          tenant_id: link.tenant_id,
+          user_id: String(admin.id),
+          title: 'Volunteer waiting for approval',
+          message: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link.`,
+          type: 'info',
+          link: approvePath,
+        },
+        trx,
+      );
+    }
+  }
+
+  private async organizerFirstName(tenant_id: string, user_id: string): Promise<string | undefined> {
+    const row = await this.volunteersRepo.db
+      .selectFrom('authusers')
+      .select('first_name')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', user_id)
+      .executeTakeFirst();
+    return row?.first_name ?? undefined;
+  }
+
+  private async personContacts(tenant_id: string, person_id: string): Promise<PersonContacts | null> {
+    const row = await this.volunteersRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', person_id)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      first_name: row.first_name,
+      email: row.email,
+      sms: normalizeE164(row.mobile),
+    };
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/deliveries/trpc.router.ts
@@ -65083,1426 +65084,6 @@ export async function queueUsageLimitCheck(tenantId: string, db: Kysely<Models>)
 }
 ````
 
-## File: apps/backend/src/app/modules/deliveries/controller.ts
-````typescript
-import { createHash, randomBytes } from 'crypto';
-
-import type { Transaction } from 'kysely';
-
-import type {
-  AddDeliveryRequestType,
-  AssignVolunteerType,
-  CommitDeliveriesType,
-  GetSignStatusType,
-  IAuthKeyPayload,
-  PlanDeliveriesType,
-  ReorderStopType,
-  ReorderStopsType,
-  SetDeliveryRequestStatusType,
-  SetDeliveryRouteStatusType,
-  StopActionType,
-  UpdateDeliveryRequestType,
-  UpdateDeliveryRouteType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-
-import { env } from '../../../env';
-import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
-import { geocodeAddress } from '../../lib/gis/geocode-address';
-import { notifyVolunteerOfLink, type VolunteerLinkSendResult } from '../../lib/mail/volunteer-link-notify';
-import { legMinutes, roadKm, type LatLng } from '../../lib/routing/geo';
-import { planRoutes, type PlanParams, type PlanStopInput } from '../../lib/routing/plan-routes';
-import {
-  AVG_SPEED_KMH,
-  MAX_STOPS_PER_PLAN,
-  SERVICE_MINUTES_PER_STOP,
-  SHARE_TOKEN_TTL_DAYS,
-} from '../../lib/routing/route-constants';
-import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
-import { logger } from '../../logger';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { CompanionAccessController } from '../companion-access/controller';
-import { DeliveryRequestsRepo } from './repositories/delivery-requests.repo';
-import { DeliveryRouteStopsRepo } from './repositories/delivery-route-stops.repo';
-import { DeliveryRoutesRepo } from './repositories/delivery-routes.repo';
-
-const ROUTE_DEFAULTS_SETTING_KEY = 'deliveries.route_defaults';
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-type StopVia = 'staff' | 'volunteer_link';
-
-interface RouteParamsSnapshot {
-  serviceMinutes: number;
-  avgSpeedKmh: number;
-  includeReturnLeg: boolean;
-  drivers: number | null;
-}
-
-function resolveParams(input: PlanDeliveriesType): PlanParams {
-  return {
-    serviceMinutes: input.service_minutes ?? SERVICE_MINUTES_PER_STOP,
-    avgSpeedKmh: input.avg_speed_kmh ?? AVG_SPEED_KMH,
-    includeReturnLeg: input.include_return_leg ?? false,
-    drivers: input.drivers ?? null,
-  };
-}
-
-/** Human-readable route name: "Maple St area — Jul 10" derived from the first stop + today. */
-function deriveRouteName(firstAddress: string, date: Date): string {
-  const firstSegment = (firstAddress.split(',')[0] ?? '').trim();
-  const streetOnly = firstSegment.replace(/^\d+\s+/, '').trim();
-  const area = streetOnly || firstSegment || 'Delivery';
-  const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return `${area} area — ${label}`;
-}
-
-export class DeliveriesController {
-  private readonly requestsRepo = new DeliveryRequestsRepo();
-  private readonly campaignsRepo = new CampaignsRepo();
-  private readonly companionAccess = new CompanionAccessController();
-  private readonly routesRepo = new DeliveryRoutesRepo();
-  private readonly stopsRepo = new DeliveryRouteStopsRepo();
-  private readonly userActivity = new UserActivityRepo();
-
-  // ---- Requests -----------------------------------------------------------
-  public getAllRequests(tenant: string, options?: getAllOptionsType) {
-    return this.requestsRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
-  }
-
-  public getRequestCounts(tenant: string) {
-    return this.requestsRepo.getStatusCounts(tenant);
-  }
-
-  public getReadyCount(tenant: string) {
-    return this.requestsRepo.getReadyCount(tenant);
-  }
-
-  /** Yard-sign standing for one household in one campaign context (household/person pages). */
-  public async getSignStatus(auth: IAuthKeyPayload, input: GetSignStatusType) {
-    const request = await this.requestsRepo.getSignStatus(auth.tenant_id, input.household_id, input.campaign_id);
-    return { request };
-  }
-
-  public async addRequest(auth: IAuthKeyPayload, input: AddDeliveryRequestType) {
-    // Guard: a household with an OPEN request (new/approved, incl. routed) can't have a second.
-    const open = await this.requestsRepo.db
-      .selectFrom('delivery_requests')
-      .select(['id'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('household_id', '=', input.household_id)
-      .where('status', 'in', ['new', 'approved'])
-      .executeTakeFirst();
-    if (open) {
-      throw new ConflictError('This household already has an open delivery request.');
-    }
-    const personId = input.person_id ? String(input.person_id) : null;
-    const row = {
-      tenant_id: auth.tenant_id,
-      // The context this yard-sign request belongs to (§15); defaults to the office.
-      campaign_id: await this.campaignsRepo.resolveForWrite({
-        tenant_id: auth.tenant_id,
-        campaign_id: input.campaign_id,
-      }),
-      household_id: input.household_id,
-      person_id: personId,
-      web_form_id: null,
-      source: 'manual',
-      status: 'new',
-      notes: input.notes ?? null,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'delivery_requests', 'insert'>;
-    const created = await this.requestsRepo.add({ row });
-    await this.logRequestStanding(undefined, auth, [String(created.id)], 'recorded');
-    return { id: String(created.id) };
-  }
-
-  public async updateRequestNotes(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRequestType) {
-    const updated = await this.requestsRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { notes: input.notes ?? null, updatedby_id: auth.user_id, updated_at: new Date() } as OperationDataType<
-        'delivery_requests',
-        'update'
-      >,
-    });
-    if (!updated) throw new NotFoundError('Request not found');
-    return { id };
-  }
-
-  public async setRequestStatus(auth: IAuthKeyPayload, input: SetDeliveryRequestStatusType) {
-    // A request sitting on an active (pending) stop can't be declined or reset out from under a
-    // route. Approved + pending stop is the normal on-route state, and 'delivered' flows THROUGH
-    // the stop below so route progress stays truthful.
-    if (input.status === 'declined' || input.status === 'new') {
-      const onRoute = await this.requestsRepo.db
-        .selectFrom('delivery_route_stops')
-        .select(['id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('request_id', 'in', input.ids)
-        .where('status', '=', 'pending')
-        .executeTakeFirst();
-      if (onRoute) {
-        throw new BadRequestError('Remove these requests from their route first, or cancel that route.');
-      }
-    }
-    return this.requestsRepo.transaction().execute(async (trx) => {
-      let directIds = input.ids;
-      if (input.status === 'delivered') {
-        // Manual "the sign is in the ground" flip: requests on an active route deliver via their
-        // stop (staff-attributed), which also advances/auto-completes the route.
-        const pendingStops = await trx
-          .selectFrom('delivery_route_stops')
-          .select(['id', 'route_id', 'request_id'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('request_id', 'in', input.ids)
-          .where('status', '=', 'pending')
-          .execute();
-        for (const stop of pendingStops) {
-          await this.applyStopTransition(trx, auth, String(stop.route_id), String(stop.id), 'deliver', null, 'staff');
-        }
-        const handled = new Set(pendingStops.map((s) => String(s.request_id)));
-        directIds = input.ids.filter((id) => !handled.has(id));
-      }
-      if (directIds.length > 0) {
-        await trx
-          .updateTable('delivery_requests')
-          .set({
-            status: input.status,
-            ...(input.status === 'delivered' ? { skip_reason: null } : {}),
-            updatedby_id: auth.user_id,
-            updated_at: new Date(),
-          })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', 'in', directIds)
-          .execute();
-      }
-      await this.logRequestStanding(trx, auth, input.ids, input.status);
-      return { updated: input.ids.length };
-    });
-  }
-
-  // ---- Planning -----------------------------------------------------------
-  public async previewPlan(auth: IAuthKeyPayload, input: PlanDeliveriesType) {
-    const geo = await geocodeAddress(input.start_address);
-    if (!geo) {
-      throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
-    }
-    const start: LatLng = { lat: geo.lat, lng: geo.lng };
-    const params = resolveParams(input);
-
-    const eligible = await this.requestsRepo.getEligibleForPlanning(auth.tenant_id, MAX_STOPS_PER_PLAN + 1);
-    const capApplied = eligible.length > MAX_STOPS_PER_PLAN;
-    const capped = capApplied ? eligible.slice(0, MAX_STOPS_PER_PLAN) : eligible;
-    const byId = new Map(capped.map((e) => [e.request_id, e] as const));
-
-    const stops: PlanStopInput[] = capped.map((e) => ({ requestId: e.request_id, lat: e.lat, lng: e.lng }));
-    const result = planRoutes(start, stops, params);
-
-    const routes = result.routes.map((route, i) => ({
-      index: i + 1,
-      total_minutes: route.totalMinutes,
-      total_km: route.totalKm,
-      stops: route.stops.map((s) => {
-        const info = byId.get(s.requestId);
-        return {
-          request_id: s.requestId,
-          seq: s.seq,
-          leg_minutes: s.legMinutes,
-          address: info?.address ?? '',
-          name: info?.name ?? null,
-        };
-      }),
-    }));
-
-    const unroutable = result.unroutable.map((u) => {
-      const info = byId.get(u.requestId);
-      const reasonText =
-        u.reason === 'isolated'
-          ? `Isolated. The nearest other stop is ${u.nearestKm} km away`
-          : `Too far to reach within an hour from this start (${u.nearestKm} km out)`;
-      return { request_id: u.requestId, reason: u.reason, reason_text: reasonText, address: info?.address ?? '' };
-    });
-
-    const buckets = await this.requestsRepo.getIneligibleBuckets(auth.tenant_id);
-
-    return {
-      start: { address: geo.formatted_address, lat: geo.lat, lng: geo.lng },
-      eligible_count: capped.length,
-      cap_applied: capApplied,
-      routes,
-      unroutable,
-      ineligible: buckets,
-    };
-  }
-
-  public async commitPlan(auth: IAuthKeyPayload, input: CommitDeliveriesType) {
-    const geo = await geocodeAddress(input.start_address);
-    if (!geo) throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
-    const start: LatLng = { lat: geo.lat, lng: geo.lng };
-    const params = resolveParams(input);
-    const snapshot: RouteParamsSnapshot = {
-      serviceMinutes: params.serviceMinutes,
-      avgSpeedKmh: params.avgSpeedKmh,
-      includeReturnLeg: params.includeReturnLeg,
-      drivers: params.drivers ?? null,
-    };
-    const now = new Date();
-
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const skipped: Array<{ request_id: string; reason: string }> = [];
-      let created = 0;
-      let firstRouteId: string | null = null;
-
-      for (const proposed of input.routes) {
-        const eligible = await this.requestsRepo.getEligibleByIds(auth.tenant_id, proposed.request_ids, trx);
-        const eligibleById = new Map(eligible.map((e) => [e.request_id, e] as const));
-        // Preserve the client's order, dropping any request that lost eligibility (concurrent planner).
-        const ordered = proposed.request_ids.filter((id) => eligibleById.has(id));
-        for (const id of proposed.request_ids) {
-          if (!eligibleById.has(id)) skipped.push({ request_id: id, reason: 'no_longer_eligible' });
-        }
-        if (ordered.length === 0) continue;
-
-        // Recompute legs server-side — never trust client math.
-        let cursor: LatLng = start;
-        let totalMinutes = 0;
-        let totalKm = 0;
-        const legs: number[] = [];
-        for (const id of ordered) {
-          const e = eligibleById.get(id);
-          if (!e) continue;
-          const point: LatLng = { lat: e.lat, lng: e.lng };
-          const leg = legMinutes(cursor, point, params.avgSpeedKmh);
-          legs.push(leg);
-          totalMinutes += leg + params.serviceMinutes;
-          totalKm += roadKm(cursor, point);
-          cursor = point;
-        }
-        if (params.includeReturnLeg) totalKm += roadKm(cursor, start);
-
-        const firstAddress = eligibleById.get(ordered[0] ?? '')?.address ?? '';
-        // A route inherits the campaign of the requests it serves (§15); the
-        // eligibility query keeps plans single-campaign, so the first stop is
-        // representative.
-        const firstRequest = await trx
-          .selectFrom('delivery_requests')
-          .select(['campaign_id'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', String(ordered[0]))
-          .executeTakeFirstOrThrow();
-        const routeRow = {
-          tenant_id: auth.tenant_id,
-          campaign_id: String(firstRequest.campaign_id),
-          name: deriveRouteName(firstAddress, now),
-          status: 'draft',
-          volunteer_person_id: null,
-          start_address: geo.formatted_address,
-          start_lat: start.lat,
-          start_lng: start.lng,
-          est_minutes: Math.round(totalMinutes * 10) / 10,
-          est_km: Math.round(totalKm * 10) / 10,
-          scheduled_for: null,
-          share_token_hash: null,
-          share_token_expires_at: null,
-          params: JSON.stringify(snapshot),
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        } as OperationDataType<'delivery_routes', 'insert'>;
-        const route = await this.routesRepo.add({ row: routeRow }, trx);
-        const routeId = String(route.id);
-        if (!firstRouteId) firstRouteId = routeId;
-
-        const stopRows = ordered.map(
-          (id, i) =>
-            ({
-              tenant_id: auth.tenant_id,
-              route_id: routeId,
-              request_id: id,
-              seq: i + 1,
-              leg_minutes: Math.round((legs[i] ?? 0) * 10) / 10,
-              status: 'pending',
-              reason: null,
-              acted_at: null,
-              acted_via: null,
-              createdby_id: auth.user_id,
-              updatedby_id: auth.user_id,
-            }) as OperationDataType<'delivery_route_stops', 'insert'>,
-        );
-        await this.stopsRepo.addMany({ rows: stopRows }, trx);
-        created++;
-        await this.logRouteActivity(trx, auth, routeId, 'create', 'route_created', 'Route created from plan');
-      }
-
-      // Persist the start address as the tenant default for the next plan.
-      await this.saveRouteDefaults(trx, auth, { start_address: geo.formatted_address });
-
-      return { created, skipped, first_route_id: firstRouteId };
-    });
-  }
-
-  public async getRouteDefaults(tenant: string): Promise<{ start_address: string | null }> {
-    const row = await this.routesRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenant)
-      .where('key', '=', ROUTE_DEFAULTS_SETTING_KEY)
-      .executeTakeFirst();
-    const value = row?.value as { start_address?: string } | null | undefined;
-    return { start_address: value?.start_address ?? null };
-  }
-
-  private async saveRouteDefaults(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    value: { start_address: string },
-  ): Promise<void> {
-    await trx
-      .insertInto('settings')
-      .values({
-        tenant_id: auth.tenant_id,
-        key: ROUTE_DEFAULTS_SETTING_KEY,
-        value: JSON.stringify(value),
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
-      })
-      .onConflict((oc) =>
-        oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(value), updatedby_id: auth.user_id }),
-      )
-      .execute();
-  }
-
-  // ---- Routes -------------------------------------------------------------
-  public getAllRoutes(tenant: string, options?: getAllOptionsType) {
-    return this.routesRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
-  }
-
-  public async getRouteById(auth: IAuthKeyPayload, id: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
-    if (!route) throw new NotFoundError('Route not found');
-    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, id);
-    let volunteerName: string | null = null;
-    if (route.volunteer_person_id) {
-      const v = await this.routesRepo.db
-        .selectFrom('persons')
-        .select(['first_name', 'last_name'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(route.volunteer_person_id))
-        .executeTakeFirst();
-      if (v) volunteerName = `${v.first_name ?? ''} ${v.last_name ?? ''}`.trim() || null;
-    }
-    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
-    return this.sanitizeRoute(route, stops, volunteerName, expiryEnforced);
-  }
-
-  public async updateRoute(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRouteType) {
-    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
-    if (input.name !== undefined) row['name'] = input.name;
-    if (input.scheduled_for !== undefined) {
-      row['scheduled_for'] = input.scheduled_for ? new Date(input.scheduled_for) : null;
-    }
-    const updated = await this.routesRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: row as OperationDataType<'delivery_routes', 'update'>,
-    });
-    if (!updated) throw new NotFoundError('Route not found');
-    return { id };
-  }
-
-  public async assignVolunteer(auth: IAuthKeyPayload, input: AssignVolunteerType) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
-    if (!route) throw new NotFoundError('Route not found');
-    const personId = input.person_id ? String(input.person_id) : null;
-    // Assigning moves draft → assigned; clearing a volunteer on a draft/assigned route → draft.
-    let status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled' = route.status;
-    if (personId && status === 'draft') status = 'assigned';
-    if (!personId && status === 'assigned') status = 'draft';
-
-    if (!personId) {
-      await this.routesRepo.db
-        .updateTable('delivery_routes')
-        .set({ volunteer_person_id: null, status, updatedby_id: auth.user_id, updated_at: new Date() })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', input.route_id)
-        .execute();
-      await this.logRouteActivity(
-        undefined,
-        auth,
-        input.route_id,
-        'unassign',
-        'volunteer_unassigned',
-        'Volunteer removed',
-      );
-      return { id: input.route_id, status, sent: { email: false, sms: false } };
-    }
-
-    const person = await this.routesRepo.db
-      .selectFrom('persons')
-      .select(['first_name', 'email', 'mobile'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', personId)
-      .executeTakeFirst();
-    if (!person) throw new BadRequestError('Pick the volunteer this route belongs to.');
-
-    // The link is personal, so assignment sends it: mint a fresh token (the raw
-    // token is never stored — this is the only moment we can put it in a message)
-    // and enqueue the email/SMS in the same transaction as the assignment. A new
-    // token also retires any link a previously assigned volunteer still holds.
-    const rawToken = randomBytes(32).toString('base64url');
-    const url = `${env.companionUrl}/r/${rawToken}`;
-    const orgName = await this.publicOrgName(auth.tenant_id);
-    let sent: VolunteerLinkSendResult = { email: false, sms: false };
-    await this.routesRepo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('delivery_routes')
-        .set({
-          volunteer_person_id: personId,
-          status,
-          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
-          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
-          updatedby_id: auth.user_id,
-          updated_at: new Date(),
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', input.route_id)
-        .execute();
-      sent = await notifyVolunteerOfLink(
-        {
-          tenant_id: auth.tenant_id,
-          person,
-          orgName,
-          kindLabel: 'delivery route',
-          itemName: String(route.name ?? 'Delivery route'),
-          url,
-        },
-        trx,
-      );
-      await this.logRouteActivity(
-        trx,
-        auth,
-        input.route_id,
-        'assign',
-        'volunteer_assigned',
-        sent.email || sent.sms
-          ? `Volunteer assigned — link sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`
-          : 'Volunteer assigned — no contact info on file, link not sent',
-      );
-    });
-    return { id: input.route_id, status, sent };
-  }
-
-  /**
-   * Re-send the assigned volunteer their personal link (lost email, new phone…).
-   * The raw token is never stored, so re-sending means minting a fresh link — the
-   * previously sent one stops working, same rule as re-assignment and regenerate.
-   */
-  public async resendVolunteerLink(auth: IAuthKeyPayload, routeId: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
-    if (!route) throw new NotFoundError('Route not found');
-    if (route.volunteer_person_id == null) {
-      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
-    }
-    if (route.status === 'canceled' || route.status === 'completed') {
-      throw new BadRequestError('This route is over — there is nothing for the volunteer to open.');
-    }
-    const person = await this.routesRepo.db
-      .selectFrom('persons')
-      .select(['first_name', 'email', 'mobile'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', String(route.volunteer_person_id))
-      .executeTakeFirst();
-    if (!person) throw new BadRequestError('The assigned volunteer no longer exists. Assign another volunteer.');
-
-    const rawToken = randomBytes(32).toString('base64url');
-    const url = `${env.companionUrl}/r/${rawToken}`;
-    const orgName = await this.publicOrgName(auth.tenant_id);
-    let sent: VolunteerLinkSendResult = { email: false, sms: false };
-    await this.routesRepo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('delivery_routes')
-        .set({
-          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
-          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
-          updatedby_id: auth.user_id,
-          updated_at: new Date(),
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .execute();
-      sent = await notifyVolunteerOfLink(
-        {
-          tenant_id: auth.tenant_id,
-          person,
-          orgName,
-          kindLabel: 'delivery route',
-          itemName: String(route.name ?? 'Delivery route'),
-          url,
-        },
-        trx,
-      );
-      if (!sent.email && !sent.sms) {
-        // Rolls back the mint: a resend that reaches nobody must not retire the link they already have.
-        throw new BadRequestError(
-          'This volunteer has no email or mobile on file — add one to their record, or use "Copy volunteer link" to share it yourself.',
-        );
-      }
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'update',
-        'link_resent',
-        `Volunteer link re-sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`,
-      );
-    });
-    return { id: routeId, sent };
-  }
-
-  public async setRouteStatus(auth: IAuthKeyPayload, input: SetDeliveryRouteStatusType) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
-    if (!route) throw new NotFoundError('Route not found');
-    if (input.status === 'canceled') {
-      return this.cancelRoute(auth, input.route_id);
-    }
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({ status: input.status, updatedby_id: auth.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', input.route_id)
-      .execute();
-    return { id: input.route_id, status: input.status };
-  }
-
-  private async cancelRoute(auth: IAuthKeyPayload, routeId: string) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      // Undelivered (pending) stops return their requests to the pool; delivered stay delivered.
-      const pending = await trx
-        .selectFrom('delivery_route_stops')
-        .select(['id', 'request_id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('route_id', '=', routeId)
-        .where('status', '=', 'pending')
-        .execute();
-      const requestIds = pending.map((p) => String(p.request_id));
-      if (requestIds.length > 0) {
-        await trx
-          .updateTable('delivery_requests')
-          .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', 'in', requestIds)
-          .execute();
-        await trx
-          .updateTable('delivery_route_stops')
-          .set({ status: 'skipped', reason: 'Other', updatedby_id: auth.user_id, updated_at: new Date() })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where(
-            'id',
-            'in',
-            pending.map((p) => String(p.id)),
-          )
-          .execute();
-      }
-      await trx
-        .updateTable('delivery_routes')
-        .set({ status: 'canceled', updatedby_id: auth.user_id, updated_at: new Date() })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .execute();
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'update',
-        'route_canceled',
-        `Route canceled. ${requestIds.length} undelivered stops returned to the pool`,
-      );
-      return { id: routeId, status: 'canceled' as const, returned: requestIds.length };
-    });
-  }
-
-  public async deleteRoute(auth: IAuthKeyPayload, id: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
-    if (!route) throw new NotFoundError('Route not found');
-    const status = String(route.status);
-    if (status !== 'draft' && status !== 'assigned') {
-      throw new BadRequestError('Only draft or assigned routes can be deleted. Cancel the route first.');
-    }
-    // Stops cascade via FK; requests free automatically once their pending stop is gone.
-    await this.routesRepo.delete({ tenant_id: auth.tenant_id, id });
-    return { id };
-  }
-
-  // ---- Stops (staff) ------------------------------------------------------
-  public async stopAction(auth: IAuthKeyPayload, input: StopActionType) {
-    if (input.action === 'remove') {
-      return this.removeStop(auth, input.route_id, input.stop_id);
-    }
-    const action = input.action; // narrowed to 'deliver' | 'skip'
-    return this.routesRepo.transaction().execute(async (trx) => {
-      await this.applyStopTransition(trx, auth, input.route_id, input.stop_id, action, input.reason ?? null, 'staff');
-      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-    });
-  }
-
-  private async removeStop(auth: IAuthKeyPayload, routeId: string, stopId: string) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const stop = await trx
-        .selectFrom('delivery_route_stops')
-        .selectAll()
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .where('route_id', '=', routeId)
-        .executeTakeFirst();
-      if (!stop) throw new NotFoundError('Stop not found');
-      // Free the request back to the pool then delete the stop and renumber/recompute.
-      await trx
-        .updateTable('delivery_requests')
-        .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(stop.request_id))
-        .execute();
-      await trx
-        .deleteFrom('delivery_route_stops')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .execute();
-      await this.renumberAndRecompute(trx, auth, routeId);
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'update',
-        'stop_removed',
-        'Stop removed. Request returned to the pool',
-      );
-      return this.readRouteProgress(trx, auth.tenant_id, routeId);
-    });
-  }
-
-  /**
-   * Drag-to-reorder: reseat only the PENDING stops of a route into the given order. Delivered and
-   * skipped stops are not movable — they keep their exact seq, and the pending stops are permuted
-   * across the seq slots they already occupy. `ordered_stop_ids` must be exactly the set of the
-   * route's pending stop ids (any foreign, non-pending, or missing id is rejected). Seq writes go
-   * through `applySeqOrder`'s temp-offset trick to dodge the unique(route_id, seq) index, then legs
-   * and the route estimate are recomputed. One `stop_reordered` activity is logged, matching the
-   * adjacent-swap path.
-   */
-  public async reorderStops(auth: IAuthKeyPayload, input: ReorderStopsType) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const route = await trx
-        .selectFrom('delivery_routes')
-        .select(['id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', input.route_id)
-        .executeTakeFirst();
-      if (!route) throw new NotFoundError('Route not found');
-
-      const stops = await trx
-        .selectFrom('delivery_route_stops')
-        .select(['id', 'seq', 'status'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('route_id', '=', input.route_id)
-        .orderBy('seq', 'asc')
-        .execute();
-
-      const pendingIds = stops.filter((s) => s.status === 'pending').map((s) => String(s.id));
-      const requested = input.ordered_stop_ids;
-      // Exact set equality: same length + same members. This one check rejects a foreign/other-route
-      // stop, a delivered/skipped id, and a missing pending id all at once.
-      const pendingSet = new Set(pendingIds);
-      const sameMembers =
-        requested.length === pendingIds.length &&
-        new Set(requested).size === requested.length &&
-        requested.every((id) => pendingSet.has(id));
-      if (!sameMembers) {
-        throw new BadRequestError('The new order must list exactly the route’s pending stops.');
-      }
-      if (pendingIds.length < 2) {
-        // Nothing to permute — no-op, but return the current authoritative shape.
-        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-      }
-
-      // Drop the pending stops into the slots they currently occupy, in the requested order, while
-      // every non-pending stop stays exactly where it is (so it keeps its seq).
-      const queue = [...requested];
-      const finalOrder = stops.map((s) => (s.status === 'pending' ? (queue.shift() ?? String(s.id)) : String(s.id)));
-      await this.applySeqOrder(trx, auth.tenant_id, finalOrder);
-      await this.renumberAndRecompute(trx, auth, input.route_id);
-      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
-      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-    });
-  }
-
-  public async reorderStop(auth: IAuthKeyPayload, input: ReorderStopType) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const stops = await trx
-        .selectFrom('delivery_route_stops')
-        .select(['id', 'seq'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('route_id', '=', input.route_id)
-        .orderBy('seq', 'asc')
-        .execute();
-      const idx = stops.findIndex((s) => String(s.id) === input.stop_id);
-      if (idx === -1) throw new NotFoundError('Stop not found');
-      const swapIdx = input.direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= stops.length) {
-        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-      }
-      const a = stops[idx];
-      const b = stops[swapIdx];
-      if (!a || !b) return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-      // Swap seq via a temporary value to avoid the unique(route_id, seq) collision.
-      await this.setStopSeq(trx, auth.tenant_id, String(a.id), -1);
-      await this.setStopSeq(trx, auth.tenant_id, String(b.id), Number(a.seq));
-      await this.setStopSeq(trx, auth.tenant_id, String(a.id), Number(b.seq));
-      await this.renumberAndRecompute(trx, auth, input.route_id);
-      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
-      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-    });
-  }
-
-  // ---- Share links --------------------------------------------------------
-  public async mintShareLink(auth: IAuthKeyPayload, input: { route_id: string; regenerate?: boolean }) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
-    if (!route) throw new NotFoundError('Route not found');
-    // The companion access layer verifies the volunteer BEHIND the link, so a
-    // link with nobody behind it can never pass the gate — refuse to mint one.
-    if (route.volunteer_person_id == null) {
-      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
-    }
-    // Whether the 30-day expiry is enforced is a live workspace policy (Workspace → App).
-    // The date is always STORED at mint time; the setting decides whether it counts.
-    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
-    const active =
-      route.share_token_hash != null &&
-      (!expiryEnforced ||
-        (route.share_token_expires_at != null && new Date(route.share_token_expires_at) > new Date()));
-    if (active && !input.regenerate) {
-      // A live link already exists; the raw token is never stored, so we can't return it. Tell the
-      // UI so it can offer copy-vs-regenerate. expires_at is null when the workspace disables expiry.
-      return { status: 'exists' as const, expires_at: expiryEnforced ? route.share_token_expires_at : null };
-    }
-    const rawToken = randomBytes(32).toString('base64url');
-    const hash = createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY);
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({
-        share_token_hash: hash,
-        share_token_expires_at: expiresAt,
-        updatedby_id: auth.user_id,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', input.route_id)
-      .execute();
-    await this.logRouteActivity(undefined, auth, input.route_id, 'update', 'link_created', 'Volunteer link created');
-    return { status: 'minted' as const, token: rawToken, expires_at: expiryEnforced ? expiresAt.toISOString() : null };
-  }
-
-  public async revokeShareLink(auth: IAuthKeyPayload, routeId: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
-    if (!route) throw new NotFoundError('Route not found');
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({ share_token_hash: null, share_token_expires_at: null, updatedby_id: auth.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .execute();
-    return { id: routeId };
-  }
-
-  // ---- Public volunteer path (token is the credential) --------------------
-  public hashToken(rawToken: string): string {
-    return createHash('sha256').update(rawToken).digest('hex');
-  }
-
-  /**
-   * Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload.
-   * The capability token says WHAT may be touched; the companion session (X-Companion-Session)
-   * proves WHO is touching it — both are required (COMPANION-APPS-PLAN.md §2).
-   */
-  public async getPublicRoute(rawToken: string, sessionToken: string | null) {
-    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
-    if (!route) return null;
-    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
-    if (!this.isTokenUsable(route, expiryEnforced)) return null;
-    await this.requireCompanionSession(route, sessionToken);
-    const tenantId = String(route.tenant_id);
-    const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
-    const orgName = await this.publicOrgName(tenantId);
-    return this.publicRoutePayload(route, stops, orgName);
-  }
-
-  public async publicStopAction(
-    rawToken: string,
-    stopId: string,
-    action: 'deliver' | 'skip' | 'defer' | 'undo',
-    reason: string | null,
-    sessionToken: string | null,
-    opId: string | null,
-  ) {
-    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
-    if (!route) return null;
-    const enforceExpiry = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
-    if (!this.isTokenUsable(route, enforceExpiry)) return null;
-    await this.requireCompanionSession(route, sessionToken);
-    const tenantId = String(route.tenant_id);
-    const routeId = String(route.id);
-    const actor: IAuthKeyPayload = {
-      tenant_id: tenantId,
-      user_id: String(route.createdby_id),
-      session_id: 'volunteer-link',
-    };
-    await this.routesRepo.transaction().execute(async (trx) => {
-      // Idempotency ledger (companion_ops, scope 'deliveries'): claim the opId
-      // inside the SAME transaction as the action, so claim + apply commit or
-      // roll back together. A replayed opId conflicts, applies nothing, and
-      // falls through to return the current authoritative payload — this is
-      // what makes a retried "defer" move the stop once, not twice.
-      if (opId) {
-        const claimed = await trx
-          .insertInto('companion_ops')
-          .values({ tenant_id: tenantId, op_id: opId, scope: 'deliveries' })
-          .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
-          .returning('op_id')
-          .executeTakeFirst();
-        if (!claimed) return;
-      }
-      const stop = await trx
-        .selectFrom('delivery_route_stops')
-        .selectAll()
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', stopId)
-        .where('route_id', '=', routeId)
-        .executeTakeFirst();
-      if (!stop) throw new NotFoundError('Stop not found');
-
-      if (action === 'defer') {
-        await this.deferStop(trx, actor, routeId, stopId);
-      } else if (action === 'undo') {
-        await this.undoStop(trx, actor, routeId, stopId);
-      } else {
-        await this.applyStopTransition(trx, actor, routeId, stopId, action, reason, 'volunteer_link');
-      }
-    });
-    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId);
-    const fresh = await this.routesRepo.getRouteRow(tenantId, routeId);
-    const orgName = await this.publicOrgName(tenantId);
-    return fresh ? this.publicRoutePayload(fresh, stops, orgName) : null;
-  }
-
-  /**
-   * The volunteer-identity gate on every public data request. Throws
-   * UnauthorizedError (401 — no/invalid device session, the gate re-verifies)
-   * or ForbiddenError (403 — verified but not yet admin-approved); the route
-   * handler passes those two statuses through so the companion gate can render
-   * its verify/pending states, and keeps the uniform 404 for dead tokens.
-   */
-  private async requireCompanionSession(
-    route: { tenant_id: string } & Record<string, unknown>,
-    sessionToken: string | null,
-  ): Promise<void> {
-    const volunteerId = route['volunteer_person_id'];
-    await this.companionAccess.requireSession(sessionToken, {
-      tenant_id: String(route.tenant_id),
-      volunteer_person_id: volunteerId == null ? null : String(volunteerId),
-    });
-  }
-
-  // ---- Shared transition helpers ------------------------------------------
-  private async applyStopTransition(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    stopId: string,
-    action: 'deliver' | 'skip',
-    reason: string | null,
-    via: StopVia,
-  ): Promise<void> {
-    const stop = await trx
-      .selectFrom('delivery_route_stops')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', stopId)
-      .where('route_id', '=', routeId)
-      .executeTakeFirst();
-    if (!stop) throw new NotFoundError('Stop not found');
-
-    const now = new Date();
-    if (action === 'deliver') {
-      await trx
-        .updateTable('delivery_route_stops')
-        .set({
-          status: 'delivered',
-          reason: null,
-          acted_at: now,
-          acted_via: via,
-          updatedby_id: auth.user_id,
-          updated_at: now,
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .execute();
-      await trx
-        .updateTable('delivery_requests')
-        .set({ status: 'delivered', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(stop.request_id))
-        .execute();
-    } else {
-      const skipReason = reason ?? 'Other';
-      await trx
-        .updateTable('delivery_route_stops')
-        .set({
-          status: 'skipped',
-          reason: skipReason,
-          acted_at: now,
-          acted_via: via,
-          updatedby_id: auth.user_id,
-          updated_at: now,
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .execute();
-      // A skipped house returns to the planning pool automatically.
-      await trx
-        .updateTable('delivery_requests')
-        .set({ status: 'approved', skip_reason: skipReason, updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(stop.request_id))
-        .execute();
-    }
-
-    await this.advanceRouteStatus(trx, auth, routeId, via);
-    const message =
-      action === 'deliver'
-        ? `Stop ${stop.seq} delivered${via === 'volunteer_link' ? ' via volunteer link' : ''}`
-        : `Stop ${stop.seq} skipped: ${(reason ?? 'Other').toLowerCase()}${via === 'volunteer_link' ? ' via volunteer link' : ''}`;
-    await this.logRouteActivity(
-      trx,
-      auth,
-      routeId,
-      'update',
-      action === 'deliver' ? 'stop_delivered' : 'stop_skipped',
-      message,
-      via,
-    );
-  }
-
-  private async deferStop(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    stopId: string,
-  ): Promise<void> {
-    const stops = await trx
-      .selectFrom('delivery_route_stops')
-      .select(['id', 'seq', 'status'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('route_id', '=', routeId)
-      .orderBy('seq', 'asc')
-      .execute();
-    const target = stops.find((s) => String(s.id) === stopId);
-    if (!target || target.status !== 'pending') return;
-    // Move the target to the end: rebuild the order with it last, then renumber via a temp offset.
-    const others = stops.filter((s) => String(s.id) !== stopId);
-    const newOrder = [...others.map((s) => String(s.id)), stopId];
-    await this.applySeqOrder(trx, auth.tenant_id, newOrder);
-    await this.renumberAndRecompute(trx, auth, routeId);
-    await this.logRouteActivity(
-      trx,
-      auth,
-      routeId,
-      'update',
-      'stop_deferred',
-      'Stop moved to the end of the route',
-      'volunteer_link',
-    );
-  }
-
-  private async undoStop(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    stopId: string,
-  ): Promise<void> {
-    const stop = await trx
-      .selectFrom('delivery_route_stops')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', stopId)
-      .where('route_id', '=', routeId)
-      .executeTakeFirst();
-    if (!stop) throw new NotFoundError('Stop not found');
-    const now = new Date();
-    await trx
-      .updateTable('delivery_route_stops')
-      .set({
-        status: 'pending',
-        reason: null,
-        acted_at: null,
-        acted_via: null,
-        updatedby_id: auth.user_id,
-        updated_at: now,
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', stopId)
-      .execute();
-    // Restore the request to the pool state (approved) — undo clears the delivered/skipped result.
-    await trx
-      .updateTable('delivery_requests')
-      .set({ status: 'approved', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', String(stop.request_id))
-      .execute();
-    // Undoing from a completed route reopens it to in_progress.
-    await trx
-      .updateTable('delivery_routes')
-      .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .where('status', '=', 'completed')
-      .execute();
-    await this.logRouteActivity(trx, auth, routeId, 'update', 'stop_undo', `Stop ${stop.seq} undone`, 'volunteer_link');
-  }
-
-  /** First action flips assigned → in_progress; all-terminal auto-completes the route. */
-  private async advanceRouteStatus(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    _via: StopVia,
-  ): Promise<void> {
-    const now = new Date();
-    const counts = await trx
-      .selectFrom('delivery_route_stops')
-      .select([
-        ({ fn }) => fn.count<number>('id').as('total'),
-        ({ fn }) => fn.count<number>('id').filterWhere('status', '=', 'pending').as('pending'),
-      ])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('route_id', '=', routeId)
-      .executeTakeFirst();
-    const total = Number(counts?.total ?? 0);
-    const pending = Number(counts?.pending ?? 0);
-    if (total > 0 && pending === 0) {
-      await trx
-        .updateTable('delivery_routes')
-        .set({ status: 'completed', updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .execute();
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'close',
-        'route_completed',
-        'Route auto-completed: every stop handled',
-      );
-    } else {
-      await trx
-        .updateTable('delivery_routes')
-        .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .where('status', 'in', ['assigned', 'draft'])
-        .execute();
-    }
-  }
-
-  private async setStopSeq(trx: Transaction<Models>, tenantId: string, stopId: string, seq: number): Promise<void> {
-    await trx
-      .updateTable('delivery_route_stops')
-      .set({ seq })
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', stopId)
-      .execute();
-  }
-
-  /** Assign contiguous 1..n seq values to the given ordered stop ids, avoiding unique collisions. */
-  private async applySeqOrder(trx: Transaction<Models>, tenantId: string, orderedIds: string[]): Promise<void> {
-    const OFFSET = 100000;
-    for (let i = 0; i < orderedIds.length; i++) {
-      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', OFFSET + i);
-    }
-    for (let i = 0; i < orderedIds.length; i++) {
-      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', i + 1);
-    }
-  }
-
-  /** Renumber stops to contiguous seq in current order and recompute leg times + route estimate. */
-  private async renumberAndRecompute(trx: Transaction<Models>, auth: IAuthKeyPayload, routeId: string): Promise<void> {
-    const route = await trx
-      .selectFrom('delivery_routes')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .executeTakeFirst();
-    if (!route) return;
-    const params = this.paramsFromRoute(route.params);
-    const start: LatLng = { lat: Number(route.start_lat), lng: Number(route.start_lng) };
-    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, routeId, trx);
-    // Ensure contiguous seq.
-    await this.applySeqOrder(
-      trx,
-      auth.tenant_id,
-      stops.map((s) => s.id),
-    );
-
-    let cursor: LatLng = start;
-    let totalMinutes = 0;
-    let totalKm = 0;
-    for (const stop of stops) {
-      const point: LatLng = { lat: stop.lat ?? start.lat, lng: stop.lng ?? start.lng };
-      const leg = legMinutes(cursor, point, params.avgSpeedKmh);
-      await trx
-        .updateTable('delivery_route_stops')
-        .set({ leg_minutes: Math.round(leg * 10) / 10 })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stop.id)
-        .execute();
-      totalMinutes += leg + params.serviceMinutes;
-      totalKm += roadKm(cursor, point);
-      cursor = point;
-    }
-    if (params.includeReturnLeg && stops.length > 0) totalKm += roadKm(cursor, start);
-    await trx
-      .updateTable('delivery_routes')
-      .set({
-        est_minutes: Math.round(totalMinutes * 10) / 10,
-        est_km: Math.round(totalKm * 10) / 10,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .execute();
-  }
-
-  private paramsFromRoute(raw: unknown): RouteParamsSnapshot {
-    const obj = typeof raw === 'string' ? safeParse(raw) : raw;
-    const rec = (obj ?? {}) as Record<string, unknown>;
-    return {
-      serviceMinutes: typeof rec['serviceMinutes'] === 'number' ? rec['serviceMinutes'] : SERVICE_MINUTES_PER_STOP,
-      avgSpeedKmh: typeof rec['avgSpeedKmh'] === 'number' ? rec['avgSpeedKmh'] : AVG_SPEED_KMH,
-      includeReturnLeg: rec['includeReturnLeg'] === true,
-      drivers: typeof rec['drivers'] === 'number' ? rec['drivers'] : null,
-    };
-  }
-
-  private async readRouteProgress(trx: Transaction<Models>, tenantId: string, routeId: string) {
-    const route = await trx
-      .selectFrom('delivery_routes')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', routeId)
-      .executeTakeFirst();
-    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId, trx);
-    return {
-      id: routeId,
-      status: route ? String(route.status) : 'unknown',
-      est_minutes: route ? Number(route.est_minutes) : 0,
-      est_km: route ? Number(route.est_km) : 0,
-      stops,
-    };
-  }
-
-  /** `enforceExpiry` is the live Workspace → App policy (volunteerLinksExpire) — when the
-   * workspace disables expiry, a link stays usable for the life of the route (until revoked
-   * or the route is canceled). */
-  private isTokenUsable(
-    route: { status?: unknown; share_token_expires_at?: unknown } | undefined,
-    enforceExpiry: boolean,
-  ): route is {
-    id: string;
-    tenant_id: string;
-    createdby_id: string;
-    status: string;
-    share_token_expires_at: Date | string | null;
-  } & Record<string, unknown> {
-    if (!route) return false;
-    const status = String((route as Record<string, unknown>)['status']);
-    if (status === 'canceled') return false;
-    if (!enforceExpiry) return true;
-    const exp = (route as Record<string, unknown>)['share_token_expires_at'];
-    if (!exp) return false;
-    return new Date(String(exp)) > new Date();
-  }
-
-  private async publicOrgName(tenantId: string): Promise<string> {
-    const row = await this.routesRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    return typeof value === 'string' && value.trim() ? value : 'Our organization';
-  }
-
-  private publicRoutePayload(
-    route: Record<string, unknown>,
-    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
-    orgName: string,
-  ) {
-    const delivered = stops.filter((s) => s.status === 'delivered').length;
-    // Data minimization (spec §4.4): first name + address only. No email/phone/notes/person_id.
-    return {
-      organization_name: orgName,
-      route_name: String(route['name'] ?? 'Delivery route'),
-      status: String(route['status'] ?? 'assigned'),
-      start: { lat: Number(route['start_lat']), lng: Number(route['start_lng']) },
-      stops_total: stops.length,
-      stops_delivered: delivered,
-      stops: stops.map((s) => ({
-        id: s.id,
-        seq: s.seq,
-        first_name: s.first_name ?? 'Neighbour',
-        address: s.address,
-        lat: s.lat,
-        lng: s.lng,
-        status: s.status,
-        reason: s.reason,
-        acted_at: s.acted_at,
-      })),
-    };
-  }
-
-  private sanitizeRoute(
-    route: Record<string, unknown>,
-    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
-    volunteerName: string | null,
-    expiryEnforced: boolean,
-  ) {
-    // link_expires_at is a POLICY-shaped value: null when the workspace disables expiry, so the
-    // UI never shows a date that won't be enforced.
-    const expiresAt = expiryEnforced ? route['share_token_expires_at'] : null;
-    const linkActive =
-      route['share_token_hash'] != null &&
-      (!expiryEnforced || (!!expiresAt && new Date(String(expiresAt)) > new Date()));
-    return {
-      id: String(route['id']),
-      name: String(route['name'] ?? ''),
-      status: String(route['status'] ?? 'draft'),
-      volunteer_person_id: route['volunteer_person_id'] != null ? String(route['volunteer_person_id']) : null,
-      volunteer_name: volunteerName,
-      start_address: String(route['start_address'] ?? ''),
-      start_lat: Number(route['start_lat']),
-      start_lng: Number(route['start_lng']),
-      est_minutes: Number(route['est_minutes'] ?? 0),
-      est_km: Number(route['est_km'] ?? 0),
-      scheduled_for: (route['scheduled_for'] as Date | string | null) ?? null,
-      link_active: linkActive,
-      link_expires_at: (expiresAt as Date | string | null) ?? null,
-      stops,
-    };
-  }
-
-  /**
-   * Yard-sign standing changes surface on the household's (and requester's) activity feed —
-   * the sign lives at the door, so that's where its history belongs (honest attribution, §22.7).
-   * Route-level history is logged separately by applyStopTransition/logRouteActivity.
-   */
-  private async logRequestStanding(
-    trx: Transaction<Models> | undefined,
-    auth: IAuthKeyPayload,
-    requestIds: string[],
-    status: 'recorded' | SetDeliveryRequestStatusType['status'],
-  ): Promise<void> {
-    const db = trx ?? this.requestsRepo.db;
-    const labels: Record<string, string> = {
-      recorded: 'Yard sign request recorded',
-      new: 'Yard sign request reopened',
-      approved: 'Yard sign request approved',
-      declined: 'Yard sign request declined',
-      delivered: 'Yard sign marked delivered',
-    };
-    const message = labels[status] ?? `Yard sign request ${status}`;
-    try {
-      const rows = await db
-        .selectFrom('delivery_requests')
-        .select(['id', 'household_id', 'person_id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', 'in', requestIds)
-        .execute();
-      for (const r of rows) {
-        const targets: Array<{ entity: string; entity_id: string }> = [
-          { entity: 'households', entity_id: String(r.household_id) },
-        ];
-        if (r.person_id != null) targets.push({ entity: 'persons', entity_id: String(r.person_id) });
-        for (const target of targets) {
-          await this.userActivity.log(
-            {
-              tenant_id: auth.tenant_id,
-              user_id: auth.user_id,
-              activity: status === 'recorded' ? 'create' : 'update',
-              entity: target.entity,
-              entity_id: target.entity_id,
-              quantity: 1,
-              metadata: {
-                action: 'yard_sign_status',
-                message,
-                entity_label: message,
-                request_id: String(r.id),
-                via: 'staff',
-              },
-            },
-            trx,
-          );
-        }
-      }
-    } catch (err) {
-      logger.error({ err }, 'Failed to log yard sign standing activity');
-    }
-  }
-
-  private async logRouteActivity(
-    trxOrAny: Transaction<Models> | unknown,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    activity: 'create' | 'update' | 'assign' | 'unassign' | 'close' | 'reopen' | 'delete',
-    action: string,
-    message: string,
-    via?: StopVia,
-  ): Promise<void> {
-    const trx = isTransaction(trxOrAny) ? trxOrAny : undefined;
-    try {
-      await this.userActivity.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity,
-          entity: 'delivery_routes',
-          entity_id: routeId,
-          quantity: 1,
-          metadata: { action, message, entity_label: message, via: via ?? 'staff' },
-        },
-        trx,
-      );
-    } catch (err) {
-      logger.error({ err }, 'Failed to log delivery route activity');
-    }
-  }
-}
-
-function isTransaction(value: unknown): value is Transaction<Models> {
-  return typeof value === 'object' && value !== null && 'selectFrom' in (value as Record<string, unknown>);
-}
-
-function safeParse(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/events/controller.ts
 ````typescript
 import { TRPCError } from '@trpc/server';
@@ -67411,6 +65992,8 @@ export const PHONE_UNVERIFIED_MESSAGE =
   'On the Free plan, verify a mobile phone number (Settings → Communications) before your first newsletter send.';
 export const AUTOMATION_PHONE_UNVERIFIED_MESSAGE =
   'On the Free plan, verify a mobile phone number (Settings → Communications) before automation emails can send. This email was not sent.';
+export const ORG_ADDRESS_MISSING_MESSAGE =
+  'Before sending, an administrator must set your organization’s mailing address (Settings → Organization). Anti-spam laws (like CAN-SPAM and CASL) require it in every newsletter footer.';
 
 /** Rolling window the automation tripwires aggregate over. Automation emails are one-recipient
  * sends spread over time (no per-send population like a newsletter), so the "send" a tripwire
@@ -67582,6 +66165,18 @@ export async function logAutomationSend(db: Db, tenantId: string): Promise<void>
     .execute();
 }
 
+/** The server-appended compliance footer needs the org's postal address (CAN-SPAM/CASL), so a
+ * newsletter may not send until an administrator has set it. */
+export async function hasOrganizationAddress(db: Db, tenantId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom('settings')
+    .select('value')
+    .where('tenant_id', '=', tenantId)
+    .where('key', '=', 'organization.address')
+    .executeTakeFirst();
+  return typeof row?.value === 'string' && row.value.trim().length > 0;
+}
+
 /** True when the tenant's default From address belongs to a DKIM-verified sending domain. */
 export async function hasVerifiedSendingDomain(db: Db, tenantId: string): Promise<boolean> {
   const rows = await db
@@ -67618,6 +66213,9 @@ export async function assertTenantMaySendNewsletter(
 
   if (!(await hasVerifiedSendingDomain(db, tenantId))) {
     throw new PreconditionFailedError(DOMAIN_UNVERIFIED_MESSAGE);
+  }
+  if (!(await hasOrganizationAddress(db, tenantId))) {
+    throw new PreconditionFailedError(ORG_ADDRESS_MISSING_MESSAGE);
   }
   if (needsPhoneVerification(tenant)) {
     throw new PreconditionFailedError(PHONE_UNVERIFIED_MESSAGE);
@@ -69291,1182 +67889,6 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       errors: results.errors,
       skipped: skipped + results.skipped,
       errorMessages,
-    };
-  }
-}
-````
-
-## File: apps/backend/src/app/modules/web-forms/controller.ts
-````typescript
-import type {
-  AddWebFormType,
-  CreateFormType,
-  FormField,
-  IAuthKeyPayload,
-  UpdateFormType,
-  UpdateWebFormType,
-} from '../../../../../../libs/common/src';
-import { FORM_TEMPLATES, fieldsForTemplate, normForm, slugifyRecordName } from '../../../../../../libs/common/src';
-import { BaseController } from '../../lib/base.controller';
-import { uniqueSlug } from '../../lib/slug';
-import { WebFormsRepo } from './repositories/web-forms.repo';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { type Transaction, sql } from 'kysely';
-import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { createSigner, createVerifier } from 'fast-jwt';
-import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
-import type { PublicTenant } from '../../lib/public-tenant';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { HouseholdRepo } from '../households/repositories/households.repo';
-
-import { WorkflowsController } from '../workflows/controller';
-import { DonationsController } from '../donations/controller';
-import { logger } from '../../logger';
-
-// Sliding window memory for rate-limiting
-const ipSubmissionTimestamps = new Map<string, number[]>();
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
-  private readonly campaignsRepo = new CampaignsRepo();
-
-  constructor() {
-    super(new WebFormsRepo());
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const form = await super.getOneById(input);
-    if (!form) return form;
-    return this.resolveCreatorAndUpdater(input.tenant_id, form);
-  }
-
-  /**
-   * Tenant-scoped lookup for the server-rendered public donation page (/api/forms/d/:slug).
-   * Only donation-type forms resolve here — standard forms live on the /f/:slug SPA page.
-   */
-  public async getDonationFormPublic(tenantId: string, slug: string) {
-    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
-    if (!form || (form.form_type !== 'donation' && form.form_type !== 'recurring_donation')) {
-      return undefined;
-    }
-    return form;
-  }
-
-  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
-    const row = {
-      tenant_id: auth.tenant_id,
-      campaign_id: await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id }),
-      slug: await this.uniqueSlug(auth.tenant_id, payload.name),
-      name: payload.name,
-      description: payload.description ?? null,
-      redirect_url: payload.redirect_url ?? null,
-      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
-      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
-      fields: payload.fields ? JSON.stringify(payload.fields) : null,
-      status: this.mapLegacyStatus(payload.status),
-      send_confirmation: payload.send_confirmation ?? true,
-      send_alert: payload.send_alert ?? true,
-      form_type: payload.form_type ?? 'standard',
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    const created = await this.add(row as any);
-    const createdId = (created as Record<string, unknown> | undefined)?.['id'];
-    if (createdId != null && payload.target_lists?.length) {
-      await this.syncTargetLists(auth, String(createdId), payload.target_lists);
-    }
-    return created;
-  }
-
-  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
-    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
-    if (!existing) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found.',
-      });
-    }
-
-    const row: OperationDataType<'web_forms', 'update'> = {
-      updatedby_id: auth.user_id,
-      updated_at: new Date(),
-    };
-    if (payload.name !== undefined) row.name = payload.name;
-    if (payload.description !== undefined) row.description = payload.description;
-    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
-    if (payload.target_tags !== undefined)
-      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
-    if (payload.target_lists !== undefined)
-      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
-    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
-    if (payload.status !== undefined) row.status = this.mapLegacyStatus(payload.status);
-    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
-    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
-
-    const rawPayload = payload as Record<string, unknown>;
-    if (rawPayload['form_type'] !== undefined && rawPayload['form_type'] !== existing.form_type) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Form type cannot be changed after the form has been created.',
-      });
-    }
-
-    const updated = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row,
-    });
-    if (payload.target_lists !== undefined) {
-      await this.syncTargetLists(auth, id, payload.target_lists ?? []);
-    }
-    return updated;
-  }
-
-  public async submitFormPublic(
-    tenant: PublicTenant,
-    slug: string,
-    payload: Record<string, string>,
-    clientIp: string,
-    opts?: { skipIpRateLimit?: boolean },
-  ): Promise<{ redirect_url?: string | null }> {
-    // 1. Rate limiting check. Keyed (workspace-API-key) submissions skip the per-IP window —
-    // they come from one integration server and are rate-limited per tenant by the route.
-    if (!opts?.skipIpRateLimit) {
-      const now = Date.now();
-      let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
-      timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-      if (timestamps.length >= RATE_LIMIT_MAX) {
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: 'Rate limit exceeded. Please try again in a minute.',
-        });
-      }
-      timestamps.push(now);
-      // Prune empty keys to prevent unbounded Map growth
-      if (timestamps.length > 0) {
-        ipSubmissionTimestamps.set(clientIp, timestamps);
-      } else {
-        ipSubmissionTimestamps.delete(clientIp);
-      }
-    }
-
-    // 2. Fetch the form — tenant-scoped by slug; the tenant was resolved from the subdomain
-    const tenantId = tenant.id;
-    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
-    if (!form || form.status !== 'published') {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found or inactive.',
-      });
-    }
-    const formId = String(form.id);
-
-    // 3. Honeypot check
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
-      return { redirect_url: form.redirect_url || null };
-    }
-
-    // 4. Validate email
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Email address is required.',
-      });
-    }
-
-    // Parse configured fields. Supports both the legacy string[] shape ("mobile:required") used by
-    // donation/older forms and the new-model FormField[] objects ({ key, on, required, label }).
-    const rawFields: unknown = form.fields
-      ? Array.isArray(form.fields)
-        ? form.fields
-        : JSON.parse(String(form.fields))
-      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-    const fieldArray: unknown[] = Array.isArray(rawFields) ? rawFields : [];
-
-    // Map payload key aliases helper
-    const getPayloadValue = (key: string): string => {
-      let value = '';
-      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
-      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
-      else if (key === 'full_name' || key === 'name') value = payload['full_name'] || payload['name'] || '';
-      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
-      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
-      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
-      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
-      else value = payload[key] || '';
-      return String(value).trim();
-    };
-
-    // Validate user-configured required fields for standard forms
-    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
-      const fieldLabels: Record<string, string> = {
-        first_name: 'First Name',
-        last_name: 'Last Name',
-        full_name: 'Full name',
-        mobile: 'Mobile / Phone',
-        notes: 'Notes / Message',
-        street1: 'Street Address',
-        city: 'City',
-        state: 'State / Province',
-        zip: 'Zip / Postal Code',
-        country: 'Country',
-      };
-
-      const requiredFields: { name: string; label: string }[] = [];
-      for (const raw of fieldArray) {
-        if (typeof raw === 'string') {
-          if (raw.endsWith(':required')) {
-            const name = raw.replace(':required', '');
-            requiredFields.push({ name, label: fieldLabels[name] ?? name });
-          }
-        } else if (raw && typeof raw === 'object') {
-          const obj = raw as { key?: string; on?: boolean; required?: boolean; label?: string };
-          // Email is validated separately above; skip it here.
-          if (obj.key && obj.key !== 'email' && obj.on && obj.required) {
-            requiredFields.push({ name: obj.key, label: obj.label ?? fieldLabels[obj.key] ?? obj.key });
-          }
-        }
-      }
-
-      for (const field of requiredFields) {
-        if (!getPayloadValue(field.name)) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: `${field.label} is required.` });
-        }
-      }
-    }
-
-    // Parse and validate donation fields if form is a donation or recurring_donation form
-    let amountCents = 0;
-    let monthlyAmountCents = 0;
-    let country = '';
-    let state = '';
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
-      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
-      if (!firstName || !lastName) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'First name and last name are required for donations.',
-        });
-      }
-
-      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-      const city = (payload['city'] || '').trim();
-      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-      country = (payload['country'] || payload['residency_country'] || '').trim();
-      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-      if (!street1 || !city || !zip || !country || !state) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message:
-            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
-        });
-      }
-
-      // Check if email already exists to run eligibility checks
-      const existing = await this.getRepo()
-        .db.selectFrom('persons')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where(sql`lower(email)`, '=', email.toLowerCase())
-        .executeTakeFirst();
-
-      const donationsController = new DonationsController();
-
-      if (form.form_type === 'donation') {
-        const amountStr = payload['amount'] || payload['donation_amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
-        }
-        amountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          amountCents,
-          { country, state },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
-      } else {
-        // recurring_donation
-        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
-        }
-        monthlyAmountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          monthlyAmountCents,
-          { country, state },
-          { isRecurring: true },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
-      }
-    }
-
-    // 5. Gather submission fields. New-model forms collect a single `full_name`; split it on the
-    // last space so the person record still gets a first/last name.
-    let firstName = payload['first_name'] || payload['firstName'] || null;
-    let lastName = payload['last_name'] || payload['lastName'] || null;
-    if (!firstName && !lastName) {
-      const fullName = (payload['full_name'] || payload['name'] || '').trim();
-      if (fullName) {
-        const lastSpace = fullName.lastIndexOf(' ');
-        if (lastSpace === -1) {
-          firstName = fullName;
-        } else {
-          firstName = fullName.slice(0, lastSpace).trim();
-          lastName = fullName.slice(lastSpace + 1).trim();
-        }
-      }
-    }
-    const mobile = payload['mobile'] || payload['phone'] || null;
-    const notes = payload['notes'] || payload['message'] || null;
-
-    let resolvedPersonId = '';
-    let resolvedCreatorId = '1';
-
-    // 6. Find or Create person & apply merges/tags
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        // Use the form's creator as the actor — they are the person who
-        // configured this form, which is the most correct attribution for
-        // contacts and data created via public submissions.
-        const creatorId = String(form.createdby_id);
-
-        resolvedCreatorId = creatorId;
-
-        if (!householdId) {
-          throw new Error('Tenant placeholder household is not configured.');
-        }
-
-        // Submissions belong to the FORM's campaign (§15) — a campaign sign-up
-        // form collects that campaign's consent, not the office's. Older rows
-        // without a campaign fall back to the legacy current_campaign setting.
-        const formCampaignId = (form as Record<string, unknown>)['campaign_id'];
-        const campaignId = formCampaignId != null ? String(formCampaignId) : await this.getCampaignId(tenantId, trx);
-
-        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
-        // counted once they confirm via the emailed link (see confirm-subscription route).
-        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
-
-        let finalHouseholdId = householdId;
-
-        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-        const city = (payload['city'] || '').trim();
-        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-        const country = (payload['country'] || payload['residency_country'] || '').trim();
-        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-        const hasAddress = !!(street1 || city || zip || country || state);
-
-        if (hasAddress) {
-          const fp_street = fingerprintStreet({ street1 });
-          const fp_full = fingerprintFull({
-            street1,
-            city,
-            state,
-            zip,
-            country,
-          });
-
-          const householdRepo = new HouseholdRepo();
-          const existingHh = await trx
-            .selectFrom('households')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('campaign_id', '=', campaignId)
-            .where('address_fp_full', '=', fp_full)
-            .executeTakeFirst();
-
-          if (existingHh) {
-            finalHouseholdId = String(existingHh.id);
-          } else {
-            const createdHhs = await householdRepo.addMany(
-              {
-                rows: [
-                  {
-                    tenant_id: tenantId,
-                    campaign_id: campaignId,
-                    createdby_id: creatorId,
-                    updatedby_id: creatorId,
-                    street1,
-                    city,
-                    state,
-                    zip,
-                    country,
-                    address_fp_street: fp_street,
-                    address_fp_full: fp_full,
-                  } as any,
-                ],
-              },
-              trx,
-            );
-            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
-              finalHouseholdId = String(createdHhs[0].id);
-            }
-          }
-        }
-
-        // Check if email already exists
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = {
-            updatedby_id: creatorId,
-            updated_at: sql`now()`,
-          };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (form.form_type === 'donation' || hasAddress) {
-            updateRow.household_id = finalHouseholdId;
-          }
-          if (!existing.notes && notes) {
-            updateRow.notes = notes;
-          } else if (existing.notes && notes) {
-            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
-          }
-
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: finalHouseholdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            mobile: mobile,
-            notes: notes,
-          };
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          // Trigger contact created workflow
-          try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
-          }
-
-          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
-          if (doubleOptIn) {
-            await this.enqueueSubscriptionConfirmation(trx, {
-              tenantId,
-              personId,
-              email,
-              firstName,
-            });
-          }
-        }
-
-        resolvedPersonId = personId;
-
-        // Consent lives in campaign_subscriptions (§15): a form submission is
-        // consent for THIS form's campaign only — pending until confirmed when
-        // the tenant requires double opt-in. doNothing keeps an existing row
-        // (including a deliberate 'unsubscribed') authoritative over re-submits.
-        await trx
-          .insertInto('campaign_subscriptions')
-          .values({
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            person_id: personId,
-            email,
-            status: doubleOptIn ? 'pending' : 'subscribed',
-            consent_source: 'form',
-            consent_at: doubleOptIn ? null : new Date(),
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .onConflict((oc) => oc.columns(['tenant_id', 'campaign_id', 'person_id']).doNothing())
-          .execute();
-
-        const workflowsController = new WorkflowsController();
-
-        // Add target custom tags & read-only system tag
-        const targetTags: string[] = Array.isArray(form.target_tags)
-          ? form.target_tags
-          : JSON.parse((form.target_tags as any) || '[]');
-        const systemTagName = `source: ${form.name}`;
-        // "Donor" is derived from donations data (§15) — no tag on donation forms.
-        const allTagsToApply = [...targetTags, systemTagName];
-
-        for (const tagName of allTagsToApply) {
-          const normalizedTagName = tagName.trim().toLowerCase();
-          if (!normalizedTagName) continue;
-
-          let tag = await trx
-            .selectFrom('tags')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('name', '=', normalizedTagName)
-            .where('type', '=', 'tag')
-            .executeTakeFirst();
-
-          if (!tag) {
-            const insertTagRes = await trx
-              .insertInto('tags')
-              .values({
-                tenant_id: tenantId,
-                name: normalizedTagName,
-                type: 'tag',
-                deletable: true,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .returning('id')
-              .executeTakeFirstOrThrow();
-            tag = { id: insertTagRes.id };
-          }
-
-          const mapExists = await trx
-            .selectFrom('map_peoples_tags')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('tag_id', '=', tag.id)
-            .executeTakeFirst();
-
-          if (!mapExists) {
-            await trx
-              .insertInto('map_peoples_tags')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                tag_id: tag.id,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger tag_added and specialized subscriber workflows
-            try {
-              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Add target lists. map_web_forms_lists is the source of truth — its
-        // FKs guarantee every row points at a live list (no dangling-id skip
-        // needed, unlike the legacy JSONB target_lists document).
-        const targetListRows = await trx
-          .selectFrom('map_web_forms_lists')
-          .select('list_id')
-          .where('tenant_id', '=', tenantId)
-          .where('web_form_id', '=', formId)
-          .execute();
-        for (const { list_id: listId } of targetListRows) {
-          const inList = await trx
-            .selectFrom('map_lists_persons')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('list_id', '=', listId)
-            .executeTakeFirst();
-
-          if (!inList) {
-            await trx
-              .insertInto('map_lists_persons')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                list_id: listId,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger list joined workflows
-            try {
-              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Trigger web form submitted workflows
-        try {
-          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
-        }
-
-        // Log user activity
-        await trx
-          .insertInto('user_activity')
-          .values({
-            tenant_id: tenantId,
-            user_id: creatorId,
-            activity: 'submission',
-            entity: 'web_forms',
-            entity_id: formId,
-            quantity: 1,
-            metadata: JSON.stringify({ person_id: personId, email }),
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .execute();
-
-        // Persist a durable response record (answers snapshot + person FK) for the Responses tab.
-        // Donation forms are a separate flow (Stripe/webhook) and are not part of this model.
-        if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
-          const answers: Record<string, unknown> = {};
-          for (const [key, value] of Object.entries(payload)) {
-            if (key === '_hp') continue;
-            answers[key] = value;
-          }
-          await trx
-            .insertInto('form_submissions')
-            .values({
-              tenant_id: tenantId,
-              form_id: String(form.id),
-              person_id: personId,
-              answers: JSON.stringify(answers),
-            })
-            .execute();
-        }
-
-        // Queue email notification job in background
-        await trx
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'send-webform-notifications',
-              formId: String(form.id),
-              tenantId,
-              email,
-              firstName,
-              lastName,
-              mobile,
-              notes,
-            }),
-            run_at: new Date(),
-          })
-          .execute();
-      });
-
-    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const donationsController = new DonationsController();
-      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/d/${form.slug}?t=${encodeURIComponent(tenant.slug)}&checkout_cancel=true`;
-
-      if (form.form_type === 'donation') {
-        const checkoutInit = await donationsController.createCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          amountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutInit.url };
-      } else {
-        const checkoutSession = await donationsController.createRecurringCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          monthlyAmountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutSession.url };
-      }
-    }
-
-    return { redirect_url: form.redirect_url || null };
-  }
-
-  /**
-   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
-   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
-   */
-  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
-
-    let payload: unknown;
-    try {
-      payload = await verifier(token);
-    } catch {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
-    }
-
-    if (
-      !isRecord(payload) ||
-      payload['purpose'] !== 'confirm-subscription' ||
-      !payload['tenant_id'] ||
-      !payload['person_id']
-    ) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
-    }
-
-    // Double opt-in confirmed: every pending subscription for this person
-    // becomes subscribed (§15). Deliberately allowed even if the campaign has
-    // since been archived — the confirmation belongs to when the link was sent.
-    await this.getRepo()
-      .db.updateTable('campaign_subscriptions')
-      .set({ status: 'subscribed', consent_at: sql`now()`, updated_at: sql`now()` })
-      .where('tenant_id', '=', String(payload['tenant_id']))
-      .where('person_id', '=', String(payload['person_id']))
-      .where('status', '=', 'pending')
-      .execute();
-
-    return { success: true };
-  }
-
-  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'communications.double_opt_in')
-      .executeTakeFirst();
-
-    return row?.value === true || row?.value === 'true';
-  }
-
-  /**
-   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
-   * runs only if the surrounding submission transaction commits, keeping the pending person and the
-   * confirmation email consistent.
-   */
-  private async enqueueSubscriptionConfirmation(
-    trx: Transaction<Models>,
-    args: { tenantId: string; personId: string; email: string; firstName: string | null },
-  ): Promise<void> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
-      return;
-    }
-
-    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
-    const token = signer({
-      tenant_id: args.tenantId,
-      person_id: args.personId,
-      email: args.email.toLowerCase().trim(),
-      purpose: 'confirm-subscription',
-    });
-    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
-
-    await trx
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: args.tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-subscription-confirmation',
-          tenantId: args.tenantId,
-          email: args.email,
-          firstName: args.firstName,
-          confirmUrl,
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-  }
-
-  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'current_campaign')
-      .executeTakeFirst();
-
-    if (row) {
-      const value = row.value;
-      if (typeof value === 'number' || typeof value === 'string') {
-        return String(value);
-      }
-      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-        const id = (value as Record<string, unknown>)['id'];
-        if (typeof id === 'number' || typeof id === 'string') {
-          return String(id);
-        }
-      }
-    }
-
-    const campaignRow = await trx
-      .selectFrom('campaigns')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (campaignRow) {
-      return String(campaignRow.id);
-    }
-
-    throw new Error('No campaign found for this tenant.');
-  }
-
-  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
-    return this.getRepo().countSubmissions(tenantId, formId);
-  }
-
-  // ---------------------------------------------------------------------------
-  // North Star "living funnel" lifecycle (new Forms experience).
-  // ---------------------------------------------------------------------------
-
-  /** All non-donation forms as cards for the browse page, fields normalized for the preview. */
-  public async listForms(tenantId: string) {
-    const rows = await this.getRepo().listForms(tenantId);
-    return rows.map((row) => this.normalizeForm(row));
-  }
-
-  /**
-   * Public config for the unauthenticated /f/:slug page. Returns only what the public page renders,
-   * plus the org name; closed (unpublished/archived) forms return a status the page shows as a
-   * "closed" card. Throws NOT_FOUND when the slug doesn't exist at all.
-   */
-  public async getPublicFormBySlug(slug: string, tenantId: string) {
-    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
-    // Donation forms have slugs too (every form does) but render on the separate server-rendered
-    // /api/forms/d/:slug page with the amount field — never on the /f/:slug SPA page.
-    if (!form || form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const orgName = await this.getOrgName(String(form.tenant_id));
-    if (form.status !== 'published') {
-      return { status: 'closed' as const, orgName, name: String(form.name) };
-    }
-    const normalized = this.normalizeForm(form) as {
-      id: string;
-      name: string;
-      description: string | null;
-      submit_label: string | null;
-      thanks_title: string | null;
-      thanks_body: string | null;
-      redirect_url: string | null;
-      fields: FormField[];
-    };
-    return {
-      status: 'open' as const,
-      orgName,
-      form: {
-        id: normalized.id,
-        name: normalized.name,
-        description: normalized.description,
-        submit_label: normalized.submit_label,
-        thanks_title: normalized.thanks_title,
-        thanks_body: normalized.thanks_body,
-        redirect_url: normalized.redirect_url,
-        fields: normalized.fields.filter((f) => f.on),
-      },
-    };
-  }
-
-  private async getOrgName(tenantId: string): Promise<string> {
-    const row = await this.getRepo()
-      .db.selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    return typeof value === 'string' && value.trim() ? value : 'Our organization';
-  }
-
-  /** Single form, fields normalized — used by the editor + preview. */
-  public async getFormForEdit(id: string, tenantId: string) {
-    const form = await this.getRepo().getOneById({ id, tenant_id: tenantId });
-    if (!form) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    return this.normalizeForm(form);
-  }
-
-  /** Create a draft from a template. Lands the user in edit mode (frontend). */
-  public async createForm(payload: CreateFormType, auth: IAuthKeyPayload) {
-    const template = FORM_TEMPLATES[payload.type];
-    const slug = await this.uniqueSlug(auth.tenant_id, payload.name);
-    const fields = fieldsForTemplate(payload.type);
-    const row = {
-      tenant_id: auth.tenant_id,
-      // A form collects consent for exactly one campaign (§15).
-      campaign_id: await this.campaignsRepo.resolveForWrite({
-        tenant_id: auth.tenant_id,
-        campaign_id: payload.campaign_id,
-      }),
-      name: payload.name,
-      description: template.description,
-      redirect_url: null,
-      target_tags: JSON.stringify([]),
-      target_lists: JSON.stringify([]),
-      fields: JSON.stringify(fields),
-      status: 'draft',
-      type: payload.type,
-      form_type: 'standard',
-      slug,
-      submit_label: template.submitLabel,
-      thanks_title: 'Thank you!',
-      thanks_body: 'Your response has been recorded. Thanks for reaching out.',
-      confirm_subject: `Thanks for your ${payload.type}`,
-      confirm_body: 'Hi [First name],\n\nThanks for your submission. We’ve received it and will be in touch soon.',
-      send_confirmation: true,
-      send_alert: false,
-      notify_team_on: false,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    const created = await this.add(row as any);
-    return this.normalizeForm(created);
-  }
-
-  /** Live-edit patch. `normForm` guarantees the email identity-key invariant server-side. */
-  public async updateFormLive(id: string, patch: UpdateFormType, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-
-    const row: OperationDataType<'web_forms', 'update'> = { updatedby_id: auth.user_id, updated_at: new Date() };
-    // Slug intentionally stays stable across renames — a published link must never break.
-    if (patch.name !== undefined) row['name'] = patch.name;
-    if (patch.description !== undefined) row['description'] = patch.description;
-    if (patch.redirect_url !== undefined) row['redirect_url'] = patch.redirect_url;
-    if (patch.submit_label !== undefined) row['submit_label'] = patch.submit_label;
-    if (patch.thanks_title !== undefined) row['thanks_title'] = patch.thanks_title;
-    if (patch.thanks_body !== undefined) row['thanks_body'] = patch.thanks_body;
-    if (patch.confirm_email_on !== undefined) row['send_confirmation'] = patch.confirm_email_on;
-    if (patch.confirm_subject !== undefined) row['confirm_subject'] = patch.confirm_subject;
-    if (patch.confirm_body !== undefined) row['confirm_body'] = patch.confirm_body;
-    if (patch.notify_team_on !== undefined) row['notify_team_on'] = patch.notify_team_on;
-    if (patch.target_tags !== undefined) row['target_tags'] = JSON.stringify(patch.target_tags);
-    if (patch.target_lists !== undefined) row['target_lists'] = JSON.stringify(patch.target_lists);
-    if (patch.fields !== undefined) {
-      row['fields'] = JSON.stringify(normForm(patch.fields));
-    }
-
-    const updated = await this.update({ tenant_id: auth.tenant_id, id, row });
-    if (patch.target_lists !== undefined) {
-      await this.syncTargetLists(auth, id, patch.target_lists ?? []);
-    }
-    return this.normalizeForm(updated);
-  }
-
-  /**
-   * Replace the form's map_web_forms_lists rows (the source of truth for list
-   * targeting — the JSONB target_lists column is still dual-written during
-   * the transition, but nothing reads it for behavior anymore). Ids that
-   * don't resolve to a live list in the tenant are dropped.
-   */
-  private async syncTargetLists(auth: IAuthKeyPayload, formId: string, listIds: string[]): Promise<void> {
-    const db = this.getRepo().db;
-    const candidates = [...new Set(listIds.map((id) => String(id)))].filter((id) => /^\d+$/.test(id));
-    let liveIds: string[] = [];
-    if (candidates.length > 0) {
-      const rows = await db
-        .selectFrom('lists')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', 'in', candidates)
-        .execute();
-      liveIds = rows.map((r) => String(r.id));
-    }
-
-    await db
-      .deleteFrom('map_web_forms_lists')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('web_form_id', '=', formId)
-      .execute();
-
-    if (liveIds.length > 0) {
-      await db
-        .insertInto('map_web_forms_lists')
-        .values(
-          liveIds.map((list_id) => ({
-            tenant_id: auth.tenant_id,
-            web_form_id: formId,
-            list_id,
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          })),
-        )
-        .execute();
-    }
-  }
-
-  public publishForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'published', null);
-  }
-
-  public unpublishForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'draft', null);
-  }
-
-  public archiveForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'archived', new Date());
-  }
-
-  /** Restore always lands in draft — reopening a public link is a deliberate act. */
-  public restoreForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'draft', null);
-  }
-
-  /** Hard delete is only allowed for a zero-response draft; everything else must be archived. */
-  public async deleteForm(id: string, auth: IAuthKeyPayload) {
-    const existing = (await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id })) as
-      | { status?: string }
-      | undefined;
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const count = await this.getRepo().countSubmissions(auth.tenant_id, id);
-    if (existing.status !== 'draft' || count > 0) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Only a draft with no responses can be deleted. Archive it instead; archiving is reversible.',
-      });
-    }
-    return this.delete(auth.tenant_id, id, auth.user_id);
-  }
-
-  public async getFormSubmissions(id: string, tenantId: string, cursor?: number) {
-    const limit = 25;
-    const offset = cursor ?? 0;
-    const rows = await this.getRepo().getFormSubmissions(tenantId, id, limit + 1, offset);
-    const total = await this.getRepo().countSubmissions(tenantId, id);
-    const hasMore = rows.length > limit;
-    const items = rows.slice(0, limit).map((row) => {
-      const answersRaw = row['answers'];
-      const answers =
-        typeof answersRaw === 'string'
-          ? this.safeJson(answersRaw, {})
-          : ((answersRaw as Record<string, unknown>) ?? {});
-      const name = `${row['first_name'] ?? ''} ${row['last_name'] ?? ''}`.trim();
-      return {
-        id: String(row['id']),
-        person_id: String(row['person_id']),
-        person_name: name || null,
-        answers,
-        created_at: row['created_at'] as Date | string,
-      };
-    });
-    return { items, total, nextCursor: hasMore ? offset + limit : null };
-  }
-
-  private async setStatus(
-    id: string,
-    auth: IAuthKeyPayload,
-    status: 'draft' | 'published' | 'archived',
-    archivedAt: Date | null,
-  ) {
-    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const updated = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() },
-    });
-    return this.normalizeForm(updated);
-  }
-
-  private uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
-    // Shared slug strategy (lib/slug.ts) — same base + collision suffixes as
-    // persons/households/companies record slugs.
-    return uniqueSlug(slugifyRecordName(name, 'form'), (candidate) =>
-      this.getRepo().slugExists(tenantId, candidate, excludeId),
-    );
-  }
-
-  /** Legacy add/update path accepts 'active'; the DB only knows the lifecycle statuses. */
-  private mapLegacyStatus(status: string | undefined): 'draft' | 'published' | 'archived' {
-    if (status === 'archived') return 'archived';
-    if (status === 'draft') return 'draft';
-    return 'published';
-  }
-
-  private safeJson<T>(value: string, fallback: T): T {
-    try {
-      return JSON.parse(value) as T;
-    } catch {
-      return fallback;
-    }
-  }
-
-  private normalizeForm(record: unknown) {
-    if (!record || typeof record !== 'object') return record;
-    const row = record as Record<string, unknown>;
-    const toArray = (value: unknown): string[] => {
-      if (Array.isArray(value)) return value as string[];
-      if (typeof value === 'string') return this.safeJson<string[]>(value, []);
-      return [];
-    };
-    const rawFields = Array.isArray(row['fields'])
-      ? row['fields']
-      : typeof row['fields'] === 'string'
-        ? this.safeJson<unknown[]>(row['fields'] as string, [])
-        : [];
-    return {
-      ...row,
-      id: row['id'] != null ? String(row['id']) : row['id'],
-      tenant_id: row['tenant_id'] != null ? String(row['tenant_id']) : row['tenant_id'],
-      target_tags: toArray(row['target_tags']),
-      target_lists: toArray(row['target_lists']),
-      fields: normForm(rawFields),
-      submission_count: row['submission_count'] != null ? Number(row['submission_count']) : 0,
     };
   }
 }
@@ -72710,6 +70132,1416 @@ export class BillingController {
 }
 ````
 
+## File: apps/backend/src/app/modules/deliveries/controller.ts
+````typescript
+import { createHash, randomBytes } from 'crypto';
+
+import type { Transaction } from 'kysely';
+
+import type {
+  AddDeliveryRequestType,
+  AssignVolunteerType,
+  CommitDeliveriesType,
+  GetSignStatusType,
+  IAuthKeyPayload,
+  PlanDeliveriesType,
+  ReorderStopType,
+  ReorderStopsType,
+  SetDeliveryRequestStatusType,
+  SetDeliveryRouteStatusType,
+  StopActionType,
+  UpdateDeliveryRequestType,
+  UpdateDeliveryRouteType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+
+import { env } from '../../../env';
+import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
+import { geocodeAddress } from '../../lib/gis/geocode-address';
+import { notifyVolunteerOfLink, type VolunteerLinkSendResult } from '../../lib/mail/volunteer-link-notify';
+import { publicOrgName } from '../../lib/public-tenant';
+import { legMinutes, roadKm, type LatLng } from '../../lib/routing/geo';
+import { planRoutes, type PlanParams, type PlanStopInput } from '../../lib/routing/plan-routes';
+import {
+  AVG_SPEED_KMH,
+  MAX_STOPS_PER_PLAN,
+  SERVICE_MINUTES_PER_STOP,
+  SHARE_TOKEN_TTL_DAYS,
+} from '../../lib/routing/route-constants';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
+import { logger } from '../../logger';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { CompanionAccessController } from '../companion-access/controller';
+import { DeliveryRequestsRepo } from './repositories/delivery-requests.repo';
+import { DeliveryRouteStopsRepo } from './repositories/delivery-route-stops.repo';
+import { DeliveryRoutesRepo } from './repositories/delivery-routes.repo';
+
+const ROUTE_DEFAULTS_SETTING_KEY = 'deliveries.route_defaults';
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+type StopVia = 'staff' | 'volunteer_link';
+
+interface RouteParamsSnapshot {
+  serviceMinutes: number;
+  avgSpeedKmh: number;
+  includeReturnLeg: boolean;
+  drivers: number | null;
+}
+
+function resolveParams(input: PlanDeliveriesType): PlanParams {
+  return {
+    serviceMinutes: input.service_minutes ?? SERVICE_MINUTES_PER_STOP,
+    avgSpeedKmh: input.avg_speed_kmh ?? AVG_SPEED_KMH,
+    includeReturnLeg: input.include_return_leg ?? false,
+    drivers: input.drivers ?? null,
+  };
+}
+
+/** Human-readable route name: "Maple St area — Jul 10" derived from the first stop + today. */
+function deriveRouteName(firstAddress: string, date: Date): string {
+  const firstSegment = (firstAddress.split(',')[0] ?? '').trim();
+  const streetOnly = firstSegment.replace(/^\d+\s+/, '').trim();
+  const area = streetOnly || firstSegment || 'Delivery';
+  const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${area} area — ${label}`;
+}
+
+export class DeliveriesController {
+  private readonly requestsRepo = new DeliveryRequestsRepo();
+  private readonly campaignsRepo = new CampaignsRepo();
+  private readonly companionAccess = new CompanionAccessController();
+  private readonly routesRepo = new DeliveryRoutesRepo();
+  private readonly stopsRepo = new DeliveryRouteStopsRepo();
+  private readonly userActivity = new UserActivityRepo();
+
+  // ---- Requests -----------------------------------------------------------
+  public getAllRequests(tenant: string, options?: getAllOptionsType) {
+    return this.requestsRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
+  }
+
+  public getRequestCounts(tenant: string) {
+    return this.requestsRepo.getStatusCounts(tenant);
+  }
+
+  public getReadyCount(tenant: string) {
+    return this.requestsRepo.getReadyCount(tenant);
+  }
+
+  /** Yard-sign standing for one household in one campaign context (household/person pages). */
+  public async getSignStatus(auth: IAuthKeyPayload, input: GetSignStatusType) {
+    const request = await this.requestsRepo.getSignStatus(auth.tenant_id, input.household_id, input.campaign_id);
+    return { request };
+  }
+
+  public async addRequest(auth: IAuthKeyPayload, input: AddDeliveryRequestType) {
+    // Guard: a household with an OPEN request (new/approved, incl. routed) can't have a second.
+    const open = await this.requestsRepo.db
+      .selectFrom('delivery_requests')
+      .select(['id'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('household_id', '=', input.household_id)
+      .where('status', 'in', ['new', 'approved'])
+      .executeTakeFirst();
+    if (open) {
+      throw new ConflictError('This household already has an open delivery request.');
+    }
+    const personId = input.person_id ? String(input.person_id) : null;
+    const row = {
+      tenant_id: auth.tenant_id,
+      // The context this yard-sign request belongs to (§15); defaults to the office.
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: input.campaign_id,
+      }),
+      household_id: input.household_id,
+      person_id: personId,
+      web_form_id: null,
+      source: 'manual',
+      status: 'new',
+      notes: input.notes ?? null,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'delivery_requests', 'insert'>;
+    const created = await this.requestsRepo.add({ row });
+    await this.logRequestStanding(undefined, auth, [String(created.id)], 'recorded');
+    return { id: String(created.id) };
+  }
+
+  public async updateRequestNotes(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRequestType) {
+    const updated = await this.requestsRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { notes: input.notes ?? null, updatedby_id: auth.user_id, updated_at: new Date() } as OperationDataType<
+        'delivery_requests',
+        'update'
+      >,
+    });
+    if (!updated) throw new NotFoundError('Request not found');
+    return { id };
+  }
+
+  public async setRequestStatus(auth: IAuthKeyPayload, input: SetDeliveryRequestStatusType) {
+    // A request sitting on an active (pending) stop can't be declined or reset out from under a
+    // route. Approved + pending stop is the normal on-route state, and 'delivered' flows THROUGH
+    // the stop below so route progress stays truthful.
+    if (input.status === 'declined' || input.status === 'new') {
+      const onRoute = await this.requestsRepo.db
+        .selectFrom('delivery_route_stops')
+        .select(['id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('request_id', 'in', input.ids)
+        .where('status', '=', 'pending')
+        .executeTakeFirst();
+      if (onRoute) {
+        throw new BadRequestError('Remove these requests from their route first, or cancel that route.');
+      }
+    }
+    return this.requestsRepo.transaction().execute(async (trx) => {
+      let directIds = input.ids;
+      if (input.status === 'delivered') {
+        // Manual "the sign is in the ground" flip: requests on an active route deliver via their
+        // stop (staff-attributed), which also advances/auto-completes the route.
+        const pendingStops = await trx
+          .selectFrom('delivery_route_stops')
+          .select(['id', 'route_id', 'request_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('request_id', 'in', input.ids)
+          .where('status', '=', 'pending')
+          .execute();
+        for (const stop of pendingStops) {
+          await this.applyStopTransition(trx, auth, String(stop.route_id), String(stop.id), 'deliver', null, 'staff');
+        }
+        const handled = new Set(pendingStops.map((s) => String(s.request_id)));
+        directIds = input.ids.filter((id) => !handled.has(id));
+      }
+      if (directIds.length > 0) {
+        await trx
+          .updateTable('delivery_requests')
+          .set({
+            status: input.status,
+            ...(input.status === 'delivered' ? { skip_reason: null } : {}),
+            updatedby_id: auth.user_id,
+            updated_at: new Date(),
+          })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', 'in', directIds)
+          .execute();
+      }
+      await this.logRequestStanding(trx, auth, input.ids, input.status);
+      return { updated: input.ids.length };
+    });
+  }
+
+  // ---- Planning -----------------------------------------------------------
+  public async previewPlan(auth: IAuthKeyPayload, input: PlanDeliveriesType) {
+    const geo = await geocodeAddress(input.start_address);
+    if (!geo) {
+      throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
+    }
+    const start: LatLng = { lat: geo.lat, lng: geo.lng };
+    const params = resolveParams(input);
+
+    const eligible = await this.requestsRepo.getEligibleForPlanning(auth.tenant_id, MAX_STOPS_PER_PLAN + 1);
+    const capApplied = eligible.length > MAX_STOPS_PER_PLAN;
+    const capped = capApplied ? eligible.slice(0, MAX_STOPS_PER_PLAN) : eligible;
+    const byId = new Map(capped.map((e) => [e.request_id, e] as const));
+
+    const stops: PlanStopInput[] = capped.map((e) => ({ requestId: e.request_id, lat: e.lat, lng: e.lng }));
+    const result = planRoutes(start, stops, params);
+
+    const routes = result.routes.map((route, i) => ({
+      index: i + 1,
+      total_minutes: route.totalMinutes,
+      total_km: route.totalKm,
+      stops: route.stops.map((s) => {
+        const info = byId.get(s.requestId);
+        return {
+          request_id: s.requestId,
+          seq: s.seq,
+          leg_minutes: s.legMinutes,
+          address: info?.address ?? '',
+          name: info?.name ?? null,
+        };
+      }),
+    }));
+
+    const unroutable = result.unroutable.map((u) => {
+      const info = byId.get(u.requestId);
+      const reasonText =
+        u.reason === 'isolated'
+          ? `Isolated. The nearest other stop is ${u.nearestKm} km away`
+          : `Too far to reach within an hour from this start (${u.nearestKm} km out)`;
+      return { request_id: u.requestId, reason: u.reason, reason_text: reasonText, address: info?.address ?? '' };
+    });
+
+    const buckets = await this.requestsRepo.getIneligibleBuckets(auth.tenant_id);
+
+    return {
+      start: { address: geo.formatted_address, lat: geo.lat, lng: geo.lng },
+      eligible_count: capped.length,
+      cap_applied: capApplied,
+      routes,
+      unroutable,
+      ineligible: buckets,
+    };
+  }
+
+  public async commitPlan(auth: IAuthKeyPayload, input: CommitDeliveriesType) {
+    const geo = await geocodeAddress(input.start_address);
+    if (!geo) throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
+    const start: LatLng = { lat: geo.lat, lng: geo.lng };
+    const params = resolveParams(input);
+    const snapshot: RouteParamsSnapshot = {
+      serviceMinutes: params.serviceMinutes,
+      avgSpeedKmh: params.avgSpeedKmh,
+      includeReturnLeg: params.includeReturnLeg,
+      drivers: params.drivers ?? null,
+    };
+    const now = new Date();
+
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const skipped: Array<{ request_id: string; reason: string }> = [];
+      let created = 0;
+      let firstRouteId: string | null = null;
+
+      for (const proposed of input.routes) {
+        const eligible = await this.requestsRepo.getEligibleByIds(auth.tenant_id, proposed.request_ids, trx);
+        const eligibleById = new Map(eligible.map((e) => [e.request_id, e] as const));
+        // Preserve the client's order, dropping any request that lost eligibility (concurrent planner).
+        const ordered = proposed.request_ids.filter((id) => eligibleById.has(id));
+        for (const id of proposed.request_ids) {
+          if (!eligibleById.has(id)) skipped.push({ request_id: id, reason: 'no_longer_eligible' });
+        }
+        if (ordered.length === 0) continue;
+
+        // Recompute legs server-side — never trust client math.
+        let cursor: LatLng = start;
+        let totalMinutes = 0;
+        let totalKm = 0;
+        const legs: number[] = [];
+        for (const id of ordered) {
+          const e = eligibleById.get(id);
+          if (!e) continue;
+          const point: LatLng = { lat: e.lat, lng: e.lng };
+          const leg = legMinutes(cursor, point, params.avgSpeedKmh);
+          legs.push(leg);
+          totalMinutes += leg + params.serviceMinutes;
+          totalKm += roadKm(cursor, point);
+          cursor = point;
+        }
+        if (params.includeReturnLeg) totalKm += roadKm(cursor, start);
+
+        const firstAddress = eligibleById.get(ordered[0] ?? '')?.address ?? '';
+        // A route inherits the campaign of the requests it serves (§15); the
+        // eligibility query keeps plans single-campaign, so the first stop is
+        // representative.
+        const firstRequest = await trx
+          .selectFrom('delivery_requests')
+          .select(['campaign_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', String(ordered[0]))
+          .executeTakeFirstOrThrow();
+        const routeRow = {
+          tenant_id: auth.tenant_id,
+          campaign_id: String(firstRequest.campaign_id),
+          name: deriveRouteName(firstAddress, now),
+          status: 'draft',
+          volunteer_person_id: null,
+          start_address: geo.formatted_address,
+          start_lat: start.lat,
+          start_lng: start.lng,
+          est_minutes: Math.round(totalMinutes * 10) / 10,
+          est_km: Math.round(totalKm * 10) / 10,
+          scheduled_for: null,
+          share_token_hash: null,
+          share_token_expires_at: null,
+          params: JSON.stringify(snapshot),
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        } as OperationDataType<'delivery_routes', 'insert'>;
+        const route = await this.routesRepo.add({ row: routeRow }, trx);
+        const routeId = String(route.id);
+        if (!firstRouteId) firstRouteId = routeId;
+
+        const stopRows = ordered.map(
+          (id, i) =>
+            ({
+              tenant_id: auth.tenant_id,
+              route_id: routeId,
+              request_id: id,
+              seq: i + 1,
+              leg_minutes: Math.round((legs[i] ?? 0) * 10) / 10,
+              status: 'pending',
+              reason: null,
+              acted_at: null,
+              acted_via: null,
+              createdby_id: auth.user_id,
+              updatedby_id: auth.user_id,
+            }) as OperationDataType<'delivery_route_stops', 'insert'>,
+        );
+        await this.stopsRepo.addMany({ rows: stopRows }, trx);
+        created++;
+        await this.logRouteActivity(trx, auth, routeId, 'create', 'route_created', 'Route created from plan');
+      }
+
+      // Persist the start address as the tenant default for the next plan.
+      await this.saveRouteDefaults(trx, auth, { start_address: geo.formatted_address });
+
+      return { created, skipped, first_route_id: firstRouteId };
+    });
+  }
+
+  public async getRouteDefaults(tenant: string): Promise<{ start_address: string | null }> {
+    const row = await this.routesRepo.db
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenant)
+      .where('key', '=', ROUTE_DEFAULTS_SETTING_KEY)
+      .executeTakeFirst();
+    const value = row?.value as { start_address?: string } | null | undefined;
+    return { start_address: value?.start_address ?? null };
+  }
+
+  private async saveRouteDefaults(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    value: { start_address: string },
+  ): Promise<void> {
+    await trx
+      .insertInto('settings')
+      .values({
+        tenant_id: auth.tenant_id,
+        key: ROUTE_DEFAULTS_SETTING_KEY,
+        value: JSON.stringify(value),
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      })
+      .onConflict((oc) =>
+        oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(value), updatedby_id: auth.user_id }),
+      )
+      .execute();
+  }
+
+  // ---- Routes -------------------------------------------------------------
+  public getAllRoutes(tenant: string, options?: getAllOptionsType) {
+    return this.routesRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
+  }
+
+  public async getRouteById(auth: IAuthKeyPayload, id: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
+    if (!route) throw new NotFoundError('Route not found');
+    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, id);
+    let volunteerName: string | null = null;
+    if (route.volunteer_person_id) {
+      const v = await this.routesRepo.db
+        .selectFrom('persons')
+        .select(['first_name', 'last_name'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(route.volunteer_person_id))
+        .executeTakeFirst();
+      if (v) volunteerName = `${v.first_name ?? ''} ${v.last_name ?? ''}`.trim() || null;
+    }
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
+    return this.sanitizeRoute(route, stops, volunteerName, expiryEnforced);
+  }
+
+  public async updateRoute(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRouteType) {
+    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
+    if (input.name !== undefined) row['name'] = input.name;
+    if (input.scheduled_for !== undefined) {
+      row['scheduled_for'] = input.scheduled_for ? new Date(input.scheduled_for) : null;
+    }
+    const updated = await this.routesRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: row as OperationDataType<'delivery_routes', 'update'>,
+    });
+    if (!updated) throw new NotFoundError('Route not found');
+    return { id };
+  }
+
+  public async assignVolunteer(auth: IAuthKeyPayload, input: AssignVolunteerType) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
+    if (!route) throw new NotFoundError('Route not found');
+    const personId = input.person_id ? String(input.person_id) : null;
+    // Assigning moves draft → assigned; clearing a volunteer on a draft/assigned route → draft.
+    let status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled' = route.status;
+    if (personId && status === 'draft') status = 'assigned';
+    if (!personId && status === 'assigned') status = 'draft';
+
+    if (!personId) {
+      await this.routesRepo.db
+        .updateTable('delivery_routes')
+        .set({ volunteer_person_id: null, status, updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .execute();
+      await this.logRouteActivity(
+        undefined,
+        auth,
+        input.route_id,
+        'unassign',
+        'volunteer_unassigned',
+        'Volunteer removed',
+      );
+      return { id: input.route_id, status, sent: { email: false, sms: false } };
+    }
+
+    const person = await this.routesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', personId)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('Pick the volunteer this route belongs to.');
+
+    // The link is personal, so assignment sends it: mint a fresh token (the raw
+    // token is never stored — this is the only moment we can put it in a message)
+    // and enqueue the email/SMS in the same transaction as the assignment. A new
+    // token also retires any link a previously assigned volunteer still holds.
+    const rawToken = randomBytes(32).toString('base64url');
+    const url = `${env.companionUrl}/r/${rawToken}`;
+    const orgName = await publicOrgName(auth.tenant_id);
+    let sent: VolunteerLinkSendResult = { email: false, sms: false };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('delivery_routes')
+        .set({
+          volunteer_person_id: personId,
+          status,
+          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
+          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .execute();
+      sent = await notifyVolunteerOfLink(
+        {
+          tenant_id: auth.tenant_id,
+          person,
+          orgName,
+          kindLabel: 'delivery route',
+          itemName: String(route.name ?? 'Delivery route'),
+          url,
+        },
+        trx,
+      );
+      await this.logRouteActivity(
+        trx,
+        auth,
+        input.route_id,
+        'assign',
+        'volunteer_assigned',
+        sent.email || sent.sms
+          ? `Volunteer assigned — link sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`
+          : 'Volunteer assigned — no contact info on file, link not sent',
+      );
+    });
+    return { id: input.route_id, status, sent };
+  }
+
+  /**
+   * Re-send the assigned volunteer their personal link (lost email, new phone…).
+   * The raw token is never stored, so re-sending means minting a fresh link — the
+   * previously sent one stops working, same rule as re-assignment and regenerate.
+   */
+  public async resendVolunteerLink(auth: IAuthKeyPayload, routeId: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
+    if (!route) throw new NotFoundError('Route not found');
+    if (route.volunteer_person_id == null) {
+      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
+    }
+    if (route.status === 'canceled' || route.status === 'completed') {
+      throw new BadRequestError('This route is over — there is nothing for the volunteer to open.');
+    }
+    const person = await this.routesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', String(route.volunteer_person_id))
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('The assigned volunteer no longer exists. Assign another volunteer.');
+
+    const rawToken = randomBytes(32).toString('base64url');
+    const url = `${env.companionUrl}/r/${rawToken}`;
+    const orgName = await publicOrgName(auth.tenant_id);
+    let sent: VolunteerLinkSendResult = { email: false, sms: false };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('delivery_routes')
+        .set({
+          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
+          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .execute();
+      sent = await notifyVolunteerOfLink(
+        {
+          tenant_id: auth.tenant_id,
+          person,
+          orgName,
+          kindLabel: 'delivery route',
+          itemName: String(route.name ?? 'Delivery route'),
+          url,
+        },
+        trx,
+      );
+      if (!sent.email && !sent.sms) {
+        // Rolls back the mint: a resend that reaches nobody must not retire the link they already have.
+        throw new BadRequestError(
+          'This volunteer has no email or mobile on file — add one to their record, or use "Copy volunteer link" to share it yourself.',
+        );
+      }
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'update',
+        'link_resent',
+        `Volunteer link re-sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`,
+      );
+    });
+    return { id: routeId, sent };
+  }
+
+  public async setRouteStatus(auth: IAuthKeyPayload, input: SetDeliveryRouteStatusType) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
+    if (!route) throw new NotFoundError('Route not found');
+    if (input.status === 'canceled') {
+      return this.cancelRoute(auth, input.route_id);
+    }
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({ status: input.status, updatedby_id: auth.user_id, updated_at: new Date() })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', input.route_id)
+      .execute();
+    return { id: input.route_id, status: input.status };
+  }
+
+  private async cancelRoute(auth: IAuthKeyPayload, routeId: string) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      // Undelivered (pending) stops return their requests to the pool; delivered stay delivered.
+      const pending = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'request_id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', routeId)
+        .where('status', '=', 'pending')
+        .execute();
+      const requestIds = pending.map((p) => String(p.request_id));
+      if (requestIds.length > 0) {
+        await trx
+          .updateTable('delivery_requests')
+          .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', 'in', requestIds)
+          .execute();
+        await trx
+          .updateTable('delivery_route_stops')
+          .set({ status: 'skipped', reason: 'Other', updatedby_id: auth.user_id, updated_at: new Date() })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where(
+            'id',
+            'in',
+            pending.map((p) => String(p.id)),
+          )
+          .execute();
+      }
+      await trx
+        .updateTable('delivery_routes')
+        .set({ status: 'canceled', updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .execute();
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'update',
+        'route_canceled',
+        `Route canceled. ${requestIds.length} undelivered stops returned to the pool`,
+      );
+      return { id: routeId, status: 'canceled' as const, returned: requestIds.length };
+    });
+  }
+
+  public async deleteRoute(auth: IAuthKeyPayload, id: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
+    if (!route) throw new NotFoundError('Route not found');
+    const status = String(route.status);
+    if (status !== 'draft' && status !== 'assigned') {
+      throw new BadRequestError('Only draft or assigned routes can be deleted. Cancel the route first.');
+    }
+    // Stops cascade via FK; requests free automatically once their pending stop is gone.
+    await this.routesRepo.delete({ tenant_id: auth.tenant_id, id });
+    return { id };
+  }
+
+  // ---- Stops (staff) ------------------------------------------------------
+  public async stopAction(auth: IAuthKeyPayload, input: StopActionType) {
+    if (input.action === 'remove') {
+      return this.removeStop(auth, input.route_id, input.stop_id);
+    }
+    const action = input.action; // narrowed to 'deliver' | 'skip'
+    return this.routesRepo.transaction().execute(async (trx) => {
+      await this.applyStopTransition(trx, auth, input.route_id, input.stop_id, action, input.reason ?? null, 'staff');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+    });
+  }
+
+  private async removeStop(auth: IAuthKeyPayload, routeId: string, stopId: string) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const stop = await trx
+        .selectFrom('delivery_route_stops')
+        .selectAll()
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .where('route_id', '=', routeId)
+        .executeTakeFirst();
+      if (!stop) throw new NotFoundError('Stop not found');
+      // Free the request back to the pool then delete the stop and renumber/recompute.
+      await trx
+        .updateTable('delivery_requests')
+        .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(stop.request_id))
+        .execute();
+      await trx
+        .deleteFrom('delivery_route_stops')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .execute();
+      await this.renumberAndRecompute(trx, auth, routeId);
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'update',
+        'stop_removed',
+        'Stop removed. Request returned to the pool',
+      );
+      return this.readRouteProgress(trx, auth.tenant_id, routeId);
+    });
+  }
+
+  /**
+   * Drag-to-reorder: reseat only the PENDING stops of a route into the given order. Delivered and
+   * skipped stops are not movable — they keep their exact seq, and the pending stops are permuted
+   * across the seq slots they already occupy. `ordered_stop_ids` must be exactly the set of the
+   * route's pending stop ids (any foreign, non-pending, or missing id is rejected). Seq writes go
+   * through `applySeqOrder`'s temp-offset trick to dodge the unique(route_id, seq) index, then legs
+   * and the route estimate are recomputed. One `stop_reordered` activity is logged, matching the
+   * adjacent-swap path.
+   */
+  public async reorderStops(auth: IAuthKeyPayload, input: ReorderStopsType) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const route = await trx
+        .selectFrom('delivery_routes')
+        .select(['id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .executeTakeFirst();
+      if (!route) throw new NotFoundError('Route not found');
+
+      const stops = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'seq', 'status'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', input.route_id)
+        .orderBy('seq', 'asc')
+        .execute();
+
+      const pendingIds = stops.filter((s) => s.status === 'pending').map((s) => String(s.id));
+      const requested = input.ordered_stop_ids;
+      // Exact set equality: same length + same members. This one check rejects a foreign/other-route
+      // stop, a delivered/skipped id, and a missing pending id all at once.
+      const pendingSet = new Set(pendingIds);
+      const sameMembers =
+        requested.length === pendingIds.length &&
+        new Set(requested).size === requested.length &&
+        requested.every((id) => pendingSet.has(id));
+      if (!sameMembers) {
+        throw new BadRequestError('The new order must list exactly the route’s pending stops.');
+      }
+      if (pendingIds.length < 2) {
+        // Nothing to permute — no-op, but return the current authoritative shape.
+        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      }
+
+      // Drop the pending stops into the slots they currently occupy, in the requested order, while
+      // every non-pending stop stays exactly where it is (so it keeps its seq).
+      const queue = [...requested];
+      const finalOrder = stops.map((s) => (s.status === 'pending' ? (queue.shift() ?? String(s.id)) : String(s.id)));
+      await this.applySeqOrder(trx, auth.tenant_id, finalOrder);
+      await this.renumberAndRecompute(trx, auth, input.route_id);
+      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+    });
+  }
+
+  public async reorderStop(auth: IAuthKeyPayload, input: ReorderStopType) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const stops = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'seq'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', input.route_id)
+        .orderBy('seq', 'asc')
+        .execute();
+      const idx = stops.findIndex((s) => String(s.id) === input.stop_id);
+      if (idx === -1) throw new NotFoundError('Stop not found');
+      const swapIdx = input.direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= stops.length) {
+        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      }
+      const a = stops[idx];
+      const b = stops[swapIdx];
+      if (!a || !b) return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      // Swap seq via a temporary value to avoid the unique(route_id, seq) collision.
+      await this.setStopSeq(trx, auth.tenant_id, String(a.id), -1);
+      await this.setStopSeq(trx, auth.tenant_id, String(b.id), Number(a.seq));
+      await this.setStopSeq(trx, auth.tenant_id, String(a.id), Number(b.seq));
+      await this.renumberAndRecompute(trx, auth, input.route_id);
+      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+    });
+  }
+
+  // ---- Share links --------------------------------------------------------
+  public async mintShareLink(auth: IAuthKeyPayload, input: { route_id: string; regenerate?: boolean }) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
+    if (!route) throw new NotFoundError('Route not found');
+    // The companion access layer verifies the volunteer BEHIND the link, so a
+    // link with nobody behind it can never pass the gate — refuse to mint one.
+    if (route.volunteer_person_id == null) {
+      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
+    }
+    // Whether the 30-day expiry is enforced is a live workspace policy (Workspace → App).
+    // The date is always STORED at mint time; the setting decides whether it counts.
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
+    const active =
+      route.share_token_hash != null &&
+      (!expiryEnforced ||
+        (route.share_token_expires_at != null && new Date(route.share_token_expires_at) > new Date()));
+    if (active && !input.regenerate) {
+      // A live link already exists; the raw token is never stored, so we can't return it. Tell the
+      // UI so it can offer copy-vs-regenerate. expires_at is null when the workspace disables expiry.
+      return { status: 'exists' as const, expires_at: expiryEnforced ? route.share_token_expires_at : null };
+    }
+    const rawToken = randomBytes(32).toString('base64url');
+    const hash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY);
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({
+        share_token_hash: hash,
+        share_token_expires_at: expiresAt,
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', input.route_id)
+      .execute();
+    await this.logRouteActivity(undefined, auth, input.route_id, 'update', 'link_created', 'Volunteer link created');
+    return { status: 'minted' as const, token: rawToken, expires_at: expiryEnforced ? expiresAt.toISOString() : null };
+  }
+
+  public async revokeShareLink(auth: IAuthKeyPayload, routeId: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
+    if (!route) throw new NotFoundError('Route not found');
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({ share_token_hash: null, share_token_expires_at: null, updatedby_id: auth.user_id, updated_at: new Date() })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .execute();
+    return { id: routeId };
+  }
+
+  // ---- Public volunteer path (token is the credential) --------------------
+  public hashToken(rawToken: string): string {
+    return createHash('sha256').update(rawToken).digest('hex');
+  }
+
+  /**
+   * Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload.
+   * The capability token says WHAT may be touched; the companion session (X-Companion-Session)
+   * proves WHO is touching it — both are required (COMPANION-APPS-PLAN.md §2).
+   */
+  public async getPublicRoute(rawToken: string, sessionToken: string | null) {
+    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
+    if (!route) return null;
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
+    if (!this.isTokenUsable(route, expiryEnforced)) return null;
+    await this.requireCompanionSession(route, sessionToken);
+    const tenantId = String(route.tenant_id);
+    const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
+    const orgName = await publicOrgName(tenantId);
+    return this.publicRoutePayload(route, stops, orgName);
+  }
+
+  public async publicStopAction(
+    rawToken: string,
+    stopId: string,
+    action: 'deliver' | 'skip' | 'defer' | 'undo',
+    reason: string | null,
+    sessionToken: string | null,
+    opId: string | null,
+  ) {
+    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
+    if (!route) return null;
+    const enforceExpiry = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
+    if (!this.isTokenUsable(route, enforceExpiry)) return null;
+    await this.requireCompanionSession(route, sessionToken);
+    const tenantId = String(route.tenant_id);
+    const routeId = String(route.id);
+    const actor: IAuthKeyPayload = {
+      tenant_id: tenantId,
+      user_id: String(route.createdby_id),
+      session_id: 'volunteer-link',
+    };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      // Idempotency ledger (companion_ops, scope 'deliveries'): claim the opId
+      // inside the SAME transaction as the action, so claim + apply commit or
+      // roll back together. A replayed opId conflicts, applies nothing, and
+      // falls through to return the current authoritative payload — this is
+      // what makes a retried "defer" move the stop once, not twice.
+      if (opId) {
+        const claimed = await trx
+          .insertInto('companion_ops')
+          .values({ tenant_id: tenantId, op_id: opId, scope: 'deliveries' })
+          .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
+          .returning('op_id')
+          .executeTakeFirst();
+        if (!claimed) return;
+      }
+      const stop = await trx
+        .selectFrom('delivery_route_stops')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', stopId)
+        .where('route_id', '=', routeId)
+        .executeTakeFirst();
+      if (!stop) throw new NotFoundError('Stop not found');
+
+      if (action === 'defer') {
+        await this.deferStop(trx, actor, routeId, stopId);
+      } else if (action === 'undo') {
+        await this.undoStop(trx, actor, routeId, stopId);
+      } else {
+        await this.applyStopTransition(trx, actor, routeId, stopId, action, reason, 'volunteer_link');
+      }
+    });
+    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId);
+    const fresh = await this.routesRepo.getRouteRow(tenantId, routeId);
+    const orgName = await publicOrgName(tenantId);
+    return fresh ? this.publicRoutePayload(fresh, stops, orgName) : null;
+  }
+
+  /**
+   * The volunteer-identity gate on every public data request. Throws
+   * UnauthorizedError (401 — no/invalid device session, the gate re-verifies)
+   * or ForbiddenError (403 — verified but not yet admin-approved); the route
+   * handler passes those two statuses through so the companion gate can render
+   * its verify/pending states, and keeps the uniform 404 for dead tokens.
+   */
+  private async requireCompanionSession(
+    route: { tenant_id: string } & Record<string, unknown>,
+    sessionToken: string | null,
+  ): Promise<void> {
+    const volunteerId = route['volunteer_person_id'];
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: String(route.tenant_id),
+      volunteer_person_id: volunteerId == null ? null : String(volunteerId),
+    });
+  }
+
+  // ---- Shared transition helpers ------------------------------------------
+  private async applyStopTransition(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    stopId: string,
+    action: 'deliver' | 'skip',
+    reason: string | null,
+    via: StopVia,
+  ): Promise<void> {
+    const stop = await trx
+      .selectFrom('delivery_route_stops')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', stopId)
+      .where('route_id', '=', routeId)
+      .executeTakeFirst();
+    if (!stop) throw new NotFoundError('Stop not found');
+
+    const now = new Date();
+    if (action === 'deliver') {
+      await trx
+        .updateTable('delivery_route_stops')
+        .set({
+          status: 'delivered',
+          reason: null,
+          acted_at: now,
+          acted_via: via,
+          updatedby_id: auth.user_id,
+          updated_at: now,
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .execute();
+      await trx
+        .updateTable('delivery_requests')
+        .set({ status: 'delivered', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(stop.request_id))
+        .execute();
+    } else {
+      const skipReason = reason ?? 'Other';
+      await trx
+        .updateTable('delivery_route_stops')
+        .set({
+          status: 'skipped',
+          reason: skipReason,
+          acted_at: now,
+          acted_via: via,
+          updatedby_id: auth.user_id,
+          updated_at: now,
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .execute();
+      // A skipped house returns to the planning pool automatically.
+      await trx
+        .updateTable('delivery_requests')
+        .set({ status: 'approved', skip_reason: skipReason, updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(stop.request_id))
+        .execute();
+    }
+
+    await this.advanceRouteStatus(trx, auth, routeId, via);
+    const message =
+      action === 'deliver'
+        ? `Stop ${stop.seq} delivered${via === 'volunteer_link' ? ' via volunteer link' : ''}`
+        : `Stop ${stop.seq} skipped: ${(reason ?? 'Other').toLowerCase()}${via === 'volunteer_link' ? ' via volunteer link' : ''}`;
+    await this.logRouteActivity(
+      trx,
+      auth,
+      routeId,
+      'update',
+      action === 'deliver' ? 'stop_delivered' : 'stop_skipped',
+      message,
+      via,
+    );
+  }
+
+  private async deferStop(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    stopId: string,
+  ): Promise<void> {
+    const stops = await trx
+      .selectFrom('delivery_route_stops')
+      .select(['id', 'seq', 'status'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('route_id', '=', routeId)
+      .orderBy('seq', 'asc')
+      .execute();
+    const target = stops.find((s) => String(s.id) === stopId);
+    if (!target || target.status !== 'pending') return;
+    // Move the target to the end: rebuild the order with it last, then renumber via a temp offset.
+    const others = stops.filter((s) => String(s.id) !== stopId);
+    const newOrder = [...others.map((s) => String(s.id)), stopId];
+    await this.applySeqOrder(trx, auth.tenant_id, newOrder);
+    await this.renumberAndRecompute(trx, auth, routeId);
+    await this.logRouteActivity(
+      trx,
+      auth,
+      routeId,
+      'update',
+      'stop_deferred',
+      'Stop moved to the end of the route',
+      'volunteer_link',
+    );
+  }
+
+  private async undoStop(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    stopId: string,
+  ): Promise<void> {
+    const stop = await trx
+      .selectFrom('delivery_route_stops')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', stopId)
+      .where('route_id', '=', routeId)
+      .executeTakeFirst();
+    if (!stop) throw new NotFoundError('Stop not found');
+    const now = new Date();
+    await trx
+      .updateTable('delivery_route_stops')
+      .set({
+        status: 'pending',
+        reason: null,
+        acted_at: null,
+        acted_via: null,
+        updatedby_id: auth.user_id,
+        updated_at: now,
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', stopId)
+      .execute();
+    // Restore the request to the pool state (approved) — undo clears the delivered/skipped result.
+    await trx
+      .updateTable('delivery_requests')
+      .set({ status: 'approved', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', String(stop.request_id))
+      .execute();
+    // Undoing from a completed route reopens it to in_progress.
+    await trx
+      .updateTable('delivery_routes')
+      .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .where('status', '=', 'completed')
+      .execute();
+    await this.logRouteActivity(trx, auth, routeId, 'update', 'stop_undo', `Stop ${stop.seq} undone`, 'volunteer_link');
+  }
+
+  /** First action flips assigned → in_progress; all-terminal auto-completes the route. */
+  private async advanceRouteStatus(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    _via: StopVia,
+  ): Promise<void> {
+    const now = new Date();
+    const counts = await trx
+      .selectFrom('delivery_route_stops')
+      .select([
+        ({ fn }) => fn.count<number>('id').as('total'),
+        ({ fn }) => fn.count<number>('id').filterWhere('status', '=', 'pending').as('pending'),
+      ])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('route_id', '=', routeId)
+      .executeTakeFirst();
+    const total = Number(counts?.total ?? 0);
+    const pending = Number(counts?.pending ?? 0);
+    if (total > 0 && pending === 0) {
+      await trx
+        .updateTable('delivery_routes')
+        .set({ status: 'completed', updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .execute();
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'close',
+        'route_completed',
+        'Route auto-completed: every stop handled',
+      );
+    } else {
+      await trx
+        .updateTable('delivery_routes')
+        .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .where('status', 'in', ['assigned', 'draft'])
+        .execute();
+    }
+  }
+
+  private async setStopSeq(trx: Transaction<Models>, tenantId: string, stopId: string, seq: number): Promise<void> {
+    await trx
+      .updateTable('delivery_route_stops')
+      .set({ seq })
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', stopId)
+      .execute();
+  }
+
+  /** Assign contiguous 1..n seq values to the given ordered stop ids, avoiding unique collisions. */
+  private async applySeqOrder(trx: Transaction<Models>, tenantId: string, orderedIds: string[]): Promise<void> {
+    const OFFSET = 100000;
+    for (let i = 0; i < orderedIds.length; i++) {
+      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', OFFSET + i);
+    }
+    for (let i = 0; i < orderedIds.length; i++) {
+      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', i + 1);
+    }
+  }
+
+  /** Renumber stops to contiguous seq in current order and recompute leg times + route estimate. */
+  private async renumberAndRecompute(trx: Transaction<Models>, auth: IAuthKeyPayload, routeId: string): Promise<void> {
+    const route = await trx
+      .selectFrom('delivery_routes')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .executeTakeFirst();
+    if (!route) return;
+    const params = this.paramsFromRoute(route.params);
+    const start: LatLng = { lat: Number(route.start_lat), lng: Number(route.start_lng) };
+    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, routeId, trx);
+    // Ensure contiguous seq.
+    await this.applySeqOrder(
+      trx,
+      auth.tenant_id,
+      stops.map((s) => s.id),
+    );
+
+    let cursor: LatLng = start;
+    let totalMinutes = 0;
+    let totalKm = 0;
+    for (const stop of stops) {
+      const point: LatLng = { lat: stop.lat ?? start.lat, lng: stop.lng ?? start.lng };
+      const leg = legMinutes(cursor, point, params.avgSpeedKmh);
+      await trx
+        .updateTable('delivery_route_stops')
+        .set({ leg_minutes: Math.round(leg * 10) / 10 })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stop.id)
+        .execute();
+      totalMinutes += leg + params.serviceMinutes;
+      totalKm += roadKm(cursor, point);
+      cursor = point;
+    }
+    if (params.includeReturnLeg && stops.length > 0) totalKm += roadKm(cursor, start);
+    await trx
+      .updateTable('delivery_routes')
+      .set({
+        est_minutes: Math.round(totalMinutes * 10) / 10,
+        est_km: Math.round(totalKm * 10) / 10,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .execute();
+  }
+
+  private paramsFromRoute(raw: unknown): RouteParamsSnapshot {
+    const obj = typeof raw === 'string' ? safeParse(raw) : raw;
+    const rec = (obj ?? {}) as Record<string, unknown>;
+    return {
+      serviceMinutes: typeof rec['serviceMinutes'] === 'number' ? rec['serviceMinutes'] : SERVICE_MINUTES_PER_STOP,
+      avgSpeedKmh: typeof rec['avgSpeedKmh'] === 'number' ? rec['avgSpeedKmh'] : AVG_SPEED_KMH,
+      includeReturnLeg: rec['includeReturnLeg'] === true,
+      drivers: typeof rec['drivers'] === 'number' ? rec['drivers'] : null,
+    };
+  }
+
+  private async readRouteProgress(trx: Transaction<Models>, tenantId: string, routeId: string) {
+    const route = await trx
+      .selectFrom('delivery_routes')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', routeId)
+      .executeTakeFirst();
+    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId, trx);
+    return {
+      id: routeId,
+      status: route ? String(route.status) : 'unknown',
+      est_minutes: route ? Number(route.est_minutes) : 0,
+      est_km: route ? Number(route.est_km) : 0,
+      stops,
+    };
+  }
+
+  /** `enforceExpiry` is the live Workspace → App policy (volunteerLinksExpire) — when the
+   * workspace disables expiry, a link stays usable for the life of the route (until revoked
+   * or the route is canceled). */
+  private isTokenUsable(
+    route: { status?: unknown; share_token_expires_at?: unknown } | undefined,
+    enforceExpiry: boolean,
+  ): route is {
+    id: string;
+    tenant_id: string;
+    createdby_id: string;
+    status: string;
+    share_token_expires_at: Date | string | null;
+  } & Record<string, unknown> {
+    if (!route) return false;
+    const status = String((route as Record<string, unknown>)['status']);
+    if (status === 'canceled') return false;
+    if (!enforceExpiry) return true;
+    const exp = (route as Record<string, unknown>)['share_token_expires_at'];
+    if (!exp) return false;
+    return new Date(String(exp)) > new Date();
+  }
+
+  private publicRoutePayload(
+    route: Record<string, unknown>,
+    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
+    orgName: string,
+  ) {
+    const delivered = stops.filter((s) => s.status === 'delivered').length;
+    // Data minimization (spec §4.4): first name + address only. No email/phone/notes/person_id.
+    return {
+      organization_name: orgName,
+      route_name: String(route['name'] ?? 'Delivery route'),
+      status: String(route['status'] ?? 'assigned'),
+      start: { lat: Number(route['start_lat']), lng: Number(route['start_lng']) },
+      stops_total: stops.length,
+      stops_delivered: delivered,
+      stops: stops.map((s) => ({
+        id: s.id,
+        seq: s.seq,
+        first_name: s.first_name ?? 'Neighbour',
+        address: s.address,
+        lat: s.lat,
+        lng: s.lng,
+        status: s.status,
+        reason: s.reason,
+        acted_at: s.acted_at,
+      })),
+    };
+  }
+
+  private sanitizeRoute(
+    route: Record<string, unknown>,
+    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
+    volunteerName: string | null,
+    expiryEnforced: boolean,
+  ) {
+    // link_expires_at is a POLICY-shaped value: null when the workspace disables expiry, so the
+    // UI never shows a date that won't be enforced.
+    const expiresAt = expiryEnforced ? route['share_token_expires_at'] : null;
+    const linkActive =
+      route['share_token_hash'] != null &&
+      (!expiryEnforced || (!!expiresAt && new Date(String(expiresAt)) > new Date()));
+    return {
+      id: String(route['id']),
+      name: String(route['name'] ?? ''),
+      status: String(route['status'] ?? 'draft'),
+      volunteer_person_id: route['volunteer_person_id'] != null ? String(route['volunteer_person_id']) : null,
+      volunteer_name: volunteerName,
+      start_address: String(route['start_address'] ?? ''),
+      start_lat: Number(route['start_lat']),
+      start_lng: Number(route['start_lng']),
+      est_minutes: Number(route['est_minutes'] ?? 0),
+      est_km: Number(route['est_km'] ?? 0),
+      scheduled_for: (route['scheduled_for'] as Date | string | null) ?? null,
+      link_active: linkActive,
+      link_expires_at: (expiresAt as Date | string | null) ?? null,
+      stops,
+    };
+  }
+
+  /**
+   * Yard-sign standing changes surface on the household's (and requester's) activity feed —
+   * the sign lives at the door, so that's where its history belongs (honest attribution, §22.7).
+   * Route-level history is logged separately by applyStopTransition/logRouteActivity.
+   */
+  private async logRequestStanding(
+    trx: Transaction<Models> | undefined,
+    auth: IAuthKeyPayload,
+    requestIds: string[],
+    status: 'recorded' | SetDeliveryRequestStatusType['status'],
+  ): Promise<void> {
+    const db = trx ?? this.requestsRepo.db;
+    const labels: Record<string, string> = {
+      recorded: 'Yard sign request recorded',
+      new: 'Yard sign request reopened',
+      approved: 'Yard sign request approved',
+      declined: 'Yard sign request declined',
+      delivered: 'Yard sign marked delivered',
+    };
+    const message = labels[status] ?? `Yard sign request ${status}`;
+    try {
+      const rows = await db
+        .selectFrom('delivery_requests')
+        .select(['id', 'household_id', 'person_id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', requestIds)
+        .execute();
+      for (const r of rows) {
+        const targets: Array<{ entity: string; entity_id: string }> = [
+          { entity: 'households', entity_id: String(r.household_id) },
+        ];
+        if (r.person_id != null) targets.push({ entity: 'persons', entity_id: String(r.person_id) });
+        for (const target of targets) {
+          await this.userActivity.log(
+            {
+              tenant_id: auth.tenant_id,
+              user_id: auth.user_id,
+              activity: status === 'recorded' ? 'create' : 'update',
+              entity: target.entity,
+              entity_id: target.entity_id,
+              quantity: 1,
+              metadata: {
+                action: 'yard_sign_status',
+                message,
+                entity_label: message,
+                request_id: String(r.id),
+                via: 'staff',
+              },
+            },
+            trx,
+          );
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to log yard sign standing activity');
+    }
+  }
+
+  private async logRouteActivity(
+    trxOrAny: Transaction<Models> | unknown,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    activity: 'create' | 'update' | 'assign' | 'unassign' | 'close' | 'reopen' | 'delete',
+    action: string,
+    message: string,
+    via?: StopVia,
+  ): Promise<void> {
+    const trx = isTransaction(trxOrAny) ? trxOrAny : undefined;
+    try {
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity,
+          entity: 'delivery_routes',
+          entity_id: routeId,
+          quantity: 1,
+          metadata: { action, message, entity_label: message, via: via ?? 'staff' },
+        },
+        trx,
+      );
+    } catch (err) {
+      logger.error({ err }, 'Failed to log delivery route activity');
+    }
+  }
+}
+
+function isTransaction(value: unknown): value is Transaction<Models> {
+  return typeof value === 'object' && value !== null && 'selectFrom' in (value as Record<string, unknown>);
+}
+
+function safeParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+````
+
 ## File: apps/backend/src/app/modules/newsletters/trpc.router.ts
 ````typescript
 import {
@@ -72789,6 +71621,1171 @@ export const NewslettersRouter = router({
     delete: authProcedure.input(idSchema).mutation(({ input, ctx }) => templates.deleteTemplate(ctx.auth, input)),
   }),
 });
+````
+
+## File: apps/backend/src/app/modules/web-forms/controller.ts
+````typescript
+import type {
+  AddWebFormType,
+  CreateFormType,
+  FormField,
+  IAuthKeyPayload,
+  UpdateFormType,
+  UpdateWebFormType,
+} from '../../../../../../libs/common/src';
+import { FORM_TEMPLATES, fieldsForTemplate, normForm, slugifyRecordName } from '../../../../../../libs/common/src';
+import { BaseController } from '../../lib/base.controller';
+import { uniqueSlug } from '../../lib/slug';
+import { WebFormsRepo } from './repositories/web-forms.repo';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { type Transaction, sql } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
+import { createSigner, createVerifier } from 'fast-jwt';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import { publicOrgName, type PublicTenant } from '../../lib/public-tenant';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { HouseholdRepo } from '../households/repositories/households.repo';
+
+import { WorkflowsController } from '../workflows/controller';
+import { DonationsController } from '../donations/controller';
+import { logger } from '../../logger';
+
+// Sliding window memory for rate-limiting
+const ipSubmissionTimestamps = new Map<string, number[]>();
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
+  private readonly campaignsRepo = new CampaignsRepo();
+
+  constructor() {
+    super(new WebFormsRepo());
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const form = await super.getOneById(input);
+    if (!form) return form;
+    return this.resolveCreatorAndUpdater(input.tenant_id, form);
+  }
+
+  /**
+   * Tenant-scoped lookup for the server-rendered public donation page (/api/forms/d/:slug).
+   * Only donation-type forms resolve here — standard forms live on the /f/:slug SPA page.
+   */
+  public async getDonationFormPublic(tenantId: string, slug: string) {
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
+    if (!form || (form.form_type !== 'donation' && form.form_type !== 'recurring_donation')) {
+      return undefined;
+    }
+    return form;
+  }
+
+  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
+    const row = {
+      tenant_id: auth.tenant_id,
+      campaign_id: await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id }),
+      slug: await this.uniqueSlug(auth.tenant_id, payload.name),
+      name: payload.name,
+      description: payload.description ?? null,
+      redirect_url: payload.redirect_url ?? null,
+      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
+      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
+      fields: payload.fields ? JSON.stringify(payload.fields) : null,
+      status: this.mapLegacyStatus(payload.status),
+      send_confirmation: payload.send_confirmation ?? true,
+      send_alert: payload.send_alert ?? true,
+      form_type: payload.form_type ?? 'standard',
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    const created = await this.add(row as any);
+    const createdId = (created as Record<string, unknown> | undefined)?.['id'];
+    if (createdId != null && payload.target_lists?.length) {
+      await this.syncTargetLists(auth, String(createdId), payload.target_lists);
+    }
+    return created;
+  }
+
+  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
+    if (!existing) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found.',
+      });
+    }
+
+    const row: OperationDataType<'web_forms', 'update'> = {
+      updatedby_id: auth.user_id,
+      updated_at: new Date(),
+    };
+    if (payload.name !== undefined) row.name = payload.name;
+    if (payload.description !== undefined) row.description = payload.description;
+    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
+    if (payload.target_tags !== undefined)
+      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
+    if (payload.target_lists !== undefined)
+      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
+    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
+    if (payload.status !== undefined) row.status = this.mapLegacyStatus(payload.status);
+    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
+    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
+
+    const rawPayload = payload as Record<string, unknown>;
+    if (rawPayload['form_type'] !== undefined && rawPayload['form_type'] !== existing.form_type) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Form type cannot be changed after the form has been created.',
+      });
+    }
+
+    const updated = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row,
+    });
+    if (payload.target_lists !== undefined) {
+      await this.syncTargetLists(auth, id, payload.target_lists ?? []);
+    }
+    return updated;
+  }
+
+  public async submitFormPublic(
+    tenant: PublicTenant,
+    slug: string,
+    payload: Record<string, string>,
+    clientIp: string,
+    opts?: { skipIpRateLimit?: boolean },
+  ): Promise<{ redirect_url?: string | null }> {
+    // 1. Rate limiting check. Keyed (workspace-API-key) submissions skip the per-IP window —
+    // they come from one integration server and are rate-limited per tenant by the route.
+    if (!opts?.skipIpRateLimit) {
+      const now = Date.now();
+      let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
+      timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+      if (timestamps.length >= RATE_LIMIT_MAX) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Rate limit exceeded. Please try again in a minute.',
+        });
+      }
+      timestamps.push(now);
+      // Prune empty keys to prevent unbounded Map growth
+      if (timestamps.length > 0) {
+        ipSubmissionTimestamps.set(clientIp, timestamps);
+      } else {
+        ipSubmissionTimestamps.delete(clientIp);
+      }
+    }
+
+    // 2. Fetch the form — tenant-scoped by slug; the tenant was resolved from the subdomain
+    const tenantId = tenant.id;
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
+    if (!form || form.status !== 'published') {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found or inactive.',
+      });
+    }
+    const formId = String(form.id);
+
+    // 3. Honeypot check
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
+      return { redirect_url: form.redirect_url || null };
+    }
+
+    // 4. Validate email
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Email address is required.',
+      });
+    }
+
+    // Parse configured fields. Supports both the legacy string[] shape ("mobile:required") used by
+    // donation/older forms and the new-model FormField[] objects ({ key, on, required, label }).
+    const rawFields: unknown = form.fields
+      ? Array.isArray(form.fields)
+        ? form.fields
+        : JSON.parse(String(form.fields))
+      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+    const fieldArray: unknown[] = Array.isArray(rawFields) ? rawFields : [];
+
+    // Map payload key aliases helper
+    const getPayloadValue = (key: string): string => {
+      let value = '';
+      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
+      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
+      else if (key === 'full_name' || key === 'name') value = payload['full_name'] || payload['name'] || '';
+      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
+      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
+      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
+      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
+      else value = payload[key] || '';
+      return String(value).trim();
+    };
+
+    // Validate user-configured required fields for standard forms
+    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
+      const fieldLabels: Record<string, string> = {
+        first_name: 'First Name',
+        last_name: 'Last Name',
+        full_name: 'Full name',
+        mobile: 'Mobile / Phone',
+        notes: 'Notes / Message',
+        street1: 'Street Address',
+        city: 'City',
+        state: 'State / Province',
+        zip: 'Zip / Postal Code',
+        country: 'Country',
+      };
+
+      const requiredFields: { name: string; label: string }[] = [];
+      for (const raw of fieldArray) {
+        if (typeof raw === 'string') {
+          if (raw.endsWith(':required')) {
+            const name = raw.replace(':required', '');
+            requiredFields.push({ name, label: fieldLabels[name] ?? name });
+          }
+        } else if (raw && typeof raw === 'object') {
+          const obj = raw as { key?: string; on?: boolean; required?: boolean; label?: string };
+          // Email is validated separately above; skip it here.
+          if (obj.key && obj.key !== 'email' && obj.on && obj.required) {
+            requiredFields.push({ name: obj.key, label: obj.label ?? fieldLabels[obj.key] ?? obj.key });
+          }
+        }
+      }
+
+      for (const field of requiredFields) {
+        if (!getPayloadValue(field.name)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `${field.label} is required.` });
+        }
+      }
+    }
+
+    // Parse and validate donation fields if form is a donation or recurring_donation form
+    let amountCents = 0;
+    let monthlyAmountCents = 0;
+    let country = '';
+    let state = '';
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
+      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
+      if (!firstName || !lastName) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'First name and last name are required for donations.',
+        });
+      }
+
+      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+      const city = (payload['city'] || '').trim();
+      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+      country = (payload['country'] || payload['residency_country'] || '').trim();
+      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+      if (!street1 || !city || !zip || !country || !state) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
+        });
+      }
+
+      // Check if email already exists to run eligibility checks
+      const existing = await this.getRepo()
+        .db.selectFrom('persons')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where(sql`lower(email)`, '=', email.toLowerCase())
+        .executeTakeFirst();
+
+      const donationsController = new DonationsController();
+
+      if (form.form_type === 'donation') {
+        const amountStr = payload['amount'] || payload['donation_amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
+        }
+        amountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          amountCents,
+          { country, state },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
+      } else {
+        // recurring_donation
+        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
+        }
+        monthlyAmountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          monthlyAmountCents,
+          { country, state },
+          { isRecurring: true },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
+      }
+    }
+
+    // 5. Gather submission fields. New-model forms collect a single `full_name`; split it on the
+    // last space so the person record still gets a first/last name.
+    let firstName = payload['first_name'] || payload['firstName'] || null;
+    let lastName = payload['last_name'] || payload['lastName'] || null;
+    if (!firstName && !lastName) {
+      const fullName = (payload['full_name'] || payload['name'] || '').trim();
+      if (fullName) {
+        const lastSpace = fullName.lastIndexOf(' ');
+        if (lastSpace === -1) {
+          firstName = fullName;
+        } else {
+          firstName = fullName.slice(0, lastSpace).trim();
+          lastName = fullName.slice(lastSpace + 1).trim();
+        }
+      }
+    }
+    const mobile = payload['mobile'] || payload['phone'] || null;
+    const notes = payload['notes'] || payload['message'] || null;
+
+    let resolvedPersonId = '';
+    let resolvedCreatorId = '1';
+
+    // 6. Find or Create person & apply merges/tags
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        // Use the form's creator as the actor — they are the person who
+        // configured this form, which is the most correct attribution for
+        // contacts and data created via public submissions.
+        const creatorId = String(form.createdby_id);
+
+        resolvedCreatorId = creatorId;
+
+        if (!householdId) {
+          throw new Error('Tenant placeholder household is not configured.');
+        }
+
+        // Submissions belong to the FORM's campaign (§15) — a campaign sign-up
+        // form collects that campaign's consent, not the office's. Older rows
+        // without a campaign fall back to the legacy current_campaign setting.
+        const formCampaignId = (form as Record<string, unknown>)['campaign_id'];
+        const campaignId = formCampaignId != null ? String(formCampaignId) : await this.getCampaignId(tenantId, trx);
+
+        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
+        // counted once they confirm via the emailed link (see confirm-subscription route).
+        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
+
+        let finalHouseholdId = householdId;
+
+        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+        const city = (payload['city'] || '').trim();
+        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+        const country = (payload['country'] || payload['residency_country'] || '').trim();
+        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+        const hasAddress = !!(street1 || city || zip || country || state);
+
+        if (hasAddress) {
+          const fp_street = fingerprintStreet({ street1 });
+          const fp_full = fingerprintFull({
+            street1,
+            city,
+            state,
+            zip,
+            country,
+          });
+
+          const householdRepo = new HouseholdRepo();
+          const existingHh = await trx
+            .selectFrom('households')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('campaign_id', '=', campaignId)
+            .where('address_fp_full', '=', fp_full)
+            .executeTakeFirst();
+
+          if (existingHh) {
+            finalHouseholdId = String(existingHh.id);
+          } else {
+            const createdHhs = await householdRepo.addMany(
+              {
+                rows: [
+                  {
+                    tenant_id: tenantId,
+                    campaign_id: campaignId,
+                    createdby_id: creatorId,
+                    updatedby_id: creatorId,
+                    street1,
+                    city,
+                    state,
+                    zip,
+                    country,
+                    address_fp_street: fp_street,
+                    address_fp_full: fp_full,
+                  } as any,
+                ],
+              },
+              trx,
+            );
+            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
+              finalHouseholdId = String(createdHhs[0].id);
+            }
+          }
+        }
+
+        // Check if email already exists
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = {
+            updatedby_id: creatorId,
+            updated_at: sql`now()`,
+          };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (form.form_type === 'donation' || hasAddress) {
+            updateRow.household_id = finalHouseholdId;
+          }
+          if (!existing.notes && notes) {
+            updateRow.notes = notes;
+          } else if (existing.notes && notes) {
+            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
+          }
+
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: finalHouseholdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            mobile: mobile,
+            notes: notes,
+          };
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          // Trigger contact created workflow
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
+          }
+
+          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
+          if (doubleOptIn) {
+            await this.enqueueSubscriptionConfirmation(trx, {
+              tenantId,
+              personId,
+              email,
+              firstName,
+            });
+          }
+        }
+
+        resolvedPersonId = personId;
+
+        // Consent lives in campaign_subscriptions (§15): a form submission is
+        // consent for THIS form's campaign only — pending until confirmed when
+        // the tenant requires double opt-in. doNothing keeps an existing row
+        // (including a deliberate 'unsubscribed') authoritative over re-submits.
+        await trx
+          .insertInto('campaign_subscriptions')
+          .values({
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            person_id: personId,
+            email,
+            status: doubleOptIn ? 'pending' : 'subscribed',
+            consent_source: 'form',
+            consent_at: doubleOptIn ? null : new Date(),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .onConflict((oc) => oc.columns(['tenant_id', 'campaign_id', 'person_id']).doNothing())
+          .execute();
+
+        const workflowsController = new WorkflowsController();
+
+        // Add target custom tags & read-only system tag
+        const targetTags: string[] = Array.isArray(form.target_tags)
+          ? form.target_tags
+          : JSON.parse((form.target_tags as any) || '[]');
+        const systemTagName = `source: ${form.name}`;
+        // "Donor" is derived from donations data (§15) — no tag on donation forms.
+        const allTagsToApply = [...targetTags, systemTagName];
+
+        for (const tagName of allTagsToApply) {
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
+
+          let tag = await trx
+            .selectFrom('tags')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('name', '=', normalizedTagName)
+            .where('type', '=', 'tag')
+            .executeTakeFirst();
+
+          if (!tag) {
+            const insertTagRes = await trx
+              .insertInto('tags')
+              .values({
+                tenant_id: tenantId,
+                name: normalizedTagName,
+                type: 'tag',
+                deletable: true,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            tag = { id: insertTagRes.id };
+          }
+
+          const mapExists = await trx
+            .selectFrom('map_peoples_tags')
+            .select('person_id')
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('tag_id', '=', tag.id)
+            .executeTakeFirst();
+
+          if (!mapExists) {
+            await trx
+              .insertInto('map_peoples_tags')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                tag_id: tag.id,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger tag_added and specialized subscriber workflows
+            try {
+              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Add target lists. map_web_forms_lists is the source of truth — its
+        // FKs guarantee every row points at a live list (no dangling-id skip
+        // needed, unlike the legacy JSONB target_lists document).
+        const targetListRows = await trx
+          .selectFrom('map_web_forms_lists')
+          .select('list_id')
+          .where('tenant_id', '=', tenantId)
+          .where('web_form_id', '=', formId)
+          .execute();
+        for (const { list_id: listId } of targetListRows) {
+          const inList = await trx
+            .selectFrom('map_lists_persons')
+            .select('person_id')
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('list_id', '=', listId)
+            .executeTakeFirst();
+
+          if (!inList) {
+            await trx
+              .insertInto('map_lists_persons')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                list_id: listId,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger list joined workflows
+            try {
+              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Trigger web form submitted workflows
+        try {
+          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
+        }
+
+        // Log user activity
+        await trx
+          .insertInto('user_activity')
+          .values({
+            tenant_id: tenantId,
+            user_id: creatorId,
+            activity: 'submission',
+            entity: 'web_forms',
+            entity_id: formId,
+            quantity: 1,
+            metadata: JSON.stringify({ person_id: personId, email }),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .execute();
+
+        // Persist a durable response record (answers snapshot + person FK) for the Responses tab.
+        // Donation forms are a separate flow (Stripe/webhook) and are not part of this model.
+        if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
+          const answers: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(payload)) {
+            if (key === '_hp') continue;
+            answers[key] = value;
+          }
+          await trx
+            .insertInto('form_submissions')
+            .values({
+              tenant_id: tenantId,
+              form_id: String(form.id),
+              person_id: personId,
+              answers: JSON.stringify(answers),
+            })
+            .execute();
+        }
+
+        // Queue email notification job in background
+        await trx
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'send-webform-notifications',
+              formId: String(form.id),
+              tenantId,
+              email,
+              firstName,
+              lastName,
+              mobile,
+              notes,
+            }),
+            run_at: new Date(),
+          })
+          .execute();
+      });
+
+    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const donationsController = new DonationsController();
+      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/d/${form.slug}?t=${encodeURIComponent(tenant.slug)}&checkout_cancel=true`;
+
+      if (form.form_type === 'donation') {
+        const checkoutInit = await donationsController.createCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          amountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutInit.url };
+      } else {
+        const checkoutSession = await donationsController.createRecurringCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          monthlyAmountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      }
+    }
+
+    return { redirect_url: form.redirect_url || null };
+  }
+
+  /**
+   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
+   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
+   */
+  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
+
+    let payload: unknown;
+    try {
+      payload = await verifier(token);
+    } catch {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
+    }
+
+    if (
+      !isRecord(payload) ||
+      payload['purpose'] !== 'confirm-subscription' ||
+      !payload['tenant_id'] ||
+      !payload['person_id']
+    ) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
+    }
+
+    // Double opt-in confirmed: every pending subscription for this person
+    // becomes subscribed (§15). Deliberately allowed even if the campaign has
+    // since been archived — the confirmation belongs to when the link was sent.
+    await this.getRepo()
+      .db.updateTable('campaign_subscriptions')
+      .set({ status: 'subscribed', consent_at: sql`now()`, updated_at: sql`now()` })
+      .where('tenant_id', '=', String(payload['tenant_id']))
+      .where('person_id', '=', String(payload['person_id']))
+      .where('status', '=', 'pending')
+      .execute();
+
+    return { success: true };
+  }
+
+  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'communications.double_opt_in')
+      .executeTakeFirst();
+
+    return row?.value === true || row?.value === 'true';
+  }
+
+  /**
+   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
+   * runs only if the surrounding submission transaction commits, keeping the pending person and the
+   * confirmation email consistent.
+   */
+  private async enqueueSubscriptionConfirmation(
+    trx: Transaction<Models>,
+    args: { tenantId: string; personId: string; email: string; firstName: string | null },
+  ): Promise<void> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
+      return;
+    }
+
+    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
+    const token = signer({
+      tenant_id: args.tenantId,
+      person_id: args.personId,
+      email: args.email.toLowerCase().trim(),
+      purpose: 'confirm-subscription',
+    });
+    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
+
+    await trx
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: args.tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-subscription-confirmation',
+          tenantId: args.tenantId,
+          email: args.email,
+          firstName: args.firstName,
+          confirmUrl,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+  }
+
+  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'current_campaign')
+      .executeTakeFirst();
+
+    if (row) {
+      const value = row.value;
+      if (typeof value === 'number' || typeof value === 'string') {
+        return String(value);
+      }
+      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+        const id = (value as Record<string, unknown>)['id'];
+        if (typeof id === 'number' || typeof id === 'string') {
+          return String(id);
+        }
+      }
+    }
+
+    const campaignRow = await trx
+      .selectFrom('campaigns')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (campaignRow) {
+      return String(campaignRow.id);
+    }
+
+    throw new Error('No campaign found for this tenant.');
+  }
+
+  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
+    return this.getRepo().countSubmissions(tenantId, formId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // North Star "living funnel" lifecycle (new Forms experience).
+  // ---------------------------------------------------------------------------
+
+  /** All non-donation forms as cards for the browse page, fields normalized for the preview. */
+  public async listForms(tenantId: string) {
+    const rows = await this.getRepo().listForms(tenantId);
+    return rows.map((row) => this.normalizeForm(row));
+  }
+
+  /**
+   * Public config for the unauthenticated /f/:slug page. Returns only what the public page renders,
+   * plus the org name; closed (unpublished/archived) forms return a status the page shows as a
+   * "closed" card. Throws NOT_FOUND when the slug doesn't exist at all.
+   */
+  public async getPublicFormBySlug(slug: string, tenantId: string) {
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
+    // Donation forms have slugs too (every form does) but render on the separate server-rendered
+    // /api/forms/d/:slug page with the amount field — never on the /f/:slug SPA page.
+    if (!form || form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const orgName = await publicOrgName(String(form.tenant_id));
+    if (form.status !== 'published') {
+      return { status: 'closed' as const, orgName, name: String(form.name) };
+    }
+    const normalized = this.normalizeForm(form) as {
+      id: string;
+      name: string;
+      description: string | null;
+      submit_label: string | null;
+      thanks_title: string | null;
+      thanks_body: string | null;
+      redirect_url: string | null;
+      fields: FormField[];
+    };
+    return {
+      status: 'open' as const,
+      orgName,
+      form: {
+        id: normalized.id,
+        name: normalized.name,
+        description: normalized.description,
+        submit_label: normalized.submit_label,
+        thanks_title: normalized.thanks_title,
+        thanks_body: normalized.thanks_body,
+        redirect_url: normalized.redirect_url,
+        fields: normalized.fields.filter((f) => f.on),
+      },
+    };
+  }
+
+  /** Single form, fields normalized — used by the editor + preview. */
+  public async getFormForEdit(id: string, tenantId: string) {
+    const form = await this.getRepo().getOneById({ id, tenant_id: tenantId });
+    if (!form) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    return this.normalizeForm(form);
+  }
+
+  /** Create a draft from a template. Lands the user in edit mode (frontend). */
+  public async createForm(payload: CreateFormType, auth: IAuthKeyPayload) {
+    const template = FORM_TEMPLATES[payload.type];
+    const slug = await this.uniqueSlug(auth.tenant_id, payload.name);
+    const fields = fieldsForTemplate(payload.type);
+    const row = {
+      tenant_id: auth.tenant_id,
+      // A form collects consent for exactly one campaign (§15).
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: payload.campaign_id,
+      }),
+      name: payload.name,
+      description: template.description,
+      redirect_url: null,
+      target_tags: JSON.stringify([]),
+      target_lists: JSON.stringify([]),
+      fields: JSON.stringify(fields),
+      status: 'draft',
+      type: payload.type,
+      form_type: 'standard',
+      slug,
+      submit_label: template.submitLabel,
+      thanks_title: 'Thank you!',
+      thanks_body: 'Your response has been recorded. Thanks for reaching out.',
+      confirm_subject: `Thanks for your ${payload.type}`,
+      confirm_body: 'Hi [First name],\n\nThanks for your submission. We’ve received it and will be in touch soon.',
+      send_confirmation: true,
+      send_alert: false,
+      notify_team_on: false,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    const created = await this.add(row as any);
+    return this.normalizeForm(created);
+  }
+
+  /** Live-edit patch. `normForm` guarantees the email identity-key invariant server-side. */
+  public async updateFormLive(id: string, patch: UpdateFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+
+    const row: OperationDataType<'web_forms', 'update'> = { updatedby_id: auth.user_id, updated_at: new Date() };
+    // Slug intentionally stays stable across renames — a published link must never break.
+    if (patch.name !== undefined) row['name'] = patch.name;
+    if (patch.description !== undefined) row['description'] = patch.description;
+    if (patch.redirect_url !== undefined) row['redirect_url'] = patch.redirect_url;
+    if (patch.submit_label !== undefined) row['submit_label'] = patch.submit_label;
+    if (patch.thanks_title !== undefined) row['thanks_title'] = patch.thanks_title;
+    if (patch.thanks_body !== undefined) row['thanks_body'] = patch.thanks_body;
+    if (patch.confirm_email_on !== undefined) row['send_confirmation'] = patch.confirm_email_on;
+    if (patch.confirm_subject !== undefined) row['confirm_subject'] = patch.confirm_subject;
+    if (patch.confirm_body !== undefined) row['confirm_body'] = patch.confirm_body;
+    if (patch.notify_team_on !== undefined) row['notify_team_on'] = patch.notify_team_on;
+    if (patch.target_tags !== undefined) row['target_tags'] = JSON.stringify(patch.target_tags);
+    if (patch.target_lists !== undefined) row['target_lists'] = JSON.stringify(patch.target_lists);
+    if (patch.fields !== undefined) {
+      row['fields'] = JSON.stringify(normForm(patch.fields));
+    }
+
+    const updated = await this.update({ tenant_id: auth.tenant_id, id, row });
+    if (patch.target_lists !== undefined) {
+      await this.syncTargetLists(auth, id, patch.target_lists ?? []);
+    }
+    return this.normalizeForm(updated);
+  }
+
+  /**
+   * Replace the form's map_web_forms_lists rows (the source of truth for list
+   * targeting — the JSONB target_lists column is still dual-written during
+   * the transition, but nothing reads it for behavior anymore). Ids that
+   * don't resolve to a live list in the tenant are dropped.
+   */
+  private async syncTargetLists(auth: IAuthKeyPayload, formId: string, listIds: string[]): Promise<void> {
+    const db = this.getRepo().db;
+    const candidates = [...new Set(listIds.map((id) => String(id)))].filter((id) => /^\d+$/.test(id));
+    let liveIds: string[] = [];
+    if (candidates.length > 0) {
+      const rows = await db
+        .selectFrom('lists')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', candidates)
+        .execute();
+      liveIds = rows.map((r) => String(r.id));
+    }
+
+    await db
+      .deleteFrom('map_web_forms_lists')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('web_form_id', '=', formId)
+      .execute();
+
+    if (liveIds.length > 0) {
+      await db
+        .insertInto('map_web_forms_lists')
+        .values(
+          liveIds.map((list_id) => ({
+            tenant_id: auth.tenant_id,
+            web_form_id: formId,
+            list_id,
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          })),
+        )
+        .execute();
+    }
+  }
+
+  public publishForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'published', null);
+  }
+
+  public unpublishForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'draft', null);
+  }
+
+  public archiveForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'archived', new Date());
+  }
+
+  /** Restore always lands in draft — reopening a public link is a deliberate act. */
+  public restoreForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'draft', null);
+  }
+
+  /** Hard delete is only allowed for a zero-response draft; everything else must be archived. */
+  public async deleteForm(id: string, auth: IAuthKeyPayload) {
+    const existing = (await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id })) as
+      | { status?: string }
+      | undefined;
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const count = await this.getRepo().countSubmissions(auth.tenant_id, id);
+    if (existing.status !== 'draft' || count > 0) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Only a draft with no responses can be deleted. Archive it instead; archiving is reversible.',
+      });
+    }
+    return this.delete(auth.tenant_id, id, auth.user_id);
+  }
+
+  public async getFormSubmissions(id: string, tenantId: string, cursor?: number) {
+    const limit = 25;
+    const offset = cursor ?? 0;
+    const rows = await this.getRepo().getFormSubmissions(tenantId, id, limit + 1, offset);
+    const total = await this.getRepo().countSubmissions(tenantId, id);
+    const hasMore = rows.length > limit;
+    const items = rows.slice(0, limit).map((row) => {
+      const answersRaw = row['answers'];
+      const answers =
+        typeof answersRaw === 'string'
+          ? this.safeJson(answersRaw, {})
+          : ((answersRaw as Record<string, unknown>) ?? {});
+      const name = `${row['first_name'] ?? ''} ${row['last_name'] ?? ''}`.trim();
+      return {
+        id: String(row['id']),
+        person_id: String(row['person_id']),
+        person_name: name || null,
+        answers,
+        created_at: row['created_at'] as Date | string,
+      };
+    });
+    return { items, total, nextCursor: hasMore ? offset + limit : null };
+  }
+
+  private async setStatus(
+    id: string,
+    auth: IAuthKeyPayload,
+    status: 'draft' | 'published' | 'archived',
+    archivedAt: Date | null,
+  ) {
+    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const updated = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() },
+    });
+    return this.normalizeForm(updated);
+  }
+
+  private uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
+    // Shared slug strategy (lib/slug.ts) — same base + collision suffixes as
+    // persons/households/companies record slugs.
+    return uniqueSlug(slugifyRecordName(name, 'form'), (candidate) =>
+      this.getRepo().slugExists(tenantId, candidate, excludeId),
+    );
+  }
+
+  /** Legacy add/update path accepts 'active'; the DB only knows the lifecycle statuses. */
+  private mapLegacyStatus(status: string | undefined): 'draft' | 'published' | 'archived' {
+    if (status === 'archived') return 'archived';
+    if (status === 'draft') return 'draft';
+    return 'published';
+  }
+
+  private safeJson<T>(value: string, fallback: T): T {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private normalizeForm(record: unknown) {
+    if (!record || typeof record !== 'object') return record;
+    const row = record as Record<string, unknown>;
+    const toArray = (value: unknown): string[] => {
+      if (Array.isArray(value)) return value as string[];
+      if (typeof value === 'string') return this.safeJson<string[]>(value, []);
+      return [];
+    };
+    const rawFields = Array.isArray(row['fields'])
+      ? row['fields']
+      : typeof row['fields'] === 'string'
+        ? this.safeJson<unknown[]>(row['fields'] as string, [])
+        : [];
+    return {
+      ...row,
+      id: row['id'] != null ? String(row['id']) : row['id'],
+      tenant_id: row['tenant_id'] != null ? String(row['tenant_id']) : row['tenant_id'],
+      target_tags: toArray(row['target_tags']),
+      target_lists: toArray(row['target_lists']),
+      fields: normForm(rawFields),
+      submission_count: row['submission_count'] != null ? Number(row['submission_count']) : 0,
+    };
+  }
+}
 ````
 
 ## File: apps/website/src/app/pricing/pricing-page.html
@@ -73165,6 +73162,7 @@ export async function handleSendNewsletter(
       'communications.reply_to',
       'communications.footer_disclaimer',
       'communications.verified_emails',
+      'organization.name',
       'organization.address',
     ])
     .execute();
@@ -73200,9 +73198,10 @@ export async function handleSendNewsletter(
   const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
   const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
 
-  // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
-  // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
+  // Mandatory footer appended server-side so it cannot be removed from the editor: org name and
+  // address, tenant disclaimer, and a SendGrid-substituted unsubscribe link.
   const footer = buildNewsletterFooter(
+    settingsMap['organization.name'],
     settingsMap['organization.address'],
     settingsMap['communications.footer_disclaimer'],
   );
@@ -73686,16 +73685,26 @@ export async function handleProcessScheduledNewsletters(db: Kysely<Models>): Pro
 
 /**
  * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
- * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
+ * from the editor). Contains the organization name and address, the tenant footer disclaimer, and a SendGrid
  * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
  * subscription tracking is enabled.
  */
-function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
+function buildNewsletterFooter(
+  orgName?: string,
+  address?: string,
+  disclaimer?: string,
+): { html: string; text: string } {
   const esc = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   const htmlParts: string[] = [];
   const textParts: string[] = [];
+
+  const name = (orgName || '').trim();
+  if (name) {
+    htmlParts.push(`<div style="font-weight:bold">${esc(name)}</div>`);
+    textParts.push(name);
+  }
 
   const addr = (address || '').trim();
   if (addr) {
@@ -73712,6 +73721,12 @@ function buildNewsletterFooter(address?: string, disclaimer?: string): { html: s
   // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
   htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
   textParts.push('Unsubscribe: <% unsubscribe %>');
+
+  // Always the last line: platform attribution linking to the marketing site.
+  htmlParts.push(
+    '<div style="margin-top:8px">powered by <a href="https://pplcrm.com" style="color:#888">pplCRM</a></div>',
+  );
+  textParts.push('powered by pplCRM (https://pplcrm.com)');
 
   const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
   const text = `\n\n----\n${textParts.join('\n')}`;
@@ -79106,7 +79121,7 @@ export const EULA_DOC: LegalDoc = {
   title: 'End user license agreement',
   intro:
     'The agreement between you and pplCRM when you use the service. Plain language where the law allows it, and no surprises hiding in the numbered clauses.',
-  updated: 'July 18, 2026',
+  updated: 'July 23, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -79229,7 +79244,7 @@ export const EULA_DOC: LegalDoc = {
     {
       kind: 'list',
       items: [
-        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address and a working unsubscribe link, and this footer cannot be removed.',
+        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address, a working unsubscribe link and a “powered by pplCRM” attribution line, and this footer cannot be removed. Sending is disabled until the postal address is set.',
         'Unsubscribes, bounces and do-not-contact flags are honored automatically on all future sends. Attempting to circumvent suppression is a breach of this agreement.',
         'New free-plan senders verify a mobile number and warm up gradually under a daily cap.',
         'Each plan includes a monthly newsletter-email allowance (shown on the [pricing page](/pricing)), and it is enforced at send time: a send larger than what remains of your allowance is declined with the exact numbers, and the allowance resets each billing month. Emails sent by automations count toward the same allowance. Growing your list raises your bracket — and your allowance — automatically.',

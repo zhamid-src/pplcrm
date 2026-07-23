@@ -121,6 +121,7 @@ export async function handleSendNewsletter(
       'communications.reply_to',
       'communications.footer_disclaimer',
       'communications.verified_emails',
+      'organization.name',
       'organization.address',
     ])
     .execute();
@@ -156,9 +157,10 @@ export async function handleSendNewsletter(
   const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
   const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
 
-  // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
-  // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
+  // Mandatory footer appended server-side so it cannot be removed from the editor: org name and
+  // address, tenant disclaimer, and a SendGrid-substituted unsubscribe link.
   const footer = buildNewsletterFooter(
+    settingsMap['organization.name'],
     settingsMap['organization.address'],
     settingsMap['communications.footer_disclaimer'],
   );
@@ -642,16 +644,26 @@ export async function handleProcessScheduledNewsletters(db: Kysely<Models>): Pro
 
 /**
  * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
- * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
+ * from the editor). Contains the organization name and address, the tenant footer disclaimer, and a SendGrid
  * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
  * subscription tracking is enabled.
  */
-function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
+function buildNewsletterFooter(
+  orgName?: string,
+  address?: string,
+  disclaimer?: string,
+): { html: string; text: string } {
   const esc = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   const htmlParts: string[] = [];
   const textParts: string[] = [];
+
+  const name = (orgName || '').trim();
+  if (name) {
+    htmlParts.push(`<div style="font-weight:bold">${esc(name)}</div>`);
+    textParts.push(name);
+  }
 
   const addr = (address || '').trim();
   if (addr) {
@@ -668,6 +680,12 @@ function buildNewsletterFooter(address?: string, disclaimer?: string): { html: s
   // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
   htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
   textParts.push('Unsubscribe: <% unsubscribe %>');
+
+  // Always the last line: platform attribution linking to the marketing site.
+  htmlParts.push(
+    '<div style="margin-top:8px">powered by <a href="https://pplcrm.com" style="color:#888">pplCRM</a></div>',
+  );
+  textParts.push('powered by pplCRM (https://pplcrm.com)');
 
   const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
   const text = `\n\n----\n${textParts.join('\n')}`;

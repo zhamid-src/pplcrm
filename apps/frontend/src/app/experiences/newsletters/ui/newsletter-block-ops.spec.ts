@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { createBlock, insertBlockAt, isEmailBlockType, moveBlock, EMAIL_BLOCK_TYPES } from './newsletter-block-ops';
+import {
+  createBlock,
+  insertBlockAt,
+  isEmailBlockType,
+  moveBlock,
+  tryImportHtmlToBlocks,
+  EMAIL_BLOCK_TYPES,
+} from './newsletter-block-ops';
 import type { EmailBlock } from './newsletter-templates';
 
 function makeList(...ids: string[]): EmailBlock[] {
@@ -150,5 +157,38 @@ describe('isEmailBlockType', () => {
     expect(isEmailBlockType('table')).toBe(false);
     expect(isEmailBlockType(undefined)).toBe(false);
     expect(isEmailBlockType({ type: 'heading' })).toBe(false);
+  });
+});
+
+describe('tryImportHtmlToBlocks', () => {
+  it('should map headings, paragraphs, and hr to blocks', () => {
+    const blocks = tryImportHtmlToBlocks('<h1>Title</h1><p>Body text.</p><hr><h3>Small</h3>');
+    expect(blocks?.map((b) => b.type)).toEqual(['heading', 'text', 'divider', 'heading']);
+    expect(blocks?.[0]?.content).toBe('Title');
+    expect(blocks?.[0]?.styles?.fontSize).toBe('28px');
+    expect(blocks?.[3]?.styles?.fontSize).toBe('20px');
+  });
+
+  it('should preserve <br> inside a paragraph as a newline', () => {
+    const blocks = tryImportHtmlToBlocks('<p>Line one<br>Line two</p>');
+    expect(blocks?.[0]?.content).toBe('Line one\nLine two');
+  });
+
+  it('should wrap stray top-level text in a text block', () => {
+    const blocks = tryImportHtmlToBlocks('Just some words');
+    expect(blocks?.map((b) => b.type)).toEqual(['text']);
+    expect(blocks?.[0]?.content).toBe('Just some words');
+  });
+
+  it('should refuse content that would not survive the round-trip', () => {
+    expect(tryImportHtmlToBlocks('<p>See <a href="https://x.com">link</a></p>')).toBeNull();
+    expect(tryImportHtmlToBlocks('<p>Some <strong>bold</strong> text</p>')).toBeNull();
+    expect(tryImportHtmlToBlocks('<table><tr><td>cell</td></tr></table>')).toBeNull();
+    expect(tryImportHtmlToBlocks('<div><p>wrapped</p></div>')).toBeNull();
+  });
+
+  it('should return null for empty or comment-only input', () => {
+    expect(tryImportHtmlToBlocks('')).toBeNull();
+    expect(tryImportHtmlToBlocks('<!-- nothing here -->')).toBeNull();
   });
 });

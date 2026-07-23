@@ -51,6 +51,7 @@ class MockAlertService {
 class MockSettingsService {
   load = vi.fn().mockResolvedValue(undefined);
   getValue = vi.fn().mockReturnValue(['team@example.org']);
+  snapshotSignal = signal<Record<string, unknown>>({ 'organization.address': '1 Main St, Springfield' });
 }
 
 class MockAuthService {
@@ -196,6 +197,10 @@ describe('NewslettersPage', () => {
     expect(component['sendBlocker'](draftRow())).toBeNull();
     expect(component['sendBlocker'](draftRow({ has_audience: false }))).toContain('no audience');
     expect(component['sendBlocker'](draftRow({ has_content: false }))).toContain('no subject or content');
+
+    settings.snapshotSignal.set({});
+    expect(component['sendBlocker'](draftRow())).toContain('mailing address');
+    settings.snapshotSignal.set({ 'organization.address': '1 Main St, Springfield' });
 
     component['verifiedSenders'].set([]);
     expect(component['sendBlocker'](draftRow())).toContain('Verify a sender address');

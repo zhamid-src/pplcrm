@@ -92,6 +92,12 @@ export class NewslettersPage {
   /** Verified sender addresses (Workspace → Communications) — sending needs at least one. */
   protected readonly verifiedSenders = signal<string[]>([]);
 
+  /** The compliance footer needs the org's mailing address, so sending is gated on it being set. */
+  protected readonly orgAddressSet = computed(() => {
+    const value = this.settings.snapshotSignal()['organization.address'];
+    return typeof value === 'string' && value.trim().length > 0;
+  });
+
   /** The campaign context the current rows were loaded for; undefined = never loaded. */
   private loadedForCampaign: string | null | undefined = undefined;
 
@@ -163,6 +169,9 @@ export class NewslettersPage {
     }
     if (this.verifiedSenders().length === 0) {
       return 'Verify a sender address under Settings → Communications before sending';
+    }
+    if (!this.orgAddressSet()) {
+      return 'Set your organization’s mailing address under Settings → Organization — it appears in the footer of every newsletter';
     }
     if (!row.has_audience) return 'This draft has no audience yet. Pick lists or tags in the newsletter wizard';
     if (!row.has_content) return 'This draft has no subject or content yet. Finish it in the newsletter wizard';

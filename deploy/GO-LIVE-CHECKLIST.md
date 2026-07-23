@@ -177,11 +177,16 @@ Re-verified against the live Container App: all expected env vars present (incl.
 - **CORS stays locked to `APP_URL`** — do NOT widen it to `*.pplforms.com`. The public surfaces are
   same-origin by design (the Workers proxy `/api`), so CORS never needs to open up. Widening it is a
   security regression.
-- Migrations: `node --env-file=.env.production --import tsx apps/backend/src/app/kyselyinit.ts` from an
-  IP allow-listed on the Postgres firewall, using the quoted owner creds. **Gotcha (2026-07-21):** the
-  owner's ISP uses CGNAT — the egress IP rotates within `153.67.41.0/24` between connections, so the
-  `AllowAdminClient` rule is that whole /24, not a single IP. A single-IP rule will ETIMEDOUT minutes
-  after you create it.
+- Migrations: **CI runs them** — the `migrate` job in `deploy.yml` (added 2026-07-23 after an outage
+  where code shipped ahead of schema) applies pending migrations as the owner role (`PROD_DB_*`
+  secrets) before the backend rolls; a migration failure blocks the deploy. The runner reaches
+  Postgres via the `AllowAzureServices` firewall rule (GitHub-hosted runners are Azure IPs).
+  Manual fallback: `node --env-file=.env.production --import tsx apps/backend/src/app/kyselyinit.ts`
+  from an IP allow-listed on the Postgres firewall, using the quoted owner creds.
+  **Firewall gotchas:** the owner's egress IP rotates (CGNAT/Starlink) — allow-list rules are /24s,
+  not single IPs (`AllowAdminClient` = `153.67.41.0/24`, old ISP; `AllowAdminClientStarlink` =
+  `129.222.193.0/24`, added 2026-07-23). If a manual connection ETIMEDOUTs, check
+  `curl https://api.ipify.org` against the rules and widen/add accordingly.
 
 ## 10. Scaling & hardening for real traffic (currently sized for a pipeline test)
 
@@ -197,26 +202,26 @@ update` has no probe flags, so YAML is the only path. Liveness must stay on `GET
       outage; readiness on `GET /healthz` correctly pulls it from ingress instead. For reference
       (probes survive image deploys; this only ever needs re-doing on an app re-create):
 
-              ```bash
-              az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml
-              # edit: under properties.template.containers[0] add
-              #   probes:
-              #   - type: Startup
-              #     httpGet: { path: /, port: 3000 }
-              #     periodSeconds: 5
-              #     failureThreshold: 30
-              #   - type: Liveness
-              #     httpGet: { path: /, port: 3000 }
-              #     periodSeconds: 30
-              #     failureThreshold: 3
-              #   - type: Readiness
-              #     httpGet: { path: /healthz, port: 3000 }
-              #     periodSeconds: 30
-              #     failureThreshold: 3
-              az containerapp update -n pplcrm-api -g pplcrm-cad-prod --yaml /tmp/pplcrm-api.yaml
-              ```
+                ```bash
+                az containerapp show -n pplcrm-api -g pplcrm-cad-prod -o yaml > /tmp/pplcrm-api.yaml
+                # edit: under properties.template.containers[0] add
+                #   probes:
+                #   - type: Startup
+                #     httpGet: { path: /, port: 3000 }
+                #     periodSeconds: 5
+                #     failureThreshold: 30
+                #   - type: Liveness
+                #     httpGet: { path: /, port: 3000 }
+                #     periodSeconds: 30
+                #     failureThreshold: 3
+                #   - type: Readiness
+                #     httpGet: { path: /healthz, port: 3000 }
+                #     periodSeconds: 30
+                #     failureThreshold: 3
+                az containerapp update -n pplcrm-api -g pplcrm-cad-prod --yaml /tmp/pplcrm-api.yaml
+                ```
 
-              One-time op — later `az containerapp update --image` deploys don't touch probes.
+                One-time op — later `az containerapp update --image` deploys don't touch probes.
 
 - [x] Review backups/retention on Postgres and Blob; confirm they match the retention windows the marketing
       site claims (see `pplcrm-website-claims`). **Verified 2026-07-21:** PG Flexible Server = 7-day

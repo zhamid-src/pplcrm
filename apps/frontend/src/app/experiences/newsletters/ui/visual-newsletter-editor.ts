@@ -1,11 +1,19 @@
 import { CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, type CdkDragDrop } from '@angular/cdk/drag-drop';
 import { CdkScrollable } from '@angular/cdk/scrolling';
-import { Component, OnInit, computed, model, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, model, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 import type { PcIconNameType } from '@icons/icons.index';
 import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 
-import { createBlock, insertBlockAt, isEmailBlockType, moveBlock, type EmailBlockType } from './newsletter-block-ops';
+import { SettingsService } from '../../settings/services/settings-service';
+import {
+  createBlock,
+  insertBlockAt,
+  isEmailBlockType,
+  moveBlock,
+  tryImportHtmlToBlocks,
+  type EmailBlockType,
+} from './newsletter-block-ops';
 import {
   EmailBlock,
   socialSvgPaths,
@@ -42,7 +50,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
   /** Seam index whose "+" insert picker is open, or null when closed. */
   protected readonly insertMenuIndex = signal<number | null>(null);
 
-  /** The 8 block types: palette tiles and the "+" insert menu share this list. */
+  /** The 7 block types: palette tiles and the "+" insert menu share this list. */
   protected readonly paletteTypes: readonly PaletteEntry[] = [
     { type: 'heading', label: 'Heading', icon: 'document-text', iconClass: 'text-primary' },
     { type: 'text', label: 'Paragraph', icon: 'document-text', iconClass: 'text-success' },
@@ -110,6 +118,26 @@ export class VisualNewsletterEditorComponent implements OnInit {
     this.updateBlocks();
   }
 
+  private readonly settingsSvc = inject(SettingsService);
+
+  /** Org name shown in the compliance-footer preview (the server appends the real footer at send time). */
+  protected readonly footerOrgName = computed(() => {
+    const value = this.settingsSvc.snapshotSignal()['organization.name'];
+    return typeof value === 'string' ? value.trim() : '';
+  });
+
+  /** Org address shown in the compliance-footer preview (the server appends the real one at send time). */
+  protected readonly footerAddress = computed(() => {
+    const value = this.settingsSvc.snapshotSignal()['organization.address'];
+    return typeof value === 'string' ? value.trim() : '';
+  });
+
+  /** Tenant footer disclaimer shown in the compliance-footer preview. */
+  protected readonly footerDisclaimer = computed(() => {
+    const value = this.settingsSvc.snapshotSignal()['communications.footer_disclaimer'];
+    return typeof value === 'string' ? value.trim() : '';
+  });
+
   // Computed signals
   protected readonly selectedBlock = computed(() => {
     const id = this.selectedBlockId();
@@ -122,6 +150,10 @@ export class VisualNewsletterEditorComponent implements OnInit {
   });
 
   public ngOnInit(): void {
+    // Best-effort fetch of the address/disclaimer for the compliance-footer preview; the
+    // preview falls back to guidance copy when the snapshot is unavailable.
+    this.settingsSvc.load().catch(() => undefined);
+
     // Check if the incoming HTML has our saved JSON blocks comment
     const matched = this.htmlContent().match(/<!-- PPLCRM_VISUAL_BLOCKS_DATA: ([\s\S]*?) -->/);
     if (matched && matched[1]) {
@@ -144,13 +176,21 @@ export class VisualNewsletterEditorComponent implements OnInit {
       }
     }
 
-    // Default: Check if we have standard HTML pasted. If not, load default welcome template
-    if (this.htmlContent() && this.htmlContent().trim().length > 100) {
-      // Legacy custom HTML detected. Set editor to code mode
-      this.editorMode.set('code');
-    } else {
-      // Load standard default Welcome Email template
+    // No embedded block model. The visual editor is the default, so try a best-effort import
+    // of simple legacy HTML into blocks; fall back to raw-HTML mode only when the content
+    // would not survive the round-trip. Empty content starts from the welcome template.
+    const legacyHtml = this.htmlContent().trim();
+    if (!legacyHtml) {
       this.loadTemplate('welcome', false);
+      return;
+    }
+    const imported = tryImportHtmlToBlocks(legacyHtml);
+    if (imported) {
+      this.blocks.set(imported);
+      this.selectedBlockId.set(imported[0]?.id ?? null);
+      this.activeTab.set('edit');
+    } else {
+      this.editorMode.set('code');
     }
   }
 

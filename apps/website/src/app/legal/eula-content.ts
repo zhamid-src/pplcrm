@@ -11,7 +11,7 @@ export const EULA_DOC: LegalDoc = {
   title: 'End user license agreement',
   intro:
     'The agreement between you and pplCRM when you use the service. Plain language where the law allows it, and no surprises hiding in the numbered clauses.',
-  updated: 'July 18, 2026',
+  updated: 'July 23, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -134,7 +134,7 @@ export const EULA_DOC: LegalDoc = {
     {
       kind: 'list',
       items: [
-        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address and a working unsubscribe link, and this footer cannot be removed.',
+        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address, a working unsubscribe link and a “powered by pplCRM” attribution line, and this footer cannot be removed. Sending is disabled until the postal address is set.',
         'Unsubscribes, bounces and do-not-contact flags are honored automatically on all future sends. Attempting to circumvent suppression is a breach of this agreement.',
         'New free-plan senders verify a mobile number and warm up gradually under a daily cap.',
         'Each plan includes a monthly newsletter-email allowance (shown on the [pricing page](/pricing)), and it is enforced at send time: a send larger than what remains of your allowance is declined with the exact numbers, and the allowance resets each billing month. Emails sent by automations count toward the same allowance. Growing your list raises your bracket — and your allowance — automatically.',

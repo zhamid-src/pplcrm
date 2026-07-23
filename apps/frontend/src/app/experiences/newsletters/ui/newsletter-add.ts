@@ -225,6 +225,9 @@ export class NewsletterAddComponent implements OnInit {
    * now" — the server re-checks the gate when a scheduled send actually fires either way. */
   protected readonly sendBlockedTooltip = computed<string | null>(() => {
     if (this.isDemo()) return this.demoSendTooltip;
+    if (!this.orgAddressSet()) {
+      return 'Set your organization’s mailing address under Settings → Organization — it appears in the footer of every newsletter';
+    }
     if (this.quotaShortfall() && this.regularPayload().timingMode === 'now') {
       const remaining = this.sendQuota()?.remaining ?? 0;
       return `This audience exceeds the ${this.numberFormatter.format(remaining)} emails left in your monthly allowance`;
@@ -254,6 +257,12 @@ export class NewsletterAddComponent implements OnInit {
   protected readonly skipBounced = computed(() =>
     this.settingsSvc.getValue<boolean>('communications.skip_bounced', true),
   );
+
+  /** The compliance footer needs the org's mailing address, so sending is gated on it being set. */
+  protected readonly orgAddressSet = computed(() => {
+    const value = this.settingsSvc.snapshotSignal()['organization.address'];
+    return typeof value === 'string' && value.trim().length > 0;
+  });
 
   // --- Suggestion chips (a list/tag already used in one bucket isn't offered in it) ---
 

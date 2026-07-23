@@ -4,13 +4,17 @@ name: Deploy
 # Platform: Azure Container Apps (backend `pplcrm-api` only) + Cloudflare (DNS/TLS; Pages for the
 # marketing site + app.pplcrm.com; Workers for *.pplforms.com and go.pplcrm.com).
 #
-# Migrations are NOT run here: the GitHub runner can't reach the firewalled Postgres. Run them
-# manually from an allow-listed machine (see deploy/PROD-CHECKLIST.md §5).
+# Migrations run in the `migrate` job below, BEFORE the backend rolls to the new image, so code
+# never ships ahead of schema (2026-07-23 outage: the campaign_id column). The runner reaches the
+# firewalled Postgres via the server's "Allow Azure services" rule — GitHub-hosted runners are
+# Azure IPs. Manual fallback: deploy/GO-LIVE-CHECKLIST.md §9.
 #
 # Required secrets:
 #   VITE_GOOGLE_MAPS_API_KEY                     (browser map key, baked at build)
 #   AZURE_CREDENTIALS                            (service-principal JSON)
 #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID  (Pages + Worker deploys)
+#   PROD_DB_HOST, PROD_DB_NAME, PROD_DB_MIGRATION_USER, PROD_DB_MIGRATION_PASSWORD
+#                                                (owner-role creds for the migrate job)
 # Required repo variables (vars.*):
 #   AZURE_RESOURCE_GROUP, AZURE_API_APP, CF_PAGES_PROJECT
 
@@ -99,8 +103,35 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
+  # Apply pending DB migrations before the deploy job rolls the backend. Runs as the owner role
+  # (least-privilege split: the runtime role has no DDL rights). A failed migration fails this job
+  # and blocks the deploy — the old revision keeps serving the old schema. Schema-ahead-of-code
+  # during the brief migrate→deploy window is safe: migrations are additive (expand/contract).
+  # SHARED_SECRET is a placeholder — env.ts requires it, but the migration path never reads it.
+  migrate:
     needs: image
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Run DB migrations (kysely migrateToLatest)
+        env:
+          NODE_ENV: production
+          DB_HOST: ${{ secrets.PROD_DB_HOST }}
+          DB_NAME: ${{ secrets.PROD_DB_NAME }}
+          DB_USER: ${{ secrets.PROD_DB_MIGRATION_USER }}
+          DB_PASSWORD: ${{ secrets.PROD_DB_MIGRATION_PASSWORD }}
+          DB_SSL: 'true'
+          SHARED_SECRET: ci-migrate-placeholder
+        run: npx tsx apps/backend/src/app/kyselyinit.ts
+
+  deploy:
+    needs: migrate
     runs-on: ubuntu-latest
     environment: production
     steps:

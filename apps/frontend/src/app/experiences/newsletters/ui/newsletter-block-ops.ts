@@ -97,3 +97,76 @@ export function createBlock(type: EmailBlockType): EmailBlock {
 
   return newBlock;
 }
+
+/** Heading sizes for imported h1–h6 (anything past h3 just reads as a small heading). */
+const IMPORTED_HEADING_SIZES: Record<string, string> = {
+  h1: '28px',
+  h2: '24px',
+  h3: '20px',
+  h4: '18px',
+  h5: '16px',
+  h6: '16px',
+};
+
+/** True when the element holds only text and <br> — i.e. its content survives a plain-text
+ * round-trip. Links or inline formatting would be silently dropped, so they disqualify. */
+function isPlainInline(el: Element): boolean {
+  return Array.from(el.childNodes).every((child) => {
+    if (child.nodeType === Node.TEXT_NODE) return true;
+    return child instanceof Element && child.tagName.toLowerCase() === 'br' && child.childNodes.length === 0;
+  });
+}
+
+/** The element's text with <br> preserved as newlines. */
+function textWithBreaks(el: Element): string {
+  return Array.from(el.childNodes)
+    .map((child) => (child.nodeType === Node.TEXT_NODE ? (child.textContent ?? '') : '\n'))
+    .join('')
+    .trim();
+}
+
+/**
+ * Best-effort import of legacy/foreign HTML (no embedded block model) into editor blocks, so
+ * the visual editor stays the default wherever possible. Deliberately conservative: only
+ * top-level headings, plain paragraphs, and <hr> map; anything whose content would not survive
+ * the round-trip (links, images, tables, divs, inline formatting) returns null and the editor
+ * falls back to raw-HTML mode instead of silently losing content.
+ */
+export function tryImportHtmlToBlocks(html: string): EmailBlock[] | null {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const blocks: EmailBlock[] = [];
+
+  for (const node of Array.from(doc.body.childNodes)) {
+    if (node.nodeType === Node.COMMENT_NODE) continue;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = (node.textContent ?? '').trim();
+      if (text) {
+        const block = createBlock('text');
+        block.content = text;
+        blocks.push(block);
+      }
+      continue;
+    }
+    if (!(node instanceof Element)) return null;
+
+    const tag = node.tagName.toLowerCase();
+    if (IMPORTED_HEADING_SIZES[tag] && isPlainInline(node)) {
+      const block = createBlock('heading');
+      block.content = textWithBreaks(node);
+      block.styles = { ...block.styles, textAlign: 'left', fontSize: IMPORTED_HEADING_SIZES[tag] };
+      blocks.push(block);
+    } else if (tag === 'p' && isPlainInline(node)) {
+      const block = createBlock('text');
+      block.content = textWithBreaks(node);
+      blocks.push(block);
+    } else if (tag === 'hr') {
+      blocks.push(createBlock('divider'));
+    } else if (tag === 'br') {
+      blocks.push(createBlock('spacer'));
+    } else {
+      return null;
+    }
+  }
+
+  return blocks.length > 0 ? blocks : null;
+}

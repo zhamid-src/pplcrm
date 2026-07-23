@@ -21553,505 +21553,6 @@ export class ListsGridComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-templates.ts
-```typescript
-export interface EmailBlock {
-  id: string;
-  type: 'heading' | 'text' | 'image' | 'button' | 'divider' | 'spacer' | 'social';
-  content?: string;
-  styles?: {
-    color?: string;
-    backgroundColor?: string;
-    fontSize?: string;
-    textAlign?: 'left' | 'center' | 'right';
-    paddingTop?: string;
-    paddingBottom?: string;
-    borderRadius?: string;
-    borderColor?: string;
-    borderWidth?: string;
-    height?: string;
-  };
-  linkUrl?: string;
-  imageUrl?: string;
-  imageAlt?: string;
-  imageWidth?: string;
-  socials?: Array<{ platform: 'facebook' | 'twitter' | 'linkedin' | 'instagram' | 'youtube'; url: string }>;
-  socialIconStyle?: 'circular-solid' | 'circular-gray' | 'simple-color' | 'simple-gray';
-}
-
-export const socialSvgPaths: Record<string, string> = {
-  facebook:
-    'M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z',
-  twitter:
-    'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z',
-  linkedin:
-    'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z',
-  instagram:
-    'M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204 0.013-3.583 0.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z',
-  youtube:
-    'M23.498 6.163a3.003 3.003 0 00-2.11-2.11C19.518 3.545 12 3.545 12 3.545s-7.518 0-9.388.507a3.003 3.003 0 00-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 002.11 2.11c1.87.507 9.388.507 9.388.507s7.518 0 9.388-.507a3.003 3.003 0 002.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z',
-};
-
-export function getSocialBgColor(platform: string, style: string): string {
-  const s = style || 'circular-solid';
-  if (s === 'circular-solid') {
-    if (platform === 'facebook') return '#1877f2';
-    if (platform === 'twitter') return '#000000';
-    if (platform === 'linkedin') return '#0a66c2';
-    if (platform === 'instagram') return '#e1306c';
-    if (platform === 'youtube') return '#ff0000';
-  }
-  if (s === 'circular-gray') {
-    return '#4b5563';
-  }
-  return 'transparent';
-}
-
-export function getSocialIconColor(platform: string, style: string): string {
-  const s = style || 'circular-solid';
-  if (s === 'circular-solid' || s === 'circular-gray') {
-    return '#ffffff';
-  }
-  if (s === 'simple-color') {
-    if (platform === 'facebook') return '#1877f2';
-    if (platform === 'twitter') return '#000000';
-    if (platform === 'linkedin') return '#0a66c2';
-    if (platform === 'instagram') return '#e1306c';
-    if (platform === 'youtube') return '#ff0000';
-  }
-  return '#4b5563';
-}
-
-export function compileTemplateHtml(preset: 'welcome' | 'product' | 'newsletter' | 'empty'): string {
-  const blockList = getTemplateBlocks(preset);
-  return compileBlocksToHtml(blockList);
-}
-
-export function compileTemplatePlainText(preset: 'welcome' | 'product' | 'newsletter' | 'empty'): string {
-  const blockList = getTemplateBlocks(preset);
-  return compileBlocksToPlainText(blockList);
-}
-
-export function getTemplateBlocks(preset: 'welcome' | 'product' | 'newsletter' | 'empty'): EmailBlock[] {
-  if (preset === 'welcome') {
-    return [
-      {
-        id: 'w1',
-        type: 'spacer',
-        styles: { height: '20' },
-      },
-      {
-        id: 'w2',
-        type: 'heading',
-        content: 'WELCOME TO OUR COMMUNITY!',
-        styles: { textAlign: 'center', fontSize: '28px', color: '#1f2937', paddingTop: '10', paddingBottom: '10' },
-      },
-      {
-        id: 'w3',
-        type: 'image',
-        imageUrl: 'assets/newsletters/welcome_banner.png',
-        imageAlt: 'Waving team welcome banner',
-        imageWidth: '100%',
-        styles: { textAlign: 'center', paddingTop: '10', paddingBottom: '10' },
-      },
-      {
-        id: 'w4',
-        type: 'text',
-        content:
-          "Hello [User Name]!\n\nYou've successfully joined a vibrant network of professionals, innovators, and creators! This email marks the beginning of your exciting journey with us.\n\nExplore exclusive content, connect with experts, access resources, and discover a world of opportunities designed to accelerate your growth.\n\nWe are here to support you every step of the way. Let's make an impact together!",
-        styles: { textAlign: 'left', fontSize: '16px', color: '#4b5563', paddingTop: '15', paddingBottom: '15' },
-      },
-      {
-        id: 'w5',
-        type: 'button',
-        content: 'GET STARTED NOW',
-        linkUrl: 'https://example.com/start',
-        styles: {
-          textAlign: 'center',
-          backgroundColor: '#2563eb',
-          color: '#ffffff',
-          borderRadius: '6',
-          fontSize: '16px',
-          paddingTop: '15',
-          paddingBottom: '15',
-        },
-      },
-      {
-        id: 'w6',
-        type: 'divider',
-        styles: { borderColor: '#e5e7eb', borderWidth: '1', paddingTop: '10', paddingBottom: '10' },
-      },
-      {
-        id: 'w7',
-        type: 'social',
-        socialIconStyle: 'circular-solid',
-        socials: [
-          { platform: 'facebook', url: 'https://facebook.com' },
-          { platform: 'twitter', url: 'https://twitter.com' },
-          { platform: 'linkedin', url: 'https://linkedin.com' },
-          { platform: 'instagram', url: 'https://instagram.com' },
-        ],
-        styles: { textAlign: 'center', paddingTop: '10', paddingBottom: '10' },
-      },
-    ];
-  } else if (preset === 'product') {
-    return [
-      {
-        id: 'p1',
-        type: 'spacer',
-        styles: { height: '15' },
-      },
-      {
-        id: 'p2',
-        type: 'heading',
-        content: 'Introducing Visual Newsletters!',
-        styles: { textAlign: 'center', fontSize: '32px', color: '#111827', paddingTop: '10', paddingBottom: '5' },
-      },
-      {
-        id: 'p3',
-        type: 'image',
-        imageUrl: 'assets/newsletters/product_banner.png',
-        imageAlt: 'Visual builder rocket announcement',
-        imageWidth: '100%',
-        styles: { textAlign: 'center', paddingTop: '15', paddingBottom: '15' },
-      },
-      {
-        id: 'p4',
-        type: 'text',
-        content:
-          'The easiest way to create and send stunning emails for your business.\n\n✨ Create engaging content with ease\n📊 Built-in analytics dashboard\n👥 Collaborative team features\n✅ One-click publishing & sending',
-        styles: { textAlign: 'left', fontSize: '16px', color: '#374151', paddingTop: '10', paddingBottom: '15' },
-      },
-      {
-        id: 'p5',
-        type: 'button',
-        content: 'Try Visual Builder',
-        linkUrl: 'https://example.com/dashboard/newsletters',
-        styles: {
-          textAlign: 'center',
-          backgroundColor: '#10b981',
-          color: '#ffffff',
-          borderRadius: '6',
-          fontSize: '16px',
-          paddingTop: '15',
-          paddingBottom: '15',
-        },
-      },
-    ];
-  } else if (preset === 'newsletter') {
-    return [
-      {
-        id: 'n1',
-        type: 'heading',
-        content: 'WEEKLY DIGEST',
-        styles: { textAlign: 'center', fontSize: '28px', color: '#111827', paddingTop: '15', paddingBottom: '5' },
-      },
-      {
-        id: 'n2',
-        type: 'divider',
-        styles: { borderColor: '#111827', borderWidth: '2', paddingTop: '5', paddingBottom: '15' },
-      },
-      {
-        id: 'n3-h1',
-        type: 'heading',
-        content: 'Article 1 Headline: Weekly News',
-        styles: { textAlign: 'left', fontSize: '18px', color: '#111827', paddingTop: '10', paddingBottom: '5' },
-      },
-      {
-        id: 'n3-t1',
-        type: 'text',
-        content:
-          'Here is what is happening around the platform this week. List Sync has been updated to support faster exports for all user accounts.',
-        styles: { textAlign: 'left', fontSize: '15px', color: '#374151', paddingTop: '5', paddingBottom: '10' },
-      },
-      {
-        id: 'n3-d1',
-        type: 'divider',
-        styles: { borderColor: '#e5e7eb', borderWidth: '1', paddingTop: '10', paddingBottom: '10' },
-      },
-      {
-        id: 'n3-h2',
-        type: 'heading',
-        content: 'Article 2: Key Insights & Trends',
-        styles: { textAlign: 'left', fontSize: '18px', color: '#111827', paddingTop: '10', paddingBottom: '5' },
-      },
-      {
-        id: 'n3-t2',
-        type: 'text',
-        content:
-          'Household reassignment logic fixes are now live and performing seamlessly under high concurrent load tests.',
-        styles: { textAlign: 'left', fontSize: '15px', color: '#374151', paddingTop: '5', paddingBottom: '10' },
-      },
-      {
-        id: 'n3-d2',
-        type: 'divider',
-        styles: { borderColor: '#e5e7eb', borderWidth: '1', paddingTop: '10', paddingBottom: '10' },
-      },
-      {
-        id: 'n3-h3',
-        type: 'heading',
-        content: 'Article 3: Tech Innovation Focus',
-        styles: { textAlign: 'left', fontSize: '18px', color: '#111827', paddingTop: '10', paddingBottom: '5' },
-      },
-      {
-        id: 'n3-t3',
-        type: 'text',
-        content:
-          'Security and role access controls have been strengthened across all internal modules and database tables.',
-        styles: { textAlign: 'left', fontSize: '15px', color: '#374151', paddingTop: '5', paddingBottom: '10' },
-      },
-      {
-        id: 'n3-d3',
-        type: 'divider',
-        styles: { borderColor: '#e5e7eb', borderWidth: '1', paddingTop: '10', paddingBottom: '10' },
-      },
-      {
-        id: 'n3-soc',
-        type: 'social',
-        socialIconStyle: 'circular-solid',
-        socials: [
-          { platform: 'facebook', url: 'https://facebook.com' },
-          { platform: 'twitter', url: 'https://twitter.com' },
-          { platform: 'linkedin', url: 'https://linkedin.com' },
-        ],
-        styles: { textAlign: 'center', paddingTop: '10', paddingBottom: '10' },
-      },
-    ];
-  } else {
-    return [
-      {
-        id: 'e1',
-        type: 'heading',
-        content: 'Start Designing Your Newsletter',
-        styles: { textAlign: 'center', fontSize: '24px', color: '#1f2937', paddingTop: '20', paddingBottom: '20' },
-      },
-    ];
-  }
-}
-
-export function compileBlocksToHtml(blockList: EmailBlock[]): string {
-  let blocksHtml = '';
-
-  for (const block of blockList) {
-    const pTop = block.styles?.paddingTop || '12';
-    const pBottom = block.styles?.paddingBottom || '12';
-    const tAlign = block.styles?.textAlign || 'center';
-    const color = block.styles?.color || '#333333';
-    const fSize = block.styles?.fontSize || '16px';
-    const bg = block.styles?.backgroundColor || '#ffffff';
-    const radius = block.styles?.borderRadius || '4';
-
-    if (block.type === 'heading') {
-      blocksHtml += `
-        <!-- Block: Heading -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td style="padding: ${pTop}px 24px ${pBottom}px 24px; color: ${color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: ${fSize}; font-weight: bold; text-align: ${tAlign}; line-height: 1.3;">
-              ${block.content || ''}
-            </td>
-          </tr>
-        </table>`;
-    } else if (block.type === 'text') {
-      const textContent = (block.content || '').replace(/\n/g, '<br />');
-      blocksHtml += `
-        <!-- Block: Text -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td style="padding: ${pTop}px 24px ${pBottom}px 24px; color: ${color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: ${fSize}; text-align: ${tAlign}; line-height: 1.6;">
-              ${textContent}
-            </td>
-          </tr>
-        </table>`;
-    } else if (block.type === 'image') {
-      const imgUrl =
-        block.imageUrl || 'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&w=600&q=80';
-      const imgAlt = block.imageAlt || 'Image';
-      const imgWidth = block.imageWidth || '100%';
-      const maxWStyle = imgWidth.endsWith('%')
-        ? `width: ${imgWidth}; max-width: 100%;`
-        : `width: 100%; max-width: ${imgWidth};`;
-
-      let imgHtml = `<img src="${imgUrl}" alt="${imgAlt}" style="display: block; ${maxWStyle} height: auto; border: 0; border-radius: 4px;" />`;
-      if (block.linkUrl) {
-        imgHtml = `<a href="${block.linkUrl}" target="_blank" style="text-decoration: none;">${imgHtml}</a>`;
-      }
-
-      blocksHtml += `
-        <!-- Block: Image -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td align="${tAlign}" style="padding: ${pTop}px 24px ${pBottom}px 24px;">
-              ${imgHtml}
-            </td>
-          </tr>
-        </table>`;
-    } else if (block.type === 'button') {
-      const btnLink = block.linkUrl || '#';
-      blocksHtml += `
-        <!-- Block: Button -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td align="${tAlign}" style="padding: ${pTop}px 24px ${pBottom}px 24px;">
-              <table border="0" cellpadding="0" cellspacing="0" style="border-collapse: separate;">
-                <tr>
-                  <td align="center" valign="middle" bgcolor="${bg}" style="border-radius: ${radius}px;">
-                    <a href="${btnLink}" target="_blank" style="display: inline-block; padding: 12px 24px; color: ${color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: ${fSize}; font-weight: bold; text-decoration: none; border-radius: ${radius}px;">
-                      ${block.content || ''}
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>`;
-    } else if (block.type === 'divider') {
-      const borderW = block.styles?.borderWidth || '1';
-      const borderC = block.styles?.borderColor || '#e5e7eb';
-      blocksHtml += `
-        <!-- Block: Divider -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td style="padding: ${pTop}px 24px ${pBottom}px 24px;">
-              <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td style="border-top: ${borderW}px solid ${borderC}; font-size: 0; line-height: 0;">
-                    &nbsp;
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>`;
-    } else if (block.type === 'spacer') {
-      const h = block.styles?.height || '20';
-      blocksHtml += `
-        <!-- Block: Spacer -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td height="${h}" style="font-size: 0; line-height: 0;">
-              &nbsp;
-            </td>
-          </tr>
-        </table>`;
-    } else if (block.type === 'social') {
-      let tdSocials = '';
-      const style = block.socialIconStyle || 'circular-solid';
-      for (const social of block.socials || []) {
-        const char = social.platform.charAt(0).toUpperCase();
-        const svgPath = socialSvgPaths[social.platform] || '';
-        const bgColor = getSocialBgColor(social.platform, style);
-        const iconColor = getSocialIconColor(social.platform, style);
-        const r = style.startsWith('circular') ? '50%' : '0%';
-
-        tdSocials += `
-          <td style="padding: 0 8px;" align="center" valign="middle">
-            <a href="${social.url || '#'}" target="_blank" style="text-decoration: none; display: block; width: 32px; height: 32px; background-color: ${bgColor}; border-radius: ${r}; line-height: 32px; text-align: center; color: ${iconColor};">
-              <!--[if !mso]><!-->
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="${iconColor}" style="display: inline-block; vertical-align: middle; width: 16px; height: 16px; margin-top: 8px;">
-                <path d="${svgPath}"></path>
-              </svg>
-              <!--<![endif]-->
-              <!--[if mso]>
-              <span style="color: ${iconColor}; font-weight: bold; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px;">${char}</span>
-              <![endif]-->
-            </a>
-          </td>`;
-      }
-
-      blocksHtml += `
-        <!-- Block: Social Links -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td align="${tAlign}" style="padding: ${pTop}px 24px ${pBottom}px 24px;">
-              <table border="0" cellpadding="0" cellspacing="0">
-                <tr>
-                  ${tdSocials}
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>`;
-    }
-  }
-
-  const jsonString = encodeURIComponent(JSON.stringify(blockList));
-  const metadataComment = `<!-- PPLCRM_VISUAL_BLOCKS_DATA: ${jsonString} -->`;
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Newsletter</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background-color: #f3f4f6;
-    }
-    table {
-      border-collapse: collapse;
-    }
-    img {
-      border: 0;
-      height: auto;
-      line-height: 100%;
-      outline: none;
-      text-decoration: none;
-      display: block;
-    }
-  </style>
-</head>
-<body style="margin: 0; padding: 0; background-color: #f3f4f6;">
-  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f3f4f6; padding: 20px 0;">
-    <tr>
-      <td align="center">
-        <!-- Main Email Container -->
-        <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e5e7eb;">
-          <tr>
-            <td style="padding: 0;">
-              ${blocksHtml}
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-  ${metadataComment}
-</body>
-</html>`;
-}
-
-export function compileBlocksToPlainText(blockList: EmailBlock[]): string {
-  let text = '';
-
-  for (const block of blockList) {
-    if (block.type === 'heading') {
-      text += `\n\n${block.content || ''}\n====================\n`;
-    } else if (block.type === 'text') {
-      text += `\n\n${block.content || ''}\n`;
-    } else if (block.type === 'image') {
-      text += `\n\n[Image: ${block.imageAlt || ''}] (${block.imageUrl || ''})\n`;
-    } else if (block.type === 'button') {
-      text += `\n\n${block.content || 'Click Here'}: ${block.linkUrl || ''}\n`;
-    } else if (block.type === 'divider') {
-      text += `\n\n-----------------------------------------\n`;
-    } else if (block.type === 'spacer') {
-      text += `\n`;
-    } else if (block.type === 'social') {
-      text += '\n\n';
-      for (const social of block.socials || []) {
-        text += `${social.platform.toUpperCase()}: ${social.url || ''} | `;
-      }
-      text += '\n';
-    }
-  }
-
-  return text.trim();
-}
-```
-
 ## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
 ```typescript
 import { Service, inject } from '@angular/core';
@@ -46108,109 +45609,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-block-ops.ts
-```typescript
-import type { EmailBlock } from './newsletter-templates';
-
-/** The block type vocabulary of the visual editor (deliberately small). */
-export type EmailBlockType = EmailBlock['type'];
-
-export const EMAIL_BLOCK_TYPES = [
-  'heading',
-  'text',
-  'image',
-  'button',
-  'divider',
-  'spacer',
-  'social',
-] as const satisfies readonly EmailBlockType[];
-
-/** Type guard for untyped drag data arriving from a CDK drop event. */
-export function isEmailBlockType(value: unknown): value is EmailBlockType {
-  return typeof value === 'string' && (EMAIL_BLOCK_TYPES as readonly string[]).includes(value);
-}
-
-/**
- * Returns a new list with the block at `from` moved to `to` (clamped to the
- * list bounds). An out-of-range `from` is a no-op copy. Never mutates `list`.
- */
-export function moveBlock(list: readonly EmailBlock[], from: number, to: number): EmailBlock[] {
-  const result = [...list];
-  if (from < 0 || from >= list.length) return result;
-  const clampedTo = Math.max(0, Math.min(to, list.length - 1));
-  if (from === clampedTo) return result;
-  const [moved] = result.splice(from, 1);
-  if (!moved) return [...list];
-  result.splice(clampedTo, 0, moved);
-  return result;
-}
-
-/**
- * Returns a new list with `block` inserted at `index` (clamped to
- * `0..list.length`). Never mutates `list`.
- */
-export function insertBlockAt(list: readonly EmailBlock[], block: EmailBlock, index: number): EmailBlock[] {
-  const clamped = Math.max(0, Math.min(index, list.length));
-  const result = [...list];
-  result.splice(clamped, 0, block);
-  return result;
-}
-
-/** Creates a new block of the given type with the editor's per-type defaults and a fresh id. */
-export function createBlock(type: EmailBlockType): EmailBlock {
-  const id = Math.random().toString(36).substring(2, 9);
-  const styles: NonNullable<EmailBlock['styles']> = {
-    textAlign: 'center',
-    paddingTop: '16',
-    paddingBottom: '16',
-  };
-
-  const newBlock: EmailBlock = {
-    id,
-    type,
-    styles,
-  };
-
-  // Set block defaults
-  if (type === 'heading') {
-    newBlock.content = 'Heading Title';
-    styles.fontSize = '24px';
-    styles.color = '#1f2937';
-  } else if (type === 'text') {
-    newBlock.content = 'Write your custom message paragraph here. Support multiple paragraphs and inline styling.';
-    styles.fontSize = '16px';
-    styles.color = '#4b5563';
-    styles.textAlign = 'left';
-  } else if (type === 'image') {
-    newBlock.imageUrl = 'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&w=600&q=80';
-    newBlock.imageAlt = 'Banner image';
-    newBlock.imageWidth = '100%';
-  } else if (type === 'button') {
-    newBlock.content = 'Click Here';
-    newBlock.linkUrl = 'https://example.com';
-    styles.backgroundColor = '#2563eb';
-    styles.color = '#ffffff';
-    styles.borderRadius = '6';
-    styles.fontSize = '16px';
-  } else if (type === 'divider') {
-    styles.borderColor = '#e5e7eb';
-    styles.borderWidth = '1';
-  } else if (type === 'spacer') {
-    styles.height = '20';
-  } else if (type === 'social') {
-    newBlock.socialIconStyle = 'circular-solid';
-    newBlock.socials = [
-      { platform: 'facebook', url: 'https://facebook.com' },
-      { platform: 'twitter', url: 'https://twitter.com' },
-      { platform: 'linkedin', url: 'https://linkedin.com' },
-      { platform: 'instagram', url: 'https://instagram.com' },
-    ];
-  }
-
-  return newBlock;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.ts
 ```typescript
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
@@ -46989,6 +46387,505 @@ export class NewsletterDetailComponent {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-templates.ts
+```typescript
+export interface EmailBlock {
+  id: string;
+  type: 'heading' | 'text' | 'image' | 'button' | 'divider' | 'spacer' | 'social';
+  content?: string;
+  styles?: {
+    color?: string;
+    backgroundColor?: string;
+    fontSize?: string;
+    textAlign?: 'left' | 'center' | 'right';
+    paddingTop?: string;
+    paddingBottom?: string;
+    borderRadius?: string;
+    borderColor?: string;
+    borderWidth?: string;
+    height?: string;
+  };
+  linkUrl?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  imageWidth?: string;
+  socials?: Array<{ platform: 'facebook' | 'twitter' | 'linkedin' | 'instagram' | 'youtube'; url: string }>;
+  socialIconStyle?: 'circular-solid' | 'circular-gray' | 'simple-color' | 'simple-gray';
+}
+
+export const socialSvgPaths: Record<string, string> = {
+  facebook:
+    'M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z',
+  twitter:
+    'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z',
+  linkedin:
+    'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z',
+  instagram:
+    'M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204 0.013-3.583 0.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z',
+  youtube:
+    'M23.498 6.163a3.003 3.003 0 00-2.11-2.11C19.518 3.545 12 3.545 12 3.545s-7.518 0-9.388.507a3.003 3.003 0 00-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 002.11 2.11c1.87.507 9.388.507 9.388.507s7.518 0 9.388-.507a3.003 3.003 0 002.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z',
+};
+
+export function getSocialBgColor(platform: string, style: string): string {
+  const s = style || 'circular-solid';
+  if (s === 'circular-solid') {
+    if (platform === 'facebook') return '#1877f2';
+    if (platform === 'twitter') return '#000000';
+    if (platform === 'linkedin') return '#0a66c2';
+    if (platform === 'instagram') return '#e1306c';
+    if (platform === 'youtube') return '#ff0000';
+  }
+  if (s === 'circular-gray') {
+    return '#4b5563';
+  }
+  return 'transparent';
+}
+
+export function getSocialIconColor(platform: string, style: string): string {
+  const s = style || 'circular-solid';
+  if (s === 'circular-solid' || s === 'circular-gray') {
+    return '#ffffff';
+  }
+  if (s === 'simple-color') {
+    if (platform === 'facebook') return '#1877f2';
+    if (platform === 'twitter') return '#000000';
+    if (platform === 'linkedin') return '#0a66c2';
+    if (platform === 'instagram') return '#e1306c';
+    if (platform === 'youtube') return '#ff0000';
+  }
+  return '#4b5563';
+}
+
+export function compileTemplateHtml(preset: 'welcome' | 'product' | 'newsletter' | 'empty'): string {
+  const blockList = getTemplateBlocks(preset);
+  return compileBlocksToHtml(blockList);
+}
+
+export function compileTemplatePlainText(preset: 'welcome' | 'product' | 'newsletter' | 'empty'): string {
+  const blockList = getTemplateBlocks(preset);
+  return compileBlocksToPlainText(blockList);
+}
+
+export function getTemplateBlocks(preset: 'welcome' | 'product' | 'newsletter' | 'empty'): EmailBlock[] {
+  if (preset === 'welcome') {
+    return [
+      {
+        id: 'w1',
+        type: 'spacer',
+        styles: { height: '20' },
+      },
+      {
+        id: 'w2',
+        type: 'heading',
+        content: 'WELCOME TO OUR COMMUNITY!',
+        styles: { textAlign: 'center', fontSize: '28px', color: '#1f2937', paddingTop: '10', paddingBottom: '10' },
+      },
+      {
+        id: 'w3',
+        type: 'image',
+        imageUrl: 'assets/newsletters/welcome_banner.png',
+        imageAlt: 'Waving team welcome banner',
+        imageWidth: '100%',
+        styles: { textAlign: 'center', paddingTop: '10', paddingBottom: '10' },
+      },
+      {
+        id: 'w4',
+        type: 'text',
+        content:
+          "Hello [User Name]!\n\nYou've successfully joined a vibrant network of professionals, innovators, and creators! This email marks the beginning of your exciting journey with us.\n\nExplore exclusive content, connect with experts, access resources, and discover a world of opportunities designed to accelerate your growth.\n\nWe are here to support you every step of the way. Let's make an impact together!",
+        styles: { textAlign: 'left', fontSize: '16px', color: '#4b5563', paddingTop: '15', paddingBottom: '15' },
+      },
+      {
+        id: 'w5',
+        type: 'button',
+        content: 'GET STARTED NOW',
+        linkUrl: 'https://example.com/start',
+        styles: {
+          textAlign: 'center',
+          backgroundColor: '#2563eb',
+          color: '#ffffff',
+          borderRadius: '6',
+          fontSize: '16px',
+          paddingTop: '15',
+          paddingBottom: '15',
+        },
+      },
+      {
+        id: 'w6',
+        type: 'divider',
+        styles: { borderColor: '#e5e7eb', borderWidth: '1', paddingTop: '10', paddingBottom: '10' },
+      },
+      {
+        id: 'w7',
+        type: 'social',
+        socialIconStyle: 'circular-solid',
+        socials: [
+          { platform: 'facebook', url: 'https://facebook.com' },
+          { platform: 'twitter', url: 'https://twitter.com' },
+          { platform: 'linkedin', url: 'https://linkedin.com' },
+          { platform: 'instagram', url: 'https://instagram.com' },
+        ],
+        styles: { textAlign: 'center', paddingTop: '10', paddingBottom: '10' },
+      },
+    ];
+  } else if (preset === 'product') {
+    return [
+      {
+        id: 'p1',
+        type: 'spacer',
+        styles: { height: '15' },
+      },
+      {
+        id: 'p2',
+        type: 'heading',
+        content: 'Introducing Visual Newsletters!',
+        styles: { textAlign: 'center', fontSize: '32px', color: '#111827', paddingTop: '10', paddingBottom: '5' },
+      },
+      {
+        id: 'p3',
+        type: 'image',
+        imageUrl: 'assets/newsletters/product_banner.png',
+        imageAlt: 'Visual builder rocket announcement',
+        imageWidth: '100%',
+        styles: { textAlign: 'center', paddingTop: '15', paddingBottom: '15' },
+      },
+      {
+        id: 'p4',
+        type: 'text',
+        content:
+          'The easiest way to create and send stunning emails for your business.\n\n✨ Create engaging content with ease\n📊 Built-in analytics dashboard\n👥 Collaborative team features\n✅ One-click publishing & sending',
+        styles: { textAlign: 'left', fontSize: '16px', color: '#374151', paddingTop: '10', paddingBottom: '15' },
+      },
+      {
+        id: 'p5',
+        type: 'button',
+        content: 'Try Visual Builder',
+        linkUrl: 'https://example.com/dashboard/newsletters',
+        styles: {
+          textAlign: 'center',
+          backgroundColor: '#10b981',
+          color: '#ffffff',
+          borderRadius: '6',
+          fontSize: '16px',
+          paddingTop: '15',
+          paddingBottom: '15',
+        },
+      },
+    ];
+  } else if (preset === 'newsletter') {
+    return [
+      {
+        id: 'n1',
+        type: 'heading',
+        content: 'WEEKLY DIGEST',
+        styles: { textAlign: 'center', fontSize: '28px', color: '#111827', paddingTop: '15', paddingBottom: '5' },
+      },
+      {
+        id: 'n2',
+        type: 'divider',
+        styles: { borderColor: '#111827', borderWidth: '2', paddingTop: '5', paddingBottom: '15' },
+      },
+      {
+        id: 'n3-h1',
+        type: 'heading',
+        content: 'Article 1 Headline: Weekly News',
+        styles: { textAlign: 'left', fontSize: '18px', color: '#111827', paddingTop: '10', paddingBottom: '5' },
+      },
+      {
+        id: 'n3-t1',
+        type: 'text',
+        content:
+          'Here is what is happening around the platform this week. List Sync has been updated to support faster exports for all user accounts.',
+        styles: { textAlign: 'left', fontSize: '15px', color: '#374151', paddingTop: '5', paddingBottom: '10' },
+      },
+      {
+        id: 'n3-d1',
+        type: 'divider',
+        styles: { borderColor: '#e5e7eb', borderWidth: '1', paddingTop: '10', paddingBottom: '10' },
+      },
+      {
+        id: 'n3-h2',
+        type: 'heading',
+        content: 'Article 2: Key Insights & Trends',
+        styles: { textAlign: 'left', fontSize: '18px', color: '#111827', paddingTop: '10', paddingBottom: '5' },
+      },
+      {
+        id: 'n3-t2',
+        type: 'text',
+        content:
+          'Household reassignment logic fixes are now live and performing seamlessly under high concurrent load tests.',
+        styles: { textAlign: 'left', fontSize: '15px', color: '#374151', paddingTop: '5', paddingBottom: '10' },
+      },
+      {
+        id: 'n3-d2',
+        type: 'divider',
+        styles: { borderColor: '#e5e7eb', borderWidth: '1', paddingTop: '10', paddingBottom: '10' },
+      },
+      {
+        id: 'n3-h3',
+        type: 'heading',
+        content: 'Article 3: Tech Innovation Focus',
+        styles: { textAlign: 'left', fontSize: '18px', color: '#111827', paddingTop: '10', paddingBottom: '5' },
+      },
+      {
+        id: 'n3-t3',
+        type: 'text',
+        content:
+          'Security and role access controls have been strengthened across all internal modules and database tables.',
+        styles: { textAlign: 'left', fontSize: '15px', color: '#374151', paddingTop: '5', paddingBottom: '10' },
+      },
+      {
+        id: 'n3-d3',
+        type: 'divider',
+        styles: { borderColor: '#e5e7eb', borderWidth: '1', paddingTop: '10', paddingBottom: '10' },
+      },
+      {
+        id: 'n3-soc',
+        type: 'social',
+        socialIconStyle: 'circular-solid',
+        socials: [
+          { platform: 'facebook', url: 'https://facebook.com' },
+          { platform: 'twitter', url: 'https://twitter.com' },
+          { platform: 'linkedin', url: 'https://linkedin.com' },
+        ],
+        styles: { textAlign: 'center', paddingTop: '10', paddingBottom: '10' },
+      },
+    ];
+  } else {
+    return [
+      {
+        id: 'e1',
+        type: 'heading',
+        content: 'Start Designing Your Newsletter',
+        styles: { textAlign: 'center', fontSize: '24px', color: '#1f2937', paddingTop: '20', paddingBottom: '20' },
+      },
+    ];
+  }
+}
+
+export function compileBlocksToHtml(blockList: EmailBlock[]): string {
+  let blocksHtml = '';
+
+  for (const block of blockList) {
+    const pTop = block.styles?.paddingTop || '12';
+    const pBottom = block.styles?.paddingBottom || '12';
+    const tAlign = block.styles?.textAlign || 'center';
+    const color = block.styles?.color || '#333333';
+    const fSize = block.styles?.fontSize || '16px';
+    const bg = block.styles?.backgroundColor || '#ffffff';
+    const radius = block.styles?.borderRadius || '4';
+
+    if (block.type === 'heading') {
+      blocksHtml += `
+        <!-- Block: Heading -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td style="padding: ${pTop}px 24px ${pBottom}px 24px; color: ${color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: ${fSize}; font-weight: bold; text-align: ${tAlign}; line-height: 1.3;">
+              ${block.content || ''}
+            </td>
+          </tr>
+        </table>`;
+    } else if (block.type === 'text') {
+      const textContent = (block.content || '').replace(/\n/g, '<br />');
+      blocksHtml += `
+        <!-- Block: Text -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td style="padding: ${pTop}px 24px ${pBottom}px 24px; color: ${color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: ${fSize}; text-align: ${tAlign}; line-height: 1.6;">
+              ${textContent}
+            </td>
+          </tr>
+        </table>`;
+    } else if (block.type === 'image') {
+      const imgUrl =
+        block.imageUrl || 'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&w=600&q=80';
+      const imgAlt = block.imageAlt || 'Image';
+      const imgWidth = block.imageWidth || '100%';
+      const maxWStyle = imgWidth.endsWith('%')
+        ? `width: ${imgWidth}; max-width: 100%;`
+        : `width: 100%; max-width: ${imgWidth};`;
+
+      let imgHtml = `<img src="${imgUrl}" alt="${imgAlt}" style="display: block; ${maxWStyle} height: auto; border: 0; border-radius: 4px;" />`;
+      if (block.linkUrl) {
+        imgHtml = `<a href="${block.linkUrl}" target="_blank" style="text-decoration: none;">${imgHtml}</a>`;
+      }
+
+      blocksHtml += `
+        <!-- Block: Image -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td align="${tAlign}" style="padding: ${pTop}px 24px ${pBottom}px 24px;">
+              ${imgHtml}
+            </td>
+          </tr>
+        </table>`;
+    } else if (block.type === 'button') {
+      const btnLink = block.linkUrl || '#';
+      blocksHtml += `
+        <!-- Block: Button -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td align="${tAlign}" style="padding: ${pTop}px 24px ${pBottom}px 24px;">
+              <table border="0" cellpadding="0" cellspacing="0" style="border-collapse: separate;">
+                <tr>
+                  <td align="center" valign="middle" bgcolor="${bg}" style="border-radius: ${radius}px;">
+                    <a href="${btnLink}" target="_blank" style="display: inline-block; padding: 12px 24px; color: ${color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: ${fSize}; font-weight: bold; text-decoration: none; border-radius: ${radius}px;">
+                      ${block.content || ''}
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>`;
+    } else if (block.type === 'divider') {
+      const borderW = block.styles?.borderWidth || '1';
+      const borderC = block.styles?.borderColor || '#e5e7eb';
+      blocksHtml += `
+        <!-- Block: Divider -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td style="padding: ${pTop}px 24px ${pBottom}px 24px;">
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td style="border-top: ${borderW}px solid ${borderC}; font-size: 0; line-height: 0;">
+                    &nbsp;
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>`;
+    } else if (block.type === 'spacer') {
+      const h = block.styles?.height || '20';
+      blocksHtml += `
+        <!-- Block: Spacer -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td height="${h}" style="font-size: 0; line-height: 0;">
+              &nbsp;
+            </td>
+          </tr>
+        </table>`;
+    } else if (block.type === 'social') {
+      let tdSocials = '';
+      const style = block.socialIconStyle || 'circular-solid';
+      for (const social of block.socials || []) {
+        const char = social.platform.charAt(0).toUpperCase();
+        const svgPath = socialSvgPaths[social.platform] || '';
+        const bgColor = getSocialBgColor(social.platform, style);
+        const iconColor = getSocialIconColor(social.platform, style);
+        const r = style.startsWith('circular') ? '50%' : '0%';
+
+        tdSocials += `
+          <td style="padding: 0 8px;" align="center" valign="middle">
+            <a href="${social.url || '#'}" target="_blank" style="text-decoration: none; display: block; width: 32px; height: 32px; background-color: ${bgColor}; border-radius: ${r}; line-height: 32px; text-align: center; color: ${iconColor};">
+              <!--[if !mso]><!-->
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="${iconColor}" style="display: inline-block; vertical-align: middle; width: 16px; height: 16px; margin-top: 8px;">
+                <path d="${svgPath}"></path>
+              </svg>
+              <!--<![endif]-->
+              <!--[if mso]>
+              <span style="color: ${iconColor}; font-weight: bold; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px;">${char}</span>
+              <![endif]-->
+            </a>
+          </td>`;
+      }
+
+      blocksHtml += `
+        <!-- Block: Social Links -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td align="${tAlign}" style="padding: ${pTop}px 24px ${pBottom}px 24px;">
+              <table border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  ${tdSocials}
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>`;
+    }
+  }
+
+  const jsonString = encodeURIComponent(JSON.stringify(blockList));
+  const metadataComment = `<!-- PPLCRM_VISUAL_BLOCKS_DATA: ${jsonString} -->`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Newsletter</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f3f4f6;
+    }
+    table {
+      border-collapse: collapse;
+    }
+    img {
+      border: 0;
+      height: auto;
+      line-height: 100%;
+      outline: none;
+      text-decoration: none;
+      display: block;
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f3f4f6;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f3f4f6; padding: 20px 0;">
+    <tr>
+      <td align="center">
+        <!-- Main Email Container -->
+        <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e5e7eb;">
+          <tr>
+            <td style="padding: 0;">
+              ${blocksHtml}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+  ${metadataComment}
+</body>
+</html>`;
+}
+
+export function compileBlocksToPlainText(blockList: EmailBlock[]): string {
+  let text = '';
+
+  for (const block of blockList) {
+    if (block.type === 'heading') {
+      text += `\n\n${block.content || ''}\n====================\n`;
+    } else if (block.type === 'text') {
+      text += `\n\n${block.content || ''}\n`;
+    } else if (block.type === 'image') {
+      text += `\n\n[Image: ${block.imageAlt || ''}] (${block.imageUrl || ''})\n`;
+    } else if (block.type === 'button') {
+      text += `\n\n${block.content || 'Click Here'}: ${block.linkUrl || ''}\n`;
+    } else if (block.type === 'divider') {
+      text += `\n\n-----------------------------------------\n`;
+    } else if (block.type === 'spacer') {
+      text += `\n`;
+    } else if (block.type === 'social') {
+      text += '\n\n';
+      for (const social of block.socials || []) {
+        text += `${social.platform.toUpperCase()}: ${social.url || ''} | `;
+      }
+      text += '\n';
+    }
+  }
+
+  return text.trim();
+}
+```
+
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.ts
 ```typescript
 import { DatePipe } from '@angular/common';
@@ -47085,6 +46982,12 @@ export class NewslettersPage {
   /** Verified sender addresses (Workspace → Communications) — sending needs at least one. */
   protected readonly verifiedSenders = signal<string[]>([]);
 
+  /** The compliance footer needs the org's mailing address, so sending is gated on it being set. */
+  protected readonly orgAddressSet = computed(() => {
+    const value = this.settings.snapshotSignal()['organization.address'];
+    return typeof value === 'string' && value.trim().length > 0;
+  });
+
   /** The campaign context the current rows were loaded for; undefined = never loaded. */
   private loadedForCampaign: string | null | undefined = undefined;
 
@@ -47156,6 +47059,9 @@ export class NewslettersPage {
     }
     if (this.verifiedSenders().length === 0) {
       return 'Verify a sender address under Settings → Communications before sending';
+    }
+    if (!this.orgAddressSet()) {
+      return 'Set your organization’s mailing address under Settings → Organization — it appears in the footer of every newsletter';
     }
     if (!row.has_audience) return 'This draft has no audience yet. Pick lists or tags in the newsletter wizard';
     if (!row.has_content) return 'This draft has no subject or content yet. Finish it in the newsletter wizard';
@@ -47310,1254 +47216,6 @@ export class TemplateThumbComponent {
    * string never enters the app's own DOM.
    */
   protected readonly safeHtml = computed<SafeHtml>(() => this.sanitizer.bypassSecurityTrustHtml(this.html()));
-}
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.html
-```html
-<div
-  class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-270px)] min-h-[600px] border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-inner"
->
-  <!-- LEFT: VISUAL CANVAS PREVIEW -->
-  <div class="flex-1 flex flex-col bg-base-200 h-full overflow-hidden">
-    <!-- CANVAS HEADER / TOOLBAR -->
-    <div class="flex items-center justify-between px-4 py-3 bg-base-100 border-b border-base-300">
-      <div class="flex items-center gap-2">
-        <span class="pc-eyebrow">Preview Mode:</span>
-        <div class="join">
-          <button
-            type="button"
-            class="btn btn-xs join-item"
-            [class.btn-primary]="previewMode() === 'desktop'"
-            [class.btn-ghost]="previewMode() !== 'desktop'"
-            (click)="previewMode.set('desktop')"
-            title="Desktop View"
-          >
-            <pc-icon name="view-column" [size]="4"></pc-icon>
-            Desktop
-          </button>
-          <button
-            type="button"
-            class="btn btn-xs join-item"
-            [class.btn-primary]="previewMode() === 'mobile'"
-            [class.btn-ghost]="previewMode() !== 'mobile'"
-            (click)="previewMode.set('mobile')"
-            title="Mobile View"
-          >
-            <pc-icon name="collapse-content" [size]="4"></pc-icon>
-            Mobile
-          </button>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <span class="pc-eyebrow">Editor:</span>
-        <button
-          type="button"
-          class="btn btn-xs btn-outline btn-secondary"
-          [class.btn-active]="editorMode() === 'code'"
-          (click)="toggleEditorMode()"
-        >
-          @if (editorMode() === 'visual') {
-          <pc-icon name="file-code" [size]="4" class="mr-1"></pc-icon>
-          View HTML } @else {
-          <pc-icon name="eye" [size]="4" class="mr-1"></pc-icon>
-          Visual Editor }
-        </button>
-      </div>
-    </div>
-
-    <!-- CANVAS CONTENT AREA -->
-    <div cdkScrollable class="flex-1 overflow-y-auto p-6 flex justify-center items-start">
-      @if (editorMode() === 'visual') {
-      <!-- EMAIL CANVAS WRAPPER -->
-      <div
-        class="bg-white text-black shadow-md rounded-lg overflow-hidden transition-all duration-300 relative border border-slate-200"
-        [style.width]="previewMode() === 'mobile' ? '375px' : '100%'"
-        [style.max-width]="previewMode() === 'mobile' ? '375px' : '600px'"
-        style="min-height: 500px"
-      >
-        <!-- CANVAS CONTAINER -->
-        <div class="w-full bg-slate-100 py-6 px-4" style="min-height: 500px">
-          <!-- Inner email content: the canvas drop list -->
-          <div
-            cdkDropList
-            id="pc-canvas-drop-list"
-            [cdkDropListData]="blocks()"
-            (cdkDropListDropped)="onCanvasDrop($event)"
-            class="bg-white rounded-lg border border-slate-200 shadow-sm"
-          >
-            @if (blocks().length === 0) {
-            <div class="p-8 text-center text-slate-400">
-              <pc-icon name="document-text" [size]="8" class="mx-auto text-slate-300 mb-2"></pc-icon>
-              <p class="text-sm font-medium">Your canvas is empty.</p>
-              <p class="text-xs text-slate-400 mt-1">Drag a block here, or pick one from the Blocks panel.</p>
-            </div>
-            } @else { @for (block of blocks(); track block.id; let idx = $index) {
-            <div
-              cdkDrag
-              [cdkDragData]="block"
-              class="group/block relative border-2 transition-all duration-150 cursor-pointer"
-              [class.border-primary]="selectedBlockId() === block.id"
-              [class.border-transparent]="selectedBlockId() !== block.id"
-              [class.hover:border-primary/50]="selectedBlockId() !== block.id"
-              (click)="selectBlock(block.id, $event)"
-            >
-              <div *cdkDragPlaceholder class="pc-drop-indicator"></div>
-              <!-- "+" insertion seam (inserts before this block) -->
-              <div class="group/seam absolute -top-2 inset-x-0 h-4 z-20" (click)="$event.stopPropagation()">
-                <div
-                  class="absolute inset-x-6 top-1/2 h-px bg-primary/40 opacity-0 group-hover/seam:opacity-100 transition-opacity"
-                  [class.opacity-100]="insertMenuIndex() === idx"
-                ></div>
-                <button
-                  type="button"
-                  class="btn btn-primary btn-circle btn-xs absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover/seam:opacity-100 transition-opacity"
-                  [class.opacity-100]="insertMenuIndex() === idx"
-                  (click)="toggleInsertMenu(idx, $event)"
-                  title="Insert block here"
-                >
-                  <pc-icon name="plus" [size]="3"></pc-icon>
-                </button>
-                @if (insertMenuIndex() === idx) {
-                <ul
-                  class="menu menu-sm bg-base-100 text-base-content border border-base-300 rounded-box shadow-lg absolute left-1/2 -translate-x-1/2 top-4 z-30 w-44"
-                >
-                  @for (t of paletteTypes; track t.type) {
-                  <li>
-                    <button type="button" (click)="addBlockAt(t.type, idx)">
-                      <pc-icon [name]="t.icon" [size]="4" [class]="t.iconClass"></pc-icon>
-                      {{ t.label }}
-                    </button>
-                  </li>
-                  }
-                </ul>
-                }
-              </div>
-              <!-- Block controls (visible on hover or while selected) -->
-              <div
-                class="absolute -top-3 right-2 z-10 group-hover/block:flex items-center gap-1 bg-primary text-primary-content rounded px-1 shadow-md"
-                [class.hidden]="selectedBlockId() !== block.id"
-                [class.flex]="selectedBlockId() === block.id"
-              >
-                <button
-                  type="button"
-                  cdkDragHandle
-                  class="p-1 hover:bg-primary-focus rounded cursor-grab active:cursor-grabbing"
-                  (click)="$event.stopPropagation()"
-                  title="Drag to reorder"
-                >
-                  <pc-icon name="bars-3" [size]="3"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="p-1 hover:bg-primary-focus rounded"
-                  (click)="moveBlockUp(idx, $event)"
-                  [disabled]="idx === 0"
-                  title="Move up"
-                >
-                  <pc-icon name="chevron-up" [size]="3"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="p-1 hover:bg-primary-focus rounded"
-                  (click)="moveBlockDown(idx, $event)"
-                  [disabled]="idx === blocks().length - 1"
-                  title="Move down"
-                >
-                  <pc-icon name="chevron-down" [size]="3"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="p-1 hover:bg-primary-focus rounded"
-                  (click)="duplicateBlock(block, $event)"
-                  title="Duplicate block"
-                >
-                  <pc-icon name="document-duplicate" [size]="3"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="p-1 hover:bg-error rounded"
-                  (click)="deleteBlock(block.id, $event)"
-                  title="Delete block"
-                >
-                  <pc-icon name="trash" [size]="3"></pc-icon>
-                </button>
-              </div>
-              <!-- Block Renderers inside standard tables to mimic layout -->
-              <!-- HEADING BLOCK -->
-              @if (block.type === 'heading') {
-              <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td
-                    [style.padding-top.px]="block.styles?.paddingTop || 16"
-                    [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
-                    [style.color]="block.styles?.color || '#1f2937'"
-                    [style.font-size]="block.styles?.fontSize || '24px'"
-                    [style.text-align]="block.styles?.textAlign || 'center'"
-                    class="font-sans font-bold px-6 leading-tight select-none"
-                    [innerHTML]="
-                                            resolveVariablesForPreview(block.content || 'Heading Block', false)
-                                          "
-                  ></td>
-                </tr>
-              </table>
-              }
-
-              <!-- TEXT BLOCK -->
-              @if (block.type === 'text') {
-              <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td
-                    [style.padding-top.px]="block.styles?.paddingTop || 12"
-                    [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
-                    [style.color]="block.styles?.color || '#4b5563'"
-                    [style.font-size]="block.styles?.fontSize || '16px'"
-                    [style.text-align]="block.styles?.textAlign || 'left'"
-                    class="font-sans px-6 leading-relaxed whitespace-pre-wrap select-none"
-                    [innerHTML]="
-                                            resolveVariablesForPreview(
-                                              block.content || 'Click here to write some text...',
-                                              false
-                                            )
-                                          "
-                  ></td>
-                </tr>
-              </table>
-              }
-
-              <!-- IMAGE BLOCK -->
-              @if (block.type === 'image') {
-              <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td
-                    [align]="block.styles?.textAlign || 'center'"
-                    [style.padding-top.px]="block.styles?.paddingTop || 12"
-                    [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
-                    class="px-6"
-                  >
-                    <img
-                      [src]="
-                                              block.imageUrl ||
-                                              'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=600&q=80'
-                                            "
-                      [alt]="block.imageAlt || 'Newsletter Image'"
-                      [style.max-width]="block.imageWidth || '100%'"
-                      class="w-full height-auto border-0 block rounded"
-                    />
-                  </td>
-                </tr>
-              </table>
-              }
-
-              <!-- BUTTON BLOCK -->
-              @if (block.type === 'button') {
-              <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td
-                    [align]="block.styles?.textAlign || 'center'"
-                    [style.padding-top.px]="block.styles?.paddingTop || 16"
-                    [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
-                    class="px-6"
-                  >
-                    <table border="0" cellpadding="0" cellspacing="0" class="border-separate">
-                      <tr>
-                        <td
-                          align="center"
-                          valign="middle"
-                          [style.background-color]="block.styles?.backgroundColor || '#2563eb'"
-                          [style.border-radius.px]="block.styles?.borderRadius || 6"
-                        >
-                          <span
-                            class="inline-block px-6 py-3 font-sans font-bold select-none text-decoration-none"
-                            [style.color]="block.styles?.color || '#ffffff'"
-                            [style.font-size]="block.styles?.fontSize || '16px'"
-                            [innerHTML]="
-                                                    resolveVariablesForPreview(block.content || 'Click Me', true)
-                                                  "
-                          >
-                          </span>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-              }
-
-              <!-- DIVIDER BLOCK -->
-              @if (block.type === 'divider') {
-              <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td
-                    [style.padding-top.px]="block.styles?.paddingTop || 12"
-                    [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
-                    class="px-6"
-                  >
-                    <div
-                      [style.border-top-width.px]="block.styles?.borderWidth || 1"
-                      [style.border-top-color]="block.styles?.borderColor || '#e5e7eb'"
-                      class="border-t"
-                    ></div>
-                  </td>
-                </tr>
-              </table>
-              }
-
-              <!-- SPACER BLOCK -->
-              @if (block.type === 'spacer') {
-              <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td [style.height.px]="block.styles?.height || 20" style="font-size: 0; line-height: 0">&nbsp;</td>
-                </tr>
-              </table>
-              }
-
-              <!-- SOCIAL LINKS BLOCK -->
-              @if (block.type === 'social') {
-              <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td
-                    [align]="block.styles?.textAlign || 'center'"
-                    [style.padding-top.px]="block.styles?.paddingTop || 16"
-                    [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
-                    class="px-6"
-                  >
-                    <table border="0" cellpadding="0" cellspacing="0">
-                      <tr>
-                        @for (social of block.socials || []; track social.platform) {
-                        <td class="px-2">
-                          <span
-                            class="inline-flex items-center justify-center w-8 h-8 select-none"
-                            [style.background-color]="
-                                                      getSocialBgColor(
-                                                        social.platform,
-                                                        block.socialIconStyle || 'circular-solid'
-                                                      )
-                                                    "
-                            [style.color]="
-                                                      getSocialIconColor(
-                                                        social.platform,
-                                                        block.socialIconStyle || 'circular-solid'
-                                                      )
-                                                    "
-                            [style.border-radius]="
-                                                      (block.socialIconStyle || 'circular-solid').startsWith('circular')
-                                                        ? '50%'
-                                                        : '0%'
-                                                    "
-                          >
-                            <svg
-                              viewBox="0 0 24 24"
-                              class="w-4 h-4 fill-current"
-                              style="display: block; width: 16px; height: 16px"
-                            >
-                              <path [attr.d]="socialSvgPaths[social.platform]"></path>
-                            </svg>
-                          </span>
-                        </td>
-                        }
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-              }
-            </div>
-            } }
-          </div>
-        </div>
-      </div>
-      } @else {
-      <!-- RAW CODE VIEW -->
-      <div class="w-full h-full flex flex-col gap-2">
-        <div class="alert alert-warning text-xs py-2">
-          <pc-icon name="exclamation-triangle" [size]="4" class="mr-1"></pc-icon>
-          <span>
-            <strong>Caution:</strong> Editing raw HTML directly is fully supported, but manual changes cannot be
-            converted back into visual blocks.
-          </span>
-        </div>
-        <textarea
-          class="textarea textarea-bordered font-mono text-xs w-full flex-1"
-          [value]="compiledHtml()"
-          (input)="onRawHtmlInput($event)"
-          placeholder="Paste or edit HTML here..."
-        ></textarea>
-      </div>
-      }
-    </div>
-  </div>
-
-  <!-- RIGHT: CONTROL PANEL -->
-  <aside
-    class="w-full lg:w-96 flex flex-col border-t lg:border-t-0 lg:border-l border-base-300 bg-base-100 h-full overflow-hidden"
-  >
-    <!-- Tabs (the standard pill tab bar) -->
-    <pc-tab-bar
-      class="border-b border-base-300 px-4 py-3"
-      [tabs]="panelTabs"
-      [activeTab]="activeTab()"
-      (activeTabChange)="setPanelTab($event)"
-    />
-
-    <!-- TAB CONTENT -->
-    <div class="flex-1 overflow-y-auto p-4">
-      <!-- BLOCKS TAB -->
-      @if (activeTab() === 'blocks') {
-      <div class="space-y-4">
-        <div>
-          <h3 class="text-sm font-bold text-base-content/75 mb-1">Add Elements</h3>
-          <p class="text-xs text-base-content/60">Click to add, or drag a block into your email.</p>
-        </div>
-
-        <div
-          class="grid grid-cols-2 gap-2"
-          cdkDropList
-          [cdkDropListSortingDisabled]="true"
-          [cdkDropListConnectedTo]="['pc-canvas-drop-list']"
-        >
-          @for (t of paletteTypes; track t.type) {
-          <button
-            type="button"
-            cdkDrag
-            [cdkDragData]="t.type"
-            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
-            (click)="addBlock(t.type)"
-          >
-            <pc-icon [name]="t.icon" [size]="5" [class]="t.iconClass"></pc-icon>
-            {{ t.label }}
-          </button>
-          }
-        </div>
-
-        <!-- Quick action tip -->
-        <div class="mt-4 rounded bg-info/10 border border-info/20 p-3 text-xs text-info-content">
-          <p>
-            <strong>Tip:</strong> Drag blocks on the canvas to rearrange them; the controls on a selected block move,
-            duplicate, or delete it. The plus between blocks inserts one right there.
-          </p>
-        </div>
-      </div>
-      }
-
-      <!-- EDIT TAB -->
-      @if (activeTab() === 'edit') { @if (selectedBlock(); as block) {
-      <div class="space-y-4">
-        <div class="flex items-center justify-between border-b border-base-200 pb-2">
-          <span class="pc-eyebrow">Selected: {{ block.type }}</span>
-          <button type="button" class="btn btn-xs btn-outline btn-error" (click)="deleteBlock(block.id)">
-            Delete block
-          </button>
-        </div>
-
-        <!-- HEADING AND TEXT EDIT FIELDS -->
-        @if (block.type === 'heading' || block.type === 'text') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Text Content</label>
-          @if (block.type === 'heading') {
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [value]="block.content ?? ''"
-            (input)="setBlockText(block, 'content', $event)"
-          />
-          } @else {
-          <textarea
-            class="textarea textarea-bordered w-full textarea-sm min-h-24"
-            [value]="block.content ?? ''"
-            (input)="setBlockText(block, 'content', $event)"
-          ></textarea>
-          }
-
-          <!-- Quick-Insert Variables -->
-          <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
-            <div class="flex items-center justify-between mb-1.5">
-              <span class="pc-eyebrow">Insert Variable</span>
-              <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
-            </div>
-            <div class="flex flex-wrap gap-1">
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'FirstName')"
-                title="Click to insert First Name placeholder"
-              >
-                + First Name
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'LastName')"
-                title="Click to insert Last Name placeholder"
-              >
-                + Last Name
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Email')"
-                title="Click to insert Email placeholder"
-              >
-                + Email
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Company')"
-                title="Click to insert Company placeholder"
-              >
-                + Company
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'JobTitle')"
-                title="Click to insert Job Title placeholder"
-              >
-                + Job Title
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Phone')"
-                title="Click to insert Phone placeholder"
-              >
-                + Phone
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Text Styles -->
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Font Size</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [value]="block.styles?.fontSize ?? ''"
-              (change)="setBlockStyle(block, 'fontSize', $event)"
-            >
-              <option value="12px">12px (Small)</option>
-              <option value="14px">14px</option>
-              <option value="16px">16px (Normal)</option>
-              <option value="18px">18px</option>
-              <option value="20px">20px (H3)</option>
-              <option value="24px">24px (H2)</option>
-              <option value="28px">28px (H1)</option>
-              <option value="32px">32px</option>
-              <option value="36px">36px (Large)</option>
-            </select>
-          </div>
-
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Text Align</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [value]="block.styles?.textAlign ?? ''"
-              (change)="setBlockAlign(block, $event)"
-            >
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Text Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [value]="block.styles?.color ?? ''"
-              (input)="setBlockStyle(block, 'color', $event)"
-            />
-          </div>
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Color Hex</label>
-            <input
-              type="text"
-              class="input input-bordered input-sm w-full font-mono text-xs"
-              [value]="block.styles?.color ?? ''"
-              (input)="setBlockStyle(block, 'color', $event)"
-            />
-          </div>
-        </div>
-        }
-
-        <!-- IMAGE EDIT FIELDS -->
-        @if (block.type === 'image') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Image URL</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [value]="block.imageUrl ?? ''"
-            (input)="setBlockText(block, 'imageUrl', $event)"
-            placeholder="https://..."
-          />
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Alt Text</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [value]="block.imageAlt ?? ''"
-            (input)="setBlockText(block, 'imageAlt', $event)"
-          />
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Max Width (e.g. 100%, 300px)</label>
-            <input
-              type="text"
-              class="input input-bordered w-full input-sm"
-              [value]="block.imageWidth ?? ''"
-              (input)="setBlockText(block, 'imageWidth', $event)"
-            />
-          </div>
-
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Alignment</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [value]="block.styles?.textAlign ?? ''"
-              (change)="setBlockAlign(block, $event)"
-            >
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Link URL (Optional)</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [value]="block.linkUrl ?? ''"
-            (input)="setBlockText(block, 'linkUrl', $event)"
-            placeholder="https://..."
-          />
-        </div>
-        }
-
-        <!-- BUTTON EDIT FIELDS -->
-        @if (block.type === 'button') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Button Text</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [value]="block.content ?? ''"
-            (input)="setBlockText(block, 'content', $event)"
-          />
-
-          <!-- Quick-Insert Variables -->
-          <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
-            <div class="flex items-center justify-between mb-1.5">
-              <span class="pc-eyebrow">Insert Variable</span>
-              <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
-            </div>
-            <div class="flex flex-wrap gap-1">
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'FirstName')"
-                title="Click to insert First Name placeholder"
-              >
-                + First Name
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'LastName')"
-                title="Click to insert Last Name placeholder"
-              >
-                + Last Name
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Email')"
-                title="Click to insert Email placeholder"
-              >
-                + Email
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Link URL</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [value]="block.linkUrl ?? ''"
-            (input)="setBlockText(block, 'linkUrl', $event)"
-            placeholder="https://..."
-          />
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Bg Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [value]="block.styles?.backgroundColor ?? ''"
-              (input)="setBlockStyle(block, 'backgroundColor', $event)"
-            />
-          </div>
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Text Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [value]="block.styles?.color ?? ''"
-              (input)="setBlockStyle(block, 'color', $event)"
-            />
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Border Radius (px)</label>
-            <input
-              type="number"
-              class="input input-bordered w-full input-sm"
-              [value]="block.styles?.borderRadius ?? ''"
-              (input)="setBlockStyle(block, 'borderRadius', $event)"
-              min="0"
-              max="30"
-            />
-          </div>
-
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Alignment</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [value]="block.styles?.textAlign ?? ''"
-              (change)="setBlockAlign(block, $event)"
-            >
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-        </div>
-        }
-
-        <!-- DIVIDER EDIT FIELDS -->
-        @if (block.type === 'divider') {
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Divider Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [value]="block.styles?.borderColor ?? ''"
-              (input)="setBlockStyle(block, 'borderColor', $event)"
-            />
-          </div>
-
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Line Thickness (px)</label>
-            <input
-              type="number"
-              class="input input-bordered w-full input-sm"
-              [value]="block.styles?.borderWidth ?? ''"
-              (input)="setBlockStyle(block, 'borderWidth', $event)"
-              min="1"
-              max="10"
-            />
-          </div>
-        </div>
-        }
-
-        <!-- SPACER EDIT FIELDS -->
-        @if (block.type === 'spacer') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Spacer Height (px)</label>
-          <input
-            type="number"
-            class="input input-bordered w-full input-sm"
-            [value]="block.styles?.height ?? ''"
-            (input)="setBlockStyle(block, 'height', $event)"
-            min="5"
-            max="150"
-            step="5"
-          />
-        </div>
-        }
-
-        <!-- SOCIAL LINKS EDIT FIELDS -->
-        @if (block.type === 'social') {
-        <div class="space-y-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Icon Style & Colors</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [value]="block.socialIconStyle ?? 'circular-solid'"
-              (change)="setSocialIconStyle(block, $event)"
-            >
-              <option value="circular-solid">Circular Brand Color</option>
-              <option value="circular-gray">Circular Grayscale</option>
-              <option value="simple-color">Flat Brand Color</option>
-              <option value="simple-gray">Flat Grayscale</option>
-            </select>
-          </div>
-
-          <label class="label text-xs font-semibold py-1">Social Networks</label>
-          @for (social of block.socials; track social.platform) {
-          <div class="flex flex-col gap-1 border border-base-200 rounded p-2 bg-base-50">
-            <span class="text-[10px] font-bold uppercase text-base-content/60">{{ social.platform }} URL</span>
-            <input
-              type="text"
-              class="input input-bordered input-xs w-full font-mono"
-              [value]="social.url"
-              (input)="setSocialUrl(social, $event)"
-              placeholder="https://..."
-            />
-          </div>
-          }
-
-          <div class="form-control mt-2">
-            <label class="label text-xs font-semibold py-1">Alignment</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [value]="block.styles?.textAlign ?? ''"
-              (change)="setBlockAlign(block, $event)"
-            >
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-        </div>
-        }
-
-        <!-- COMMON BLOCK PADDING SETTINGS -->
-        <div class="border-t border-base-200 pt-3 mt-3">
-          <h4 class="text-xs font-bold text-base-content/60 mb-2">Block Margins</h4>
-          <div class="grid grid-cols-2 gap-2">
-            <div class="form-control">
-              <label class="label text-[10px] uppercase font-bold py-0">Padding Top (px)</label>
-              <input
-                type="number"
-                class="input input-bordered w-full input-sm"
-                [value]="block.styles?.paddingTop ?? ''"
-                (input)="setBlockStyle(block, 'paddingTop', $event)"
-                min="0"
-                max="80"
-              />
-            </div>
-
-            <div class="form-control">
-              <label class="label text-[10px] uppercase font-bold py-0">Padding Bottom (px)</label>
-              <input
-                type="number"
-                class="input input-bordered w-full input-sm"
-                [value]="block.styles?.paddingBottom ?? ''"
-                (input)="setBlockStyle(block, 'paddingBottom', $event)"
-                min="0"
-                max="80"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-      } @else {
-      <div class="h-48 flex flex-col justify-center items-center text-center text-base-content/40 p-4">
-        <pc-icon name="pencil-square" [size]="8" class="text-base-content/30 mb-2"></pc-icon>
-        <p class="text-sm font-semibold">No Block Selected</p>
-        <p class="text-xs mt-1">Click on any block inside the preview area to edit its content and styling.</p>
-      </div>
-      } }
-    </div>
-  </aside>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.ts
-```typescript
-import { CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, type CdkDragDrop } from '@angular/cdk/drag-drop';
-import { CdkScrollable } from '@angular/cdk/scrolling';
-import { Component, OnInit, computed, model, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-import type { PcIconNameType } from '@icons/icons.index';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
-
-import { createBlock, insertBlockAt, isEmailBlockType, moveBlock, type EmailBlockType } from './newsletter-block-ops';
-import {
-  EmailBlock,
-  socialSvgPaths,
-  getSocialBgColor,
-  getSocialIconColor,
-  getTemplateBlocks,
-  compileBlocksToHtml,
-  compileBlocksToPlainText,
-} from './newsletter-templates';
-
-/** One palette entry: the tile in the Blocks tab and the "+" insert menu both render from this. */
-interface PaletteEntry {
-  type: EmailBlockType;
-  label: string;
-  icon: PcIconNameType;
-  iconClass: string;
-}
-
-@Component({
-  selector: 'pc-visual-newsletter-editor',
-  imports: [Icon, TabBar, CdkDropList, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkScrollable],
-  templateUrl: './visual-newsletter-editor.html',
-})
-export class VisualNewsletterEditorComponent implements OnInit {
-  public readonly htmlContent = model<string>('');
-  public readonly plainTextContent = model<string>('');
-
-  protected readonly blocks = signal<EmailBlock[]>([]);
-  protected readonly selectedBlockId = signal<string | null>(null);
-  protected readonly previewMode = signal<'desktop' | 'mobile'>('desktop');
-  protected readonly editorMode = signal<'visual' | 'code'>('visual');
-  protected readonly activeTab = signal<'blocks' | 'edit'>('blocks');
-
-  /** Seam index whose "+" insert picker is open, or null when closed. */
-  protected readonly insertMenuIndex = signal<number | null>(null);
-
-  /** The 8 block types: palette tiles and the "+" insert menu share this list. */
-  protected readonly paletteTypes: readonly PaletteEntry[] = [
-    { type: 'heading', label: 'Heading', icon: 'document-text', iconClass: 'text-primary' },
-    { type: 'text', label: 'Paragraph', icon: 'document-text', iconClass: 'text-success' },
-    { type: 'image', label: 'Image', icon: 'file-image', iconClass: 'text-warning' },
-    { type: 'button', label: 'CTA Button', icon: 'star-filled', iconClass: 'text-info' },
-    { type: 'divider', label: 'Divider', icon: 'bars-3', iconClass: 'text-neutral-content' },
-    { type: 'spacer', label: 'Spacer', icon: 'arrows-pointing-out', iconClass: '' },
-    { type: 'social', label: 'Social Links', icon: 'user-group', iconClass: 'text-primary' },
-  ];
-
-  protected readonly panelTabs: PcTabOption[] = [
-    { id: 'blocks', label: 'Blocks' },
-    { id: 'edit', label: 'Customize' },
-  ];
-
-  protected setPanelTab(tab: string): void {
-    if (tab === 'blocks' || tab === 'edit') this.activeTab.set(tab);
-  }
-
-  protected readonly socialSvgPaths = socialSvgPaths;
-  protected getSocialBgColor(platform: string, style: string) {
-    return getSocialBgColor(platform, style);
-  }
-  protected getSocialIconColor(platform: string, style: string) {
-    return getSocialIconColor(platform, style);
-  }
-
-  private escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  protected getMockVariableValue(name: string): string | undefined {
-    const mocks: Record<string, string> = {
-      FirstName: 'John',
-      LastName: 'Doe',
-      Email: 'john.doe@example.com',
-      Company: 'Acme Corporation',
-      JobTitle: 'Software Engineer',
-      Phone: '(555) 123-4567',
-    };
-    const key = Object.keys(mocks).find((k) => k.toLowerCase() === name.toLowerCase());
-    return key ? mocks[key] : undefined;
-  }
-
-  protected resolveVariablesForPreview(text: string | undefined, isButton = false): string {
-    if (!text) return '';
-    const escaped = this.escapeHtml(text);
-    return escaped.replace(/\{([a-zA-Z0-9_]+)(?:\|([^}]+))?\}/g, (match, varName, fallback) => {
-      const mockValue = this.getMockVariableValue(varName);
-      const displayValue = mockValue !== undefined ? mockValue : fallback !== undefined ? fallback : match;
-      if (isButton) {
-        return `<span class="border-b border-dashed border-current font-semibold" title="Variable: ${match}">${displayValue}</span>`;
-      }
-      return `<span class="border-b border-dashed border-primary/60 text-primary font-semibold animate-pulse" title="Variable: ${match}">${displayValue}</span>`;
-    });
-  }
-
-  protected insertVariable(block: EmailBlock, variableName: string): void {
-    block.content = (block.content || '') + `{${variableName}}`;
-    this.updateBlocks();
-  }
-
-  // Computed signals
-  protected readonly selectedBlock = computed(() => {
-    const id = this.selectedBlockId();
-    if (!id) return null;
-    return this.blocks().find((b) => b.id === id) ?? null;
-  });
-
-  protected readonly compiledHtml = computed(() => {
-    return compileBlocksToHtml(this.blocks());
-  });
-
-  public ngOnInit(): void {
-    // Check if the incoming HTML has our saved JSON blocks comment
-    const matched = this.htmlContent().match(/<!-- PPLCRM_VISUAL_BLOCKS_DATA: ([\s\S]*?) -->/);
-    if (matched && matched[1]) {
-      try {
-        const decoded = decodeURIComponent(matched[1].trim());
-        const parsed = JSON.parse(decoded);
-        if (Array.isArray(parsed)) {
-          // Older drafts may carry a removable 'footer' block; the compliance footer is
-          // appended server-side at send time now, so drop it from the design.
-          const blockList = parsed.filter((b) => b?.type !== 'footer');
-          this.blocks.set(blockList);
-          if (blockList.length > 0) {
-            this.selectedBlockId.set(blockList[0].id);
-            this.activeTab.set('edit');
-          }
-          return;
-        }
-      } catch (err) {
-        console.error('Failed to parse embedded visual block metadata. Defaulting to template.', err);
-      }
-    }
-
-    // Default: Check if we have standard HTML pasted. If not, load default welcome template
-    if (this.htmlContent() && this.htmlContent().trim().length > 100) {
-      // Legacy custom HTML detected. Set editor to code mode
-      this.editorMode.set('code');
-    } else {
-      // Load standard default Welcome Email template
-      this.loadTemplate('welcome', false);
-    }
-  }
-
-  protected selectBlock(id: string, event?: Event): void {
-    if (event) {
-      event.stopPropagation();
-    }
-    this.insertMenuIndex.set(null);
-    this.selectedBlockId.set(id);
-    this.activeTab.set('edit');
-  }
-
-  /** Toggles the "+" insert picker at the given seam index. */
-  protected toggleInsertMenu(index: number, event?: Event): void {
-    if (event) {
-      event.stopPropagation();
-    }
-    this.insertMenuIndex.set(this.insertMenuIndex() === index ? null : index);
-  }
-
-  protected toggleEditorMode(): void {
-    const current = this.editorMode();
-    if (current === 'visual') {
-      this.editorMode.set('code');
-    } else {
-      // Switch back to visual, warning that edits made in code view will be reset
-      this.editorMode.set('visual');
-      this.updateBlocks();
-    }
-  }
-
-  /** Click-to-add path: inserts after the selected block, or appends when nothing is selected. */
-  protected addBlock(type: EmailBlockType): void {
-    const selectedId = this.selectedBlockId();
-    const selectedIdx = selectedId === null ? -1 : this.blocks().findIndex((b) => b.id === selectedId);
-    const index = selectedIdx === -1 ? this.blocks().length : selectedIdx + 1;
-    this.addBlockAt(type, index);
-  }
-
-  /** Inserts a fresh block of the given type at the given index, selects it, and closes any insert menu. */
-  protected addBlockAt(type: EmailBlockType, index: number): void {
-    const newBlock = createBlock(type);
-    this.blocks.set(insertBlockAt(this.blocks(), newBlock, index));
-    this.selectBlock(newBlock.id);
-    this.updateBlocks();
-  }
-
-  /** Handles drops on the canvas: reorder within it, or copy-insert a type dragged from the palette. */
-  protected onCanvasDrop(event: CdkDragDrop<EmailBlock[]>): void {
-    if (event.previousContainer === event.container) {
-      if (event.previousIndex === event.currentIndex) return;
-      this.blocks.set(moveBlock(this.blocks(), event.previousIndex, event.currentIndex));
-      this.updateBlocks();
-      return;
-    }
-    // Palette tile dropped onto the canvas: copy semantics — the tile itself stays in the palette.
-    const data: unknown = event.item.data;
-    if (isEmailBlockType(data)) {
-      this.addBlockAt(data, event.currentIndex);
-    }
-  }
-
-  protected deleteBlock(id: string, event?: Event): void {
-    if (event) {
-      event.stopPropagation();
-    }
-    const filtered = this.blocks().filter((b) => b.id !== id);
-    this.blocks.set(filtered);
-    if (this.selectedBlockId() === id) {
-      this.selectedBlockId.set(filtered[0]?.id ?? null);
-    }
-    this.updateBlocks();
-  }
-
-  protected duplicateBlock(block: EmailBlock, event?: Event): void {
-    if (event) {
-      event.stopPropagation();
-    }
-    const idx = this.blocks().findIndex((b) => b.id === block.id);
-    if (idx === -1) return;
-
-    const id = Math.random().toString(36).substring(2, 9);
-    const clone: EmailBlock = JSON.parse(JSON.stringify(block));
-    clone.id = id;
-
-    this.blocks.set(insertBlockAt(this.blocks(), clone, idx + 1));
-    this.selectBlock(id);
-    this.updateBlocks();
-  }
-
-  protected moveBlockUp(idx: number, event?: Event): void {
-    if (event) {
-      event.stopPropagation();
-    }
-    if (idx <= 0) return;
-    this.blocks.set(moveBlock(this.blocks(), idx, idx - 1));
-    this.updateBlocks();
-  }
-
-  protected moveBlockDown(idx: number, event?: Event): void {
-    if (event) {
-      event.stopPropagation();
-    }
-    if (idx >= this.blocks().length - 1) return;
-    this.blocks.set(moveBlock(this.blocks(), idx, idx + 1));
-    this.updateBlocks();
-  }
-
-  protected updateBlocks(): void {
-    const list = [...this.blocks()];
-    // Trigger signal recomputation and propagation
-    this.blocks.set(list);
-    this.propagateChanges();
-  }
-
-  // --- Ad-hoc style/content knobs (value + input/change handlers, no forms) ---
-
-  /** Writes a plain-text field of the block (content, urls, footer copy) from a native input/textarea event. */
-  protected setBlockText(block: EmailBlock, field: EditableBlockTextField, event: Event): void {
-    block[field] = eventValue(event);
-    this.updateBlocks();
-  }
-
-  /** Writes a string-valued style property (colors, sizes, paddings) from a native control event. */
-  protected setBlockStyle(block: EmailBlock, key: StringStyleKey, event: Event): void {
-    this.ensureStyles(block)[key] = eventValue(event);
-    this.updateBlocks();
-  }
-
-  protected setBlockAlign(block: EmailBlock, event: Event): void {
-    const value = eventValue(event);
-    if (value === 'left' || value === 'center' || value === 'right') {
-      this.ensureStyles(block).textAlign = value;
-      this.updateBlocks();
-    }
-  }
-
-  protected setSocialIconStyle(block: EmailBlock, event: Event): void {
-    const value = eventValue(event);
-    if (
-      value === 'circular-solid' ||
-      value === 'circular-gray' ||
-      value === 'simple-color' ||
-      value === 'simple-gray'
-    ) {
-      block.socialIconStyle = value;
-      this.updateBlocks();
-    }
-  }
-
-  protected setSocialUrl(social: { url: string }, event: Event): void {
-    social.url = eventValue(event);
-    this.updateBlocks();
-  }
-
-  protected onRawHtmlInput(event: Event): void {
-    this.handleRawHtmlEdit(eventValue(event));
-  }
-
-  private ensureStyles(block: EmailBlock): NonNullable<EmailBlock['styles']> {
-    block.styles ??= {};
-    return block.styles;
-  }
-
-  protected handleRawHtmlEdit(html: string): void {
-    this.htmlContent.set(html);
-    // Simple text version conversion from html tags
-    const text = html
-      .replace(/<[^>]*>/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    this.plainTextContent.set(text);
-  }
-
-  protected loadTemplate(preset: 'welcome' | 'product' | 'newsletter' | 'empty', triggerPropagate = true): void {
-    const tpl = getTemplateBlocks(preset);
-    this.blocks.set(tpl);
-    this.selectedBlockId.set(tpl[0]?.id || null);
-    this.activeTab.set('edit');
-
-    if (triggerPropagate) {
-      this.propagateChanges();
-    }
-  }
-
-  private propagateChanges(): void {
-    const html = this.compiledHtml();
-    const text = compileBlocksToPlainText(this.blocks());
-
-    this.htmlContent.set(html);
-    this.plainTextContent.set(text);
-  }
-}
-
-/** Block fields that are edited as free text in the Customize panel. */
-type EditableBlockTextField = 'content' | 'linkUrl' | 'imageUrl' | 'imageAlt' | 'imageWidth';
-
-/** Style keys typed as plain strings on EmailBlock['styles'] (textAlign is handled separately). */
-type StringStyleKey =
-  | 'color'
-  | 'backgroundColor'
-  | 'fontSize'
-  | 'paddingTop'
-  | 'paddingBottom'
-  | 'borderRadius'
-  | 'borderColor'
-  | 'borderWidth'
-  | 'height';
-
-/** Safely reads the string value from a native input/textarea/select event target. */
-function eventValue(event: Event): string {
-  const target = event.target;
-  if (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement
-  ) {
-    return target.value;
-  }
-  return '';
 }
 ```
 
@@ -61837,6 +60495,182 @@ export class EmailClient {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-block-ops.ts
+```typescript
+import type { EmailBlock } from './newsletter-templates';
+
+/** The block type vocabulary of the visual editor (deliberately small). */
+export type EmailBlockType = EmailBlock['type'];
+
+export const EMAIL_BLOCK_TYPES = [
+  'heading',
+  'text',
+  'image',
+  'button',
+  'divider',
+  'spacer',
+  'social',
+] as const satisfies readonly EmailBlockType[];
+
+/** Type guard for untyped drag data arriving from a CDK drop event. */
+export function isEmailBlockType(value: unknown): value is EmailBlockType {
+  return typeof value === 'string' && (EMAIL_BLOCK_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * Returns a new list with the block at `from` moved to `to` (clamped to the
+ * list bounds). An out-of-range `from` is a no-op copy. Never mutates `list`.
+ */
+export function moveBlock(list: readonly EmailBlock[], from: number, to: number): EmailBlock[] {
+  const result = [...list];
+  if (from < 0 || from >= list.length) return result;
+  const clampedTo = Math.max(0, Math.min(to, list.length - 1));
+  if (from === clampedTo) return result;
+  const [moved] = result.splice(from, 1);
+  if (!moved) return [...list];
+  result.splice(clampedTo, 0, moved);
+  return result;
+}
+
+/**
+ * Returns a new list with `block` inserted at `index` (clamped to
+ * `0..list.length`). Never mutates `list`.
+ */
+export function insertBlockAt(list: readonly EmailBlock[], block: EmailBlock, index: number): EmailBlock[] {
+  const clamped = Math.max(0, Math.min(index, list.length));
+  const result = [...list];
+  result.splice(clamped, 0, block);
+  return result;
+}
+
+/** Creates a new block of the given type with the editor's per-type defaults and a fresh id. */
+export function createBlock(type: EmailBlockType): EmailBlock {
+  const id = Math.random().toString(36).substring(2, 9);
+  const styles: NonNullable<EmailBlock['styles']> = {
+    textAlign: 'center',
+    paddingTop: '16',
+    paddingBottom: '16',
+  };
+
+  const newBlock: EmailBlock = {
+    id,
+    type,
+    styles,
+  };
+
+  // Set block defaults
+  if (type === 'heading') {
+    newBlock.content = 'Heading Title';
+    styles.fontSize = '24px';
+    styles.color = '#1f2937';
+  } else if (type === 'text') {
+    newBlock.content = 'Write your custom message paragraph here. Support multiple paragraphs and inline styling.';
+    styles.fontSize = '16px';
+    styles.color = '#4b5563';
+    styles.textAlign = 'left';
+  } else if (type === 'image') {
+    newBlock.imageUrl = 'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&w=600&q=80';
+    newBlock.imageAlt = 'Banner image';
+    newBlock.imageWidth = '100%';
+  } else if (type === 'button') {
+    newBlock.content = 'Click Here';
+    newBlock.linkUrl = 'https://example.com';
+    styles.backgroundColor = '#2563eb';
+    styles.color = '#ffffff';
+    styles.borderRadius = '6';
+    styles.fontSize = '16px';
+  } else if (type === 'divider') {
+    styles.borderColor = '#e5e7eb';
+    styles.borderWidth = '1';
+  } else if (type === 'spacer') {
+    styles.height = '20';
+  } else if (type === 'social') {
+    newBlock.socialIconStyle = 'circular-solid';
+    newBlock.socials = [
+      { platform: 'facebook', url: 'https://facebook.com' },
+      { platform: 'twitter', url: 'https://twitter.com' },
+      { platform: 'linkedin', url: 'https://linkedin.com' },
+      { platform: 'instagram', url: 'https://instagram.com' },
+    ];
+  }
+
+  return newBlock;
+}
+
+/** Heading sizes for imported h1–h6 (anything past h3 just reads as a small heading). */
+const IMPORTED_HEADING_SIZES: Record<string, string> = {
+  h1: '28px',
+  h2: '24px',
+  h3: '20px',
+  h4: '18px',
+  h5: '16px',
+  h6: '16px',
+};
+
+/** True when the element holds only text and <br> — i.e. its content survives a plain-text
+ * round-trip. Links or inline formatting would be silently dropped, so they disqualify. */
+function isPlainInline(el: Element): boolean {
+  return Array.from(el.childNodes).every((child) => {
+    if (child.nodeType === Node.TEXT_NODE) return true;
+    return child instanceof Element && child.tagName.toLowerCase() === 'br' && child.childNodes.length === 0;
+  });
+}
+
+/** The element's text with <br> preserved as newlines. */
+function textWithBreaks(el: Element): string {
+  return Array.from(el.childNodes)
+    .map((child) => (child.nodeType === Node.TEXT_NODE ? (child.textContent ?? '') : '\n'))
+    .join('')
+    .trim();
+}
+
+/**
+ * Best-effort import of legacy/foreign HTML (no embedded block model) into editor blocks, so
+ * the visual editor stays the default wherever possible. Deliberately conservative: only
+ * top-level headings, plain paragraphs, and <hr> map; anything whose content would not survive
+ * the round-trip (links, images, tables, divs, inline formatting) returns null and the editor
+ * falls back to raw-HTML mode instead of silently losing content.
+ */
+export function tryImportHtmlToBlocks(html: string): EmailBlock[] | null {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const blocks: EmailBlock[] = [];
+
+  for (const node of Array.from(doc.body.childNodes)) {
+    if (node.nodeType === Node.COMMENT_NODE) continue;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = (node.textContent ?? '').trim();
+      if (text) {
+        const block = createBlock('text');
+        block.content = text;
+        blocks.push(block);
+      }
+      continue;
+    }
+    if (!(node instanceof Element)) return null;
+
+    const tag = node.tagName.toLowerCase();
+    if (IMPORTED_HEADING_SIZES[tag] && isPlainInline(node)) {
+      const block = createBlock('heading');
+      block.content = textWithBreaks(node);
+      block.styles = { ...block.styles, textAlign: 'left', fontSize: IMPORTED_HEADING_SIZES[tag] };
+      blocks.push(block);
+    } else if (tag === 'p' && isPlainInline(node)) {
+      const block = createBlock('text');
+      block.content = textWithBreaks(node);
+      blocks.push(block);
+    } else if (tag === 'hr') {
+      blocks.push(createBlock('divider'));
+    } else if (tag === 'br') {
+      blocks.push(createBlock('spacer'));
+    } else {
+      return null;
+    }
+  }
+
+  return blocks.length > 0 ? blocks : null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
 ```html
 <pc-detail-layout
@@ -62615,6 +61449,1325 @@ export class EmailClient {
     } }
   </pc-table>
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.html
+```html
+<div
+  class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-270px)] min-h-[600px] border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-inner"
+>
+  <!-- LEFT: VISUAL CANVAS PREVIEW -->
+  <div class="flex-1 flex flex-col bg-base-200 h-full overflow-hidden">
+    <!-- CANVAS HEADER / TOOLBAR -->
+    <div class="flex items-center justify-between px-4 py-3 bg-base-100 border-b border-base-300">
+      <div class="flex items-center gap-2">
+        <span class="pc-eyebrow">Preview Mode:</span>
+        <div class="join">
+          <button
+            type="button"
+            class="btn btn-xs join-item"
+            [class.btn-primary]="previewMode() === 'desktop'"
+            [class.btn-ghost]="previewMode() !== 'desktop'"
+            (click)="previewMode.set('desktop')"
+            title="Desktop View"
+          >
+            <pc-icon name="view-column" [size]="4"></pc-icon>
+            Desktop
+          </button>
+          <button
+            type="button"
+            class="btn btn-xs join-item"
+            [class.btn-primary]="previewMode() === 'mobile'"
+            [class.btn-ghost]="previewMode() !== 'mobile'"
+            (click)="previewMode.set('mobile')"
+            title="Mobile View"
+          >
+            <pc-icon name="collapse-content" [size]="4"></pc-icon>
+            Mobile
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span class="pc-eyebrow">Editor:</span>
+        <button
+          type="button"
+          class="btn btn-xs btn-outline btn-secondary"
+          [class.btn-active]="editorMode() === 'code'"
+          (click)="toggleEditorMode()"
+        >
+          @if (editorMode() === 'visual') {
+          <pc-icon name="file-code" [size]="4" class="mr-1"></pc-icon>
+          View HTML } @else {
+          <pc-icon name="eye" [size]="4" class="mr-1"></pc-icon>
+          Visual Editor }
+        </button>
+      </div>
+    </div>
+
+    <!-- CANVAS CONTENT AREA -->
+    <div cdkScrollable class="flex-1 overflow-y-auto p-6 flex justify-center items-start">
+      @if (editorMode() === 'visual') {
+      <!-- EMAIL CANVAS WRAPPER -->
+      <div
+        class="bg-white text-black shadow-md rounded-lg overflow-hidden transition-all duration-300 relative border border-slate-200"
+        [style.width]="previewMode() === 'mobile' ? '375px' : '100%'"
+        [style.max-width]="previewMode() === 'mobile' ? '375px' : '600px'"
+        style="min-height: 500px"
+      >
+        <!-- CANVAS CONTAINER -->
+        <div class="w-full bg-slate-100 py-6 px-4" style="min-height: 500px">
+          <!-- Inner email content: the canvas drop list -->
+          <div
+            cdkDropList
+            id="pc-canvas-drop-list"
+            [cdkDropListData]="blocks()"
+            (cdkDropListDropped)="onCanvasDrop($event)"
+            class="bg-white rounded-lg border border-slate-200 shadow-sm"
+          >
+            @if (blocks().length === 0) {
+            <div class="p-8 text-center text-slate-400">
+              <pc-icon name="document-text" [size]="8" class="mx-auto text-slate-300 mb-2"></pc-icon>
+              <p class="text-sm font-medium">Your canvas is empty.</p>
+              <p class="text-xs text-slate-400 mt-1">Drag a block here, or pick one from the Blocks panel.</p>
+            </div>
+            } @else { @for (block of blocks(); track block.id; let idx = $index) {
+            <div
+              cdkDrag
+              [cdkDragData]="block"
+              class="group/block relative border-2 transition-all duration-150 cursor-pointer"
+              [class.border-primary]="selectedBlockId() === block.id"
+              [class.border-transparent]="selectedBlockId() !== block.id"
+              [class.hover:border-primary/50]="selectedBlockId() !== block.id"
+              (click)="selectBlock(block.id, $event)"
+            >
+              <div *cdkDragPlaceholder class="pc-drop-indicator"></div>
+              <!-- "+" insertion seam (inserts before this block) -->
+              <div class="group/seam absolute -top-2 inset-x-0 h-4 z-20" (click)="$event.stopPropagation()">
+                <div
+                  class="absolute inset-x-6 top-1/2 h-px bg-primary/40 opacity-0 group-hover/seam:opacity-100 transition-opacity"
+                  [class.opacity-100]="insertMenuIndex() === idx"
+                ></div>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-circle btn-xs absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover/seam:opacity-100 transition-opacity"
+                  [class.opacity-100]="insertMenuIndex() === idx"
+                  (click)="toggleInsertMenu(idx, $event)"
+                  title="Insert block here"
+                >
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                </button>
+                @if (insertMenuIndex() === idx) {
+                <ul
+                  class="menu menu-sm bg-base-100 text-base-content border border-base-300 rounded-box shadow-lg absolute left-1/2 -translate-x-1/2 top-4 z-30 w-44"
+                >
+                  @for (t of paletteTypes; track t.type) {
+                  <li>
+                    <button type="button" (click)="addBlockAt(t.type, idx)">
+                      <pc-icon [name]="t.icon" [size]="4" [class]="t.iconClass"></pc-icon>
+                      {{ t.label }}
+                    </button>
+                  </li>
+                  }
+                </ul>
+                }
+              </div>
+              <!-- Block controls (visible on hover or while selected) -->
+              <div
+                class="absolute -top-3 right-2 z-10 group-hover/block:flex items-center gap-1 bg-primary text-primary-content rounded px-1 shadow-md"
+                [class.hidden]="selectedBlockId() !== block.id"
+                [class.flex]="selectedBlockId() === block.id"
+              >
+                <button
+                  type="button"
+                  cdkDragHandle
+                  class="p-1 hover:bg-primary-focus rounded cursor-grab active:cursor-grabbing"
+                  (click)="$event.stopPropagation()"
+                  title="Drag to reorder"
+                >
+                  <pc-icon name="bars-3" [size]="3"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="p-1 hover:bg-primary-focus rounded"
+                  (click)="moveBlockUp(idx, $event)"
+                  [disabled]="idx === 0"
+                  title="Move up"
+                >
+                  <pc-icon name="chevron-up" [size]="3"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="p-1 hover:bg-primary-focus rounded"
+                  (click)="moveBlockDown(idx, $event)"
+                  [disabled]="idx === blocks().length - 1"
+                  title="Move down"
+                >
+                  <pc-icon name="chevron-down" [size]="3"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="p-1 hover:bg-primary-focus rounded"
+                  (click)="duplicateBlock(block, $event)"
+                  title="Duplicate block"
+                >
+                  <pc-icon name="document-duplicate" [size]="3"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="p-1 hover:bg-error rounded"
+                  (click)="deleteBlock(block.id, $event)"
+                  title="Delete block"
+                >
+                  <pc-icon name="trash" [size]="3"></pc-icon>
+                </button>
+              </div>
+              <!-- Block Renderers inside standard tables to mimic layout -->
+              <!-- HEADING BLOCK -->
+              @if (block.type === 'heading') {
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td
+                    [style.padding-top.px]="block.styles?.paddingTop || 16"
+                    [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
+                    [style.color]="block.styles?.color || '#1f2937'"
+                    [style.font-size]="block.styles?.fontSize || '24px'"
+                    [style.text-align]="block.styles?.textAlign || 'center'"
+                    class="font-sans font-bold px-6 leading-tight select-none"
+                    [innerHTML]="
+                                            resolveVariablesForPreview(block.content || 'Heading Block', false)
+                                          "
+                  ></td>
+                </tr>
+              </table>
+              }
+
+              <!-- TEXT BLOCK -->
+              @if (block.type === 'text') {
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td
+                    [style.padding-top.px]="block.styles?.paddingTop || 12"
+                    [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
+                    [style.color]="block.styles?.color || '#4b5563'"
+                    [style.font-size]="block.styles?.fontSize || '16px'"
+                    [style.text-align]="block.styles?.textAlign || 'left'"
+                    class="font-sans px-6 leading-relaxed whitespace-pre-wrap select-none"
+                    [innerHTML]="
+                                            resolveVariablesForPreview(
+                                              block.content || 'Click here to write some text...',
+                                              false
+                                            )
+                                          "
+                  ></td>
+                </tr>
+              </table>
+              }
+
+              <!-- IMAGE BLOCK -->
+              @if (block.type === 'image') {
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td
+                    [align]="block.styles?.textAlign || 'center'"
+                    [style.padding-top.px]="block.styles?.paddingTop || 12"
+                    [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
+                    class="px-6"
+                  >
+                    <img
+                      [src]="
+                                              block.imageUrl ||
+                                              'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=600&q=80'
+                                            "
+                      [alt]="block.imageAlt || 'Newsletter Image'"
+                      [style.max-width]="block.imageWidth || '100%'"
+                      class="w-full height-auto border-0 block rounded"
+                    />
+                  </td>
+                </tr>
+              </table>
+              }
+
+              <!-- BUTTON BLOCK -->
+              @if (block.type === 'button') {
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td
+                    [align]="block.styles?.textAlign || 'center'"
+                    [style.padding-top.px]="block.styles?.paddingTop || 16"
+                    [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
+                    class="px-6"
+                  >
+                    <table border="0" cellpadding="0" cellspacing="0" class="border-separate">
+                      <tr>
+                        <td
+                          align="center"
+                          valign="middle"
+                          [style.background-color]="block.styles?.backgroundColor || '#2563eb'"
+                          [style.border-radius.px]="block.styles?.borderRadius || 6"
+                        >
+                          <span
+                            class="inline-block px-6 py-3 font-sans font-bold select-none text-decoration-none"
+                            [style.color]="block.styles?.color || '#ffffff'"
+                            [style.font-size]="block.styles?.fontSize || '16px'"
+                            [innerHTML]="
+                                                    resolveVariablesForPreview(block.content || 'Click Me', true)
+                                                  "
+                          >
+                          </span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              }
+
+              <!-- DIVIDER BLOCK -->
+              @if (block.type === 'divider') {
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td
+                    [style.padding-top.px]="block.styles?.paddingTop || 12"
+                    [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
+                    class="px-6"
+                  >
+                    <div
+                      [style.border-top-width.px]="block.styles?.borderWidth || 1"
+                      [style.border-top-color]="block.styles?.borderColor || '#e5e7eb'"
+                      class="border-t"
+                    ></div>
+                  </td>
+                </tr>
+              </table>
+              }
+
+              <!-- SPACER BLOCK -->
+              @if (block.type === 'spacer') {
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td [style.height.px]="block.styles?.height || 20" style="font-size: 0; line-height: 0">&nbsp;</td>
+                </tr>
+              </table>
+              }
+
+              <!-- SOCIAL LINKS BLOCK -->
+              @if (block.type === 'social') {
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td
+                    [align]="block.styles?.textAlign || 'center'"
+                    [style.padding-top.px]="block.styles?.paddingTop || 16"
+                    [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
+                    class="px-6"
+                  >
+                    <table border="0" cellpadding="0" cellspacing="0">
+                      <tr>
+                        @for (social of block.socials || []; track social.platform) {
+                        <td class="px-2">
+                          <span
+                            class="inline-flex items-center justify-center w-8 h-8 select-none"
+                            [style.background-color]="
+                                                      getSocialBgColor(
+                                                        social.platform,
+                                                        block.socialIconStyle || 'circular-solid'
+                                                      )
+                                                    "
+                            [style.color]="
+                                                      getSocialIconColor(
+                                                        social.platform,
+                                                        block.socialIconStyle || 'circular-solid'
+                                                      )
+                                                    "
+                            [style.border-radius]="
+                                                      (block.socialIconStyle || 'circular-solid').startsWith('circular')
+                                                        ? '50%'
+                                                        : '0%'
+                                                    "
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              class="w-4 h-4 fill-current"
+                              style="display: block; width: 16px; height: 16px"
+                            >
+                              <path [attr.d]="socialSvgPaths[social.platform]"></path>
+                            </svg>
+                          </span>
+                        </td>
+                        }
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              }
+            </div>
+            } }
+
+            <!-- COMPLIANCE FOOTER PREVIEW — appended by the server to every send; not a block, not editable.
+                 Slate palette on purpose: the email canvas is theme-independent white, like its neighbors above. -->
+            <div
+              class="border-t border-dashed border-slate-200 select-none cursor-default"
+              title="This footer is added to every newsletter automatically and can't be removed. Administrators set the address and disclaimer under Workspace settings."
+            >
+              <div class="flex justify-center pt-3">
+                <span
+                  class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-300"
+                >
+                  <pc-icon name="lock-closed" [size]="3"></pc-icon>
+                  Added to every send
+                </span>
+              </div>
+              <div class="px-6 pt-2 pb-6 text-center text-xs text-slate-400 leading-normal">
+                @if (footerOrgName()) {
+                <p class="font-bold">{{ footerOrgName() }}</p>
+                } @if (footerAddress()) {
+                <p class="whitespace-pre-line">{{ footerAddress() }}</p>
+                } @else {
+                <p class="italic">
+                  Your organization's mailing address — an administrator sets it in Workspace settings
+                </p>
+                } @if (footerDisclaimer()) {
+                <p class="mt-1 whitespace-pre-line">{{ footerDisclaimer() }}</p>
+                }
+                <p class="mt-2"><span class="underline">Unsubscribe</span></p>
+                <p class="mt-2 text-slate-300">powered by <span class="underline">pplCRM</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      } @else {
+      <!-- RAW CODE VIEW -->
+      <div class="w-full h-full flex flex-col gap-2">
+        <div class="alert alert-warning text-xs py-2">
+          <pc-icon name="exclamation-triangle" [size]="4" class="mr-1"></pc-icon>
+          <span>
+            <strong>Caution:</strong> Editing raw HTML directly is fully supported, but manual changes cannot be
+            converted back into visual blocks.
+          </span>
+        </div>
+        <textarea
+          class="textarea textarea-bordered font-mono text-xs w-full flex-1"
+          [value]="compiledHtml()"
+          (input)="onRawHtmlInput($event)"
+          placeholder="Paste or edit HTML here..."
+        ></textarea>
+      </div>
+      }
+    </div>
+  </div>
+
+  <!-- RIGHT: CONTROL PANEL -->
+  <aside
+    class="w-full lg:w-96 flex flex-col border-t lg:border-t-0 lg:border-l border-base-300 bg-base-100 h-full overflow-hidden"
+  >
+    <!-- Tabs (the standard pill tab bar) -->
+    <pc-tab-bar
+      class="border-b border-base-300 px-4 py-3"
+      [tabs]="panelTabs"
+      [activeTab]="activeTab()"
+      (activeTabChange)="setPanelTab($event)"
+    />
+
+    <!-- TAB CONTENT -->
+    <div class="flex-1 overflow-y-auto p-4">
+      <!-- BLOCKS TAB -->
+      @if (activeTab() === 'blocks') {
+      <div class="space-y-4">
+        <div>
+          <h3 class="text-sm font-bold text-base-content/75 mb-1">Add Elements</h3>
+          <p class="text-xs text-base-content/60">Click to add, or drag a block into your email.</p>
+        </div>
+
+        <div
+          class="grid grid-cols-2 gap-2"
+          cdkDropList
+          [cdkDropListSortingDisabled]="true"
+          [cdkDropListConnectedTo]="['pc-canvas-drop-list']"
+        >
+          @for (t of paletteTypes; track t.type) {
+          <button
+            type="button"
+            cdkDrag
+            [cdkDragData]="t.type"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
+            (click)="addBlock(t.type)"
+          >
+            <pc-icon [name]="t.icon" [size]="5" [class]="t.iconClass"></pc-icon>
+            {{ t.label }}
+          </button>
+          }
+        </div>
+
+        <!-- Quick action tip -->
+        <div class="mt-4 rounded bg-info/10 border border-info/20 p-3 text-xs text-info-content">
+          <p>
+            <strong>Tip:</strong> Drag blocks on the canvas to rearrange them; the controls on a selected block move,
+            duplicate, or delete it. The plus between blocks inserts one right there.
+          </p>
+        </div>
+      </div>
+      }
+
+      <!-- EDIT TAB -->
+      @if (activeTab() === 'edit') { @if (selectedBlock(); as block) {
+      <div class="space-y-4">
+        <div class="flex items-center justify-between border-b border-base-200 pb-2">
+          <span class="pc-eyebrow">Selected: {{ block.type }}</span>
+          <button type="button" class="btn btn-xs btn-outline btn-error" (click)="deleteBlock(block.id)">
+            Delete block
+          </button>
+        </div>
+
+        <!-- HEADING AND TEXT EDIT FIELDS -->
+        @if (block.type === 'heading' || block.type === 'text') {
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Text Content</label>
+          @if (block.type === 'heading') {
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [value]="block.content ?? ''"
+            (input)="setBlockText(block, 'content', $event)"
+          />
+          } @else {
+          <textarea
+            class="textarea textarea-bordered w-full textarea-sm min-h-24"
+            [value]="block.content ?? ''"
+            (input)="setBlockText(block, 'content', $event)"
+          ></textarea>
+          }
+
+          <!-- Quick-Insert Variables -->
+          <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="pc-eyebrow">Insert Variable</span>
+              <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'FirstName')"
+                title="Click to insert First Name placeholder"
+              >
+                + First Name
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'LastName')"
+                title="Click to insert Last Name placeholder"
+              >
+                + Last Name
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'Email')"
+                title="Click to insert Email placeholder"
+              >
+                + Email
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'Company')"
+                title="Click to insert Company placeholder"
+              >
+                + Company
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'JobTitle')"
+                title="Click to insert Job Title placeholder"
+              >
+                + Job Title
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'Phone')"
+                title="Click to insert Phone placeholder"
+              >
+                + Phone
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Text Styles -->
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Font Size</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [value]="block.styles?.fontSize ?? ''"
+              (change)="setBlockStyle(block, 'fontSize', $event)"
+            >
+              <option value="12px">12px (Small)</option>
+              <option value="14px">14px</option>
+              <option value="16px">16px (Normal)</option>
+              <option value="18px">18px</option>
+              <option value="20px">20px (H3)</option>
+              <option value="24px">24px (H2)</option>
+              <option value="28px">28px (H1)</option>
+              <option value="32px">32px</option>
+              <option value="36px">36px (Large)</option>
+            </select>
+          </div>
+
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Text Align</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [value]="block.styles?.textAlign ?? ''"
+              (change)="setBlockAlign(block, $event)"
+            >
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Text Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [value]="block.styles?.color ?? ''"
+              (input)="setBlockStyle(block, 'color', $event)"
+            />
+          </div>
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Color Hex</label>
+            <input
+              type="text"
+              class="input input-bordered input-sm w-full font-mono text-xs"
+              [value]="block.styles?.color ?? ''"
+              (input)="setBlockStyle(block, 'color', $event)"
+            />
+          </div>
+        </div>
+        }
+
+        <!-- IMAGE EDIT FIELDS -->
+        @if (block.type === 'image') {
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Image URL</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [value]="block.imageUrl ?? ''"
+            (input)="setBlockText(block, 'imageUrl', $event)"
+            placeholder="https://..."
+          />
+        </div>
+
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Alt Text</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [value]="block.imageAlt ?? ''"
+            (input)="setBlockText(block, 'imageAlt', $event)"
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Max Width (e.g. 100%, 300px)</label>
+            <input
+              type="text"
+              class="input input-bordered w-full input-sm"
+              [value]="block.imageWidth ?? ''"
+              (input)="setBlockText(block, 'imageWidth', $event)"
+            />
+          </div>
+
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Alignment</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [value]="block.styles?.textAlign ?? ''"
+              (change)="setBlockAlign(block, $event)"
+            >
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Link URL (Optional)</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [value]="block.linkUrl ?? ''"
+            (input)="setBlockText(block, 'linkUrl', $event)"
+            placeholder="https://..."
+          />
+        </div>
+        }
+
+        <!-- BUTTON EDIT FIELDS -->
+        @if (block.type === 'button') {
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Button Text</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [value]="block.content ?? ''"
+            (input)="setBlockText(block, 'content', $event)"
+          />
+
+          <!-- Quick-Insert Variables -->
+          <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="pc-eyebrow">Insert Variable</span>
+              <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'FirstName')"
+                title="Click to insert First Name placeholder"
+              >
+                + First Name
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'LastName')"
+                title="Click to insert Last Name placeholder"
+              >
+                + Last Name
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'Email')"
+                title="Click to insert Email placeholder"
+              >
+                + Email
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Link URL</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [value]="block.linkUrl ?? ''"
+            (input)="setBlockText(block, 'linkUrl', $event)"
+            placeholder="https://..."
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Bg Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [value]="block.styles?.backgroundColor ?? ''"
+              (input)="setBlockStyle(block, 'backgroundColor', $event)"
+            />
+          </div>
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Text Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [value]="block.styles?.color ?? ''"
+              (input)="setBlockStyle(block, 'color', $event)"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Border Radius (px)</label>
+            <input
+              type="number"
+              class="input input-bordered w-full input-sm"
+              [value]="block.styles?.borderRadius ?? ''"
+              (input)="setBlockStyle(block, 'borderRadius', $event)"
+              min="0"
+              max="30"
+            />
+          </div>
+
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Alignment</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [value]="block.styles?.textAlign ?? ''"
+              (change)="setBlockAlign(block, $event)"
+            >
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+        </div>
+        }
+
+        <!-- DIVIDER EDIT FIELDS -->
+        @if (block.type === 'divider') {
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Divider Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [value]="block.styles?.borderColor ?? ''"
+              (input)="setBlockStyle(block, 'borderColor', $event)"
+            />
+          </div>
+
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Line Thickness (px)</label>
+            <input
+              type="number"
+              class="input input-bordered w-full input-sm"
+              [value]="block.styles?.borderWidth ?? ''"
+              (input)="setBlockStyle(block, 'borderWidth', $event)"
+              min="1"
+              max="10"
+            />
+          </div>
+        </div>
+        }
+
+        <!-- SPACER EDIT FIELDS -->
+        @if (block.type === 'spacer') {
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Spacer Height (px)</label>
+          <input
+            type="number"
+            class="input input-bordered w-full input-sm"
+            [value]="block.styles?.height ?? ''"
+            (input)="setBlockStyle(block, 'height', $event)"
+            min="5"
+            max="150"
+            step="5"
+          />
+        </div>
+        }
+
+        <!-- SOCIAL LINKS EDIT FIELDS -->
+        @if (block.type === 'social') {
+        <div class="space-y-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Icon Style & Colors</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [value]="block.socialIconStyle ?? 'circular-solid'"
+              (change)="setSocialIconStyle(block, $event)"
+            >
+              <option value="circular-solid">Circular Brand Color</option>
+              <option value="circular-gray">Circular Grayscale</option>
+              <option value="simple-color">Flat Brand Color</option>
+              <option value="simple-gray">Flat Grayscale</option>
+            </select>
+          </div>
+
+          <label class="label text-xs font-semibold py-1">Social Networks</label>
+          @for (social of block.socials; track social.platform) {
+          <div class="flex flex-col gap-1 border border-base-200 rounded p-2 bg-base-50">
+            <span class="text-[10px] font-bold uppercase text-base-content/60">{{ social.platform }} URL</span>
+            <input
+              type="text"
+              class="input input-bordered input-xs w-full font-mono"
+              [value]="social.url"
+              (input)="setSocialUrl(social, $event)"
+              placeholder="https://..."
+            />
+          </div>
+          }
+
+          <div class="form-control mt-2">
+            <label class="label text-xs font-semibold py-1">Alignment</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [value]="block.styles?.textAlign ?? ''"
+              (change)="setBlockAlign(block, $event)"
+            >
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+        </div>
+        }
+
+        <!-- COMMON BLOCK PADDING SETTINGS -->
+        <div class="border-t border-base-200 pt-3 mt-3">
+          <h4 class="text-xs font-bold text-base-content/60 mb-2">Block Margins</h4>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="form-control">
+              <label class="label text-[10px] uppercase font-bold py-0">Padding Top (px)</label>
+              <input
+                type="number"
+                class="input input-bordered w-full input-sm"
+                [value]="block.styles?.paddingTop ?? ''"
+                (input)="setBlockStyle(block, 'paddingTop', $event)"
+                min="0"
+                max="80"
+              />
+            </div>
+
+            <div class="form-control">
+              <label class="label text-[10px] uppercase font-bold py-0">Padding Bottom (px)</label>
+              <input
+                type="number"
+                class="input input-bordered w-full input-sm"
+                [value]="block.styles?.paddingBottom ?? ''"
+                (input)="setBlockStyle(block, 'paddingBottom', $event)"
+                min="0"
+                max="80"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      } @else {
+      <div class="h-48 flex flex-col justify-center items-center text-center text-base-content/40 p-4">
+        <pc-icon name="pencil-square" [size]="8" class="text-base-content/30 mb-2"></pc-icon>
+        <p class="text-sm font-semibold">No Block Selected</p>
+        <p class="text-xs mt-1">Click on any block inside the preview area to edit its content and styling.</p>
+      </div>
+      } }
+    </div>
+  </aside>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.ts
+```typescript
+import { CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, type CdkDragDrop } from '@angular/cdk/drag-drop';
+import { CdkScrollable } from '@angular/cdk/scrolling';
+import { Component, OnInit, computed, inject, model, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+
+import { SettingsService } from '../../settings/services/settings-service';
+import {
+  createBlock,
+  insertBlockAt,
+  isEmailBlockType,
+  moveBlock,
+  tryImportHtmlToBlocks,
+  type EmailBlockType,
+} from './newsletter-block-ops';
+import {
+  EmailBlock,
+  socialSvgPaths,
+  getSocialBgColor,
+  getSocialIconColor,
+  getTemplateBlocks,
+  compileBlocksToHtml,
+  compileBlocksToPlainText,
+} from './newsletter-templates';
+
+/** One palette entry: the tile in the Blocks tab and the "+" insert menu both render from this. */
+interface PaletteEntry {
+  type: EmailBlockType;
+  label: string;
+  icon: PcIconNameType;
+  iconClass: string;
+}
+
+@Component({
+  selector: 'pc-visual-newsletter-editor',
+  imports: [Icon, TabBar, CdkDropList, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkScrollable],
+  templateUrl: './visual-newsletter-editor.html',
+})
+export class VisualNewsletterEditorComponent implements OnInit {
+  public readonly htmlContent = model<string>('');
+  public readonly plainTextContent = model<string>('');
+
+  protected readonly blocks = signal<EmailBlock[]>([]);
+  protected readonly selectedBlockId = signal<string | null>(null);
+  protected readonly previewMode = signal<'desktop' | 'mobile'>('desktop');
+  protected readonly editorMode = signal<'visual' | 'code'>('visual');
+  protected readonly activeTab = signal<'blocks' | 'edit'>('blocks');
+
+  /** Seam index whose "+" insert picker is open, or null when closed. */
+  protected readonly insertMenuIndex = signal<number | null>(null);
+
+  /** The 7 block types: palette tiles and the "+" insert menu share this list. */
+  protected readonly paletteTypes: readonly PaletteEntry[] = [
+    { type: 'heading', label: 'Heading', icon: 'document-text', iconClass: 'text-primary' },
+    { type: 'text', label: 'Paragraph', icon: 'document-text', iconClass: 'text-success' },
+    { type: 'image', label: 'Image', icon: 'file-image', iconClass: 'text-warning' },
+    { type: 'button', label: 'CTA Button', icon: 'star-filled', iconClass: 'text-info' },
+    { type: 'divider', label: 'Divider', icon: 'bars-3', iconClass: 'text-neutral-content' },
+    { type: 'spacer', label: 'Spacer', icon: 'arrows-pointing-out', iconClass: '' },
+    { type: 'social', label: 'Social Links', icon: 'user-group', iconClass: 'text-primary' },
+  ];
+
+  protected readonly panelTabs: PcTabOption[] = [
+    { id: 'blocks', label: 'Blocks' },
+    { id: 'edit', label: 'Customize' },
+  ];
+
+  protected setPanelTab(tab: string): void {
+    if (tab === 'blocks' || tab === 'edit') this.activeTab.set(tab);
+  }
+
+  protected readonly socialSvgPaths = socialSvgPaths;
+  protected getSocialBgColor(platform: string, style: string) {
+    return getSocialBgColor(platform, style);
+  }
+  protected getSocialIconColor(platform: string, style: string) {
+    return getSocialIconColor(platform, style);
+  }
+
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  protected getMockVariableValue(name: string): string | undefined {
+    const mocks: Record<string, string> = {
+      FirstName: 'John',
+      LastName: 'Doe',
+      Email: 'john.doe@example.com',
+      Company: 'Acme Corporation',
+      JobTitle: 'Software Engineer',
+      Phone: '(555) 123-4567',
+    };
+    const key = Object.keys(mocks).find((k) => k.toLowerCase() === name.toLowerCase());
+    return key ? mocks[key] : undefined;
+  }
+
+  protected resolveVariablesForPreview(text: string | undefined, isButton = false): string {
+    if (!text) return '';
+    const escaped = this.escapeHtml(text);
+    return escaped.replace(/\{([a-zA-Z0-9_]+)(?:\|([^}]+))?\}/g, (match, varName, fallback) => {
+      const mockValue = this.getMockVariableValue(varName);
+      const displayValue = mockValue !== undefined ? mockValue : fallback !== undefined ? fallback : match;
+      if (isButton) {
+        return `<span class="border-b border-dashed border-current font-semibold" title="Variable: ${match}">${displayValue}</span>`;
+      }
+      return `<span class="border-b border-dashed border-primary/60 text-primary font-semibold animate-pulse" title="Variable: ${match}">${displayValue}</span>`;
+    });
+  }
+
+  protected insertVariable(block: EmailBlock, variableName: string): void {
+    block.content = (block.content || '') + `{${variableName}}`;
+    this.updateBlocks();
+  }
+
+  private readonly settingsSvc = inject(SettingsService);
+
+  /** Org name shown in the compliance-footer preview (the server appends the real footer at send time). */
+  protected readonly footerOrgName = computed(() => {
+    const value = this.settingsSvc.snapshotSignal()['organization.name'];
+    return typeof value === 'string' ? value.trim() : '';
+  });
+
+  /** Org address shown in the compliance-footer preview (the server appends the real one at send time). */
+  protected readonly footerAddress = computed(() => {
+    const value = this.settingsSvc.snapshotSignal()['organization.address'];
+    return typeof value === 'string' ? value.trim() : '';
+  });
+
+  /** Tenant footer disclaimer shown in the compliance-footer preview. */
+  protected readonly footerDisclaimer = computed(() => {
+    const value = this.settingsSvc.snapshotSignal()['communications.footer_disclaimer'];
+    return typeof value === 'string' ? value.trim() : '';
+  });
+
+  // Computed signals
+  protected readonly selectedBlock = computed(() => {
+    const id = this.selectedBlockId();
+    if (!id) return null;
+    return this.blocks().find((b) => b.id === id) ?? null;
+  });
+
+  protected readonly compiledHtml = computed(() => {
+    return compileBlocksToHtml(this.blocks());
+  });
+
+  public ngOnInit(): void {
+    // Best-effort fetch of the address/disclaimer for the compliance-footer preview; the
+    // preview falls back to guidance copy when the snapshot is unavailable.
+    this.settingsSvc.load().catch(() => undefined);
+
+    // Check if the incoming HTML has our saved JSON blocks comment
+    const matched = this.htmlContent().match(/<!-- PPLCRM_VISUAL_BLOCKS_DATA: ([\s\S]*?) -->/);
+    if (matched && matched[1]) {
+      try {
+        const decoded = decodeURIComponent(matched[1].trim());
+        const parsed = JSON.parse(decoded);
+        if (Array.isArray(parsed)) {
+          // Older drafts may carry a removable 'footer' block; the compliance footer is
+          // appended server-side at send time now, so drop it from the design.
+          const blockList = parsed.filter((b) => b?.type !== 'footer');
+          this.blocks.set(blockList);
+          if (blockList.length > 0) {
+            this.selectedBlockId.set(blockList[0].id);
+            this.activeTab.set('edit');
+          }
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to parse embedded visual block metadata. Defaulting to template.', err);
+      }
+    }
+
+    // No embedded block model. The visual editor is the default, so try a best-effort import
+    // of simple legacy HTML into blocks; fall back to raw-HTML mode only when the content
+    // would not survive the round-trip. Empty content starts from the welcome template.
+    const legacyHtml = this.htmlContent().trim();
+    if (!legacyHtml) {
+      this.loadTemplate('welcome', false);
+      return;
+    }
+    const imported = tryImportHtmlToBlocks(legacyHtml);
+    if (imported) {
+      this.blocks.set(imported);
+      this.selectedBlockId.set(imported[0]?.id ?? null);
+      this.activeTab.set('edit');
+    } else {
+      this.editorMode.set('code');
+    }
+  }
+
+  protected selectBlock(id: string, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.insertMenuIndex.set(null);
+    this.selectedBlockId.set(id);
+    this.activeTab.set('edit');
+  }
+
+  /** Toggles the "+" insert picker at the given seam index. */
+  protected toggleInsertMenu(index: number, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.insertMenuIndex.set(this.insertMenuIndex() === index ? null : index);
+  }
+
+  protected toggleEditorMode(): void {
+    const current = this.editorMode();
+    if (current === 'visual') {
+      this.editorMode.set('code');
+    } else {
+      // Switch back to visual, warning that edits made in code view will be reset
+      this.editorMode.set('visual');
+      this.updateBlocks();
+    }
+  }
+
+  /** Click-to-add path: inserts after the selected block, or appends when nothing is selected. */
+  protected addBlock(type: EmailBlockType): void {
+    const selectedId = this.selectedBlockId();
+    const selectedIdx = selectedId === null ? -1 : this.blocks().findIndex((b) => b.id === selectedId);
+    const index = selectedIdx === -1 ? this.blocks().length : selectedIdx + 1;
+    this.addBlockAt(type, index);
+  }
+
+  /** Inserts a fresh block of the given type at the given index, selects it, and closes any insert menu. */
+  protected addBlockAt(type: EmailBlockType, index: number): void {
+    const newBlock = createBlock(type);
+    this.blocks.set(insertBlockAt(this.blocks(), newBlock, index));
+    this.selectBlock(newBlock.id);
+    this.updateBlocks();
+  }
+
+  /** Handles drops on the canvas: reorder within it, or copy-insert a type dragged from the palette. */
+  protected onCanvasDrop(event: CdkDragDrop<EmailBlock[]>): void {
+    if (event.previousContainer === event.container) {
+      if (event.previousIndex === event.currentIndex) return;
+      this.blocks.set(moveBlock(this.blocks(), event.previousIndex, event.currentIndex));
+      this.updateBlocks();
+      return;
+    }
+    // Palette tile dropped onto the canvas: copy semantics — the tile itself stays in the palette.
+    const data: unknown = event.item.data;
+    if (isEmailBlockType(data)) {
+      this.addBlockAt(data, event.currentIndex);
+    }
+  }
+
+  protected deleteBlock(id: string, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    const filtered = this.blocks().filter((b) => b.id !== id);
+    this.blocks.set(filtered);
+    if (this.selectedBlockId() === id) {
+      this.selectedBlockId.set(filtered[0]?.id ?? null);
+    }
+    this.updateBlocks();
+  }
+
+  protected duplicateBlock(block: EmailBlock, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    const idx = this.blocks().findIndex((b) => b.id === block.id);
+    if (idx === -1) return;
+
+    const id = Math.random().toString(36).substring(2, 9);
+    const clone: EmailBlock = JSON.parse(JSON.stringify(block));
+    clone.id = id;
+
+    this.blocks.set(insertBlockAt(this.blocks(), clone, idx + 1));
+    this.selectBlock(id);
+    this.updateBlocks();
+  }
+
+  protected moveBlockUp(idx: number, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (idx <= 0) return;
+    this.blocks.set(moveBlock(this.blocks(), idx, idx - 1));
+    this.updateBlocks();
+  }
+
+  protected moveBlockDown(idx: number, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (idx >= this.blocks().length - 1) return;
+    this.blocks.set(moveBlock(this.blocks(), idx, idx + 1));
+    this.updateBlocks();
+  }
+
+  protected updateBlocks(): void {
+    const list = [...this.blocks()];
+    // Trigger signal recomputation and propagation
+    this.blocks.set(list);
+    this.propagateChanges();
+  }
+
+  // --- Ad-hoc style/content knobs (value + input/change handlers, no forms) ---
+
+  /** Writes a plain-text field of the block (content, urls, footer copy) from a native input/textarea event. */
+  protected setBlockText(block: EmailBlock, field: EditableBlockTextField, event: Event): void {
+    block[field] = eventValue(event);
+    this.updateBlocks();
+  }
+
+  /** Writes a string-valued style property (colors, sizes, paddings) from a native control event. */
+  protected setBlockStyle(block: EmailBlock, key: StringStyleKey, event: Event): void {
+    this.ensureStyles(block)[key] = eventValue(event);
+    this.updateBlocks();
+  }
+
+  protected setBlockAlign(block: EmailBlock, event: Event): void {
+    const value = eventValue(event);
+    if (value === 'left' || value === 'center' || value === 'right') {
+      this.ensureStyles(block).textAlign = value;
+      this.updateBlocks();
+    }
+  }
+
+  protected setSocialIconStyle(block: EmailBlock, event: Event): void {
+    const value = eventValue(event);
+    if (
+      value === 'circular-solid' ||
+      value === 'circular-gray' ||
+      value === 'simple-color' ||
+      value === 'simple-gray'
+    ) {
+      block.socialIconStyle = value;
+      this.updateBlocks();
+    }
+  }
+
+  protected setSocialUrl(social: { url: string }, event: Event): void {
+    social.url = eventValue(event);
+    this.updateBlocks();
+  }
+
+  protected onRawHtmlInput(event: Event): void {
+    this.handleRawHtmlEdit(eventValue(event));
+  }
+
+  private ensureStyles(block: EmailBlock): NonNullable<EmailBlock['styles']> {
+    block.styles ??= {};
+    return block.styles;
+  }
+
+  protected handleRawHtmlEdit(html: string): void {
+    this.htmlContent.set(html);
+    // Simple text version conversion from html tags
+    const text = html
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    this.plainTextContent.set(text);
+  }
+
+  protected loadTemplate(preset: 'welcome' | 'product' | 'newsletter' | 'empty', triggerPropagate = true): void {
+    const tpl = getTemplateBlocks(preset);
+    this.blocks.set(tpl);
+    this.selectedBlockId.set(tpl[0]?.id || null);
+    this.activeTab.set('edit');
+
+    if (triggerPropagate) {
+      this.propagateChanges();
+    }
+  }
+
+  private propagateChanges(): void {
+    const html = this.compiledHtml();
+    const text = compileBlocksToPlainText(this.blocks());
+
+    this.htmlContent.set(html);
+    this.plainTextContent.set(text);
+  }
+}
+
+/** Block fields that are edited as free text in the Customize panel. */
+type EditableBlockTextField = 'content' | 'linkUrl' | 'imageUrl' | 'imageAlt' | 'imageWidth';
+
+/** Style keys typed as plain strings on EmailBlock['styles'] (textAlign is handled separately). */
+type StringStyleKey =
+  | 'color'
+  | 'backgroundColor'
+  | 'fontSize'
+  | 'paddingTop'
+  | 'paddingBottom'
+  | 'borderRadius'
+  | 'borderColor'
+  | 'borderWidth'
+  | 'height';
+
+/** Safely reads the string value from a native input/textarea/select event target. */
+function eventValue(event: Event): string {
+  const target = event.target;
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
+    return target.value;
+  }
+  return '';
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.ts
@@ -76953,1214 +77106,6 @@ body {
 <pc-site-footer />
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
-```typescript
-import {
-  CUSTOM_ELEMENTS_SCHEMA,
-  Component,
-  ElementRef,
-  OnInit,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
-import { FormField, email, form, required } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { Icon } from '@icons/icon';
-import type { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import {
-  computeScore,
-  lintNewsletterContent,
-  preflightBand,
-  preflightHashInput,
-  type AiReviewStatus,
-  type PreflightBand,
-  type PreflightFinding,
-  type PreflightResult,
-  type PreflightSeverity,
-} from '@common';
-
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthService } from '../../../auth/auth-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { TemplateThumbComponent } from './template-thumb';
-import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
-import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
-import { NewslettersService } from '../services/newsletters-service';
-import type { SavedNewsletterTemplate } from '../services/newsletters-service';
-
-/** Sentence-case, heroicon-backed metadata for the four starting templates. */
-const TEMPLATE_OPTIONS: ReadonlyArray<{
-  id: TemplatePreset;
-  name: string;
-  description: string;
-  icon: PcIconNameType;
-}> = [
-  {
-    id: 'welcome',
-    name: 'Welcome email',
-    description: 'Warm greeting, hero image & social links.',
-    icon: 'envelope',
-  },
-  {
-    id: 'product',
-    name: 'Announcement',
-    description: 'Hero, list of updates & CTA button.',
-    icon: 'megaphone',
-  },
-  {
-    id: 'newsletter',
-    name: 'Weekly digest',
-    description: 'Heading divider & digest content.',
-    icon: 'queue-list',
-  },
-  {
-    id: 'empty',
-    name: 'Empty canvas',
-    description: 'Start from scratch with a single heading block.',
-    icon: 'document',
-  },
-];
-
-const STEP_LABELS = ['Template', 'Content', 'Audience & details', 'Review & send'] as const;
-const LOCKED_STEP_TOOLTIP = 'Complete the current step first';
-const DEMO_SEND_TOOLTIP = 'Sending is locked during the demo. Choose a plan, then exit demo mode';
-const SUBJECT_COACH = "Add a subject line. It's the one field every recipient sees.";
-const FROM_NAME_COACH = 'Add a from name so recipients know who the email is from.';
-const FROM_ADDRESS_COACH = 'Choose a verified sender address.';
-const SCHEDULE_COACH = 'Pick a send date and time, or switch to "Send now".';
-const COMMS_SETTINGS_LINK = '/settings/communications';
-const VERIFY_SENDER_LINK = '/settings/communications';
-
-const EMPTY_REGULAR_PAYLOAD: RegularNewsletterPayload = {
-  subject: '',
-  previewText: '',
-  fromName: '',
-  fromAddress: '',
-  htmlContent: '',
-  plainTextContent: '',
-  includeLists: [],
-  includeTags: [],
-  excludeLists: [],
-  excludeTags: [],
-  timingMode: 'now',
-  scheduledDate: '',
-  scheduledTime: '',
-};
-
-@Component({
-  selector: 'pc-newsletter-add',
-  imports: [
-    EmptyState,
-    FormField,
-    RouterLink,
-    Icon,
-    ModalShell,
-    TemplateThumbComponent,
-    VisualNewsletterEditorComponent,
-  ],
-  templateUrl: './newsletter-add.html',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
-})
-export class NewsletterAddComponent implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authSvc = inject(AuthService);
-  private readonly confirmDlg = inject(ConfirmDialogService);
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-  private readonly listsSvc = inject(ListsService);
-  private readonly newslettersSvc = inject(NewslettersService);
-  private readonly numberFormatter = new Intl.NumberFormat();
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly tagsSvc = inject(TagsService);
-  private readonly timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-
-  private readonly user = this.authSvc.getUserSignal();
-  /** Sending is blocked server-side during demo mode; the disabled buttons explain it (§2 explained-disabled). */
-  protected readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
-  protected readonly demoSendTooltip = DEMO_SEND_TOOLTIP;
-
-  /** Draft id when opened as newsletters/:id/edit; null when creating a new newsletter. */
-  private readonly editId = this.route.snapshot.paramMap.get('id');
-  protected readonly isEditing = this.editId !== null;
-  /** Edit mode: true once the stored draft has been hydrated into the wizard. */
-  protected readonly editLoaded = signal(false);
-  /** Edit mode: the stored draft name, shown as the page title (§1 real record name). */
-  protected readonly editName = signal('');
-  private readonly _editLoading = createLoadingGate();
-  protected readonly editLoading = this._editLoading.visible;
-
-  /** Raw wizard payload — the single source of truth the signal-form wraps. */
-  protected readonly regularPayload = signal<RegularNewsletterPayload>({ ...EMPTY_REGULAR_PAYLOAD });
-
-  protected readonly regularForm = form(this.regularPayload, (p) => {
-    required(p.subject);
-    required(p.fromName);
-    required(p.fromAddress);
-    email(p.fromAddress);
-  });
-
-  private readonly requiresScheduleDate = computed(() => {
-    const raw = this.regularPayload();
-    if (raw.timingMode !== 'schedule') return false;
-    return !raw.scheduledDate || !raw.scheduledTime;
-  });
-
-  private readonly subjectInput = viewChild<ElementRef<HTMLInputElement>>('subjectInput');
-  private readonly fromNameInput = viewChild<ElementRef<HTMLInputElement>>('fromNameInput');
-  private readonly fromAddressInput = viewChild<ElementRef<HTMLSelectElement>>('fromAddressInput');
-
-  protected readonly availableLists = signal<Array<{ id: string; name: string; size: number }>>([]);
-  protected readonly availableTags = signal<Array<{ id: string; name: string; usage: number }>>([]);
-  protected readonly currentStep = signal<StepIndex>(1);
-  protected readonly excludeListIds = computed(() => this.regularPayload().excludeLists);
-  protected readonly excludeTagsList = computed(() => this.regularPayload().excludeTags);
-  protected readonly includeListIds = computed(() => this.regularPayload().includeLists);
-  protected readonly includeTagsList = computed(() => this.regularPayload().includeTags);
-  protected readonly loadingLists = signal<boolean>(false);
-  protected readonly loadingTags = signal<boolean>(false);
-  protected readonly saving = signal(false);
-  protected readonly selectedTemplate = signal<TemplateSelection>({ kind: 'preset', id: 'welcome' });
-  protected readonly showDatePicker = signal(false);
-  /** Set true once the user has changed anything in the wizard, so the leave guard only fires on real work. */
-  protected readonly dirty = signal(false);
-  /** Set true after a blocked Next/Send so inline field errors appear even before the field is touched. */
-  protected readonly showFieldErrors = signal(false);
-
-  protected readonly stepIds: readonly WizardStepId[] = ['template', 'content', 'audience', 'review'];
-  protected readonly steps: readonly string[] = STEP_LABELS;
-  /** What the current step number means — the template switches on this. */
-  protected readonly currentStepId = computed<WizardStepId>(() => this.stepIds[this.currentStep() - 1] ?? 'template');
-  protected readonly isLastStep = computed(() => this.currentStep() >= this.stepIds.length);
-
-  protected readonly templateOptions = TEMPLATE_OPTIONS;
-  protected readonly lockedStepTooltip = LOCKED_STEP_TOOLTIP;
-  protected readonly subjectCoach = SUBJECT_COACH;
-  protected readonly fromNameCoach = FROM_NAME_COACH;
-  protected readonly fromAddressCoach = FROM_ADDRESS_COACH;
-  protected readonly scheduleCoach = SCHEDULE_COACH;
-  protected readonly commsSettingsLink = COMMS_SETTINGS_LINK;
-  protected readonly verifySenderLink = VERIFY_SENDER_LINK;
-  /** Rendered literally in the content-step helper; kept as a constant so Angular doesn't parse the braces. */
-  protected readonly mergeFieldExample = '{{first_name}}';
-
-  // --- Verified senders / workspace prefill ---------------------------------
-
-  protected readonly verifiedSenders = signal<string[]>([]);
-  protected readonly commsDefaultsApplied = signal(false);
-
-  // --- Monthly send allowance (mirror of the server's send-guards math) -----
-
-  /** null until loaded (or when the load failed — the server still enforces the gate). */
-  protected readonly sendQuota = signal<{
-    cap: number | null;
-    used: number;
-    remaining: number | null;
-    resetsAt: string | null;
-  } | null>(null);
-  /** True when the selected audience is larger than what's left of the monthly allowance. */
-  protected readonly quotaShortfall = computed(() => {
-    const quota = this.sendQuota();
-    if (!quota || quota.remaining == null) return false;
-    return this.estimatedAudienceCount() > quota.remaining;
-  });
-  protected readonly quotaResetLabel = computed(() => {
-    const resetsAt = this.sendQuota()?.resetsAt;
-    return resetsAt ? this.dateFormatter.format(new Date(resetsAt)) : '';
-  });
-  /** Why the Send button is disabled, if it is (§2 explained-disabled): demo mode or allowance.
-   * A scheduled send may fire after the allowance resets, so the shortfall only blocks "Send
-   * now" — the server re-checks the gate when a scheduled send actually fires either way. */
-  protected readonly sendBlockedTooltip = computed<string | null>(() => {
-    if (this.isDemo()) return this.demoSendTooltip;
-    if (this.quotaShortfall() && this.regularPayload().timingMode === 'now') {
-      const remaining = this.sendQuota()?.remaining ?? 0;
-      return `This audience exceeds the ${this.numberFormatter.format(remaining)} emails left in your monthly allowance`;
-    }
-    return null;
-  });
-
-  // --- Audience math (every line is real; the total is the single source) ---
-
-  protected readonly includedListsTotal = computed(() => this.sumListSizes(this.includeListIds()));
-  protected readonly excludedListsTotal = computed(() => this.sumListSizes(this.excludeListIds()));
-  protected readonly includedTagsTotal = computed(() => this.sumTagUsage(this.includeTagsList()));
-  protected readonly excludedTagsTotal = computed(() => this.sumTagUsage(this.excludeTagsList()));
-  protected readonly estimatedAudienceCount = computed(() => {
-    const estimate =
-      this.includedListsTotal() + this.includedTagsTotal() - this.excludedListsTotal() - this.excludedTagsTotal();
-    return estimate > 0 ? Math.round(estimate) : 0;
-  });
-  protected readonly hasAudienceSelection = computed(
-    () =>
-      this.includeListIds().length > 0 ||
-      this.includeTagsList().length > 0 ||
-      this.excludeListIds().length > 0 ||
-      this.excludeTagsList().length > 0,
-  );
-  /** Reads the live workspace setting; ON by default (skip previously bounced addresses). */
-  protected readonly skipBounced = computed(() =>
-    this.settingsSvc.getValue<boolean>('communications.skip_bounced', true),
-  );
-
-  // --- Suggestion chips (a list/tag already used in one bucket isn't offered in it) ---
-
-  protected readonly includeListSuggestions = computed(() =>
-    this.availableLists().filter((l) => !this.includeListIds().includes(l.id)),
-  );
-  protected readonly excludeListSuggestions = computed(() =>
-    this.availableLists().filter((l) => !this.excludeListIds().includes(l.id)),
-  );
-  protected readonly includeTagSuggestions = computed(() =>
-    this.availableTags().filter((t) => !this.includeTagsList().includes(t.name)),
-  );
-  protected readonly excludeTagSuggestions = computed(() =>
-    this.availableTags().filter((t) => !this.excludeTagsList().includes(t.name)),
-  );
-
-  public ngOnInit(): void {
-    void this.loadLists();
-    void this.loadTags();
-    void this.loadCommsDefaults();
-    void this.loadSendQuota();
-    void this.loadSavedTemplates();
-    if (this.editId) {
-      void this.loadDraft(this.editId);
-    } else {
-      // Land directly in the wizard with the default template applied; not a user edit.
-      this.applyTemplate('welcome');
-      this.dirty.set(false);
-    }
-  }
-
-  /** Route-level leave guard (wired via unsavedChangesGuard in dashboard.routes.ts). */
-  public canDeactivate(): Promise<boolean> {
-    if (!this.dirty()) return Promise.resolve(true);
-    return this.confirmDlg.confirm({
-      title: 'Leave without saving?',
-      message:
-        'Your changes to your draft newsletter (template, audience and copy) will be lost. Save it as a draft to keep working on it later.',
-      variant: 'warning',
-      confirmText: 'Discard draft',
-      cancelText: 'Keep editing',
-      emphasizeCancel: true,
-    });
-  }
-
-  // --- Step navigation ------------------------------------------------------
-
-  protected canReachStep(step: number): boolean {
-    return step <= this.currentStep();
-  }
-
-  protected goToStep(targetStep: number): void {
-    // Completed or current steps are clickable; future steps stay locked (they narrate why via tooltip).
-    if (this.canReachStep(targetStep)) {
-      this.currentStep.set(targetStep as StepIndex);
-    }
-  }
-
-  protected handleBack(): void {
-    const step = this.currentStep();
-    if (step === 1) {
-      this.close();
-    } else {
-      this.currentStep.set((step - 1) as StepIndex);
-    }
-  }
-
-  protected handleNext(): void {
-    const step = this.currentStep();
-
-    if (this.currentStepId() === 'audience' && !this.validateDetails()) return;
-
-    if (step >= this.stepIds.length) return;
-    this.showFieldErrors.set(false);
-    this.currentStep.set((step + 1) as StepIndex);
-  }
-
-  /** Jump to a step by meaning, not number. */
-  private goToStepId(id: WizardStepId): void {
-    const index = this.stepIds.indexOf(id);
-    if (index >= 0) this.currentStep.set((index + 1) as StepIndex);
-  }
-
-  // --- Template -------------------------------------------------------------
-
-  protected close(): void {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  protected selectTemplate(preset: TemplatePreset): void {
-    this.applyTemplate(preset);
-    this.markDirty();
-  }
-
-  protected selectedTemplateName(): string {
-    const selection = this.selectedTemplate();
-    if (selection.kind === 'preset') {
-      return TEMPLATE_OPTIONS.find((t) => t.id === selection.id)?.name ?? 'Template';
-    }
-    return this.savedTemplates().find((t) => t.id === selection.id)?.name ?? 'Saved template';
-  }
-
-  protected isPresetSelected(preset: TemplatePreset): boolean {
-    const selection = this.selectedTemplate();
-    return selection.kind === 'preset' && selection.id === preset;
-  }
-
-  protected isSavedSelected(id: string): boolean {
-    const selection = this.selectedTemplate();
-    return selection.kind === 'saved' && selection.id === id;
-  }
-
-  /** Compiled preset previews for the template cards — pure functions, compiled once and cached. */
-  private readonly presetPreviewCache = new Map<TemplatePreset, string>();
-
-  protected presetPreviewHtml(preset: TemplatePreset): string {
-    const cached = this.presetPreviewCache.get(preset);
-    if (cached !== undefined) return cached;
-    const compiled = compileTemplateHtml(preset);
-    this.presetPreviewCache.set(preset, compiled);
-    return compiled;
-  }
-
-  // --- Saved templates ("Your templates") -----------------------------------
-
-  protected readonly savedTemplates = signal<SavedNewsletterTemplate[]>([]);
-  private readonly _templatesLoading = createLoadingGate();
-  protected readonly templatesLoading = this._templatesLoading.visible;
-
-  /** Applies a saved template's stored content — same overwrite semantics as the presets. */
-  protected selectSavedTemplate(template: SavedNewsletterTemplate): void {
-    this.selectedTemplate.set({ kind: 'saved', id: template.id });
-    this.regularPayload.update((p) => ({
-      ...p,
-      htmlContent: template.html_content,
-      plainTextContent: template.plain_text_content,
-    }));
-    this.markDirty();
-  }
-
-  protected savedTemplateSubtitle(template: SavedNewsletterTemplate): string {
-    return template.updated_at ? `Saved ${this.dateFormatter.format(template.updated_at)}` : 'Saved template';
-  }
-
-  protected async deleteSavedTemplate(template: SavedNewsletterTemplate): Promise<void> {
-    const confirmed = await this.confirmDlg.confirm({
-      title: `Delete template "${template.name}"?`,
-      message: `"${template.name}" will be removed from your saved templates for everyone in this workspace. Newsletters already created from it keep their content.`,
-      variant: 'danger',
-      confirmText: 'Delete template',
-      cancelText: 'Keep template',
-    });
-    if (!confirmed) return;
-    try {
-      await this.newslettersSvc.deleteTemplate(template.id);
-      this.savedTemplates.update((list) => list.filter((t) => t.id !== template.id));
-      this.alertSvc.showSuccess(`Deleted template "${template.name}"`);
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not delete this template. Try again.'));
-    }
-  }
-
-  private async loadSavedTemplates(): Promise<void> {
-    const end = this._templatesLoading.begin();
-    try {
-      this.savedTemplates.set(await this.newslettersSvc.getTemplates());
-    } catch {
-      // Non-fatal: the presets still serve; the section simply stays hidden.
-    } finally {
-      end();
-    }
-  }
-
-  // --- Save as template -----------------------------------------------------
-
-  protected readonly saveTemplateOpen = signal(false);
-  protected readonly savingTemplate = signal(false);
-  protected readonly templateNamePayload = signal({ name: '' });
-  protected readonly templateNameForm = form(this.templateNamePayload, (p) => {
-    required(p.name);
-  });
-
-  protected openSaveTemplate(): void {
-    this.templateNamePayload.set({ name: '' });
-    this.templateNameForm().reset();
-    this.saveTemplateOpen.set(true);
-  }
-
-  protected closeSaveTemplate(): void {
-    this.saveTemplateOpen.set(false);
-  }
-
-  protected templateNameInvalid(): boolean {
-    const state = this.templateNameForm.name();
-    return state.invalid() && (state.touched() || state.dirty());
-  }
-
-  /** Saves the wizard's current html/plain content verbatim under the chosen name. */
-  protected async saveAsTemplate(): Promise<void> {
-    if (this.savingTemplate()) return;
-    this.templateNameForm().markAsTouched();
-    if (this.templateNameForm().invalid()) return;
-    const name = this.templateNamePayload().name.trim();
-    const raw = this.regularPayload();
-    this.savingTemplate.set(true);
-    try {
-      const created = await this.newslettersSvc.saveTemplate({
-        name,
-        html_content: raw.htmlContent,
-        plain_text_content: raw.plainTextContent,
-      });
-      this.savedTemplates.update((list) =>
-        [...list.filter((t) => t.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name)),
-      );
-      this.saveTemplateOpen.set(false);
-      this.alertSvc.showSuccess('Template saved');
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not save this template. Try again.'));
-    } finally {
-      this.savingTemplate.set(false);
-    }
-  }
-
-  // --- Audience: add / remove -----------------------------------------------
-
-  protected addIncludeList(listId: string): void {
-    if (this.includeListIds().includes(listId)) return;
-    // A list can't be both included and excluded.
-    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
-    this.setIncludeLists([...this.includeListIds(), listId]);
-  }
-
-  protected removeIncludeList(listId: string): void {
-    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
-  }
-
-  protected addExcludeList(listId: string): void {
-    if (this.excludeListIds().includes(listId)) return;
-    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
-    this.setExcludeLists([...this.excludeListIds(), listId]);
-  }
-
-  protected removeExcludeList(listId: string): void {
-    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
-  }
-
-  protected addIncludeTag(name: string): void {
-    if (this.includeTagsList().includes(name)) return;
-    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
-    this.setIncludeTags([...this.includeTagsList(), name]);
-  }
-
-  protected removeIncludeTag(name: string): void {
-    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
-  }
-
-  protected addExcludeTag(name: string): void {
-    if (this.excludeTagsList().includes(name)) return;
-    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
-    this.setExcludeTags([...this.excludeTagsList(), name]);
-  }
-
-  protected removeExcludeTag(name: string): void {
-    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
-  }
-
-  protected listName(id: string): string {
-    return this.availableLists().find((list) => list.id === id)?.name ?? 'List';
-  }
-
-  protected listSize(id: string): number {
-    return this.availableLists().find((list) => list.id === id)?.size ?? 0;
-  }
-
-  protected tagUsage(name: string): number {
-    return this.availableTags().find((tag) => tag.name === name)?.usage ?? 0;
-  }
-
-  protected formatCount(value: number): string {
-    return this.numberFormatter.format(value);
-  }
-
-  /** "1 person" / "1,312 people" — honest scale for buttons and copy. */
-  protected peopleLabel(value: number): string {
-    return `${this.formatCount(value)} ${value === 1 ? 'person' : 'people'}`;
-  }
-
-  // --- Schedule -------------------------------------------------------------
-
-  protected isInvalid(field: 'subject' | 'fromName' | 'fromAddress'): boolean {
-    const state = this.regularForm[field]();
-    return state.invalid() && (state.dirty() || state.touched() || this.showFieldErrors());
-  }
-
-  protected onScheduledDateChange(event: unknown): void {
-    const value = this.normalizeCalendarValue(event) ?? '';
-    const state = this.regularForm.scheduledDate();
-    state.value.set(value);
-    state.markAsDirty();
-    state.markAsTouched();
-    this.markDirty();
-    this.showDatePicker.set(false);
-  }
-
-  protected scheduledDateDisplay(): string {
-    const value = this.scheduledDateValue();
-    if (!value) return 'Select a date';
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? value : this.dateFormatter.format(parsed);
-  }
-
-  protected scheduledDateValue(): string {
-    return this.regularPayload().scheduledDate;
-  }
-
-  protected timingNeedsDate(): boolean {
-    return this.requiresScheduleDate();
-  }
-
-  protected toggleDatePicker(): void {
-    this.showDatePicker.update((open) => !open);
-  }
-
-  protected onFieldInput(): void {
-    this.markDirty();
-  }
-
-  protected setTimingMode(mode: TimingMode): void {
-    this.regularForm.timingMode().value.set(mode);
-    this.markDirty();
-  }
-
-  protected onTimingChange(): void {
-    this.markDirty();
-  }
-
-  protected onEditorHtmlChange(html: string): void {
-    this.regularForm.htmlContent().value.set(html);
-    this.markDirty();
-  }
-
-  protected onEditorTextChange(text: string): void {
-    this.regularForm.plainTextContent().value.set(text);
-  }
-
-  protected goToVerifySender(): void {
-    void this.router.navigateByUrl(this.verifySenderLink);
-  }
-
-  // --- Deliverability preflight --------------------------------------------
-
-  /** Full server check (lint + SpamAssassin + AI review) and the content key it was run for. */
-  private readonly serverPreflight = signal<{ key: string; result: PreflightResult } | null>(null);
-  protected readonly preflightRunning = signal(false);
-
-  /** Canonical key of the current content — a stored server result is stale once this changes. */
-  private readonly preflightContentKey = computed(() => {
-    const raw = this.regularPayload();
-    return preflightHashInput(raw.subject, raw.htmlContent, raw.plainTextContent);
-  });
-
-  /** Instant local lint of the current content — shown until a full server check runs. */
-  private readonly quickPreflight = computed<PreflightView>(() => {
-    const raw = this.regularPayload();
-    const findings = lintNewsletterContent({
-      subject: raw.subject,
-      html: raw.htmlContent,
-      plainText: raw.plainTextContent || undefined,
-    });
-    const score = computeScore(findings);
-    return { score, band: preflightBand(score), findings, kind: 'quick', aiStatus: 'not_required' };
-  });
-
-  /** What the Review card and the confirm dialog show: the full check while it still matches the
-   * content, otherwise the live quick check. */
-  protected readonly preflightView = computed<PreflightView>(() => {
-    const server = this.serverPreflight();
-    if (server && server.key === this.preflightContentKey()) {
-      const r = server.result;
-      return { score: r.score, band: r.band, findings: r.findings, kind: 'full', aiStatus: r.aiStatus };
-    }
-    return this.quickPreflight();
-  });
-
-  protected async runFullPreflight(): Promise<void> {
-    if (this.preflightRunning()) return;
-    const raw = this.regularPayload();
-    const key = this.preflightContentKey();
-    this.preflightRunning.set(true);
-    try {
-      const result = await this.newslettersSvc.runPreflight({
-        subject: raw.subject,
-        html: raw.htmlContent,
-        plainText: raw.plainTextContent || undefined,
-      });
-      this.serverPreflight.set({ key, result });
-      if (this.currentStepId() !== 'review') {
-        this.alertSvc.showInfo(`Deliverability score ${result.score} — details on the review step.`);
-      }
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not run the deliverability check. Try again.'));
-    } finally {
-      this.preflightRunning.set(false);
-    }
-  }
-
-  protected preflightBandCopy(band: PreflightBand): string {
-    switch (band) {
-      case 'good':
-        return 'Looking good — ready to send';
-      case 'fix':
-        return 'Fix these before sending';
-      default:
-        return 'Sending is disabled until you fix the items below';
-    }
-  }
-
-  protected preflightGaugeClass(band: PreflightBand): string {
-    switch (band) {
-      case 'good':
-        return 'text-success';
-      case 'fix':
-        return 'text-warning';
-      default:
-        return 'text-error';
-    }
-  }
-
-  protected preflightSeverityIcon(severity: PreflightSeverity): PcIconNameType {
-    switch (severity) {
-      case 'block':
-        return 'x-circle';
-      case 'warn':
-        return 'exclamation-triangle';
-      default:
-        return 'information-circle';
-    }
-  }
-
-  protected preflightSeverityClass(severity: PreflightSeverity): string {
-    switch (severity) {
-      case 'block':
-        return 'text-error';
-      case 'warn':
-        return 'text-warning';
-      default:
-        return 'text-info';
-    }
-  }
-
-  // --- Test send ------------------------------------------------------------
-
-  protected async sendTestEmail(): Promise<void> {
-    const raw = this.regularPayload();
-    const to = this.authSvc.getUser()?.email;
-    if (!to) {
-      this.alertSvc.showError('We could not find your email address for the test send.');
-      return;
-    }
-    const subject = raw.subject || 'Your newsletter';
-    try {
-      await this.newslettersSvc.sendTest({
-        subject,
-        html: raw.htmlContent,
-        text: raw.plainTextContent,
-        to,
-        fromName: raw.fromName,
-        fromEmail: raw.fromAddress,
-      });
-      this.alertSvc.showSuccess(`Sent a test of "${subject}" to ${to}`);
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not send the test email. Try again.'));
-    }
-  }
-
-  // --- Save draft -----------------------------------------------------------
-
-  protected async saveDraft(): Promise<void> {
-    if (this.saving()) return;
-    // Edit mode: never write an empty payload over the draft before hydration lands.
-    if (this.isEditing && !this.editLoaded()) return;
-    const raw = this.regularPayload();
-    const subject = raw.subject || 'Untitled draft';
-    this.saving.set(true);
-    try {
-      if (this.editId) {
-        await this.newslettersSvc.update(this.editId, this.buildPayload('draft'));
-      } else {
-        await this.newslettersSvc.add(this.buildPayload('draft'));
-      }
-      this.dirty.set(false);
-      // Edit mode closes onto the draft's own page; create mode closes onto the list.
-      this.alertSvc.showSuccess(
-        this.editId ? `Saved draft "${subject}"` : `Saved draft "${subject}". Find it in Newsletters`,
-      );
-      this.close();
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not save your draft. Try again.'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  // --- Send / schedule (with preflight) -------------------------------------
-
-  protected async sendRegular(): Promise<void> {
-    if (this.saving()) return;
-    if (this.isEditing && !this.editLoaded()) return;
-    if (!this.validateDetails()) {
-      this.goToStepId('audience');
-      return;
-    }
-    if (this.requiresScheduleDate()) {
-      this.regularForm.scheduledDate().markAsTouched();
-      this.regularForm.scheduledTime().markAsTouched();
-      this.showFieldErrors.set(true);
-      this.alertSvc.showError(this.scheduleCoach);
-      return;
-    }
-
-    // The server enforces this again at send time; catching it here routes the user to the
-    // findings instead of a failed request.
-    const check = this.preflightView();
-    if (check.band === 'blocked') {
-      this.goToStepId('review');
-      this.alertSvc.showError(
-        `Deliverability score ${check.score} — fix the items flagged in the deliverability check before sending.`,
-      );
-      return;
-    }
-
-    const raw = this.regularPayload();
-    const scheduled = raw.timingMode === 'schedule';
-    const count = this.estimatedAudienceCount();
-    const subject = raw.subject || 'Untitled newsletter';
-    const whenLabel = scheduled ? this.scheduleWhenLabel() : 'now';
-
-    const confirmed = await this.confirmDlg.confirm({
-      title: scheduled ? `Schedule "${subject}" for ${whenLabel}?` : `Send "${subject}" now?`,
-      message: this.preflightMessage(count),
-      variant: 'info',
-      icon: 'paper-airplane',
-      confirmText: scheduled ? `Schedule for ${this.peopleLabel(count)}` : `Send to ${this.peopleLabel(count)}`,
-      cancelText: 'Keep editing',
-      emphasizeCancel: true,
-    });
-    if (!confirmed) return;
-
-    this.saving.set(true);
-    try {
-      let targetId: string | null = this.editId;
-      if (this.editId) {
-        await this.newslettersSvc.update(this.editId, this.buildPayload(scheduled ? 'scheduled' : 'draft'));
-      } else {
-        const created = await this.newslettersSvc.add(this.buildPayload(scheduled ? 'scheduled' : 'draft'));
-        targetId = this.extractId(created);
-      }
-      if (!scheduled && targetId) {
-        await this.newslettersSvc.send(targetId);
-      }
-      this.dirty.set(false);
-      this.alertSvc.showSuccess(
-        scheduled
-          ? `Scheduled "${subject}" for ${whenLabel}; it goes out within a few minutes of that time`
-          : `Queued "${subject}" to ${this.peopleLabel(count)}, sending now`,
-      );
-      this.close();
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not send this newsletter. Try again.'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  // --- Internals ------------------------------------------------------------
-
-  private applyTemplate(preset: TemplatePreset): void {
-    this.selectedTemplate.set({ kind: 'preset', id: preset });
-    this.regularPayload.update((p) => ({
-      ...p,
-      htmlContent: compileTemplateHtml(preset),
-      plainTextContent: compileTemplatePlainText(preset),
-    }));
-  }
-
-  /** Edit mode: hydrate the wizard from the stored draft, then land on the content step. */
-  private async loadDraft(id: string): Promise<void> {
-    const end = this._editLoading.begin();
-    try {
-      const record: unknown = await this.newslettersSvc.getById(id);
-      const row = record && typeof record === 'object' ? (record as Record<string, unknown>) : null;
-      if (!row) {
-        this.alertSvc.showError('We could not find this newsletter.');
-        this.close();
-        return;
-      }
-      if (row['status'] !== 'draft') {
-        // Only drafts are editable; anything further along opens as its details/report page.
-        void this.router.navigate(['/newsletters', id]);
-        return;
-      }
-      const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-      const name = str(row['name']);
-      const lists = this.parseIdSets(row['target_lists']);
-      const tags = this.parseIdSets(row['segments']);
-      const rawDate = row['send_date'];
-      const sendDate = rawDate instanceof Date && !Number.isNaN(rawDate.getTime()) ? rawDate : null;
-      const pad = (n: number) => String(n).padStart(2, '0');
-      this.regularPayload.update((p) => ({
-        ...p,
-        // Drafts saved without a subject fall back to a placeholder name; don't hydrate that back in.
-        subject: str(row['subject']) || (name === 'Unnamed Newsletter' || name === 'Untitled draft' ? '' : name),
-        previewText: str(row['preview_text']),
-        htmlContent: str(row['html_content']),
-        plainTextContent: str(row['plain_text_content']),
-        includeLists: lists.include,
-        excludeLists: lists.exclude,
-        includeTags: tags.include,
-        excludeTags: tags.exclude,
-        timingMode: sendDate ? 'schedule' : p.timingMode,
-        scheduledDate: sendDate
-          ? `${sendDate.getFullYear()}-${pad(sendDate.getMonth() + 1)}-${pad(sendDate.getDate())}`
-          : p.scheduledDate,
-        scheduledTime: sendDate ? `${pad(sendDate.getHours())}:${pad(sendDate.getMinutes())}` : p.scheduledTime,
-      }));
-      this.editName.set(name);
-      // The template step is moot for an existing draft; its saved content is the design.
-      this.currentStep.set(2);
-      this.editLoaded.set(true);
-      this.dirty.set(false);
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not open this draft. Try again.'));
-      this.close();
-    } finally {
-      end();
-    }
-  }
-
-  /** Tolerates the shapes drafts have stored: {include, exclude} JSON, a bare array, or null. */
-  private parseIdSets(value: unknown): { include: string[]; exclude: string[] } {
-    let parsed: unknown = value;
-    if (typeof parsed === 'string') {
-      if (!parsed.trim()) return { include: [], exclude: [] };
-      try {
-        parsed = JSON.parse(parsed);
-      } catch {
-        return { include: [], exclude: [] };
-      }
-    }
-    if (Array.isArray(parsed)) return { include: parsed.map((v) => String(v)), exclude: [] };
-    if (parsed && typeof parsed === 'object') {
-      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
-      const obj = parsed as Record<string, unknown>;
-      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
-    }
-    return { include: [], exclude: [] };
-  }
-
-  private validateDetails(): boolean {
-    this.markDetailsTouched();
-    this.showFieldErrors.set(true);
-    const invalidField = this.firstInvalidDetail();
-    if (invalidField) {
-      this.focusAndCoach(invalidField);
-      return false;
-    }
-    return true;
-  }
-
-  private firstInvalidDetail(): 'subject' | 'fromName' | 'fromAddress' | null {
-    if (this.regularForm.subject().invalid()) return 'subject';
-    if (this.regularForm.fromName().invalid()) return 'fromName';
-    if (this.regularForm.fromAddress().invalid()) return 'fromAddress';
-    return null;
-  }
-
-  private focusAndCoach(field: 'subject' | 'fromName' | 'fromAddress'): void {
-    const map = {
-      subject: { ref: this.subjectInput(), coach: this.subjectCoach },
-      fromName: { ref: this.fromNameInput(), coach: this.fromNameCoach },
-      fromAddress: { ref: this.fromAddressInput(), coach: this.fromAddressCoach },
-    } as const;
-    const target = map[field];
-    target.ref?.nativeElement.focus();
-    this.alertSvc.showError(target.coach);
-  }
-
-  private preflightMessage(count: number): string {
-    const check = this.preflightView();
-    const flagged = check.findings.length;
-    const scoreLine =
-      check.band === 'good'
-        ? `Deliverability score ${check.score} — looking good.`
-        : `Deliverability score ${check.score} — ${flagged} item${flagged === 1 ? '' : 's'} worth fixing first (see the Review & send step).`;
-    const base = `It will go to ${this.peopleLabel(count)}.`;
-    if (this.skipBounced()) {
-      return `${scoreLine} ${base} Previously bounced addresses are skipped automatically.`;
-    }
-    return `${scoreLine} ${base} Bounced addresses are NOT being skipped (Workspace setting).`;
-  }
-
-  private scheduleWhenLabel(): string {
-    const date = this.scheduledDateValue();
-    const time = this.regularPayload().scheduledTime;
-    if (!date) return 'the scheduled time';
-    const parsed = new Date(`${date}T${time || '00:00'}`);
-    if (Number.isNaN(parsed.getTime())) return `${date} ${time}`.trim();
-    return time
-      ? `${this.dateFormatter.format(parsed)} at ${this.timeFormatter.format(parsed)}`
-      : this.dateFormatter.format(parsed);
-  }
-
-  private buildPayload(status: 'draft' | 'scheduled'): Parameters<NewslettersService['add']>[0] {
-    const raw = this.regularPayload();
-    const scheduledAt =
-      status === 'scheduled' && raw.scheduledDate && raw.scheduledTime
-        ? new Date(`${raw.scheduledDate}T${raw.scheduledTime}`)
-        : null;
-
-    return {
-      name: raw.subject || 'Unnamed Newsletter',
-      status,
-      subject: raw.subject,
-      preview_text: raw.previewText,
-      audience_description: this.buildAudienceDescription(),
-      target_lists: JSON.stringify({ include: raw.includeLists, exclude: raw.excludeLists }),
-      segments: JSON.stringify({ include: raw.includeTags, exclude: raw.excludeTags }),
-      html_content: raw.htmlContent,
-      plain_text_content: raw.plainTextContent,
-      send_date: scheduledAt,
-      total_recipients: this.estimatedAudienceCount(),
-    };
-  }
-
-  private buildAudienceDescription(): string {
-    const includeLists = this.includeListIds().map((id) => this.listName(id));
-    const includeTags = this.includeTagsList();
-    const excludeLists = this.excludeListIds().map((id) => this.listName(id));
-    const excludeTags = this.excludeTagsList();
-
-    const parts: string[] = [];
-    if (includeLists.length || includeTags.length) {
-      parts.push(
-        `Targeting lists: [${includeLists.join(', ') || 'None'}], tags: [${includeTags.join(', ') || 'None'}]`,
-      );
-    }
-    if (excludeLists.length || excludeTags.length) {
-      parts.push(
-        `Excluding lists: [${excludeLists.join(', ') || 'None'}], tags: [${excludeTags.join(', ') || 'None'}]`,
-      );
-    }
-    return parts.length ? parts.join(' ') : 'No target audience configured.';
-  }
-
-  private markDetailsTouched(): void {
-    this.regularForm.subject().markAsTouched();
-    this.regularForm.fromName().markAsTouched();
-    this.regularForm.fromAddress().markAsTouched();
-  }
-
-  private markDirty(): void {
-    if (!this.dirty()) this.dirty.set(true);
-  }
-
-  private setIncludeLists(next: string[]): void {
-    this.writeAudience('includeLists', next);
-  }
-
-  private setExcludeLists(next: string[]): void {
-    this.writeAudience('excludeLists', next);
-  }
-
-  private setIncludeTags(next: string[]): void {
-    this.writeAudience('includeTags', next);
-  }
-
-  private setExcludeTags(next: string[]): void {
-    this.writeAudience('excludeTags', next);
-  }
-
-  private writeAudience(key: 'includeLists' | 'excludeLists' | 'includeTags' | 'excludeTags', next: string[]): void {
-    this.regularPayload.update((p) => ({ ...p, [key]: next }));
-    this.markDirty();
-  }
-
-  private sumListSizes(ids: string[]): number {
-    const sizeById = new Map(this.availableLists().map((l) => [l.id, Number(l.size) || 0]));
-    return ids.reduce((sum, id) => sum + (sizeById.get(id) ?? 0), 0);
-  }
-
-  private sumTagUsage(names: string[]): number {
-    const usageByName = new Map(this.availableTags().map((t) => [t.name, Number(t.usage) || 0]));
-    return names.reduce((sum, name) => sum + (usageByName.get(name) ?? 0), 0);
-  }
-
-  private async loadLists(): Promise<void> {
-    this.loadingLists.set(true);
-    try {
-      const result = await this.listsSvc.getAll({ limit: 100, startRow: 0 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows
-          .filter((row: { id?: unknown; name?: unknown }) => row?.id && row?.name)
-          .map((row: Record<string, unknown>) => ({
-            id: String(row['id']),
-            name: String(row['name']),
-            size:
-              Number(row['list_size'] ?? row['people_count'] ?? row['household_count'] ?? row['member_count'] ?? 0) ||
-              0,
-          })),
-      );
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not load lists. Try again later.'));
-    } finally {
-      this.loadingLists.set(false);
-    }
-  }
-
-  private async loadTags(): Promise<void> {
-    this.loadingTags.set(true);
-    try {
-      const result = await this.tagsSvc.getAll({ limit: 100, startRow: 0 });
-      const rows = Array.isArray((result as { rows?: unknown })?.rows) ? (result as { rows: unknown[] }).rows : [];
-      this.availableTags.set(
-        rows
-          .filter(
-            (row): row is Record<string, unknown> => !!row && typeof row === 'object' && 'id' in row && 'name' in row,
-          )
-          .filter((row) => row['id'] && row['name'])
-          .map((row) => ({
-            id: String(row['id']),
-            name: String(row['name']),
-            usage: Number(row['use_count_people'] ?? 0) + Number(row['use_count_households'] ?? 0),
-          })),
-      );
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not load tags. Try again later.'));
-    } finally {
-      this.loadingTags.set(false);
-    }
-  }
-
-  private async loadCommsDefaults(): Promise<void> {
-    try {
-      await this.settingsSvc.load();
-    } catch {
-      // Non-fatal: the sender fields simply won't prefill.
-      return;
-    }
-    this.verifiedSenders.set(this.settingsSvc.getValue<string[]>('communications.verified_emails', []) ?? []);
-
-    const defaultName = this.settingsSvc.getValue<string>('communications.default_from_name', '');
-    const defaultEmail = this.settingsSvc.getValue<string>('communications.default_from_email', '');
-    let applied = false;
-    if (defaultName && !this.regularPayload().fromName) {
-      this.regularForm.fromName().value.set(defaultName);
-      applied = true;
-    }
-    if (defaultEmail && this.verifiedSenders().includes(defaultEmail) && !this.regularPayload().fromAddress) {
-      this.regularForm.fromAddress().value.set(defaultEmail);
-      applied = true;
-    }
-    this.commsDefaultsApplied.set(applied);
-  }
-
-  private async loadSendQuota(): Promise<void> {
-    try {
-      this.sendQuota.set(await this.newslettersSvc.getSendQuota());
-    } catch {
-      // Non-fatal: the Review step just won't show the allowance line — the server still enforces it.
-    }
-  }
-
-  private normalizeCalendarValue(event: unknown): string | null {
-    const raw = this.readCalendarRaw(event);
-    if (!raw) return null;
-    const text = String(raw).trim();
-    if (!text) return null;
-    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
-    const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
-  }
-
-  private readCalendarRaw(event: unknown): string | null {
-    if (typeof event === 'string') return event;
-    if (!event || typeof event !== 'object') return null;
-    const e = event as Record<string, unknown>;
-    const detail = e['detail'];
-    if (typeof detail === 'string') return detail;
-    if (detail && typeof detail === 'object' && typeof (detail as Record<string, unknown>)['value'] === 'string') {
-      return (detail as Record<string, unknown>)['value'] as string;
-    }
-    const target = e['target'];
-    if (target && typeof target === 'object' && typeof (target as Record<string, unknown>)['value'] === 'string') {
-      return (target as Record<string, unknown>)['value'] as string;
-    }
-    if (typeof e['value'] === 'string') return e['value'] as string;
-    return null;
-  }
-
-  private extractId(created: unknown): string | null {
-    if (created && typeof created === 'object' && 'id' in created) {
-      const id = (created as Record<string, unknown>)['id'];
-      return id != null ? String(id) : null;
-    }
-    return null;
-  }
-
-  private errorMessage(err: unknown, fallback: string): string {
-    return err instanceof Error && err.message ? err.message : fallback;
-  }
-}
-
-/** Deliverability-check view model: a full server run, or the instant local quick check. */
-interface PreflightView {
-  score: number;
-  band: PreflightBand;
-  findings: PreflightFinding[];
-  kind: 'full' | 'quick';
-  aiStatus: AiReviewStatus;
-}
-
-type StepIndex = 1 | 2 | 3 | 4;
-
-type WizardStepId = 'template' | 'content' | 'audience' | 'review';
-
-type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
-
-/** What the Template step has selected: a built-in preset or a user-saved template. */
-type TemplateSelection = { kind: 'preset'; id: TemplatePreset } | { kind: 'saved'; id: string };
-
-type TimingMode = 'now' | 'schedule';
-
-interface RegularNewsletterPayload {
-  subject: string;
-  previewText: string;
-  fromName: string;
-  fromAddress: string;
-  htmlContent: string;
-  plainTextContent: string;
-  includeLists: string[];
-  includeTags: string[];
-  excludeLists: string[];
-  excludeTags: string[];
-  timingMode: TimingMode;
-  scheduledDate: string;
-  scheduledTime: string;
-}
-```
-
 ## File: apps/frontend/src/app/layout/navbar/navbar.html
 ```html
 <!-- Navigation bar template with search, theme toggle, and user actions -->
@@ -80671,6 +79616,1223 @@ export class PricingPage {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
+```typescript
+import {
+  CUSTOM_ELEMENTS_SCHEMA,
+  Component,
+  ElementRef,
+  OnInit,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { FormField, email, form, required } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import {
+  computeScore,
+  lintNewsletterContent,
+  preflightBand,
+  preflightHashInput,
+  type AiReviewStatus,
+  type PreflightBand,
+  type PreflightFinding,
+  type PreflightResult,
+  type PreflightSeverity,
+} from '@common';
+
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { TemplateThumbComponent } from './template-thumb';
+import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
+import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
+import { NewslettersService } from '../services/newsletters-service';
+import type { SavedNewsletterTemplate } from '../services/newsletters-service';
+
+/** Sentence-case, heroicon-backed metadata for the four starting templates. */
+const TEMPLATE_OPTIONS: ReadonlyArray<{
+  id: TemplatePreset;
+  name: string;
+  description: string;
+  icon: PcIconNameType;
+}> = [
+  {
+    id: 'welcome',
+    name: 'Welcome email',
+    description: 'Warm greeting, hero image & social links.',
+    icon: 'envelope',
+  },
+  {
+    id: 'product',
+    name: 'Announcement',
+    description: 'Hero, list of updates & CTA button.',
+    icon: 'megaphone',
+  },
+  {
+    id: 'newsletter',
+    name: 'Weekly digest',
+    description: 'Heading divider & digest content.',
+    icon: 'queue-list',
+  },
+  {
+    id: 'empty',
+    name: 'Empty canvas',
+    description: 'Start from scratch with a single heading block.',
+    icon: 'document',
+  },
+];
+
+const STEP_LABELS = ['Template', 'Content', 'Audience & details', 'Review & send'] as const;
+const LOCKED_STEP_TOOLTIP = 'Complete the current step first';
+const DEMO_SEND_TOOLTIP = 'Sending is locked during the demo. Choose a plan, then exit demo mode';
+const SUBJECT_COACH = "Add a subject line. It's the one field every recipient sees.";
+const FROM_NAME_COACH = 'Add a from name so recipients know who the email is from.';
+const FROM_ADDRESS_COACH = 'Choose a verified sender address.';
+const SCHEDULE_COACH = 'Pick a send date and time, or switch to "Send now".';
+const COMMS_SETTINGS_LINK = '/settings/communications';
+const VERIFY_SENDER_LINK = '/settings/communications';
+
+const EMPTY_REGULAR_PAYLOAD: RegularNewsletterPayload = {
+  subject: '',
+  previewText: '',
+  fromName: '',
+  fromAddress: '',
+  htmlContent: '',
+  plainTextContent: '',
+  includeLists: [],
+  includeTags: [],
+  excludeLists: [],
+  excludeTags: [],
+  timingMode: 'now',
+  scheduledDate: '',
+  scheduledTime: '',
+};
+
+@Component({
+  selector: 'pc-newsletter-add',
+  imports: [
+    EmptyState,
+    FormField,
+    RouterLink,
+    Icon,
+    ModalShell,
+    TemplateThumbComponent,
+    VisualNewsletterEditorComponent,
+  ],
+  templateUrl: './newsletter-add.html',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+export class NewsletterAddComponent implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authSvc = inject(AuthService);
+  private readonly confirmDlg = inject(ConfirmDialogService);
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+  private readonly listsSvc = inject(ListsService);
+  private readonly newslettersSvc = inject(NewslettersService);
+  private readonly numberFormatter = new Intl.NumberFormat();
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly tagsSvc = inject(TagsService);
+  private readonly timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  private readonly user = this.authSvc.getUserSignal();
+  /** Sending is blocked server-side during demo mode; the disabled buttons explain it (§2 explained-disabled). */
+  protected readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
+  protected readonly demoSendTooltip = DEMO_SEND_TOOLTIP;
+
+  /** Draft id when opened as newsletters/:id/edit; null when creating a new newsletter. */
+  private readonly editId = this.route.snapshot.paramMap.get('id');
+  protected readonly isEditing = this.editId !== null;
+  /** Edit mode: true once the stored draft has been hydrated into the wizard. */
+  protected readonly editLoaded = signal(false);
+  /** Edit mode: the stored draft name, shown as the page title (§1 real record name). */
+  protected readonly editName = signal('');
+  private readonly _editLoading = createLoadingGate();
+  protected readonly editLoading = this._editLoading.visible;
+
+  /** Raw wizard payload — the single source of truth the signal-form wraps. */
+  protected readonly regularPayload = signal<RegularNewsletterPayload>({ ...EMPTY_REGULAR_PAYLOAD });
+
+  protected readonly regularForm = form(this.regularPayload, (p) => {
+    required(p.subject);
+    required(p.fromName);
+    required(p.fromAddress);
+    email(p.fromAddress);
+  });
+
+  private readonly requiresScheduleDate = computed(() => {
+    const raw = this.regularPayload();
+    if (raw.timingMode !== 'schedule') return false;
+    return !raw.scheduledDate || !raw.scheduledTime;
+  });
+
+  private readonly subjectInput = viewChild<ElementRef<HTMLInputElement>>('subjectInput');
+  private readonly fromNameInput = viewChild<ElementRef<HTMLInputElement>>('fromNameInput');
+  private readonly fromAddressInput = viewChild<ElementRef<HTMLSelectElement>>('fromAddressInput');
+
+  protected readonly availableLists = signal<Array<{ id: string; name: string; size: number }>>([]);
+  protected readonly availableTags = signal<Array<{ id: string; name: string; usage: number }>>([]);
+  protected readonly currentStep = signal<StepIndex>(1);
+  protected readonly excludeListIds = computed(() => this.regularPayload().excludeLists);
+  protected readonly excludeTagsList = computed(() => this.regularPayload().excludeTags);
+  protected readonly includeListIds = computed(() => this.regularPayload().includeLists);
+  protected readonly includeTagsList = computed(() => this.regularPayload().includeTags);
+  protected readonly loadingLists = signal<boolean>(false);
+  protected readonly loadingTags = signal<boolean>(false);
+  protected readonly saving = signal(false);
+  protected readonly selectedTemplate = signal<TemplateSelection>({ kind: 'preset', id: 'welcome' });
+  protected readonly showDatePicker = signal(false);
+  /** Set true once the user has changed anything in the wizard, so the leave guard only fires on real work. */
+  protected readonly dirty = signal(false);
+  /** Set true after a blocked Next/Send so inline field errors appear even before the field is touched. */
+  protected readonly showFieldErrors = signal(false);
+
+  protected readonly stepIds: readonly WizardStepId[] = ['template', 'content', 'audience', 'review'];
+  protected readonly steps: readonly string[] = STEP_LABELS;
+  /** What the current step number means — the template switches on this. */
+  protected readonly currentStepId = computed<WizardStepId>(() => this.stepIds[this.currentStep() - 1] ?? 'template');
+  protected readonly isLastStep = computed(() => this.currentStep() >= this.stepIds.length);
+
+  protected readonly templateOptions = TEMPLATE_OPTIONS;
+  protected readonly lockedStepTooltip = LOCKED_STEP_TOOLTIP;
+  protected readonly subjectCoach = SUBJECT_COACH;
+  protected readonly fromNameCoach = FROM_NAME_COACH;
+  protected readonly fromAddressCoach = FROM_ADDRESS_COACH;
+  protected readonly scheduleCoach = SCHEDULE_COACH;
+  protected readonly commsSettingsLink = COMMS_SETTINGS_LINK;
+  protected readonly verifySenderLink = VERIFY_SENDER_LINK;
+  /** Rendered literally in the content-step helper; kept as a constant so Angular doesn't parse the braces. */
+  protected readonly mergeFieldExample = '{{first_name}}';
+
+  // --- Verified senders / workspace prefill ---------------------------------
+
+  protected readonly verifiedSenders = signal<string[]>([]);
+  protected readonly commsDefaultsApplied = signal(false);
+
+  // --- Monthly send allowance (mirror of the server's send-guards math) -----
+
+  /** null until loaded (or when the load failed — the server still enforces the gate). */
+  protected readonly sendQuota = signal<{
+    cap: number | null;
+    used: number;
+    remaining: number | null;
+    resetsAt: string | null;
+  } | null>(null);
+  /** True when the selected audience is larger than what's left of the monthly allowance. */
+  protected readonly quotaShortfall = computed(() => {
+    const quota = this.sendQuota();
+    if (!quota || quota.remaining == null) return false;
+    return this.estimatedAudienceCount() > quota.remaining;
+  });
+  protected readonly quotaResetLabel = computed(() => {
+    const resetsAt = this.sendQuota()?.resetsAt;
+    return resetsAt ? this.dateFormatter.format(new Date(resetsAt)) : '';
+  });
+  /** Why the Send button is disabled, if it is (§2 explained-disabled): demo mode or allowance.
+   * A scheduled send may fire after the allowance resets, so the shortfall only blocks "Send
+   * now" — the server re-checks the gate when a scheduled send actually fires either way. */
+  protected readonly sendBlockedTooltip = computed<string | null>(() => {
+    if (this.isDemo()) return this.demoSendTooltip;
+    if (!this.orgAddressSet()) {
+      return 'Set your organization’s mailing address under Settings → Organization — it appears in the footer of every newsletter';
+    }
+    if (this.quotaShortfall() && this.regularPayload().timingMode === 'now') {
+      const remaining = this.sendQuota()?.remaining ?? 0;
+      return `This audience exceeds the ${this.numberFormatter.format(remaining)} emails left in your monthly allowance`;
+    }
+    return null;
+  });
+
+  // --- Audience math (every line is real; the total is the single source) ---
+
+  protected readonly includedListsTotal = computed(() => this.sumListSizes(this.includeListIds()));
+  protected readonly excludedListsTotal = computed(() => this.sumListSizes(this.excludeListIds()));
+  protected readonly includedTagsTotal = computed(() => this.sumTagUsage(this.includeTagsList()));
+  protected readonly excludedTagsTotal = computed(() => this.sumTagUsage(this.excludeTagsList()));
+  protected readonly estimatedAudienceCount = computed(() => {
+    const estimate =
+      this.includedListsTotal() + this.includedTagsTotal() - this.excludedListsTotal() - this.excludedTagsTotal();
+    return estimate > 0 ? Math.round(estimate) : 0;
+  });
+  protected readonly hasAudienceSelection = computed(
+    () =>
+      this.includeListIds().length > 0 ||
+      this.includeTagsList().length > 0 ||
+      this.excludeListIds().length > 0 ||
+      this.excludeTagsList().length > 0,
+  );
+  /** Reads the live workspace setting; ON by default (skip previously bounced addresses). */
+  protected readonly skipBounced = computed(() =>
+    this.settingsSvc.getValue<boolean>('communications.skip_bounced', true),
+  );
+
+  /** The compliance footer needs the org's mailing address, so sending is gated on it being set. */
+  protected readonly orgAddressSet = computed(() => {
+    const value = this.settingsSvc.snapshotSignal()['organization.address'];
+    return typeof value === 'string' && value.trim().length > 0;
+  });
+
+  // --- Suggestion chips (a list/tag already used in one bucket isn't offered in it) ---
+
+  protected readonly includeListSuggestions = computed(() =>
+    this.availableLists().filter((l) => !this.includeListIds().includes(l.id)),
+  );
+  protected readonly excludeListSuggestions = computed(() =>
+    this.availableLists().filter((l) => !this.excludeListIds().includes(l.id)),
+  );
+  protected readonly includeTagSuggestions = computed(() =>
+    this.availableTags().filter((t) => !this.includeTagsList().includes(t.name)),
+  );
+  protected readonly excludeTagSuggestions = computed(() =>
+    this.availableTags().filter((t) => !this.excludeTagsList().includes(t.name)),
+  );
+
+  public ngOnInit(): void {
+    void this.loadLists();
+    void this.loadTags();
+    void this.loadCommsDefaults();
+    void this.loadSendQuota();
+    void this.loadSavedTemplates();
+    if (this.editId) {
+      void this.loadDraft(this.editId);
+    } else {
+      // Land directly in the wizard with the default template applied; not a user edit.
+      this.applyTemplate('welcome');
+      this.dirty.set(false);
+    }
+  }
+
+  /** Route-level leave guard (wired via unsavedChangesGuard in dashboard.routes.ts). */
+  public canDeactivate(): Promise<boolean> {
+    if (!this.dirty()) return Promise.resolve(true);
+    return this.confirmDlg.confirm({
+      title: 'Leave without saving?',
+      message:
+        'Your changes to your draft newsletter (template, audience and copy) will be lost. Save it as a draft to keep working on it later.',
+      variant: 'warning',
+      confirmText: 'Discard draft',
+      cancelText: 'Keep editing',
+      emphasizeCancel: true,
+    });
+  }
+
+  // --- Step navigation ------------------------------------------------------
+
+  protected canReachStep(step: number): boolean {
+    return step <= this.currentStep();
+  }
+
+  protected goToStep(targetStep: number): void {
+    // Completed or current steps are clickable; future steps stay locked (they narrate why via tooltip).
+    if (this.canReachStep(targetStep)) {
+      this.currentStep.set(targetStep as StepIndex);
+    }
+  }
+
+  protected handleBack(): void {
+    const step = this.currentStep();
+    if (step === 1) {
+      this.close();
+    } else {
+      this.currentStep.set((step - 1) as StepIndex);
+    }
+  }
+
+  protected handleNext(): void {
+    const step = this.currentStep();
+
+    if (this.currentStepId() === 'audience' && !this.validateDetails()) return;
+
+    if (step >= this.stepIds.length) return;
+    this.showFieldErrors.set(false);
+    this.currentStep.set((step + 1) as StepIndex);
+  }
+
+  /** Jump to a step by meaning, not number. */
+  private goToStepId(id: WizardStepId): void {
+    const index = this.stepIds.indexOf(id);
+    if (index >= 0) this.currentStep.set((index + 1) as StepIndex);
+  }
+
+  // --- Template -------------------------------------------------------------
+
+  protected close(): void {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  protected selectTemplate(preset: TemplatePreset): void {
+    this.applyTemplate(preset);
+    this.markDirty();
+  }
+
+  protected selectedTemplateName(): string {
+    const selection = this.selectedTemplate();
+    if (selection.kind === 'preset') {
+      return TEMPLATE_OPTIONS.find((t) => t.id === selection.id)?.name ?? 'Template';
+    }
+    return this.savedTemplates().find((t) => t.id === selection.id)?.name ?? 'Saved template';
+  }
+
+  protected isPresetSelected(preset: TemplatePreset): boolean {
+    const selection = this.selectedTemplate();
+    return selection.kind === 'preset' && selection.id === preset;
+  }
+
+  protected isSavedSelected(id: string): boolean {
+    const selection = this.selectedTemplate();
+    return selection.kind === 'saved' && selection.id === id;
+  }
+
+  /** Compiled preset previews for the template cards — pure functions, compiled once and cached. */
+  private readonly presetPreviewCache = new Map<TemplatePreset, string>();
+
+  protected presetPreviewHtml(preset: TemplatePreset): string {
+    const cached = this.presetPreviewCache.get(preset);
+    if (cached !== undefined) return cached;
+    const compiled = compileTemplateHtml(preset);
+    this.presetPreviewCache.set(preset, compiled);
+    return compiled;
+  }
+
+  // --- Saved templates ("Your templates") -----------------------------------
+
+  protected readonly savedTemplates = signal<SavedNewsletterTemplate[]>([]);
+  private readonly _templatesLoading = createLoadingGate();
+  protected readonly templatesLoading = this._templatesLoading.visible;
+
+  /** Applies a saved template's stored content — same overwrite semantics as the presets. */
+  protected selectSavedTemplate(template: SavedNewsletterTemplate): void {
+    this.selectedTemplate.set({ kind: 'saved', id: template.id });
+    this.regularPayload.update((p) => ({
+      ...p,
+      htmlContent: template.html_content,
+      plainTextContent: template.plain_text_content,
+    }));
+    this.markDirty();
+  }
+
+  protected savedTemplateSubtitle(template: SavedNewsletterTemplate): string {
+    return template.updated_at ? `Saved ${this.dateFormatter.format(template.updated_at)}` : 'Saved template';
+  }
+
+  protected async deleteSavedTemplate(template: SavedNewsletterTemplate): Promise<void> {
+    const confirmed = await this.confirmDlg.confirm({
+      title: `Delete template "${template.name}"?`,
+      message: `"${template.name}" will be removed from your saved templates for everyone in this workspace. Newsletters already created from it keep their content.`,
+      variant: 'danger',
+      confirmText: 'Delete template',
+      cancelText: 'Keep template',
+    });
+    if (!confirmed) return;
+    try {
+      await this.newslettersSvc.deleteTemplate(template.id);
+      this.savedTemplates.update((list) => list.filter((t) => t.id !== template.id));
+      this.alertSvc.showSuccess(`Deleted template "${template.name}"`);
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not delete this template. Try again.'));
+    }
+  }
+
+  private async loadSavedTemplates(): Promise<void> {
+    const end = this._templatesLoading.begin();
+    try {
+      this.savedTemplates.set(await this.newslettersSvc.getTemplates());
+    } catch {
+      // Non-fatal: the presets still serve; the section simply stays hidden.
+    } finally {
+      end();
+    }
+  }
+
+  // --- Save as template -----------------------------------------------------
+
+  protected readonly saveTemplateOpen = signal(false);
+  protected readonly savingTemplate = signal(false);
+  protected readonly templateNamePayload = signal({ name: '' });
+  protected readonly templateNameForm = form(this.templateNamePayload, (p) => {
+    required(p.name);
+  });
+
+  protected openSaveTemplate(): void {
+    this.templateNamePayload.set({ name: '' });
+    this.templateNameForm().reset();
+    this.saveTemplateOpen.set(true);
+  }
+
+  protected closeSaveTemplate(): void {
+    this.saveTemplateOpen.set(false);
+  }
+
+  protected templateNameInvalid(): boolean {
+    const state = this.templateNameForm.name();
+    return state.invalid() && (state.touched() || state.dirty());
+  }
+
+  /** Saves the wizard's current html/plain content verbatim under the chosen name. */
+  protected async saveAsTemplate(): Promise<void> {
+    if (this.savingTemplate()) return;
+    this.templateNameForm().markAsTouched();
+    if (this.templateNameForm().invalid()) return;
+    const name = this.templateNamePayload().name.trim();
+    const raw = this.regularPayload();
+    this.savingTemplate.set(true);
+    try {
+      const created = await this.newslettersSvc.saveTemplate({
+        name,
+        html_content: raw.htmlContent,
+        plain_text_content: raw.plainTextContent,
+      });
+      this.savedTemplates.update((list) =>
+        [...list.filter((t) => t.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      this.saveTemplateOpen.set(false);
+      this.alertSvc.showSuccess('Template saved');
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not save this template. Try again.'));
+    } finally {
+      this.savingTemplate.set(false);
+    }
+  }
+
+  // --- Audience: add / remove -----------------------------------------------
+
+  protected addIncludeList(listId: string): void {
+    if (this.includeListIds().includes(listId)) return;
+    // A list can't be both included and excluded.
+    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
+    this.setIncludeLists([...this.includeListIds(), listId]);
+  }
+
+  protected removeIncludeList(listId: string): void {
+    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
+  }
+
+  protected addExcludeList(listId: string): void {
+    if (this.excludeListIds().includes(listId)) return;
+    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
+    this.setExcludeLists([...this.excludeListIds(), listId]);
+  }
+
+  protected removeExcludeList(listId: string): void {
+    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
+  }
+
+  protected addIncludeTag(name: string): void {
+    if (this.includeTagsList().includes(name)) return;
+    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
+    this.setIncludeTags([...this.includeTagsList(), name]);
+  }
+
+  protected removeIncludeTag(name: string): void {
+    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
+  }
+
+  protected addExcludeTag(name: string): void {
+    if (this.excludeTagsList().includes(name)) return;
+    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
+    this.setExcludeTags([...this.excludeTagsList(), name]);
+  }
+
+  protected removeExcludeTag(name: string): void {
+    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
+  }
+
+  protected listName(id: string): string {
+    return this.availableLists().find((list) => list.id === id)?.name ?? 'List';
+  }
+
+  protected listSize(id: string): number {
+    return this.availableLists().find((list) => list.id === id)?.size ?? 0;
+  }
+
+  protected tagUsage(name: string): number {
+    return this.availableTags().find((tag) => tag.name === name)?.usage ?? 0;
+  }
+
+  protected formatCount(value: number): string {
+    return this.numberFormatter.format(value);
+  }
+
+  /** "1 person" / "1,312 people" — honest scale for buttons and copy. */
+  protected peopleLabel(value: number): string {
+    return `${this.formatCount(value)} ${value === 1 ? 'person' : 'people'}`;
+  }
+
+  // --- Schedule -------------------------------------------------------------
+
+  protected isInvalid(field: 'subject' | 'fromName' | 'fromAddress'): boolean {
+    const state = this.regularForm[field]();
+    return state.invalid() && (state.dirty() || state.touched() || this.showFieldErrors());
+  }
+
+  protected onScheduledDateChange(event: unknown): void {
+    const value = this.normalizeCalendarValue(event) ?? '';
+    const state = this.regularForm.scheduledDate();
+    state.value.set(value);
+    state.markAsDirty();
+    state.markAsTouched();
+    this.markDirty();
+    this.showDatePicker.set(false);
+  }
+
+  protected scheduledDateDisplay(): string {
+    const value = this.scheduledDateValue();
+    if (!value) return 'Select a date';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : this.dateFormatter.format(parsed);
+  }
+
+  protected scheduledDateValue(): string {
+    return this.regularPayload().scheduledDate;
+  }
+
+  protected timingNeedsDate(): boolean {
+    return this.requiresScheduleDate();
+  }
+
+  protected toggleDatePicker(): void {
+    this.showDatePicker.update((open) => !open);
+  }
+
+  protected onFieldInput(): void {
+    this.markDirty();
+  }
+
+  protected setTimingMode(mode: TimingMode): void {
+    this.regularForm.timingMode().value.set(mode);
+    this.markDirty();
+  }
+
+  protected onTimingChange(): void {
+    this.markDirty();
+  }
+
+  protected onEditorHtmlChange(html: string): void {
+    this.regularForm.htmlContent().value.set(html);
+    this.markDirty();
+  }
+
+  protected onEditorTextChange(text: string): void {
+    this.regularForm.plainTextContent().value.set(text);
+  }
+
+  protected goToVerifySender(): void {
+    void this.router.navigateByUrl(this.verifySenderLink);
+  }
+
+  // --- Deliverability preflight --------------------------------------------
+
+  /** Full server check (lint + SpamAssassin + AI review) and the content key it was run for. */
+  private readonly serverPreflight = signal<{ key: string; result: PreflightResult } | null>(null);
+  protected readonly preflightRunning = signal(false);
+
+  /** Canonical key of the current content — a stored server result is stale once this changes. */
+  private readonly preflightContentKey = computed(() => {
+    const raw = this.regularPayload();
+    return preflightHashInput(raw.subject, raw.htmlContent, raw.plainTextContent);
+  });
+
+  /** Instant local lint of the current content — shown until a full server check runs. */
+  private readonly quickPreflight = computed<PreflightView>(() => {
+    const raw = this.regularPayload();
+    const findings = lintNewsletterContent({
+      subject: raw.subject,
+      html: raw.htmlContent,
+      plainText: raw.plainTextContent || undefined,
+    });
+    const score = computeScore(findings);
+    return { score, band: preflightBand(score), findings, kind: 'quick', aiStatus: 'not_required' };
+  });
+
+  /** What the Review card and the confirm dialog show: the full check while it still matches the
+   * content, otherwise the live quick check. */
+  protected readonly preflightView = computed<PreflightView>(() => {
+    const server = this.serverPreflight();
+    if (server && server.key === this.preflightContentKey()) {
+      const r = server.result;
+      return { score: r.score, band: r.band, findings: r.findings, kind: 'full', aiStatus: r.aiStatus };
+    }
+    return this.quickPreflight();
+  });
+
+  protected async runFullPreflight(): Promise<void> {
+    if (this.preflightRunning()) return;
+    const raw = this.regularPayload();
+    const key = this.preflightContentKey();
+    this.preflightRunning.set(true);
+    try {
+      const result = await this.newslettersSvc.runPreflight({
+        subject: raw.subject,
+        html: raw.htmlContent,
+        plainText: raw.plainTextContent || undefined,
+      });
+      this.serverPreflight.set({ key, result });
+      if (this.currentStepId() !== 'review') {
+        this.alertSvc.showInfo(`Deliverability score ${result.score} — details on the review step.`);
+      }
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not run the deliverability check. Try again.'));
+    } finally {
+      this.preflightRunning.set(false);
+    }
+  }
+
+  protected preflightBandCopy(band: PreflightBand): string {
+    switch (band) {
+      case 'good':
+        return 'Looking good — ready to send';
+      case 'fix':
+        return 'Fix these before sending';
+      default:
+        return 'Sending is disabled until you fix the items below';
+    }
+  }
+
+  protected preflightGaugeClass(band: PreflightBand): string {
+    switch (band) {
+      case 'good':
+        return 'text-success';
+      case 'fix':
+        return 'text-warning';
+      default:
+        return 'text-error';
+    }
+  }
+
+  protected preflightSeverityIcon(severity: PreflightSeverity): PcIconNameType {
+    switch (severity) {
+      case 'block':
+        return 'x-circle';
+      case 'warn':
+        return 'exclamation-triangle';
+      default:
+        return 'information-circle';
+    }
+  }
+
+  protected preflightSeverityClass(severity: PreflightSeverity): string {
+    switch (severity) {
+      case 'block':
+        return 'text-error';
+      case 'warn':
+        return 'text-warning';
+      default:
+        return 'text-info';
+    }
+  }
+
+  // --- Test send ------------------------------------------------------------
+
+  protected async sendTestEmail(): Promise<void> {
+    const raw = this.regularPayload();
+    const to = this.authSvc.getUser()?.email;
+    if (!to) {
+      this.alertSvc.showError('We could not find your email address for the test send.');
+      return;
+    }
+    const subject = raw.subject || 'Your newsletter';
+    try {
+      await this.newslettersSvc.sendTest({
+        subject,
+        html: raw.htmlContent,
+        text: raw.plainTextContent,
+        to,
+        fromName: raw.fromName,
+        fromEmail: raw.fromAddress,
+      });
+      this.alertSvc.showSuccess(`Sent a test of "${subject}" to ${to}`);
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not send the test email. Try again.'));
+    }
+  }
+
+  // --- Save draft -----------------------------------------------------------
+
+  protected async saveDraft(): Promise<void> {
+    if (this.saving()) return;
+    // Edit mode: never write an empty payload over the draft before hydration lands.
+    if (this.isEditing && !this.editLoaded()) return;
+    const raw = this.regularPayload();
+    const subject = raw.subject || 'Untitled draft';
+    this.saving.set(true);
+    try {
+      if (this.editId) {
+        await this.newslettersSvc.update(this.editId, this.buildPayload('draft'));
+      } else {
+        await this.newslettersSvc.add(this.buildPayload('draft'));
+      }
+      this.dirty.set(false);
+      // Edit mode closes onto the draft's own page; create mode closes onto the list.
+      this.alertSvc.showSuccess(
+        this.editId ? `Saved draft "${subject}"` : `Saved draft "${subject}". Find it in Newsletters`,
+      );
+      this.close();
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not save your draft. Try again.'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  // --- Send / schedule (with preflight) -------------------------------------
+
+  protected async sendRegular(): Promise<void> {
+    if (this.saving()) return;
+    if (this.isEditing && !this.editLoaded()) return;
+    if (!this.validateDetails()) {
+      this.goToStepId('audience');
+      return;
+    }
+    if (this.requiresScheduleDate()) {
+      this.regularForm.scheduledDate().markAsTouched();
+      this.regularForm.scheduledTime().markAsTouched();
+      this.showFieldErrors.set(true);
+      this.alertSvc.showError(this.scheduleCoach);
+      return;
+    }
+
+    // The server enforces this again at send time; catching it here routes the user to the
+    // findings instead of a failed request.
+    const check = this.preflightView();
+    if (check.band === 'blocked') {
+      this.goToStepId('review');
+      this.alertSvc.showError(
+        `Deliverability score ${check.score} — fix the items flagged in the deliverability check before sending.`,
+      );
+      return;
+    }
+
+    const raw = this.regularPayload();
+    const scheduled = raw.timingMode === 'schedule';
+    const count = this.estimatedAudienceCount();
+    const subject = raw.subject || 'Untitled newsletter';
+    const whenLabel = scheduled ? this.scheduleWhenLabel() : 'now';
+
+    const confirmed = await this.confirmDlg.confirm({
+      title: scheduled ? `Schedule "${subject}" for ${whenLabel}?` : `Send "${subject}" now?`,
+      message: this.preflightMessage(count),
+      variant: 'info',
+      icon: 'paper-airplane',
+      confirmText: scheduled ? `Schedule for ${this.peopleLabel(count)}` : `Send to ${this.peopleLabel(count)}`,
+      cancelText: 'Keep editing',
+      emphasizeCancel: true,
+    });
+    if (!confirmed) return;
+
+    this.saving.set(true);
+    try {
+      let targetId: string | null = this.editId;
+      if (this.editId) {
+        await this.newslettersSvc.update(this.editId, this.buildPayload(scheduled ? 'scheduled' : 'draft'));
+      } else {
+        const created = await this.newslettersSvc.add(this.buildPayload(scheduled ? 'scheduled' : 'draft'));
+        targetId = this.extractId(created);
+      }
+      if (!scheduled && targetId) {
+        await this.newslettersSvc.send(targetId);
+      }
+      this.dirty.set(false);
+      this.alertSvc.showSuccess(
+        scheduled
+          ? `Scheduled "${subject}" for ${whenLabel}; it goes out within a few minutes of that time`
+          : `Queued "${subject}" to ${this.peopleLabel(count)}, sending now`,
+      );
+      this.close();
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not send this newsletter. Try again.'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  // --- Internals ------------------------------------------------------------
+
+  private applyTemplate(preset: TemplatePreset): void {
+    this.selectedTemplate.set({ kind: 'preset', id: preset });
+    this.regularPayload.update((p) => ({
+      ...p,
+      htmlContent: compileTemplateHtml(preset),
+      plainTextContent: compileTemplatePlainText(preset),
+    }));
+  }
+
+  /** Edit mode: hydrate the wizard from the stored draft, then land on the content step. */
+  private async loadDraft(id: string): Promise<void> {
+    const end = this._editLoading.begin();
+    try {
+      const record: unknown = await this.newslettersSvc.getById(id);
+      const row = record && typeof record === 'object' ? (record as Record<string, unknown>) : null;
+      if (!row) {
+        this.alertSvc.showError('We could not find this newsletter.');
+        this.close();
+        return;
+      }
+      if (row['status'] !== 'draft') {
+        // Only drafts are editable; anything further along opens as its details/report page.
+        void this.router.navigate(['/newsletters', id]);
+        return;
+      }
+      const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+      const name = str(row['name']);
+      const lists = this.parseIdSets(row['target_lists']);
+      const tags = this.parseIdSets(row['segments']);
+      const rawDate = row['send_date'];
+      const sendDate = rawDate instanceof Date && !Number.isNaN(rawDate.getTime()) ? rawDate : null;
+      const pad = (n: number) => String(n).padStart(2, '0');
+      this.regularPayload.update((p) => ({
+        ...p,
+        // Drafts saved without a subject fall back to a placeholder name; don't hydrate that back in.
+        subject: str(row['subject']) || (name === 'Unnamed Newsletter' || name === 'Untitled draft' ? '' : name),
+        previewText: str(row['preview_text']),
+        htmlContent: str(row['html_content']),
+        plainTextContent: str(row['plain_text_content']),
+        includeLists: lists.include,
+        excludeLists: lists.exclude,
+        includeTags: tags.include,
+        excludeTags: tags.exclude,
+        timingMode: sendDate ? 'schedule' : p.timingMode,
+        scheduledDate: sendDate
+          ? `${sendDate.getFullYear()}-${pad(sendDate.getMonth() + 1)}-${pad(sendDate.getDate())}`
+          : p.scheduledDate,
+        scheduledTime: sendDate ? `${pad(sendDate.getHours())}:${pad(sendDate.getMinutes())}` : p.scheduledTime,
+      }));
+      this.editName.set(name);
+      // The template step is moot for an existing draft; its saved content is the design.
+      this.currentStep.set(2);
+      this.editLoaded.set(true);
+      this.dirty.set(false);
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not open this draft. Try again.'));
+      this.close();
+    } finally {
+      end();
+    }
+  }
+
+  /** Tolerates the shapes drafts have stored: {include, exclude} JSON, a bare array, or null. */
+  private parseIdSets(value: unknown): { include: string[]; exclude: string[] } {
+    let parsed: unknown = value;
+    if (typeof parsed === 'string') {
+      if (!parsed.trim()) return { include: [], exclude: [] };
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        return { include: [], exclude: [] };
+      }
+    }
+    if (Array.isArray(parsed)) return { include: parsed.map((v) => String(v)), exclude: [] };
+    if (parsed && typeof parsed === 'object') {
+      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
+      const obj = parsed as Record<string, unknown>;
+      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
+    }
+    return { include: [], exclude: [] };
+  }
+
+  private validateDetails(): boolean {
+    this.markDetailsTouched();
+    this.showFieldErrors.set(true);
+    const invalidField = this.firstInvalidDetail();
+    if (invalidField) {
+      this.focusAndCoach(invalidField);
+      return false;
+    }
+    return true;
+  }
+
+  private firstInvalidDetail(): 'subject' | 'fromName' | 'fromAddress' | null {
+    if (this.regularForm.subject().invalid()) return 'subject';
+    if (this.regularForm.fromName().invalid()) return 'fromName';
+    if (this.regularForm.fromAddress().invalid()) return 'fromAddress';
+    return null;
+  }
+
+  private focusAndCoach(field: 'subject' | 'fromName' | 'fromAddress'): void {
+    const map = {
+      subject: { ref: this.subjectInput(), coach: this.subjectCoach },
+      fromName: { ref: this.fromNameInput(), coach: this.fromNameCoach },
+      fromAddress: { ref: this.fromAddressInput(), coach: this.fromAddressCoach },
+    } as const;
+    const target = map[field];
+    target.ref?.nativeElement.focus();
+    this.alertSvc.showError(target.coach);
+  }
+
+  private preflightMessage(count: number): string {
+    const check = this.preflightView();
+    const flagged = check.findings.length;
+    const scoreLine =
+      check.band === 'good'
+        ? `Deliverability score ${check.score} — looking good.`
+        : `Deliverability score ${check.score} — ${flagged} item${flagged === 1 ? '' : 's'} worth fixing first (see the Review & send step).`;
+    const base = `It will go to ${this.peopleLabel(count)}.`;
+    if (this.skipBounced()) {
+      return `${scoreLine} ${base} Previously bounced addresses are skipped automatically.`;
+    }
+    return `${scoreLine} ${base} Bounced addresses are NOT being skipped (Workspace setting).`;
+  }
+
+  private scheduleWhenLabel(): string {
+    const date = this.scheduledDateValue();
+    const time = this.regularPayload().scheduledTime;
+    if (!date) return 'the scheduled time';
+    const parsed = new Date(`${date}T${time || '00:00'}`);
+    if (Number.isNaN(parsed.getTime())) return `${date} ${time}`.trim();
+    return time
+      ? `${this.dateFormatter.format(parsed)} at ${this.timeFormatter.format(parsed)}`
+      : this.dateFormatter.format(parsed);
+  }
+
+  private buildPayload(status: 'draft' | 'scheduled'): Parameters<NewslettersService['add']>[0] {
+    const raw = this.regularPayload();
+    const scheduledAt =
+      status === 'scheduled' && raw.scheduledDate && raw.scheduledTime
+        ? new Date(`${raw.scheduledDate}T${raw.scheduledTime}`)
+        : null;
+
+    return {
+      name: raw.subject || 'Unnamed Newsletter',
+      status,
+      subject: raw.subject,
+      preview_text: raw.previewText,
+      audience_description: this.buildAudienceDescription(),
+      target_lists: JSON.stringify({ include: raw.includeLists, exclude: raw.excludeLists }),
+      segments: JSON.stringify({ include: raw.includeTags, exclude: raw.excludeTags }),
+      html_content: raw.htmlContent,
+      plain_text_content: raw.plainTextContent,
+      send_date: scheduledAt,
+      total_recipients: this.estimatedAudienceCount(),
+    };
+  }
+
+  private buildAudienceDescription(): string {
+    const includeLists = this.includeListIds().map((id) => this.listName(id));
+    const includeTags = this.includeTagsList();
+    const excludeLists = this.excludeListIds().map((id) => this.listName(id));
+    const excludeTags = this.excludeTagsList();
+
+    const parts: string[] = [];
+    if (includeLists.length || includeTags.length) {
+      parts.push(
+        `Targeting lists: [${includeLists.join(', ') || 'None'}], tags: [${includeTags.join(', ') || 'None'}]`,
+      );
+    }
+    if (excludeLists.length || excludeTags.length) {
+      parts.push(
+        `Excluding lists: [${excludeLists.join(', ') || 'None'}], tags: [${excludeTags.join(', ') || 'None'}]`,
+      );
+    }
+    return parts.length ? parts.join(' ') : 'No target audience configured.';
+  }
+
+  private markDetailsTouched(): void {
+    this.regularForm.subject().markAsTouched();
+    this.regularForm.fromName().markAsTouched();
+    this.regularForm.fromAddress().markAsTouched();
+  }
+
+  private markDirty(): void {
+    if (!this.dirty()) this.dirty.set(true);
+  }
+
+  private setIncludeLists(next: string[]): void {
+    this.writeAudience('includeLists', next);
+  }
+
+  private setExcludeLists(next: string[]): void {
+    this.writeAudience('excludeLists', next);
+  }
+
+  private setIncludeTags(next: string[]): void {
+    this.writeAudience('includeTags', next);
+  }
+
+  private setExcludeTags(next: string[]): void {
+    this.writeAudience('excludeTags', next);
+  }
+
+  private writeAudience(key: 'includeLists' | 'excludeLists' | 'includeTags' | 'excludeTags', next: string[]): void {
+    this.regularPayload.update((p) => ({ ...p, [key]: next }));
+    this.markDirty();
+  }
+
+  private sumListSizes(ids: string[]): number {
+    const sizeById = new Map(this.availableLists().map((l) => [l.id, Number(l.size) || 0]));
+    return ids.reduce((sum, id) => sum + (sizeById.get(id) ?? 0), 0);
+  }
+
+  private sumTagUsage(names: string[]): number {
+    const usageByName = new Map(this.availableTags().map((t) => [t.name, Number(t.usage) || 0]));
+    return names.reduce((sum, name) => sum + (usageByName.get(name) ?? 0), 0);
+  }
+
+  private async loadLists(): Promise<void> {
+    this.loadingLists.set(true);
+    try {
+      const result = await this.listsSvc.getAll({ limit: 100, startRow: 0 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows
+          .filter((row: { id?: unknown; name?: unknown }) => row?.id && row?.name)
+          .map((row: Record<string, unknown>) => ({
+            id: String(row['id']),
+            name: String(row['name']),
+            size:
+              Number(row['list_size'] ?? row['people_count'] ?? row['household_count'] ?? row['member_count'] ?? 0) ||
+              0,
+          })),
+      );
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not load lists. Try again later.'));
+    } finally {
+      this.loadingLists.set(false);
+    }
+  }
+
+  private async loadTags(): Promise<void> {
+    this.loadingTags.set(true);
+    try {
+      const result = await this.tagsSvc.getAll({ limit: 100, startRow: 0 });
+      const rows = Array.isArray((result as { rows?: unknown })?.rows) ? (result as { rows: unknown[] }).rows : [];
+      this.availableTags.set(
+        rows
+          .filter(
+            (row): row is Record<string, unknown> => !!row && typeof row === 'object' && 'id' in row && 'name' in row,
+          )
+          .filter((row) => row['id'] && row['name'])
+          .map((row) => ({
+            id: String(row['id']),
+            name: String(row['name']),
+            usage: Number(row['use_count_people'] ?? 0) + Number(row['use_count_households'] ?? 0),
+          })),
+      );
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not load tags. Try again later.'));
+    } finally {
+      this.loadingTags.set(false);
+    }
+  }
+
+  private async loadCommsDefaults(): Promise<void> {
+    try {
+      await this.settingsSvc.load();
+    } catch {
+      // Non-fatal: the sender fields simply won't prefill.
+      return;
+    }
+    this.verifiedSenders.set(this.settingsSvc.getValue<string[]>('communications.verified_emails', []) ?? []);
+
+    const defaultName = this.settingsSvc.getValue<string>('communications.default_from_name', '');
+    const defaultEmail = this.settingsSvc.getValue<string>('communications.default_from_email', '');
+    let applied = false;
+    if (defaultName && !this.regularPayload().fromName) {
+      this.regularForm.fromName().value.set(defaultName);
+      applied = true;
+    }
+    if (defaultEmail && this.verifiedSenders().includes(defaultEmail) && !this.regularPayload().fromAddress) {
+      this.regularForm.fromAddress().value.set(defaultEmail);
+      applied = true;
+    }
+    this.commsDefaultsApplied.set(applied);
+  }
+
+  private async loadSendQuota(): Promise<void> {
+    try {
+      this.sendQuota.set(await this.newslettersSvc.getSendQuota());
+    } catch {
+      // Non-fatal: the Review step just won't show the allowance line — the server still enforces it.
+    }
+  }
+
+  private normalizeCalendarValue(event: unknown): string | null {
+    const raw = this.readCalendarRaw(event);
+    if (!raw) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+  }
+
+  private readCalendarRaw(event: unknown): string | null {
+    if (typeof event === 'string') return event;
+    if (!event || typeof event !== 'object') return null;
+    const e = event as Record<string, unknown>;
+    const detail = e['detail'];
+    if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object' && typeof (detail as Record<string, unknown>)['value'] === 'string') {
+      return (detail as Record<string, unknown>)['value'] as string;
+    }
+    const target = e['target'];
+    if (target && typeof target === 'object' && typeof (target as Record<string, unknown>)['value'] === 'string') {
+      return (target as Record<string, unknown>)['value'] as string;
+    }
+    if (typeof e['value'] === 'string') return e['value'] as string;
+    return null;
+  }
+
+  private extractId(created: unknown): string | null {
+    if (created && typeof created === 'object' && 'id' in created) {
+      const id = (created as Record<string, unknown>)['id'];
+      return id != null ? String(id) : null;
+    }
+    return null;
+  }
+
+  private errorMessage(err: unknown, fallback: string): string {
+    return err instanceof Error && err.message ? err.message : fallback;
+  }
+}
+
+/** Deliverability-check view model: a full server run, or the instant local quick check. */
+interface PreflightView {
+  score: number;
+  band: PreflightBand;
+  findings: PreflightFinding[];
+  kind: 'full' | 'quick';
+  aiStatus: AiReviewStatus;
+}
+
+type StepIndex = 1 | 2 | 3 | 4;
+
+type WizardStepId = 'template' | 'content' | 'audience' | 'review';
+
+type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
+
+/** What the Template step has selected: a built-in preset or a user-saved template. */
+type TemplateSelection = { kind: 'preset'; id: TemplatePreset } | { kind: 'saved'; id: string };
+
+type TimingMode = 'now' | 'schedule';
+
+interface RegularNewsletterPayload {
+  subject: string;
+  previewText: string;
+  fromName: string;
+  fromAddress: string;
+  htmlContent: string;
+  plainTextContent: string;
+  includeLists: string[];
+  includeTags: string[];
+  excludeLists: string[];
+  excludeTags: string[];
+  timingMode: TimingMode;
+  scheduledDate: string;
+  scheduledTime: string;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/settings-page.html
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
@@ -81709,7 +81871,7 @@ export const EULA_DOC: LegalDoc = {
   title: 'End user license agreement',
   intro:
     'The agreement between you and pplCRM when you use the service. Plain language where the law allows it, and no surprises hiding in the numbered clauses.',
-  updated: 'July 18, 2026',
+  updated: 'July 23, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -81832,7 +81994,7 @@ export const EULA_DOC: LegalDoc = {
     {
       kind: 'list',
       items: [
-        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address and a working unsubscribe link, and this footer cannot be removed.',
+        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address, a working unsubscribe link and a “powered by pplCRM” attribution line, and this footer cannot be removed. Sending is disabled until the postal address is set.',
         'Unsubscribes, bounces and do-not-contact flags are honored automatically on all future sends. Attempting to circumvent suppression is a breach of this agreement.',
         'New free-plan senders verify a mobile number and warm up gradually under a daily cap.',
         'Each plan includes a monthly newsletter-email allowance (shown on the [pricing page](/pricing)), and it is enforced at send time: a send larger than what remains of your allowance is declined with the exact numbers, and the allowance resets each billing month. Emails sent by automations count toward the same allowance. Growing your list raises your bracket — and your allowance — automatically.',

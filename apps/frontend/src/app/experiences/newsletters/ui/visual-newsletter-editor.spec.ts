@@ -1,17 +1,26 @@
 import type { CdkDragDrop } from '@angular/cdk/drag-drop';
+import { signal } from '@angular/core';
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { SettingsService } from '../../settings/services/settings-service';
 import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
 import { getTemplateBlocks, type EmailBlock } from './newsletter-templates';
 
 describe('VisualNewsletterEditorComponent', () => {
   let component: VisualNewsletterEditorComponent;
   let fixture: ComponentFixture<VisualNewsletterEditorComponent>;
+  const snapshotSignal = signal<Record<string, unknown>>({});
+  const mockSettingsSvc = {
+    snapshotSignal,
+    load: vi.fn().mockResolvedValue({}),
+  };
 
   async function createComponent(htmlContent = ''): Promise<void> {
+    snapshotSignal.set({});
     await TestBed.configureTestingModule({
       imports: [VisualNewsletterEditorComponent],
+      providers: [{ provide: SettingsService, useValue: mockSettingsSvc }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(VisualNewsletterEditorComponent);
@@ -45,8 +54,18 @@ describe('VisualNewsletterEditorComponent', () => {
       expect(component['activeTab']()).toBe('edit');
     });
 
-    it('should switch to code mode for legacy HTML without embedded metadata', async () => {
-      const legacyHtml = `<html><body>${'<p>Legacy content</p>'.repeat(10)}</body></html>`;
+    it('should import simple legacy HTML into blocks and stay in visual mode', async () => {
+      const legacyHtml = '<h1>June update</h1><p>Canvass season opens Saturday.</p><p>Survey results are in.</p>';
+
+      await createComponent(legacyHtml);
+
+      expect(component['editorMode']()).toBe('visual');
+      expect(component['blocks']().map((b) => b.type)).toEqual(['heading', 'text', 'text']);
+      expect(component['blocks']()[0]?.content).toBe('June update');
+    });
+
+    it('should switch to code mode only when legacy HTML cannot survive the block round-trip', async () => {
+      const legacyHtml = `<html><body>${'<p>See <a href="https://example.com">this link</a></p>'.repeat(5)}</body></html>`;
 
       await createComponent(legacyHtml);
 
@@ -305,7 +324,7 @@ describe('VisualNewsletterEditorComponent', () => {
     it('should insert a variable placeholder into the block content field', () => {
       const [block] = component['blocks']();
       if (!block) throw new Error('Expected the welcome template to seed at least one block');
-      component['insertVariable'](block, 'FirstName', 'content');
+      component['insertVariable'](block, 'FirstName');
 
       const updated = component['blocks']().find((b) => b.id === block.id);
       expect(updated?.content ?? '').toContain('{FirstName}');
@@ -330,6 +349,46 @@ describe('VisualNewsletterEditorComponent', () => {
     it('should look up mock variable values case-insensitively', () => {
       expect(component['getMockVariableValue']('firstname')).toBe('John');
       expect(component['getMockVariableValue']('unknownvar')).toBeUndefined();
+    });
+  });
+
+  describe('compliance footer preview', () => {
+    it('should drop legacy footer blocks when restoring an older draft', async () => {
+      const blocks = [
+        { id: 'h1', type: 'heading', content: 'Kept' },
+        { id: 'f1', type: 'footer', footerCompany: 'Acme Inc.' },
+      ];
+      const encoded = encodeURIComponent(JSON.stringify(blocks));
+      const html = `<html><body>...<!-- PPLCRM_VISUAL_BLOCKS_DATA: ${encoded} --></body></html>`;
+
+      await createComponent(html);
+
+      expect(component['blocks']().map((b) => b.id)).toEqual(['h1']);
+    });
+
+    it('should render the always-on footer strip with guidance when no address is set', async () => {
+      await createComponent('');
+
+      const host: HTMLElement = fixture.nativeElement;
+      expect(host.textContent).toContain('Added to every send');
+      expect(host.textContent).toContain('Unsubscribe');
+      expect(host.textContent).toContain("Your organization's mailing address");
+    });
+
+    it('should show the real address and disclaimer from the settings snapshot', async () => {
+      await createComponent('');
+      snapshotSignal.set({
+        'organization.name': 'Riverdale Community Org',
+        'organization.address': '1 Main St, Springfield',
+        'communications.footer_disclaimer': 'Paid for by the committee.',
+      });
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      expect(host.textContent).toContain('Riverdale Community Org');
+      expect(host.textContent).toContain('1 Main St, Springfield');
+      expect(host.textContent).toContain('Paid for by the committee.');
+      expect(host.textContent).not.toContain("Your organization's mailing address");
     });
   });
 });

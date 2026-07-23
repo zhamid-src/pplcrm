@@ -67,6 +67,8 @@ export const PHONE_UNVERIFIED_MESSAGE =
   'On the Free plan, verify a mobile phone number (Settings → Communications) before your first newsletter send.';
 export const AUTOMATION_PHONE_UNVERIFIED_MESSAGE =
   'On the Free plan, verify a mobile phone number (Settings → Communications) before automation emails can send. This email was not sent.';
+export const ORG_ADDRESS_MISSING_MESSAGE =
+  'Before sending, an administrator must set your organization’s mailing address (Settings → Organization). Anti-spam laws (like CAN-SPAM and CASL) require it in every newsletter footer.';
 
 /** Rolling window the automation tripwires aggregate over. Automation emails are one-recipient
  * sends spread over time (no per-send population like a newsletter), so the "send" a tripwire
@@ -238,6 +240,18 @@ export async function logAutomationSend(db: Db, tenantId: string): Promise<void>
     .execute();
 }
 
+/** The server-appended compliance footer needs the org's postal address (CAN-SPAM/CASL), so a
+ * newsletter may not send until an administrator has set it. */
+export async function hasOrganizationAddress(db: Db, tenantId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom('settings')
+    .select('value')
+    .where('tenant_id', '=', tenantId)
+    .where('key', '=', 'organization.address')
+    .executeTakeFirst();
+  return typeof row?.value === 'string' && row.value.trim().length > 0;
+}
+
 /** True when the tenant's default From address belongs to a DKIM-verified sending domain. */
 export async function hasVerifiedSendingDomain(db: Db, tenantId: string): Promise<boolean> {
   const rows = await db
@@ -274,6 +288,9 @@ export async function assertTenantMaySendNewsletter(
 
   if (!(await hasVerifiedSendingDomain(db, tenantId))) {
     throw new PreconditionFailedError(DOMAIN_UNVERIFIED_MESSAGE);
+  }
+  if (!(await hasOrganizationAddress(db, tenantId))) {
+    throw new PreconditionFailedError(ORG_ADDRESS_MISSING_MESSAGE);
   }
   if (needsPhoneVerification(tenant)) {
     throw new PreconditionFailedError(PHONE_UNVERIFIED_MESSAGE);

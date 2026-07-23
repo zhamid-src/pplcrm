@@ -39,6 +39,11 @@ async function createTestSeed(db: any) {
         key: 'communications.verified_domains',
         value: JSON.stringify([{ domain: 'test-tenant.org', status: 'verified' }]),
       },
+      {
+        tenant_id: tenantId,
+        key: 'organization.address',
+        value: JSON.stringify('123 Test St, Testville'),
+      },
     ])
     .execute();
 
@@ -769,7 +774,9 @@ describe('NewslettersController Asynchronous Sending', () => {
     const call = spy.mock.calls[0][0];
     // Derived text mirrors the HTML structure, and the mandatory footer (with the SendGrid
     // unsubscribe substitution tag) is appended to BOTH parts so it can never be edited out.
-    expect(call.text).toBe('Big news\n\nHello supporters\n\n----\nUnsubscribe: <% unsubscribe %>');
+    expect(call.text).toBe(
+      'Big news\n\nHello supporters\n\n----\n123 Test St, Testville\nUnsubscribe: <% unsubscribe %>\npowered by pplCRM (https://pplcrm.com)',
+    );
     expect(call.html).toContain('<a href="<% unsubscribe %>">Unsubscribe</a>');
   });
 
@@ -779,7 +786,9 @@ describe('NewslettersController Asynchronous Sending', () => {
 
     await executeJob(payload, db, jobId);
 
-    expect(spy.mock.calls[0][0].text).toBe('Hand-written text.\n\n----\nUnsubscribe: <% unsubscribe %>');
+    expect(spy.mock.calls[0][0].text).toBe(
+      'Hand-written text.\n\n----\n123 Test St, Testville\nUnsubscribe: <% unsubscribe %>\npowered by pplCRM (https://pplcrm.com)',
+    );
   });
 
   it('fails loudly instead of sending from a platform address when the From setting is missing', async () => {
