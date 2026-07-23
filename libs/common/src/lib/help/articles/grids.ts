@@ -95,7 +95,7 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'builder', text: 'The query builder' },
       {
         kind: 'p',
-        text: 'When per-column matching is not expressive enough, the **Advanced Query Builder** composes full conditions with and/or groups: “city is Springfield AND (donated this year OR volunteers)”. It is the same builder that powers dynamic lists, so a query you like can become a [list](/help/lists) that maintains itself.',
+        text: 'When per-column matching is not expressive enough, the **Advanced query builder** composes full conditions with and/or groups: “city is Springfield AND (donated this year OR volunteers)”. It is the same builder that powers dynamic lists, so a query you like can become a [list](/help/lists) that maintains itself.',
       },
       {
         kind: 'callout',

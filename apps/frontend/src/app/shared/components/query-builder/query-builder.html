@@ -2,7 +2,7 @@
   <!-- Summary Bar -->
   @if (showSummary()) {
   <div
-    class="text-xs text-base-content/70 flex items-center justify-between gap-3 p-3 bg-base-200/40 rounded-xl border border-base-200"
+    class="text-xs text-base-content/70 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 p-3 bg-base-200/40 rounded-xl border border-base-200"
   >
     <div class="min-w-0">
       <span class="font-medium mr-1">Summary:</span>
@@ -24,7 +24,9 @@
   }
 
   <!-- Group Header / Conjunction Toggle & Controls -->
-  <div class="flex items-center justify-between gap-3 bg-base-200/30 p-2 rounded-lg border border-base-200/50">
+  <div
+    class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 bg-base-200/30 p-2 rounded-lg border border-base-200/50"
+  >
     <div class="flex items-center gap-2">
       <span class="pc-eyebrow">Conjunction:</span>
       <div class="join border border-base-300">
@@ -60,12 +62,14 @@
     @for (item of group().rules; track item.id; let i = $index) {
     <!-- Rule Item -->
     @if (isRule(item)) {
+    <!-- Below sm: two-column grid (field + remove, then operator and value
+         full-width). From sm up: the original wrapping inline row. -->
     <div
-      class="flex flex-wrap items-center gap-2 p-2 bg-base-200/10 hover:bg-base-200/20 rounded-lg border border-base-200/30 transition-colors"
+      class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-2 bg-base-200/10 hover:bg-base-200/20 rounded-lg border border-base-200/30 transition-colors sm:flex sm:flex-wrap"
     >
       <!-- Field Selector -->
       <select
-        class="select select-bordered select-sm w-36 md:w-44 text-xs font-medium"
+        class="select select-bordered select-sm w-full sm:w-36 md:w-44 text-xs font-medium"
         [value]="item.field"
         (change)="setField(i, $any($event.target).value)"
       >
@@ -74,10 +78,20 @@
         }
       </select>
 
+      <!-- Remove Button -->
+      <button
+        type="button"
+        class="btn btn-ghost btn-circle btn-xs text-error hover:bg-error/10 shrink-0 sm:order-last"
+        title="Remove condition"
+        (click)="removeItem(i)"
+      >
+        ❌
+      </button>
+
       <!-- Operator Selector -->
       @let fieldDef = getFieldDef(item.field);
       <select
-        class="select select-bordered select-sm w-28 md:w-36 text-xs"
+        class="select select-bordered select-sm col-span-2 w-full sm:col-span-1 sm:w-28 md:w-36 text-xs"
         [value]="item.op"
         (change)="setOp(i, $any($event.target).value)"
       >
@@ -88,9 +102,9 @@
 
       <!-- Value Input -->
       @if (showValueInput(item)) {
-      <div class="flex-1 min-w-[150px] flex items-center gap-2">
+      <div class="col-span-2 flex min-w-0 items-center gap-2 sm:col-span-1 sm:flex-1 sm:min-w-[150px]">
         @if (fieldDef?.inputType === 'autocomplete') {
-        <div class="w-full max-w-xs">
+        <div class="w-full sm:max-w-xs">
           <pc-autocomplete
             [filterSvc]="tagSvc()!"
             placeholder="Type a tag..."
@@ -103,7 +117,7 @@
         >
         } } @else if (fieldDef?.inputType === 'select') {
         <select
-          class="select select-bordered select-sm w-full max-w-xs text-xs"
+          class="select select-bordered select-sm w-full sm:max-w-xs text-xs"
           [value]="item.value"
           (change)="setRuleValue(i, $any($event.target).value)"
         >
@@ -123,23 +137,13 @@
         }
       </div>
       }
-
-      <!-- Remove Button -->
-      <button
-        type="button"
-        class="btn btn-ghost btn-circle btn-xs text-error hover:bg-error/10 shrink-0"
-        title="Remove condition"
-        (click)="removeItem(i)"
-      >
-        ❌
-      </button>
     </div>
     }
 
     <!-- Nested Group Item -->
     @if (isGroup(item)) {
     <div
-      class="ml-4 pl-4 border-l-2 border-primary/30 flex flex-col gap-2 relative bg-base-200/5 p-3 rounded-r-xl border border-y-base-200/20 border-r-base-200/20"
+      class="ml-1 pl-2.5 sm:ml-4 sm:pl-4 border-l-2 border-primary/30 flex flex-col gap-2 relative bg-base-200/5 p-3 rounded-r-xl border border-y-base-200/20 border-r-base-200/20"
     >
       <pc-query-builder
         [group]="asGroup(item)"

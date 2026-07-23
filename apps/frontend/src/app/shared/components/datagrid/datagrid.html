@@ -930,15 +930,15 @@
 />
 }
 
-<!-- Advanced Filter Builder Modal -->
+<!-- Advanced Query Builder Modal -->
 @if (showAdvancedFilterBuilder()) {
 <pc-modal-shell
   [open]="true"
   (closed)="showAdvancedFilterBuilder.set(false)"
-  title="Advanced filter builder"
+  title="Advanced query builder"
   i18n-title="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
   icon="adjustments-horizontal"
-  [boxClass]="'w-11/12 max-w-3xl'"
+  [boxClass]="'w-11/12 max-w-3xl pc-modal-fullscreen'"
 >
   <p
     class="text-xs text-neutral-400 -mt-4 mb-4"
@@ -961,7 +961,7 @@
       (click)="clearAdvancedFilter()"
       i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
     >
-      Clear Filters
+      Clear filters
     </button>
     <div class="flex gap-2">
       <button

@@ -350,7 +350,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
 
     if (this.hasActiveAdvancedFilters()) {
-      chips.push({ kind: 'advanced', key: 'advanced', label: 'Advanced filter' });
+      chips.push({ kind: 'advanced', key: 'advanced', label: 'Advanced query' });
     }
 
     return chips;

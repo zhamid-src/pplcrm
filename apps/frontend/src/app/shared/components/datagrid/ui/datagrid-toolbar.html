@@ -138,7 +138,7 @@
           [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
           (click)="grid.openAdvancedFilterBuilder()"
         >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced query builder
         </button>
       </div>
       }
@@ -378,7 +378,7 @@
     />
     <pc-grid-tool-btn
       icon="adjustments-horizontal"
-      tip="Advanced Query Builder"
+      tip="Advanced query builder"
       [hidden]="!grid.allowFilter()"
       [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
       [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
