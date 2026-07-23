@@ -129,12 +129,12 @@
         }
       </div>
 
-      <!-- Notifications list -->
+      <!-- Notifications list (full-screen sheet below the sm breakpoint) -->
       <div
         tabindex="0"
-        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
+        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl max-sm:fixed max-sm:inset-0 max-sm:mt-0 max-sm:h-dvh max-sm:w-full max-sm:rounded-none max-sm:border-0 max-sm:bg-base-100"
       >
-        <div class="card-body p-0">
+        <div class="card-body p-0 max-sm:min-h-0">
           <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
             <h3
               class="font-semibold text-sm"
@@ -142,18 +142,32 @@
             >
               Notifications
             </h3>
-            @if (unreadCount() > 0) {
-            <button
-              class="text-xs text-primary hover:underline font-medium"
-              (click)="markAllAsRead($event)"
-              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
-            >
-              Mark all read
-            </button>
-            }
+            <div class="flex items-center gap-2">
+              @if (unreadCount() > 0) {
+              <button
+                class="text-xs text-primary hover:underline font-medium"
+                (click)="markAllAsRead($event)"
+                i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
+              >
+                Mark all read
+              </button>
+              }
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm btn-circle sm:hidden"
+                (click)="closeDropdown()"
+                aria-label="Close notifications"
+                i18n-aria-label="@@navbar.notifications.closeAriaLabel"
+              >
+                <pc-icon name="x-mark" [size]="5"></pc-icon>
+              </button>
+            </div>
           </div>
 
-          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
+          <div
+            class="max-h-80 overflow-y-auto divide-y divide-base-200/30 max-sm:max-h-none max-sm:flex-1 max-sm:min-h-0"
+            (scroll)="onScroll($event)"
+          >
             @if (notifications().length === 0) {
             <div class="flex flex-col items-center justify-center py-8 text-base-400">
               <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
