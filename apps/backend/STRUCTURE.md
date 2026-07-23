@@ -65,6 +65,7 @@ apps/
           2026-07-20-h-task-sla-breach.ts
           2026-07-20-i-workspace-api-keys.ts
           2026-07-21-a-ops-heartbeats.ts
+          2026-07-23-user-campaign-assignment.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -425,8 +426,6 @@ apps/
       instrument.ts
       main.ts
       shutdown.ts
-      test-assign5.js
-      test-trpc.js
       trpc.ts
       typings.d.ts
     Dockerfile
@@ -1430,6 +1429,34 @@ export async function down(db: Kysely<any>): Promise<void> {
       DROP COLUMN IF EXISTS phone_verification_expires_at,
       DROP COLUMN IF EXISTS phone_verification_attempts
   `.execute(db);
+}
+`````
+
+## File: apps/backend/src/app/_migrations/2026-07-23-user-campaign-assignment.ts
+`````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Campaigns §15 — admin-assigned campaign membership. Editors and Viewers belong
+ * to exactly one campaign; NULL means the permanent office context. Admins and
+ * owners are never scoped by this column (they can work in every campaign), and
+ * archiving a campaign clears its members back to NULL (office).
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    ALTER TABLE public.authusers
+      ADD COLUMN IF NOT EXISTS campaign_id bigint REFERENCES public.campaigns(id) ON DELETE SET NULL
+  `.execute(db);
+  await sql`
+    CREATE INDEX IF NOT EXISTS authusers_tenant_campaign_index
+      ON public.authusers (tenant_id, campaign_id)
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP INDEX IF EXISTS authusers_tenant_campaign_index`.execute(db);
+  await sql`ALTER TABLE public.authusers DROP COLUMN IF EXISTS campaign_id`.execute(db);
 }
 `````
 
@@ -6630,14 +6657,39 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
   }
 
   /**
-   * One round-trip for the header switcher: every campaign plus the id of the
-   * context this user is working in. The stored preference wins when it still
-   * points at an existing campaign; otherwise fall back to the office context
-   * (which always exists). Archived campaigns remain selectable — they are
-   * viewable read-only history.
+   * One round-trip for the context payload.
+   *
+   * Admins/owners: every campaign plus the id of the context they are working
+   * in. Their stored preference wins when it still points at an existing
+   * campaign; otherwise fall back to the office context (which always exists).
+   * Archived campaigns remain selectable — they are viewable read-only history.
+   *
+   * Editors/Viewers: exactly their admin-assigned campaign (§15 — they belong to
+   * one campaign and cannot switch). Unassigned, archived, or dangling
+   * assignments resolve to the office context.
    */
   public async getContext(auth: IAuthKeyPayload) {
     const campaigns = await this.getRepo().getSwitcherList({ tenant_id: auth.tenant_id });
+    const isAdmin = auth.role === 'admin' || auth.role === 'owner';
+
+    if (!isAdmin) {
+      const me = await this.getRepo()
+        .db.selectFrom('authusers')
+        .select('campaign_id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', auth.user_id)
+        .executeTakeFirst();
+      const assignedId = me?.campaign_id != null ? String(me.campaign_id) : null;
+      const assigned =
+        (assignedId ? campaigns.find((c) => String(c.id) === assignedId && c.status === 'active') : undefined) ??
+        campaigns.find((c) => c.kind === 'office') ??
+        campaigns[0];
+      return {
+        campaigns: assigned ? [this.toContextItem(assigned)] : [],
+        active_campaign_id: assigned ? String(assigned.id) : null,
+      };
+    }
+
     const profile = await this.profilesRepo.getOneByAuthId(auth.user_id);
     const preferred = parseProfilePreferences(profile?.preferences)?.active_campaign_id;
     const active =
@@ -6645,14 +6697,7 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
       campaigns.find((c) => c.kind === 'office') ??
       campaigns[0];
     return {
-      campaigns: campaigns.map((c) => ({
-        id: String(c.id),
-        name: c.name,
-        kind: c.kind,
-        status: c.status,
-        startdate: c.startdate,
-        enddate: c.enddate,
-      })),
+      campaigns: campaigns.map((c) => this.toContextItem(c)),
       active_campaign_id: active ? String(active.id) : null,
     };
   }
@@ -6701,11 +6746,26 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
     if (campaign.kind === 'office') {
       throw new BadRequestError('The office context cannot be archived. It is the permanent workspace.');
     }
-    return this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status: 'archived', updatedby_id: auth.user_id } as OperationDataType<'campaigns', 'update'>,
-    });
+    return this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        // Members assigned to this campaign fall back to the office context —
+        // an archived campaign is read-only history nobody can work in (§15).
+        await trx
+          .updateTable('authusers')
+          .set({ campaign_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('campaign_id', '=', id)
+          .execute();
+        return this.getRepo().update(
+          {
+            tenant_id: auth.tenant_id,
+            id,
+            row: { status: 'archived', updatedby_id: auth.user_id } as OperationDataType<'campaigns', 'update'>,
+          },
+          trx,
+        );
+      });
   }
 
   public async unarchive(id: string, auth: IAuthKeyPayload) {
@@ -6924,6 +6984,17 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
     throw new BadRequestError('Campaigns cannot be deleted. Archive them instead.');
   }
 
+  private toContextItem(c: Awaited<ReturnType<CampaignsRepo['getSwitcherList']>>[number]) {
+    return {
+      id: String(c.id),
+      name: c.name,
+      kind: c.kind,
+      status: c.status,
+      startdate: c.startdate,
+      enddate: c.enddate,
+    };
+  }
+
   private async getCampaignOrThrow(tenant_id: string, id: string) {
     const rows = await this.getRepo().getSwitcherList({ tenant_id });
     const campaign = rows.find((c) => String(c.id) === String(id));
@@ -6949,30 +7020,36 @@ import {
   idSchema,
 } from '../../../../../../libs/common/src';
 
-import { authProcedure, router } from '../../../trpc';
+import { adminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
 import { CampaignsController } from './controller';
 import { createCrudRouter } from '../../lib/crud-router';
 
 const campaigns = new CampaignsController();
 
-const crud = createCrudRouter(campaigns, AddCampaignObj, UpdateCampaignObj);
+// Campaign management (create/edit/archive/browse) is admin/owner-only; ordinary
+// users are assigned to a campaign by an admin and cannot change contexts.
+const crud = createCrudRouter(campaigns, AddCampaignObj, UpdateCampaignObj, adminOrOwnerProcedure);
 
 export const CampaignsRouter = router({
   ...crud,
 
-  add: authProcedure.input(AddCampaignObj).mutation(({ input, ctx }) => campaigns.addCampaign(input, ctx.auth)),
+  add: adminOrOwnerProcedure.input(AddCampaignObj).mutation(({ input, ctx }) => campaigns.addCampaign(input, ctx.auth)),
 
-  /** Lightweight list for the header context switcher. */
-  getSwitcherList: authProcedure.query(({ ctx }) => campaigns.getSwitcherList(ctx.auth)),
+  /** Lightweight list for campaign management and assignment pickers (admin/owner). */
+  getSwitcherList: adminOrOwnerProcedure.query(({ ctx }) => campaigns.getSwitcherList(ctx.auth)),
 
-  /** Switcher payload: all campaigns + this user's active context id. */
+  /**
+   * Context payload. Admins/owners get every campaign + their active context id;
+   * Editors/Viewers get exactly their assigned campaign (or the office).
+   */
   getContext: authProcedure.query(({ ctx }) => campaigns.getContext(ctx.auth)),
 
-  setActiveCampaign: authProcedure
+  /** Only admins/owners switch contexts — everyone else is pinned to their assigned campaign. */
+  setActiveCampaign: adminOrOwnerProcedure
     .input(idSchema)
     .mutation(({ input, ctx }) => campaigns.setActiveCampaign(input, ctx.auth)),
 
-  archive: authProcedure.input(idSchema).mutation(({ input, ctx }) => campaigns.archive(input, ctx.auth)),
+  archive: adminOrOwnerProcedure.input(idSchema).mutation(({ input, ctx }) => campaigns.archive(input, ctx.auth)),
 
   /** Set/clear a person's support level / voting status in one campaign (§15). */
   upsertPersonFact: authProcedure
@@ -6992,10 +7069,10 @@ export const CampaignsRouter = router({
     .input(idSchema)
     .query(({ input, ctx }) => campaigns.getPersonSubscriptions(input, ctx.auth)),
 
-  unarchive: authProcedure.input(idSchema).mutation(({ input, ctx }) => campaigns.unarchive(input, ctx.auth)),
+  unarchive: adminOrOwnerProcedure.input(idSchema).mutation(({ input, ctx }) => campaigns.unarchive(input, ctx.auth)),
 
   /** Seed a campaign from a prior one (§15) — support as assumption, consent only with confirmation. */
-  carryOver: authProcedure
+  carryOver: adminOrOwnerProcedure
     .input(CarryOverCampaignObj)
     .mutation(({ input, ctx }) => campaigns.carryOver(input, ctx.auth)),
 });
@@ -11003,45 +11080,6 @@ export class DemoController extends BaseController<'settings', SettingsRepo> {
       throw new InternalError('The demo data record is malformed. Please contact support.');
     }
     return parsed.data;
-  }
-}
-`````
-
-## File: apps/backend/src/app/modules/demo/demo-guard.ts
-`````typescript
-import type { Kysely, Transaction } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { ForbiddenError } from '../../errors/app-errors';
-
-/**
- * Demo mode is the pre-plan test drive: the tenant can explore and edit the
- * seeded data and ordinary workspace settings freely, but must not touch
- * outward-facing setup (sender email/phone/domain verification, mailbox sync,
- * Stripe Connect), send email, or invite teammates. Those unlock when they
- * subscribe and exit demo mode. Enforced server-side at the mutation entry
- * points — the UI copy is a courtesy, this guard is the contract. Plain
- * `settings.upsert` is deliberately not guarded; its server-managed keys are
- * protected individually.
- */
-export const DEMO_MODE_BLOCKED_MESSAGE =
-  'This is part of the demo. Choose a plan on the Billing page, then exit demo mode to unlock configuration and sending.';
-
-export const DEMO_MODE_INVITES_BLOCKED_MESSAGE =
-  'Inviting teammates is locked during the demo. Choose a plan on the Billing page, then exit demo mode to invite your team.';
-
-export async function isDemoMode(db: Kysely<Models> | Transaction<Models>, tenant_id: string): Promise<boolean> {
-  const tenant = await db.selectFrom('tenants').select('demo_mode_at').where('id', '=', tenant_id).executeTakeFirst();
-  return tenant?.demo_mode_at != null;
-}
-
-/** Throws FORBIDDEN when the tenant is still in demo mode. */
-export async function assertNotDemoMode(
-  db: Kysely<Models> | Transaction<Models>,
-  tenant_id: string,
-  message: string = DEMO_MODE_BLOCKED_MESSAGE,
-): Promise<void> {
-  if (await isDemoMode(db, tenant_id)) {
-    throw new ForbiddenError(message);
   }
 }
 `````
@@ -15480,7 +15518,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     // Retrieve sender user details
     const user = await db
       .selectFrom('authusers')
-      .select(['email', 'first_name', 'last_name'])
+      .select(['email', 'first_name', 'last_name', 'role', 'campaign_id'])
       .where('tenant_id', '=', tenantId)
       .where('id', '=', userId)
       .executeTakeFirst();
@@ -15516,6 +15554,25 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const campaignId = fields.campaignId ? String(fields.campaignId) : null;
     if (!campaignId) {
       return reply.status(400).send({ status: 'error', message: 'Missing campaign context.' });
+    }
+
+    // Campaigns §15 — Editors/Viewers are pinned to their admin-assigned campaign
+    // (office when unassigned); only admins/owners may dispatch mail through
+    // another campaign's mailbox. Mirrors the tRPC isAuthed campaign-scope check.
+    if (user.role !== 'admin' && user.role !== 'owner') {
+      let allowed = user.campaign_id != null ? String(user.campaign_id) : null;
+      if (allowed === null) {
+        const office = await db
+          .selectFrom('campaigns')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('kind', '=', 'office')
+          .executeTakeFirst();
+        allowed = office ? String(office.id) : null;
+      }
+      if (campaignId !== allowed) {
+        return reply.status(403).send({ status: 'error', message: 'You can only send from your assigned campaign.' });
+      }
     }
 
     // Parse recipient lists and content fields
@@ -17755,179 +17812,6 @@ export class GoogleSyncService {
     return Buffer.from(base64, 'base64');
   }
 }
-`````
-
-## File: apps/backend/src/app/modules/google-sync/trpc.router.ts
-`````typescript
-import { authProcedure, router } from '../../../trpc';
-import { GoogleOAuthService, NEEDS_FULL_SYNC } from './google-oauth.service';
-import { GoogleSyncService } from './google-sync.service';
-import { BaseRepository } from '../../lib/base.repo';
-import { env } from '../../../env';
-import { z } from 'zod';
-import { idSchema } from '@common';
-import { sql } from 'kysely';
-import { encodeOAuthState } from '../../lib/oauth-state';
-import { assertNotDemoMode } from '../demo/demo-guard';
-import { BadRequestError } from '../../errors/app-errors';
-
-let _oauthSvc: GoogleOAuthService | null = null;
-let _syncSvc: GoogleSyncService | null = null;
-
-/** Mailbox sync is optional per deployment (the env vars are optional by design). */
-function isConfigured(): boolean {
-  return !!env.googleClientId && !!env.googleClientSecret;
-}
-
-function getServices() {
-  // Unlike MSAL, Google's client constructs fine with empty credentials — the
-  // failure would surface later as a dead-end Google error page. Same guard,
-  // same user-facing copy as the Microsoft router.
-  if (!isConfigured()) {
-    throw new BadRequestError('Google email sync is not configured on this server.');
-  }
-  if (!_oauthSvc || !_syncSvc) {
-    const db = BaseRepository.dbInstance; // reuse the shared Kysely instance
-    _oauthSvc = new GoogleOAuthService(db, {
-      clientId: env.googleClientId ?? '',
-      clientSecret: env.googleClientSecret ?? '',
-      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-    });
-    _syncSvc = new GoogleSyncService(db, _oauthSvc);
-  }
-  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
-}
-
-// Campaigns §15 — mailbox connections are per-campaign; the client supplies the
-// active context (the same activeCampaignId() it passes everywhere).
-const campaignInput = z.object({ campaignId: idSchema });
-
-function getAuthUrl() {
-  return authProcedure
-    .input(z.object({ campaignId: idSchema, returnTo: z.string().optional() }))
-    .query(async ({ ctx, input }) => {
-      // Mailbox sync is configuration — locked during the demo test drive.
-      await assertNotDemoMode(BaseRepository.dbInstance, ctx.auth.tenant_id);
-      const { oauthSvc } = getServices();
-      const state = encodeOAuthState({
-        userId: ctx.auth.user_id,
-        tenantId: ctx.auth.tenant_id,
-        campaignId: input.campaignId,
-        returnTo: input.returnTo,
-      });
-      const url = oauthSvc.getAuthUrl(state);
-      return { url };
-    });
-}
-
-function getConnectionStatus() {
-  return authProcedure.input(campaignInput).query(async ({ ctx, input }) => {
-    // Unconfigured is a normal state (e.g. local dev): render the section calmly
-    // instead of erroring on load.
-    if (!isConfigured()) {
-      return {
-        configured: false,
-        connected: false,
-        googleEmail: null,
-        syncedAt: null,
-        lastSyncError: null,
-        lastSyncErrorAt: null,
-        syncing: false,
-      };
-    }
-    const { oauthSvc } = getServices();
-    const db = BaseRepository.dbInstance;
-    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id, input.campaignId);
-
-    const activeJob = await db
-      .selectFrom('background_jobs')
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'google_sync')
-      .where(sql`payload->>'campaignId'`, '=', input.campaignId)
-      .executeTakeFirst();
-
-    return {
-      configured: true,
-      ...status,
-      syncing: !!activeJob,
-    };
-  });
-}
-
-function syncNow() {
-  return authProcedure.input(campaignInput).mutation(async ({ ctx, input }) => {
-    const db = BaseRepository.dbInstance;
-
-    const existing = await db
-      .selectFrom('background_jobs')
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'google_sync')
-      .where(sql`payload->>'campaignId'`, '=', input.campaignId)
-      .executeTakeFirst();
-
-    if (!existing) {
-      await db
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: ctx.auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'google_sync',
-            tenantId: ctx.auth.tenant_id,
-            campaignId: input.campaignId,
-            requestedBy: ctx.auth.user_id,
-          }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    }
-
-    return { inserted: 0, queued: true };
-  });
-}
-
-function disconnect() {
-  return authProcedure
-    .input(
-      z.object({
-        campaignId: idSchema,
-        removeLocalEmails: z.boolean().default(false),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { oauthSvc, syncSvc } = getServices();
-
-      if (input.removeLocalEmails) {
-        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id, input.campaignId);
-      }
-
-      await oauthSvc.disconnect(ctx.auth.tenant_id, input.campaignId);
-      return { success: true };
-    });
-}
-
-function resetSync() {
-  return authProcedure.input(campaignInput).mutation(async ({ ctx, input }) => {
-    const { oauthSvc } = getServices();
-    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, input.campaignId, NEEDS_FULL_SYNC);
-    return { success: true };
-  });
-}
-
-export const GoogleSyncRouter = router({
-  getAuthUrl: getAuthUrl(),
-  getConnectionStatus: getConnectionStatus(),
-  syncNow: syncNow(),
-  disconnect: disconnect(),
-  resetSync: resetSync(),
-});
-export type GoogleSyncRouterType = typeof GoogleSyncRouter;
 `````
 
 ## File: apps/backend/src/app/modules/households/repositories/map-households-tags.repo.ts
@@ -20286,179 +20170,6 @@ export class MsSyncService {
     });
   }
 }
-`````
-
-## File: apps/backend/src/app/modules/ms-sync/trpc.router.ts
-`````typescript
-import { authProcedure, router } from '../../../trpc';
-import { MsOAuthService, NEEDS_FULL_SYNC } from './ms-oauth.service';
-import { MsSyncService } from './ms-sync.service';
-import { BaseRepository } from '../../lib/base.repo';
-import { env } from '../../../env';
-import { z } from 'zod';
-import { idSchema } from '@common';
-import { sql } from 'kysely';
-import { encodeOAuthState } from '../../lib/oauth-state';
-import { assertNotDemoMode } from '../demo/demo-guard';
-import { BadRequestError } from '../../errors/app-errors';
-
-let _oauthSvc: MsOAuthService | null = null;
-let _syncSvc: MsSyncService | null = null;
-
-/** Mailbox sync is optional per deployment (the env vars are optional by design). */
-function isConfigured(): boolean {
-  return !!env.msClientId && !!env.msClientSecret;
-}
-
-function getServices() {
-  // msal-node's ConfidentialClientApplication rejects an empty clientSecret at
-  // construction with a raw invalid_client_credential error — fail with
-  // user-facing copy before it gets the chance.
-  if (!isConfigured()) {
-    throw new BadRequestError('Microsoft email sync is not configured on this server.');
-  }
-  if (!_oauthSvc || !_syncSvc) {
-    const db = BaseRepository.dbInstance; // reuse the shared Kysely instance
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-    _syncSvc = new MsSyncService(db, _oauthSvc);
-  }
-  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
-}
-
-// Campaigns §15 — mailbox connections are per-campaign. The active context is
-// supplied by the client (the same activeCampaignId() it passes everywhere).
-const campaignInput = z.object({ campaignId: idSchema });
-
-function getAuthUrl() {
-  return authProcedure
-    .input(z.object({ campaignId: idSchema, returnTo: z.string().optional() }))
-    .query(async ({ ctx, input }) => {
-      // Mailbox sync is configuration — locked during the demo test drive.
-      await assertNotDemoMode(BaseRepository.dbInstance, ctx.auth.tenant_id);
-      const { oauthSvc } = getServices();
-      const state = encodeOAuthState({
-        userId: ctx.auth.user_id,
-        tenantId: ctx.auth.tenant_id,
-        campaignId: input.campaignId,
-        returnTo: input.returnTo,
-      });
-      const url = await oauthSvc.getAuthUrl(state);
-      return { url };
-    });
-}
-
-function getConnectionStatus() {
-  return authProcedure.input(campaignInput).query(async ({ ctx, input }) => {
-    // Unconfigured is a normal state (e.g. local dev): render the section calmly
-    // instead of erroring on load.
-    if (!isConfigured()) {
-      return {
-        configured: false,
-        connected: false,
-        msEmail: null,
-        syncedAt: null,
-        lastSyncError: null,
-        lastSyncErrorAt: null,
-        syncing: false,
-      };
-    }
-    const { oauthSvc } = getServices();
-    const db = BaseRepository.dbInstance;
-    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id, input.campaignId);
-
-    const activeJob = await db
-      .selectFrom('background_jobs')
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'ms_sync')
-      .where(sql`payload->>'campaignId'`, '=', input.campaignId)
-      .executeTakeFirst();
-
-    return {
-      configured: true,
-      ...status,
-      syncing: !!activeJob,
-    };
-  });
-}
-
-function syncNow() {
-  return authProcedure.input(campaignInput).mutation(async ({ ctx, input }) => {
-    const db = BaseRepository.dbInstance;
-
-    const existing = await db
-      .selectFrom('background_jobs')
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'ms_sync')
-      .where(sql`payload->>'campaignId'`, '=', input.campaignId)
-      .executeTakeFirst();
-
-    if (!existing) {
-      await db
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: ctx.auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'ms_sync',
-            tenantId: ctx.auth.tenant_id,
-            campaignId: input.campaignId,
-            requestedBy: ctx.auth.user_id,
-          }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    }
-
-    return { inserted: 0, queued: true };
-  });
-}
-
-function disconnect() {
-  return authProcedure
-    .input(
-      z.object({
-        campaignId: idSchema,
-        removeLocalEmails: z.boolean().default(false),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { oauthSvc, syncSvc } = getServices();
-
-      if (input.removeLocalEmails) {
-        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id, input.campaignId);
-      }
-
-      await oauthSvc.disconnect(ctx.auth.tenant_id, input.campaignId);
-      return { success: true };
-    });
-}
-
-function resetSync() {
-  return authProcedure.input(campaignInput).mutation(async ({ ctx, input }) => {
-    const { oauthSvc } = getServices();
-    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, input.campaignId, NEEDS_FULL_SYNC);
-    return { success: true };
-  });
-}
-
-export const MsSyncRouter = router({
-  getAuthUrl: getAuthUrl(),
-  getConnectionStatus: getConnectionStatus(),
-  syncNow: syncNow(),
-  disconnect: disconnect(),
-  resetSync: resetSync(),
-});
 `````
 
 ## File: apps/backend/src/app/modules/newsletters/repositories/newsletters.repo.ts
@@ -29277,6 +28988,140 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 }
 `````
 
+## File: apps/website/src/app/coming-soon/coming-soon-page.ts
+`````typescript
+import { Component, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+/**
+ * Shared placeholder for pages the design links to but we haven't built yet
+ * (assorted footer links). `pageTitle` is
+ * bound from the route's `data` or a `?pageTitle=` query param via
+ * withComponentInputBinding — swap the route to a real component when it exists.
+ */
+@Component({
+  selector: 'pc-coming-soon-page',
+  imports: [RouterLink, SiteHeader, SiteFooter],
+  template: `
+    <pc-site-header variant="solid" />
+
+    <section class="flex min-h-[62vh] items-center justify-center px-5 py-20 text-center sm:px-8">
+      <div class="mx-auto max-w-[520px]">
+        <div class="eyebrow">{{ pageTitle() }}</div>
+        <h1 class="mt-3 text-[clamp(1.75rem,5vw,2.25rem)] font-bold tracking-[-0.02em]">This page is on the way.</h1>
+        <p class="mx-auto mt-3.5 max-w-[420px] text-[15px] leading-relaxed text-base-content/60">
+          We’re still writing this one. In the meantime you can try the whole product on sample data — no card, nothing
+          to lose.
+        </p>
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 font-semibold">Start free with sample data</a>
+          <a routerLink="/" class="btn btn-ghost rounded-field font-semibold">Back to home</a>
+        </div>
+      </div>
+    </section>
+
+    <pc-site-footer />
+  `,
+})
+export class ComingSoonPage {
+  public readonly pageTitle = input<string>('Coming soon');
+  protected readonly signupUrl = SIGNUP_URL;
+}
+`````
+
+## File: apps/website/src/app/compare/compare-page.html
+`````html
+<pc-site-header variant="solid" />
+
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">How we compare</div>
+    <h1 class="mt-3 text-balance text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">
+      You’re probably not choosing between CRMs.
+    </h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      Most teams like yours run on a spreadsheet, an email tool and somebody’s inbox. That stack is free, familiar and
+      genuinely fine at first. Here is where it starts to cost you, job by job.
+    </p>
+  </div>
+</section>
+
+<!-- The same jobs, side by side -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="mx-auto flex max-w-[880px] flex-col gap-3.5">
+    @for (row of rows; track row.job) {
+    <div class="rounded-xl border border-line bg-base-50 p-5 sm:p-6">
+      <div class="text-[15px] font-semibold">{{ row.job }}</div>
+      <div class="mt-3 grid gap-3.5 sm:grid-cols-2">
+        <div class="rounded-[10px] bg-base-200/70 p-4">
+          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/45">
+            The spreadsheet stack
+          </div>
+          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ row.stack }}</p>
+        </div>
+        <div class="rounded-[10px] bg-primary/8 p-4">
+          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-primary">pplCRM</div>
+          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/70">{{ row.crm }}</p>
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+</section>
+
+<!-- The big platforms -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="mx-auto max-w-[760px]">
+    <div class="mx-auto max-w-[620px] text-center">
+      <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
+        Weighing one of the big organizing platforms?
+      </h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        They are capable tools, and feature checklists age badly, so we won’t pretend to score them. Three things are
+        structurally different here, whichever one you have in mind.
+      </p>
+    </div>
+    <div class="mt-9 grid gap-4 sm:grid-cols-3">
+      @for (point of platformPoints; track point.title) {
+      <div class="rounded-xl border border-line bg-base-100 p-6">
+        <div class="text-[15px] font-semibold">{{ point.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ point.body }}</p>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- CTA band -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    See the difference on sample data.
+  </h2>
+  <p class="mx-auto mt-3.5 max-w-[540px] text-[15px] leading-relaxed text-white/75">
+    The free workspace opens with people, households, turfs and an inbox already in it. Compare with your own hands; no
+    card required.
+  </p>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+    <a
+      [href]="mailto"
+      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
+    >
+      Book a 15-minute walkthrough
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />
+`````
+
 ## File: apps/website/src/app/docs/docs-article.html
 `````html
 <pc-site-header variant="solid" />
@@ -30555,6 +30400,36 @@ import { Component, input } from '@angular/core';
 export class SiteLogo {
   public readonly onDark = input<boolean>(false);
 }
+`````
+
+## File: apps/website/src/app/ui/site-nav.ts
+`````typescript
+import { environment } from '../../environments/environment';
+
+export interface NavLink {
+  readonly label: string;
+  /** Internal router path. */
+  readonly path: string;
+}
+
+/** The primary audience + pricing nav, shared by the header and footers. */
+export const PRIMARY_NAV: readonly NavLink[] = [
+  { label: 'For constituency offices', path: '/for/offices' },
+  { label: 'For campaigns', path: '/for/campaigns' },
+  { label: 'For non-profits', path: '/for/nonprofits' },
+  { label: 'Compare', path: '/compare' },
+  { label: 'Pricing', path: '/pricing' },
+];
+
+/**
+ * The CRM lives on a separate host (see environment.appUrl). "Log in" and
+ * "Start free" leave the marketing site for the app, so they are absolute URLs,
+ * not router links.
+ */
+export const LOGIN_URL = `${environment.appUrl}/signin`;
+export const SIGNUP_URL = `${environment.appUrl}/signup`;
+// Signed-in visitors go straight to the app (its root redirects to the dashboard).
+export const DASHBOARD_URL = environment.appUrl;
 `````
 
 ## File: apps/website/src/app/app.config.server.ts
@@ -33626,6 +33501,8 @@ export interface IUserStatsSnapshot {
 export interface IAuthUserRecord extends IAuthUser {
   last_name: string;
   role: string | null;
+  /** Campaigns §15 — admin-assigned campaign; null = office. Not enforced for admins/owners. */
+  campaign_id: string | null;
   verified: boolean;
   two_factor_enabled: boolean;
   deletion_scheduled_at: Date | null;
@@ -36286,6 +36163,220 @@ export class Icon {
     }
   }
 }
+`````
+
+## File: libs/uxcommon/src/components/icons/icons.index.ts
+`````typescript
+/****************************************************** */
+/*
+/* Look at https://heroicons.com for icons. Most of these
+/* are from the Heroicons set, some are custom.
+/*
+/****************************************************** */
+export type PcIconNameType = keyof typeof icons;
+
+export async function loadIconSvg(name: PcIconNameType): Promise<string> {
+  let cached = _cache.get(name);
+  if (!cached) {
+    cached = resolveIconSvg(name);
+    _cache.set(name, cached);
+  }
+  return cached;
+}
+
+async function resolveIconSvg(name: PcIconNameType): Promise<string> {
+  const svg = await fetchSvg(icons[name]);
+  if (svg != null) return svg;
+  // Fall back to the generic unknown glyph — but only if it itself is a real SVG.
+  if (name !== UNKNOWN) {
+    const fallback = await loadIconSvg(UNKNOWN);
+    if (fallback) return fallback;
+  }
+  // Nothing usable (e.g. the assets aren't being served): render nothing rather than
+  // injecting a dev-server 404 page ("Cannot GET /assets/icons/unknown.svg") as markup.
+  return '';
+}
+
+/** Fetch an icon and return its text only if it is actually an SVG, else null. */
+async function fetchSvg(url: string): Promise<string | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const text = await r.text();
+    return text.trimStart().startsWith('<svg') ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+const UNKNOWN: PcIconNameType = 'unknown';
+
+/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
+const _cache = new Map<PcIconNameType, Promise<string>>();
+
+export const icons = {
+  none: 'none',
+  'add-company': 'assets/icons/add-company.svg',
+  'add-form': 'assets/icons/add-form.svg',
+  'add-group': 'assets/icons/add-group.svg',
+  'add-home': 'assets/icons/add-home.svg',
+  'add-issue': 'assets/icons/add-issue.svg',
+  'add-label': 'assets/icons/add-label.svg',
+  'add-list': 'assets/icons/add-list.svg',
+  'add-newsletter': 'assets/icons/add-newsletter.svg',
+  'add-notes': 'assets/icons/add-notes.svg',
+  'add-schedule': 'assets/icons/add-schedule.svg',
+  'add-task': 'assets/icons/add-task.svg',
+  'add-ticket': 'assets/icons/add-ticket.svg',
+  'add-users': 'assets/icons/add-users.svg',
+  'add-volunteer': 'assets/icons/add-volunteer.svg',
+  'add-fundraising': 'assets/icons/add-fundraising.svg',
+  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
+  'archive-box': 'assets/icons/archive-box.svg',
+  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
+  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
+  'arrow-left': 'assets/icons/arrow-left.svg',
+  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
+  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
+  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
+  'arrow-path': 'assets/icons/arrow-path.svg',
+  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
+  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
+  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
+  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
+  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
+  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
+  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
+  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
+  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
+  'at-symbol': 'assets/icons/at-symbol.svg',
+  'attach-fat': 'assets/icons/attach-fat.svg',
+  'attach-file-off': 'assets/icons/attach-file-off.svg',
+  banknotes: 'assets/icons/banknotes.svg',
+  'bars-3': 'assets/icons/bars-3.svg',
+  'bars-4': 'assets/icons/bars-4.svg',
+  bell: 'assets/icons/bell.svg',
+  bookmark: 'assets/icons/bookmark.svg',
+  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
+  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
+  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
+  briefcase: 'assets/icons/briefcase.svg',
+  calendar: 'assets/icons/calendar.svg',
+  'chart-pie': 'assets/icons/chart-pie.svg',
+  'check-circle': 'assets/icons/check-circle.svg',
+  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
+  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
+  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
+  'chevron-down': 'assets/icons/chevron-down.svg',
+  'chevron-left': 'assets/icons/chevron-left.svg',
+  'chevron-right': 'assets/icons/chevron-right.svg',
+  'chevron-up': 'assets/icons/chevron-up.svg',
+  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
+  clock: 'assets/icons/clock.svg',
+  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
+  cog: 'assets/icons/cog.svg',
+  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
+  'collapse-content': 'assets/icons/collapse-content.svg',
+  'credit-card': 'assets/icons/credit-card.svg',
+  'currency-dollar': 'assets/icons/currency-dollar.svg',
+  document: 'assets/icons/document.svg',
+  'document-check': 'assets/icons/document-check.svg',
+  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
+  'document-duplicate': 'assets/icons/document-duplicate.svg',
+  'document-text': 'assets/icons/document-text.svg',
+  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
+  envelope: 'assets/icons/envelope.svg',
+  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
+  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
+  'expand-content': 'assets/icons/expand-content.svg',
+  eye: 'assets/icons/eye.svg',
+  'eye-slash': 'assets/icons/eye-slash.svg',
+  facebook: 'assets/icons/facebook.svg',
+  file: 'assets/icons/file.svg',
+  'file-archive': 'assets/icons/file-archive.svg',
+  'file-audio': 'assets/icons/file-audio.svg',
+  'file-calendar': 'assets/icons/file-calendar.svg',
+  'file-code': 'assets/icons/file-code.svg',
+  'file-contact': 'assets/icons/file-contact.svg',
+  'file-db': 'assets/icons/file-db.svg',
+  'file-design': 'assets/icons/file-design.svg',
+  'file-disk': 'assets/icons/file-disk.svg',
+  'file-doc': 'assets/icons/file-doc.svg',
+  'file-ebook': 'assets/icons/file-ebook.svg',
+  'file-email': 'assets/icons/file-email.svg',
+  'file-exe': 'assets/icons/file-exe.svg',
+  'file-font': 'assets/icons/file-font.svg',
+  'file-image': 'assets/icons/file-image.svg',
+  'file-pdf': 'assets/icons/file-pdf.svg',
+  'file-sheet': 'assets/icons/file-sheet.svg',
+  'file-slides': 'assets/icons/file-slides.svg',
+  'file-text': 'assets/icons/file-text.svg',
+  'file-video': 'assets/icons/file-video.svg',
+  filter: 'assets/icons/funnel.svg',
+  forward: 'assets/icons/forward.svg',
+  funnel: 'assets/icons/funnel.svg',
+  'globe-americas': 'assets/icons/globe-americas.svg',
+  hashtag: 'assets/icons/hashtag.svg',
+  home: 'assets/icons/home.svg',
+  'house-modern': 'assets/icons/house-modern.svg',
+  identification: 'assets/icons/identification.svg',
+  inbox: 'assets/icons/inbox.svg',
+  'inbox-stack': 'assets/icons/inbox-stack.svg',
+  'information-circle': 'assets/icons/information-circle.svg',
+  instagram: 'assets/icons/instagram.svg',
+  label: 'assets/icons/label.svg',
+  linkedin: 'assets/icons/linkedin.svg',
+  'lock-closed': 'assets/icons/lock-closed.svg',
+  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
+  mailbox: 'assets/icons/mailbox.svg',
+  map: 'assets/icons/map.svg',
+  'map-pin': 'assets/icons/map-pin.svg',
+  megaphone: 'assets/icons/megaphone.svg',
+  message: 'assets/icons/message.svg',
+  'menu-open': 'assets/icons/menu-open.svg',
+  merge: 'assets/icons/merge.svg',
+  moon: 'assets/icons/moon.svg',
+  notification: 'assets/icons/notification.svg',
+  'paper-airplane': 'assets/icons/paper-airplane.svg',
+  'paper-clip': 'assets/icons/paper-clip.svg',
+  'pencil-square': 'assets/icons/pencil-square.svg',
+  plus: 'assets/icons/plus.svg',
+  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
+  print: 'assets/icons/print.svg',
+  'queue-list': 'assets/icons/queue-list.svg',
+  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
+  'redo-fat': 'assets/icons/redo-fat.svg',
+  route: 'assets/icons/route.svg',
+  reply: 'assets/icons/reply.svg',
+  'reply-all': 'assets/icons/reply-all.svg',
+  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
+  save: 'assets/icons/save.svg',
+  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
+  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
+  star: 'assets/icons/star.svg',
+  'star-filled': 'assets/icons/star-filled.svg',
+  sun: 'assets/icons/sun.svg',
+  'table-cells': 'assets/icons/table-cells.svg',
+  phone: 'assets/icons/phone.svg',
+  tag: 'assets/icons/tag.svg',
+  task: 'assets/icons/task.svg',
+  ticket: 'assets/icons/ticket.svg',
+  trash: 'assets/icons/trash.svg',
+  'trash-forever': 'assets/icons/trash-forever.svg',
+  'undo-fat': 'assets/icons/undo-fat.svg',
+  unknown: 'assets/icons/unknown.svg',
+  'user-circle': 'assets/icons/user-circle.svg',
+  'user-group': 'assets/icons/user-group.svg',
+  'user-plus': 'assets/icons/user-plus.svg',
+  users: 'assets/icons/users.svg',
+  'view-column': 'assets/icons/view-column.svg',
+  'view-kanban': 'assets/icons/view-kanban.svg',
+  volunteer: 'assets/icons/volunteer.svg',
+  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
+  'x-circle': 'assets/icons/x-circle.svg',
+  x: 'assets/icons/x.svg',
+  'x-mark': 'assets/icons/x-mark.svg',
+} as const;
 `````
 
 ## File: libs/uxcommon/src/components/input/input.ts
@@ -54124,255 +54215,42 @@ export const CompanionAccessRouter = router({
 });
 `````
 
-## File: apps/backend/src/app/modules/donations/stripe-connect.ts
+## File: apps/backend/src/app/modules/demo/demo-guard.ts
 `````typescript
-import type { StripeConnectCountry } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
-import { env } from '../../../env';
-import { PreconditionFailedError } from '../../errors/app-errors';
-import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
-import { logger } from '../../logger';
-import { assertNotDemoMode } from '../demo/demo-guard';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-
-/** Settings keys for the tenant's Stripe Connect state. Written ONLY by this module (backend),
- * never by the generic frontend settings save — the frontend has no secret to enter anymore. */
-export const STRIPE_ACCOUNT_ID_KEY = 'donations.stripe_account_id';
-export const STRIPE_ACCOUNT_STATUS_KEY = 'donations.stripe_account_status';
-
-export interface StripeConnectStatus {
-  connected: boolean;
-  accountId: string | null;
-  detailsSubmitted: boolean;
-  chargesEnabled: boolean;
-  requirementsDue: string[];
-  isMockMode: boolean;
-}
-
-interface CachedAccountStatus {
-  detailsSubmitted: boolean;
-  chargesEnabled: boolean;
-}
-
-const settingsRepo = new SettingsRepo();
-
-const NOT_CONNECTED_MESSAGE =
-  'Connect your Stripe account under Workspace → Donations before accepting card donations.';
-
-/** Settings values may come back as a raw JSON string or already parsed (jsonb), same as the
- * billing settings reads — normalize both. */
-function parseSettingValue(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-async function readSetting(tenantId: string, key: string): Promise<unknown> {
-  const row = await settingsRepo.getByKey({ tenant_id: tenantId, key });
-  return parseSettingValue(row?.value);
-}
-
-function asCachedStatus(value: unknown): CachedAccountStatus {
-  if (value && typeof value === 'object') {
-    const v = value as Record<string, unknown>;
-    return {
-      detailsSubmitted: v['detailsSubmitted'] === true,
-      chargesEnabled: v['chargesEnabled'] === true,
-    };
-  }
-  return { detailsSubmitted: false, chargesEnabled: false };
-}
-
-/** The tenant's connected account id, or undefined when Stripe isn't connected. */
-export async function getConnectedAccountId(tenantId: string): Promise<string | undefined> {
-  const value = await readSetting(tenantId, STRIPE_ACCOUNT_ID_KEY);
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-/** Fast checkout-path gate: cached status only, no Stripe round-trip. Mock mode always passes so
- * local dev works without keys. */
-export async function getCachedConnectState(
-  tenantId: string,
-): Promise<{ accountId: string | undefined; chargesEnabled: boolean }> {
-  if (isMockMode) {
-    return { accountId: undefined, chargesEnabled: true };
-  }
-  const accountId = await getConnectedAccountId(tenantId);
-  if (!accountId) {
-    return { accountId: undefined, chargesEnabled: false };
-  }
-  const cached = asCachedStatus(await readSetting(tenantId, STRIPE_ACCOUNT_STATUS_KEY));
-  return { accountId, chargesEnabled: cached.chargesEnabled };
-}
-
-/** Throws the fail-closed "connect Stripe first" error unless the tenant has a connected account
- * with charges enabled (or we're in platform mock mode). Returns the account id for `{stripeAccount}`
- * request options (undefined only in mock mode). */
-export async function assertStripeConnectReady(tenantId: string): Promise<string | undefined> {
-  const state = await getCachedConnectState(tenantId);
-  if (isMockMode) return undefined;
-  if (!state.accountId || !state.chargesEnabled) {
-    throw new PreconditionFailedError(NOT_CONNECTED_MESSAGE);
-  }
-  return state.accountId;
-}
-
-export async function updateCachedAccountStatus(
-  tenantId: string,
-  userId: string,
-  status: CachedAccountStatus,
-): Promise<void> {
-  await settingsRepo.upsertMany({
-    tenant_id: tenantId,
-    user_id: userId,
-    entries: [{ key: STRIPE_ACCOUNT_STATUS_KEY, value: status }],
-  });
-}
-
-/** Live status for the settings page: retrieves the account from Stripe and refreshes the cache;
- * falls back to the cache if the retrieve fails. */
-export async function getConnectStatus(tenantId: string, userId: string): Promise<StripeConnectStatus> {
-  if (isMockMode) {
-    return {
-      connected: true,
-      accountId: 'acct_mock_platform',
-      detailsSubmitted: true,
-      chargesEnabled: true,
-      requirementsDue: [],
-      isMockMode: true,
-    };
-  }
-
-  const accountId = await getConnectedAccountId(tenantId);
-  if (!accountId) {
-    return {
-      connected: false,
-      accountId: null,
-      detailsSubmitted: false,
-      chargesEnabled: false,
-      requirementsDue: [],
-      isMockMode: false,
-    };
-  }
-
-  try {
-    const account = await getStripe().accounts.retrieve(accountId);
-    const status: CachedAccountStatus = {
-      detailsSubmitted: account.details_submitted === true,
-      chargesEnabled: account.charges_enabled === true,
-    };
-    await updateCachedAccountStatus(tenantId, userId, status);
-    return {
-      connected: true,
-      accountId,
-      detailsSubmitted: status.detailsSubmitted,
-      chargesEnabled: status.chargesEnabled,
-      requirementsDue: account.requirements?.currently_due ?? [],
-      isMockMode: false,
-    };
-  } catch (err) {
-    logger.error({ err }, `[StripeConnect] accounts.retrieve failed for tenant ${tenantId} — using cached status`);
-    const cached = asCachedStatus(await readSetting(tenantId, STRIPE_ACCOUNT_STATUS_KEY));
-    return {
-      connected: true,
-      accountId,
-      detailsSubmitted: cached.detailsSubmitted,
-      chargesEnabled: cached.chargesEnabled,
-      requirementsDue: [],
-      isMockMode: false,
-    };
-  }
-}
+import type { Kysely, Transaction } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { ForbiddenError } from '../../errors/app-errors';
 
 /**
- * Create the connected account on first call and return a Stripe-hosted onboarding URL.
- *
- * Account shape (verified against stripe-node v22 typings + current Connect docs): the legacy
- * `type: 'express'` param is deprecated — controller properties express the decided configuration:
- * Express dashboard UX, Stripe owns loss liability, and the campaign pays Stripe's processing fees
- * directly (`fees.payer: 'account'`), which keeps the platform's application fee (env
- * DONATIONS_PLATFORM_FEE_PERCENT) as clean margin.
+ * Demo mode is the pre-plan test drive: the tenant can explore and edit the
+ * seeded data and ordinary workspace settings freely, but must not touch
+ * outward-facing setup (sender email/phone/domain verification, mailbox sync,
+ * Stripe Connect), send email, or invite teammates. Those unlock when they
+ * subscribe and exit demo mode. Enforced server-side at the mutation entry
+ * points — the UI copy is a courtesy, this guard is the contract. Plain
+ * `settings.upsert` is deliberately not guarded; its server-managed keys are
+ * protected individually.
  */
-export async function startOnboarding(
-  tenantId: string,
-  userId: string,
-  country: StripeConnectCountry,
-): Promise<{ url: string }> {
-  // Connecting a real Stripe account is outward-facing setup — locked during the demo.
-  await assertNotDemoMode(settingsRepo.db, tenantId);
-  if (isMockMode) {
-    await settingsRepo.upsertMany({
-      tenant_id: tenantId,
-      user_id: userId,
-      entries: [
-        { key: STRIPE_ACCOUNT_ID_KEY, value: `acct_mock_${tenantId}` },
-        { key: STRIPE_ACCOUNT_STATUS_KEY, value: { detailsSubmitted: true, chargesEnabled: true } },
-      ],
-    });
-    return { url: `${env.appUrl}/workspace/donations?stripe_connected=true&mock=true` };
-  }
+export const DEMO_MODE_BLOCKED_MESSAGE =
+  'This is part of the demo. Choose a plan on the Billing page, then exit demo mode to unlock configuration and sending.';
 
-  const stripe = getStripe();
-  let accountId = await getConnectedAccountId(tenantId);
+export const DEMO_MODE_INVITES_BLOCKED_MESSAGE =
+  'Inviting teammates is locked during the demo. Choose a plan on the Billing page, then exit demo mode to invite your team.';
 
-  if (!accountId || accountId.startsWith('acct_mock_')) {
-    const account = await stripe.accounts.create({
-      country,
-      controller: {
-        fees: { payer: 'account' },
-        losses: { payments: 'stripe' },
-        requirement_collection: 'stripe',
-        stripe_dashboard: { type: 'express' },
-      },
-      capabilities: { card_payments: { requested: true } },
-      metadata: { tenantId },
-    });
-    accountId = account.id;
-    await settingsRepo.upsertMany({
-      tenant_id: tenantId,
-      user_id: userId,
-      entries: [
-        { key: STRIPE_ACCOUNT_ID_KEY, value: accountId },
-        { key: STRIPE_ACCOUNT_STATUS_KEY, value: { detailsSubmitted: false, chargesEnabled: false } },
-      ],
-    });
-  }
-
-  const link = await stripe.accountLinks.create({
-    account: accountId,
-    type: 'account_onboarding',
-    refresh_url: `${env.appUrl}/workspace/donations?stripe_refresh=true`,
-    return_url: `${env.appUrl}/workspace/donations?stripe_connected=true`,
-  });
-
-  return { url: link.url };
+export async function isDemoMode(db: Kysely<Models> | Transaction<Models>, tenant_id: string): Promise<boolean> {
+  const tenant = await db.selectFrom('tenants').select('demo_mode_at').where('id', '=', tenant_id).executeTakeFirst();
+  return tenant?.demo_mode_at != null;
 }
 
-/** Express-dashboard login link for the "Open Stripe dashboard" button. */
-export async function createDashboardLoginLink(tenantId: string): Promise<{ url: string }> {
-  await assertNotDemoMode(settingsRepo.db, tenantId);
-  if (isMockMode) {
-    return { url: `${env.appUrl}/workspace/donations?mock_stripe_dashboard=true` };
+/** Throws FORBIDDEN when the tenant is still in demo mode. */
+export async function assertNotDemoMode(
+  db: Kysely<Models> | Transaction<Models>,
+  tenant_id: string,
+  message: string = DEMO_MODE_BLOCKED_MESSAGE,
+): Promise<void> {
+  if (await isDemoMode(db, tenant_id)) {
+    throw new ForbiddenError(message);
   }
-  const accountId = await getConnectedAccountId(tenantId);
-  if (!accountId) {
-    throw new PreconditionFailedError(NOT_CONNECTED_MESSAGE);
-  }
-  const link = await getStripe().accounts.createLoginLink(accountId);
-  return { url: link.url };
-}
-
-/** Forget the connection (frees the processor choice). The Stripe account itself belongs to the
- * campaign — we never delete it; reconnecting later creates a fresh account. */
-export async function disconnect(tenantId: string): Promise<void> {
-  await assertNotDemoMode(settingsRepo.db, tenantId);
-  await settingsRepo.db
-    .deleteFrom('settings')
-    .where('tenant_id', '=', tenantId)
-    .where('key', 'in', [STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY])
-    .execute();
 }
 `````
 
@@ -55259,6 +55137,179 @@ export class FilesController extends BaseController<'files', FilesRepo> {
 }
 `````
 
+## File: apps/backend/src/app/modules/google-sync/trpc.router.ts
+`````typescript
+import { authProcedure, router } from '../../../trpc';
+import { GoogleOAuthService, NEEDS_FULL_SYNC } from './google-oauth.service';
+import { GoogleSyncService } from './google-sync.service';
+import { BaseRepository } from '../../lib/base.repo';
+import { env } from '../../../env';
+import { z } from 'zod';
+import { idSchema } from '@common';
+import { sql } from 'kysely';
+import { encodeOAuthState } from '../../lib/oauth-state';
+import { assertNotDemoMode } from '../demo/demo-guard';
+import { BadRequestError } from '../../errors/app-errors';
+
+let _oauthSvc: GoogleOAuthService | null = null;
+let _syncSvc: GoogleSyncService | null = null;
+
+/** Mailbox sync is optional per deployment (the env vars are optional by design). */
+function isConfigured(): boolean {
+  return !!env.googleClientId && !!env.googleClientSecret;
+}
+
+function getServices() {
+  // Unlike MSAL, Google's client constructs fine with empty credentials — the
+  // failure would surface later as a dead-end Google error page. Same guard,
+  // same user-facing copy as the Microsoft router.
+  if (!isConfigured()) {
+    throw new BadRequestError('Google email sync is not configured on this server.');
+  }
+  if (!_oauthSvc || !_syncSvc) {
+    const db = BaseRepository.dbInstance; // reuse the shared Kysely instance
+    _oauthSvc = new GoogleOAuthService(db, {
+      clientId: env.googleClientId ?? '',
+      clientSecret: env.googleClientSecret ?? '',
+      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+    });
+    _syncSvc = new GoogleSyncService(db, _oauthSvc);
+  }
+  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
+}
+
+// Campaigns §15 — mailbox connections are per-campaign; the client supplies the
+// active context (the same activeCampaignId() it passes everywhere).
+const campaignInput = z.object({ campaignId: idSchema });
+
+function getAuthUrl() {
+  return authProcedure
+    .input(z.object({ campaignId: idSchema, returnTo: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      // Mailbox sync is configuration — locked during the demo test drive.
+      await assertNotDemoMode(BaseRepository.dbInstance, ctx.auth.tenant_id);
+      const { oauthSvc } = getServices();
+      const state = encodeOAuthState({
+        userId: ctx.auth.user_id,
+        tenantId: ctx.auth.tenant_id,
+        campaignId: input.campaignId,
+        returnTo: input.returnTo,
+      });
+      const url = oauthSvc.getAuthUrl(state);
+      return { url };
+    });
+}
+
+function getConnectionStatus() {
+  return authProcedure.input(campaignInput).query(async ({ ctx, input }) => {
+    // Unconfigured is a normal state (e.g. local dev): render the section calmly
+    // instead of erroring on load.
+    if (!isConfigured()) {
+      return {
+        configured: false,
+        connected: false,
+        googleEmail: null,
+        syncedAt: null,
+        lastSyncError: null,
+        lastSyncErrorAt: null,
+        syncing: false,
+      };
+    }
+    const { oauthSvc } = getServices();
+    const db = BaseRepository.dbInstance;
+    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id, input.campaignId);
+
+    const activeJob = await db
+      .selectFrom('background_jobs')
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'google_sync')
+      .where(sql`payload->>'campaignId'`, '=', input.campaignId)
+      .executeTakeFirst();
+
+    return {
+      configured: true,
+      ...status,
+      syncing: !!activeJob,
+    };
+  });
+}
+
+function syncNow() {
+  return authProcedure.input(campaignInput).mutation(async ({ ctx, input }) => {
+    const db = BaseRepository.dbInstance;
+
+    const existing = await db
+      .selectFrom('background_jobs')
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'google_sync')
+      .where(sql`payload->>'campaignId'`, '=', input.campaignId)
+      .executeTakeFirst();
+
+    if (!existing) {
+      await db
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: ctx.auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'google_sync',
+            tenantId: ctx.auth.tenant_id,
+            campaignId: input.campaignId,
+            requestedBy: ctx.auth.user_id,
+          }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    }
+
+    return { inserted: 0, queued: true };
+  });
+}
+
+function disconnect() {
+  return authProcedure
+    .input(
+      z.object({
+        campaignId: idSchema,
+        removeLocalEmails: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { oauthSvc, syncSvc } = getServices();
+
+      if (input.removeLocalEmails) {
+        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id, input.campaignId);
+      }
+
+      await oauthSvc.disconnect(ctx.auth.tenant_id, input.campaignId);
+      return { success: true };
+    });
+}
+
+function resetSync() {
+  return authProcedure.input(campaignInput).mutation(async ({ ctx, input }) => {
+    const { oauthSvc } = getServices();
+    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, input.campaignId, NEEDS_FULL_SYNC);
+    return { success: true };
+  });
+}
+
+export const GoogleSyncRouter = router({
+  getAuthUrl: getAuthUrl(),
+  getConnectionStatus: getConnectionStatus(),
+  syncNow: syncNow(),
+  disconnect: disconnect(),
+  resetSync: resetSync(),
+});
+export type GoogleSyncRouterType = typeof GoogleSyncRouter;
+`````
+
 ## File: apps/backend/src/app/modules/households/trpc.router.ts
 `````typescript
 import { UpdateHouseholdsObj, idSchema } from '../../../../../../libs/common/src';
@@ -55381,6 +55432,179 @@ export const HouseholdsRouter = router({
   recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) =>
     households.recomputeAddressFingerprints(ctx.auth.tenant_id),
   ),
+});
+`````
+
+## File: apps/backend/src/app/modules/ms-sync/trpc.router.ts
+`````typescript
+import { authProcedure, router } from '../../../trpc';
+import { MsOAuthService, NEEDS_FULL_SYNC } from './ms-oauth.service';
+import { MsSyncService } from './ms-sync.service';
+import { BaseRepository } from '../../lib/base.repo';
+import { env } from '../../../env';
+import { z } from 'zod';
+import { idSchema } from '@common';
+import { sql } from 'kysely';
+import { encodeOAuthState } from '../../lib/oauth-state';
+import { assertNotDemoMode } from '../demo/demo-guard';
+import { BadRequestError } from '../../errors/app-errors';
+
+let _oauthSvc: MsOAuthService | null = null;
+let _syncSvc: MsSyncService | null = null;
+
+/** Mailbox sync is optional per deployment (the env vars are optional by design). */
+function isConfigured(): boolean {
+  return !!env.msClientId && !!env.msClientSecret;
+}
+
+function getServices() {
+  // msal-node's ConfidentialClientApplication rejects an empty clientSecret at
+  // construction with a raw invalid_client_credential error — fail with
+  // user-facing copy before it gets the chance.
+  if (!isConfigured()) {
+    throw new BadRequestError('Microsoft email sync is not configured on this server.');
+  }
+  if (!_oauthSvc || !_syncSvc) {
+    const db = BaseRepository.dbInstance; // reuse the shared Kysely instance
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+    _syncSvc = new MsSyncService(db, _oauthSvc);
+  }
+  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
+}
+
+// Campaigns §15 — mailbox connections are per-campaign. The active context is
+// supplied by the client (the same activeCampaignId() it passes everywhere).
+const campaignInput = z.object({ campaignId: idSchema });
+
+function getAuthUrl() {
+  return authProcedure
+    .input(z.object({ campaignId: idSchema, returnTo: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      // Mailbox sync is configuration — locked during the demo test drive.
+      await assertNotDemoMode(BaseRepository.dbInstance, ctx.auth.tenant_id);
+      const { oauthSvc } = getServices();
+      const state = encodeOAuthState({
+        userId: ctx.auth.user_id,
+        tenantId: ctx.auth.tenant_id,
+        campaignId: input.campaignId,
+        returnTo: input.returnTo,
+      });
+      const url = await oauthSvc.getAuthUrl(state);
+      return { url };
+    });
+}
+
+function getConnectionStatus() {
+  return authProcedure.input(campaignInput).query(async ({ ctx, input }) => {
+    // Unconfigured is a normal state (e.g. local dev): render the section calmly
+    // instead of erroring on load.
+    if (!isConfigured()) {
+      return {
+        configured: false,
+        connected: false,
+        msEmail: null,
+        syncedAt: null,
+        lastSyncError: null,
+        lastSyncErrorAt: null,
+        syncing: false,
+      };
+    }
+    const { oauthSvc } = getServices();
+    const db = BaseRepository.dbInstance;
+    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id, input.campaignId);
+
+    const activeJob = await db
+      .selectFrom('background_jobs')
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'ms_sync')
+      .where(sql`payload->>'campaignId'`, '=', input.campaignId)
+      .executeTakeFirst();
+
+    return {
+      configured: true,
+      ...status,
+      syncing: !!activeJob,
+    };
+  });
+}
+
+function syncNow() {
+  return authProcedure.input(campaignInput).mutation(async ({ ctx, input }) => {
+    const db = BaseRepository.dbInstance;
+
+    const existing = await db
+      .selectFrom('background_jobs')
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'ms_sync')
+      .where(sql`payload->>'campaignId'`, '=', input.campaignId)
+      .executeTakeFirst();
+
+    if (!existing) {
+      await db
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: ctx.auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'ms_sync',
+            tenantId: ctx.auth.tenant_id,
+            campaignId: input.campaignId,
+            requestedBy: ctx.auth.user_id,
+          }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    }
+
+    return { inserted: 0, queued: true };
+  });
+}
+
+function disconnect() {
+  return authProcedure
+    .input(
+      z.object({
+        campaignId: idSchema,
+        removeLocalEmails: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { oauthSvc, syncSvc } = getServices();
+
+      if (input.removeLocalEmails) {
+        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id, input.campaignId);
+      }
+
+      await oauthSvc.disconnect(ctx.auth.tenant_id, input.campaignId);
+      return { success: true };
+    });
+}
+
+function resetSync() {
+  return authProcedure.input(campaignInput).mutation(async ({ ctx, input }) => {
+    const { oauthSvc } = getServices();
+    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, input.campaignId, NEEDS_FULL_SYNC);
+    return { success: true };
+  });
+}
+
+export const MsSyncRouter = router({
+  getAuthUrl: getAuthUrl(),
+  getConnectionStatus: getConnectionStatus(),
+  syncNow: syncNow(),
+  disconnect: disconnect(),
+  resetSync: resetSync(),
 });
 `````
 
@@ -58245,40 +58469,6 @@ onShutdown(async () => {
 });
 `````
 
-## File: apps/backend/src/test-assign5.js
-`````javascript
-const { Pool } = require('pg');
-const pool = new Pool({
-  user: 'pplcrm',
-  database: 'pplcrm',
-  password: '[REDACTED]',
-  host: 'localhost',
-  port: 5432,
-});
-
-async function run() {
-  const res = await pool.query("UPDATE emails SET assigned_to = '2' WHERE id = '29' RETURNING *");
-  console.log(res.rows[0].assigned_to);
-  process.exit(0);
-}
-run();
-`````
-
-## File: apps/backend/src/test-trpc.js
-`````javascript
-async function run() {
-  const loginRes = await fetch('http://localhost:3000/trpc/auth.login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'hello@pplcrm.com', password: 'password' }),
-  });
-  console.log('Login status:', loginRes.status);
-
-  // if this doesn't work, we don't have the password, we can't test via HTTP.
-}
-run();
-`````
-
 ## File: apps/backend/src/trpc.ts
 `````typescript
 // tsco:ignore
@@ -58402,6 +58592,32 @@ import { BaseRepository } from './app/lib/base.repo';
 import { runWithTenant } from './app/lib/tenant-context';
 import { hashToken } from './app/lib/token-hash';
 
+/**
+ * Campaigns §15 — input keys that name a campaign context. Editors/Viewers are
+ * pinned to their admin-assigned campaign, so any of these keys arriving with a
+ * different id is a scope violation (the UI never sends one; only a tampered
+ * client would). Admin-only inputs (carry-over's source/target ids) are gated by
+ * adminOrOwnerProcedure and deliberately not listed here.
+ */
+const CAMPAIGN_INPUT_KEYS = new Set(['campaignId', 'campaign_id']);
+
+/** Recursively collect every campaign id named by the (already-deserialized) raw input. */
+function collectCampaignIds(value: unknown, depth = 0, out = new Set<string>()): Set<string> {
+  if (depth > 4 || value === null || typeof value !== 'object') return out;
+  if (Array.isArray(value)) {
+    for (const item of value) collectCampaignIds(item, depth + 1, out);
+    return out;
+  }
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (CAMPAIGN_INPUT_KEYS.has(key)) {
+      if ((typeof v === 'string' && v !== '') || typeof v === 'number') out.add(String(v));
+    } else {
+      collectCampaignIds(v, depth + 1, out);
+    }
+  }
+  return out;
+}
+
 const isAuthed = middleware(async (opts) => {
   const { ctx } = opts;
 
@@ -58418,11 +58634,11 @@ const isAuthed = middleware(async (opts) => {
   // app-level `.where('tenant_id', …)` filters. Wrapping the auth lookups too is
   // harmless (they are already tenant-scoped) and covers all downstream resolvers.
   return runWithTenant(auth.tenant_id, async () => {
-    let user: { role: string | null; verified: boolean } | undefined;
+    let user: { role: string | null; verified: boolean; campaign_id: string | null } | undefined;
     if (/^\d+$/.test(auth.user_id)) {
       const record = await BaseRepository.dbInstance
         .selectFrom('authusers')
-        .select(['role', 'verified'])
+        .select(['role', 'verified', 'campaign_id'])
         .where('id', '=', auth.user_id)
         .where('tenant_id', '=', auth.tenant_id)
         .executeTakeFirst();
@@ -58430,6 +58646,7 @@ const isAuthed = middleware(async (opts) => {
         user = {
           role: record.role,
           verified: record.verified === true || String(record.verified) === 'true',
+          campaign_id: record.campaign_id != null ? String(record.campaign_id) : null,
         };
       }
     }
@@ -58470,6 +58687,34 @@ const isAuthed = middleware(async (opts) => {
           code: 'FORBIDDEN',
           message: 'Viewers are not allowed to make changes.',
         });
+      }
+    }
+
+    // Campaigns §15 — Editors/Viewers belong to exactly one campaign (their
+    // admin-assigned one, or the office when unassigned). Any campaignId /
+    // campaign_id in the request input must name that campaign; anything else
+    // is a cross-campaign read/write attempt.
+    if (user.role === 'user' || user.role === 'viewer') {
+      const requested = collectCampaignIds(await opts.getRawInput());
+      if (requested.size > 0) {
+        let allowed = user.campaign_id;
+        if (allowed === null) {
+          const office = await BaseRepository.dbInstance
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('kind', '=', 'office')
+            .executeTakeFirst();
+          allowed = office ? String(office.id) : null;
+        }
+        for (const id of requested) {
+          if (id !== allowed) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'You can only work in your assigned campaign.',
+            });
+          }
+        }
       }
     }
 
@@ -58761,51 +59006,6 @@ interface ImportMeta {
 }
 `````
 
-## File: apps/website/src/app/coming-soon/coming-soon-page.ts
-`````typescript
-import { Component, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-/**
- * Shared placeholder for pages the design links to but we haven't built yet
- * (assorted footer links). `pageTitle` is
- * bound from the route's `data` or a `?pageTitle=` query param via
- * withComponentInputBinding — swap the route to a real component when it exists.
- */
-@Component({
-  selector: 'pc-coming-soon-page',
-  imports: [RouterLink, SiteHeader, SiteFooter],
-  template: `
-    <pc-site-header variant="solid" />
-
-    <section class="flex min-h-[62vh] items-center justify-center px-5 py-20 text-center sm:px-8">
-      <div class="mx-auto max-w-[520px]">
-        <div class="eyebrow">{{ pageTitle() }}</div>
-        <h1 class="mt-3 text-[clamp(1.75rem,5vw,2.25rem)] font-bold tracking-[-0.02em]">This page is on the way.</h1>
-        <p class="mx-auto mt-3.5 max-w-[420px] text-[15px] leading-relaxed text-base-content/60">
-          We’re still writing this one. In the meantime you can try the whole product on sample data — no card, nothing
-          to lose.
-        </p>
-        <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 font-semibold">Start free with sample data</a>
-          <a routerLink="/" class="btn btn-ghost rounded-field font-semibold">Back to home</a>
-        </div>
-      </div>
-    </section>
-
-    <pc-site-footer />
-  `,
-})
-export class ComingSoonPage {
-  public readonly pageTitle = input<string>('Coming soon');
-  protected readonly signupUrl = SIGNUP_URL;
-}
-`````
-
 ## File: apps/website/src/app/company/about-page.ts
 `````typescript
 import { Component } from '@angular/core';
@@ -59089,93 +59289,91 @@ export class CareersPage {
 <pc-site-footer />
 `````
 
-## File: apps/website/src/app/compare/compare-page.html
-`````html
-<pc-site-header variant="solid" />
+## File: apps/website/src/app/compare/compare-page.ts
+`````typescript
+import { Component } from '@angular/core';
 
-<!-- Hero -->
-<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
-  <div class="mx-auto max-w-[760px] text-center">
-    <div class="eyebrow">How we compare</div>
-    <h1 class="mt-3 text-balance text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">
-      You’re probably not choosing between CRMs.
-    </h1>
-    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
-      Most teams like yours run on a spreadsheet, an email tool and somebody’s inbox. That stack is free, familiar and
-      genuinely fine at first. Here is where it starts to cost you, job by job.
-    </p>
-  </div>
-</section>
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
 
-<!-- The same jobs, side by side -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="mx-auto flex max-w-[880px] flex-col gap-3.5">
-    @for (row of rows; track row.job) {
-    <div class="rounded-xl border border-line bg-base-50 p-5 sm:p-6">
-      <div class="text-[15px] font-semibold">{{ row.job }}</div>
-      <div class="mt-3 grid gap-3.5 sm:grid-cols-2">
-        <div class="rounded-[10px] bg-base-200/70 p-4">
-          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/45">
-            The spreadsheet stack
-          </div>
-          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ row.stack }}</p>
-        </div>
-        <div class="rounded-[10px] bg-primary/8 p-4">
-          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-primary">pplCRM</div>
-          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/70">{{ row.crm }}</p>
-        </div>
-      </div>
-    </div>
-    }
-  </div>
-</section>
+/** One job, told twice: how the spreadsheet stack does it, how pplCRM does it. */
+interface CompareRow {
+  readonly job: string;
+  readonly stack: string;
+  readonly crm: string;
+}
 
-<!-- The big platforms -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="mx-auto max-w-[760px]">
-    <div class="mx-auto max-w-[620px] text-center">
-      <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
-        Weighing one of the big organizing platforms?
-      </h2>
-      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
-        They are capable tools, and feature checklists age badly, so we won’t pretend to score them. Three things are
-        structurally different here, whichever one you have in mind.
-      </p>
-    </div>
-    <div class="mt-9 grid gap-4 sm:grid-cols-3">
-      @for (point of platformPoints; track point.title) {
-      <div class="rounded-xl border border-line bg-base-100 p-6">
-        <div class="text-[15px] font-semibold">{{ point.title }}</div>
-        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ point.body }}</p>
-      </div>
-      }
-    </div>
-  </div>
-</section>
+interface PlatformPoint {
+  readonly title: string;
+  readonly body: string;
+}
 
-<!-- CTA band -->
-<section class="bg-navy px-5 py-14 text-center sm:px-8">
-  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
-    See the difference on sample data.
-  </h2>
-  <p class="mx-auto mt-3.5 max-w-[540px] text-[15px] leading-relaxed text-white/75">
-    The free workspace opens with people, households, turfs and an inbox already in it. Compare with your own hands; no
-    card required.
-  </p>
-  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
-    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
-      Start free with sample data
-    </a>
-    <a
-      [href]="mailto"
-      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
-    >
-      Book a 15-minute walkthrough
-    </a>
-  </div>
-</section>
+@Component({
+  selector: 'pc-compare-page',
+  imports: [SiteHeader, SiteFooter],
+  templateUrl: './compare-page.html',
+})
+export class ComparePage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
 
-<pc-site-footer />
+  protected readonly rows: readonly CompareRow[] = [
+    {
+      job: 'Keeping one person’s story straight',
+      stack: 'Three files hold three versions of the same person, and nobody is sure which one is current.',
+      crm: 'One record holds the household, the emails, the gifts, the knocks and the notes. Update it once; it’s correct everywhere.',
+    },
+    {
+      job: 'Sending the newsletter',
+      stack:
+        'Export a CSV, upload it to the email tool, clean the bounces, repeat next month. Unsubscribes live only in the email tool.',
+      crm: 'Segments come straight from the live list, and every unsubscribe and do-not-contact is honored automatically.',
+    },
+    {
+      job: 'Staying out of spam',
+      stack:
+        'Your mail shares a sending reputation with thousands of strangers on the same platform, including the spammers.',
+      crm: 'You send from your own verified domain. The reputation you build is yours alone.',
+    },
+    {
+      job: 'Answering everyone who writes in',
+      stack: 'Requests live in whoever’s inbox they landed in. Follow-up depends on memory and flags.',
+      crm: 'A shared inbox gives every message an owner and a due date; nothing waits on one person remembering.',
+    },
+    {
+      job: 'The field: knocks, signs, deliveries',
+      stack: 'Paper lists in the car, re-typed into the sheet at night, if it happens at all.',
+      crm: 'Offline-first companion apps for volunteers; every knock and delivery syncs back to the live report.',
+    },
+    {
+      job: 'When a staffer or volunteer leaves',
+      stack: 'The master file lived on their laptop. So did the passwords.',
+      crm: 'History belongs to the workspace, not a laptop. Access ends with one click; the story stays.',
+    },
+    {
+      job: 'What it costs',
+      stack: 'Free, plus the hours spent reconciling files and the mistakes that slip out in between.',
+      crm: 'Free forever for unlimited contacts and 1,000 email subscribers. Paid plans price by the people you email, never the size of your list.',
+    },
+  ];
+
+  /** For visitors evaluating the big organizing platforms; principles, not a feature grid. */
+  protected readonly platformPoints: readonly PlatformPoint[] = [
+    {
+      title: 'Growth is never taxed',
+      body: 'Platforms that price by database size charge you for every name you collect. Here contacts and households are unlimited on every plan; you pay only for emailable subscribers.',
+    },
+    {
+      title: 'No contracts, no exit fee',
+      body: 'Pay month to month — or annually for 2 months free, your choice — and everything exports to plain CSV on every plan. A tool you can leave anytime is a tool you can trust with your list.',
+    },
+    {
+      title: 'Try before you trust',
+      body: 'No sales call, no demo video. The free workspace opens with sample data already in it, so you evaluate with your own hands.',
+    },
+  ];
+}
 `````
 
 ## File: apps/website/src/app/docs/docs-article.ts
@@ -59264,6 +59462,303 @@ export class DocsArticle {
     });
   }
 }
+`````
+
+## File: apps/website/src/app/home/home-page.html
+`````html
+<pc-site-header variant="over-hero" />
+
+<!-- ============================ HERO ============================ -->
+<section class="bg-navy px-5 pb-12 pt-10 text-center sm:px-8 sm:pb-16 sm:pt-14">
+  <div class="flex flex-wrap items-center justify-center gap-3">
+    <span class="w-full text-center text-[12.5px] font-medium text-white/60">I'm with a</span>
+    <div class="flex gap-1 rounded-lg bg-white/12 p-1">
+      @for (a of audiences; track a.id) {
+      <button
+        type="button"
+        class="rounded-md px-3.5 py-2 text-[13px] font-semibold transition-colors"
+        [class]="aud() === a.id ? 'bg-white text-navy' : 'bg-transparent text-white/80 hover:text-white'"
+        (click)="pick(a.id)"
+      >
+        {{ a.label }}
+      </button>
+      }
+    </div>
+  </div>
+
+  <div class="mx-auto mt-9 max-w-[780px]">
+    <h1
+      class="text-balance text-[clamp(2.125rem,5.5vw,3.125rem)] font-bold leading-[1.1] tracking-[-0.02em] text-white"
+    >
+      {{ hero().h1 }}
+    </h1>
+    <p class="mx-auto mt-5 max-w-[580px] text-[17.5px] leading-relaxed text-white/75">{{ hero().sub }}</p>
+  </div>
+
+  <div class="mt-11">
+    @if (hero().img; as img) {
+    <pc-browser-frame [url]="hero().url" [imageSrc]="img" [imageAlt]="hero().h1" />
+    } @else {
+    <pc-browser-frame [url]="hero().url">
+      <pc-app-preview [kind]="hero().kind" />
+    </pc-browser-frame>
+    }
+  </div>
+</section>
+
+<!-- ========================== WHY PPLCRM ========================== -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">Why pplCRM</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
+        Built for relationships, not pipelines.
+      </h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        Most CRMs exist to move deals to “closed”. Your work never closes: the same people, the same streets, year after
+        year. That one difference shapes everything below.
+      </p>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[980px] gap-4 sm:grid-cols-3">
+      @for (pillar of whyPillars; track pillar.title) {
+      <div class="rounded-xl border border-line bg-base-50 p-6">
+        <span class="grid h-10 w-10 place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="pillar.icon" [size]="20" />
+        </span>
+        <div class="mt-3.5 text-[15px] font-semibold">{{ pillar.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ pillar.body }}</p>
+      </div>
+      }
+    </div>
+    <div class="mt-6 text-center">
+      <a routerLink="/compare" class="text-[13.5px] font-semibold text-primary hover:text-secondary"
+        >How we compare to the tools you use now →</a
+      >
+    </div>
+  </div>
+</section>
+
+<!-- ========================= HOW IT WORKS ========================= -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">How it works</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Free to start. Yours to keep.</h2>
+    </div>
+    <div class="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      @for (step of steps; track step.n) {
+      <div class="rounded-xl border border-line bg-base-100 p-6">
+        <div class="text-[13px] font-bold tabular-nums text-primary">{{ step.n }}</div>
+        <div class="mt-2.5 text-[15px] font-semibold">{{ step.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ step.body }}</p>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- ========================= WHAT IT DOES ========================= -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">What it does</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Know your neighbours.</h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        Not “contacts”. Not “leads”. People, with households, histories, and the issues they’ve told you about.
+      </p>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
+      @for (feature of features; track feature.title) {
+      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
+        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="feature.icon" [size]="20" />
+        </span>
+        <div>
+          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
+          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
+        </div>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- ======================= THE NETWORK EFFECT ======================= -->
+<section class="bg-navy px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap flex flex-wrap items-center gap-10 lg:gap-14">
+    <div class="min-w-0 flex-1 basis-[360px]">
+      <div class="eyebrow-dark">The network effect</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em] text-white">
+        Your list isn’t a list. It’s a network.
+      </h2>
+      <p class="mt-3.5 max-w-[520px] text-[15px] leading-relaxed text-white/75">
+        One supporter is never just one person. Behind every name is a household, a street, a workplace and a circle of
+        friends. pplCRM remembers how your people connect, so one good conversation can carry to the next three.
+      </p>
+      <div class="mt-4 flex flex-col">
+        @for (item of networkPoints; track item.title; let last = $last) {
+        <div class="flex gap-4 border-white/10 py-4" [class.border-b]="!last">
+          <span class="mt-0.5 flex-none text-secondary">
+            <pc-site-icon [name]="item.icon" [size]="22" />
+          </span>
+          <div>
+            <div class="text-[15px] font-semibold text-white">{{ item.title }}</div>
+            <p class="mt-1 text-[13.5px] leading-relaxed text-white/60">{{ item.body }}</p>
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+
+    <div class="min-w-0 flex-1 basis-[380px]">
+      <pc-constellation class="h-[300px] w-full sm:h-[420px]" [density]="30" [speed]="1.05" />
+    </div>
+  </div>
+</section>
+
+<!-- ===================== BEYOND THE BASICS ===================== -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">Beyond the basics</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Turn a list into momentum.</h2>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
+      @for (feature of growFeatures; track feature.title) {
+      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
+        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="feature.icon" [size]="20" />
+        </span>
+        <div>
+          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
+          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
+        </div>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- ======================= COMPANION APPS ======================= -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap flex flex-wrap items-center justify-center gap-10 lg:gap-14">
+    <div class="min-w-0 flex-1 basis-[360px]">
+      <div class="eyebrow">Companion apps · iOS, Android and web</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">For the folks in the field.</h2>
+      <div class="mt-6 flex flex-col">
+        @for (item of companionFeatures; track item.title; let last = $last) {
+        <div class="flex gap-4 py-4" [class.border-b]="!last" [class.border-line]="!last">
+          <span class="mt-0.5 flex-none text-secondary">
+            <pc-site-icon [name]="item.icon" [size]="22" />
+          </span>
+          <div>
+            <div class="text-[15px] font-semibold">{{ item.title }}</div>
+            <p class="mt-1 text-[13.5px] leading-relaxed text-base-content/60">{{ item.body }}</p>
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+
+    <!-- Phone mockup -->
+    <div class="w-[264px] flex-none rounded-[42px] bg-navy p-2.5 shadow-[0_24px_70px_rgba(15,23,42,.28)]">
+      <div class="relative flex h-[500px] flex-col overflow-hidden rounded-[34px] bg-base-200">
+        <span class="absolute left-1/2 top-2.5 h-5 w-20 -translate-x-1/2 rounded-full bg-navy"></span>
+        <div class="bg-base-100 px-5 pb-2.5 pt-8">
+          <div class="text-[9px] font-semibold uppercase tracking-[0.08em] text-primary">Demo campaign · Turf 12</div>
+          <div class="mt-0.5 text-[19px] font-bold tracking-[-0.01em]">Maple Heights</div>
+          <div class="mt-0.5 text-[10.5px] text-base-content/50">14 doors · 21 voters</div>
+          <div class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-base-300">
+            <div class="h-full w-[43%] bg-primary"></div>
+          </div>
+          <div class="mt-1.5 flex justify-between text-[10px] tabular-nums text-base-content/55">
+            <span>6 of 14 doors attempted</span><span>5 conversations</span>
+          </div>
+        </div>
+        <div class="flex flex-1 flex-col gap-1.5 overflow-hidden px-3 py-3">
+          @for (door of doors; track door.addr) {
+          <div
+            class="flex items-center justify-between gap-2 rounded-[10px] border border-line bg-base-100 px-3 py-2.5"
+          >
+            <div class="min-w-0">
+              <div class="truncate text-[12px] font-semibold">{{ door.addr }}</div>
+              <div class="truncate text-[9.5px] text-base-content/50">{{ door.who }}</div>
+            </div>
+            <span class="flex-none rounded-full px-2 py-0.5 text-[9px] font-semibold" [class]="door.chipClass"
+              >{{ door.chip }}</span
+            >
+          </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ PRICING ============================ -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="flex flex-wrap items-baseline justify-between gap-4">
+      <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair, simple pricing.</h2>
+    </div>
+    <p class="mt-3 max-w-[620px] text-[14.5px] leading-relaxed text-base-content/60">
+      Unlimited contacts and households on every plan, including free. You pay only for features and email subscribers,
+      never for the size of your list.
+    </p>
+    <div class="mt-7 grid gap-4 sm:grid-cols-3">
+      @for (tier of tiers; track tier.key) {
+      <div
+        class="rounded-xl bg-base-100 p-6"
+        [class]="tier.featured ? 'border-2 border-primary' : 'border border-line'"
+      >
+        <div class="text-[15px] font-semibold">{{ tier.name }}</div>
+        <div class="mt-2.5 text-[30px] font-bold tabular-nums">{{ startingPrice(tier) }}</div>
+        <div class="text-[12.5px] text-base-content/50">{{ tier.cadence }}</div>
+        <p class="mt-3.5 text-[13.5px] leading-relaxed text-base-content/60">{{ tier.blurb }}</p>
+      </div>
+      }
+    </div>
+    <div class="mt-4 text-right">
+      <a routerLink="/pricing" class="text-[13.5px] font-semibold text-primary hover:text-secondary">Full pricing →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ========================== FAQ PREVIEW ========================== -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <h2 class="text-center text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair questions.</h2>
+    <div class="mt-2.5 text-center">
+      <a routerLink="/faq" class="text-[13.5px] font-semibold text-primary hover:text-secondary">All questions →</a>
+    </div>
+    <div class="mt-9 grid gap-x-10 gap-y-3.5 sm:grid-cols-2">
+      @for (qa of faqs; track qa.q) {
+      <div class="border-t border-line py-5">
+        <div class="text-[15px] font-semibold">{{ qa.q }}</div>
+        <p class="mt-1.5 text-[14px] leading-relaxed text-base-content/60">{{ qa.a }}</p>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- =========================== CLOSING CTA =========================== -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8 sm:py-16">
+  <h2 class="text-[clamp(1.5rem,4vw,1.75rem)] font-bold tracking-[-0.01em] text-white">
+    Try everything before you trust us with a single name.
+  </h2>
+  <p class="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-relaxed text-white/75">
+    Your free workspace opens with sample people, households, turfs and a live inbox already in it. Cut a turf, send a
+    test newsletter, break things. When it clicks, import your real list. No card, no time limit.
+  </p>
+  <div class="mt-6">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />
 `````
 
 ## File: apps/website/src/app/legal/eula-page.ts
@@ -59639,36 +60134,6 @@ export class SeoTitleStrategy extends TitleStrategy {
     this.seo.applyRoute({ title, description, path: snapshot.url });
   }
 }
-`````
-
-## File: apps/website/src/app/ui/site-nav.ts
-`````typescript
-import { environment } from '../../environments/environment';
-
-export interface NavLink {
-  readonly label: string;
-  /** Internal router path. */
-  readonly path: string;
-}
-
-/** The primary audience + pricing nav, shared by the header and footers. */
-export const PRIMARY_NAV: readonly NavLink[] = [
-  { label: 'For constituency offices', path: '/for/offices' },
-  { label: 'For campaigns', path: '/for/campaigns' },
-  { label: 'For non-profits', path: '/for/nonprofits' },
-  { label: 'Compare', path: '/compare' },
-  { label: 'Pricing', path: '/pricing' },
-];
-
-/**
- * The CRM lives on a separate host (see environment.appUrl). "Log in" and
- * "Start free" leave the marketing site for the app, so they are absolute URLs,
- * not router links.
- */
-export const LOGIN_URL = `${environment.appUrl}/signin`;
-export const SIGNUP_URL = `${environment.appUrl}/signup`;
-// Signed-in visitors go straight to the app (its root redirects to the dashboard).
-export const DASHBOARD_URL = environment.appUrl;
 `````
 
 ## File: apps/website/src/app/app.config.ts
@@ -60078,7 +60543,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. The card always shows the campaign you are working in — your assigned campaign, or, for admins, the context selected under **Workspace → Campaigns**.',
       },
       {
         kind: 'p',
@@ -60370,6 +60835,8 @@ export const InviteAuthUserObj = z.object({
   first_name: nameSchema('First name'),
   last_name: nameSchema('Last name').nullable().optional(),
   role: z.string().max(100).nullable().optional(),
+  /** Campaigns §15 — assign the invitee to a campaign; null/absent = the office context. */
+  campaign_id: z.string().nullable().optional(),
 });
 
 export const NotificationPreferencesObj = z.object({
@@ -60410,6 +60877,8 @@ export const UpdateAuthUserObj = z.object({
   verified: z.boolean().optional(),
   two_factor_enabled: z.boolean().optional(),
   notification_preferences: NotificationPreferencesObj.optional(),
+  /** Campaigns §15 — admin-assigned campaign; null = the office context. Admin/owner callers only. */
+  campaign_id: z.string().nullable().optional(),
 });
 
 export const Verify2FAObj = z.object({
@@ -61975,220 +62444,6 @@ export class GeocodeChip {
 
   protected readonly spec = computed(() => geocodeChipSpec(this.status()));
 }
-`````
-
-## File: libs/uxcommon/src/components/icons/icons.index.ts
-`````typescript
-/****************************************************** */
-/*
-/* Look at https://heroicons.com for icons. Most of these
-/* are from the Heroicons set, some are custom.
-/*
-/****************************************************** */
-export type PcIconNameType = keyof typeof icons;
-
-export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  let cached = _cache.get(name);
-  if (!cached) {
-    cached = resolveIconSvg(name);
-    _cache.set(name, cached);
-  }
-  return cached;
-}
-
-async function resolveIconSvg(name: PcIconNameType): Promise<string> {
-  const svg = await fetchSvg(icons[name]);
-  if (svg != null) return svg;
-  // Fall back to the generic unknown glyph — but only if it itself is a real SVG.
-  if (name !== UNKNOWN) {
-    const fallback = await loadIconSvg(UNKNOWN);
-    if (fallback) return fallback;
-  }
-  // Nothing usable (e.g. the assets aren't being served): render nothing rather than
-  // injecting a dev-server 404 page ("Cannot GET /assets/icons/unknown.svg") as markup.
-  return '';
-}
-
-/** Fetch an icon and return its text only if it is actually an SVG, else null. */
-async function fetchSvg(url: string): Promise<string | null> {
-  try {
-    const r = await fetch(url);
-    if (!r.ok) return null;
-    const text = await r.text();
-    return text.trimStart().startsWith('<svg') ? text : null;
-  } catch {
-    return null;
-  }
-}
-
-const UNKNOWN: PcIconNameType = 'unknown';
-
-/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<PcIconNameType, Promise<string>>();
-
-export const icons = {
-  none: 'none',
-  'add-company': 'assets/icons/add-company.svg',
-  'add-form': 'assets/icons/add-form.svg',
-  'add-group': 'assets/icons/add-group.svg',
-  'add-home': 'assets/icons/add-home.svg',
-  'add-issue': 'assets/icons/add-issue.svg',
-  'add-label': 'assets/icons/add-label.svg',
-  'add-list': 'assets/icons/add-list.svg',
-  'add-newsletter': 'assets/icons/add-newsletter.svg',
-  'add-notes': 'assets/icons/add-notes.svg',
-  'add-schedule': 'assets/icons/add-schedule.svg',
-  'add-task': 'assets/icons/add-task.svg',
-  'add-ticket': 'assets/icons/add-ticket.svg',
-  'add-users': 'assets/icons/add-users.svg',
-  'add-volunteer': 'assets/icons/add-volunteer.svg',
-  'add-fundraising': 'assets/icons/add-fundraising.svg',
-  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
-  'archive-box': 'assets/icons/archive-box.svg',
-  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
-  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
-  'arrow-left': 'assets/icons/arrow-left.svg',
-  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
-  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
-  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
-  'arrow-path': 'assets/icons/arrow-path.svg',
-  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
-  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
-  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
-  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
-  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
-  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
-  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
-  'at-symbol': 'assets/icons/at-symbol.svg',
-  'attach-fat': 'assets/icons/attach-fat.svg',
-  'attach-file-off': 'assets/icons/attach-file-off.svg',
-  banknotes: 'assets/icons/banknotes.svg',
-  'bars-3': 'assets/icons/bars-3.svg',
-  'bars-4': 'assets/icons/bars-4.svg',
-  bell: 'assets/icons/bell.svg',
-  bookmark: 'assets/icons/bookmark.svg',
-  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
-  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
-  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
-  briefcase: 'assets/icons/briefcase.svg',
-  calendar: 'assets/icons/calendar.svg',
-  'chart-pie': 'assets/icons/chart-pie.svg',
-  'check-circle': 'assets/icons/check-circle.svg',
-  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
-  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
-  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
-  'chevron-down': 'assets/icons/chevron-down.svg',
-  'chevron-left': 'assets/icons/chevron-left.svg',
-  'chevron-right': 'assets/icons/chevron-right.svg',
-  'chevron-up': 'assets/icons/chevron-up.svg',
-  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
-  clock: 'assets/icons/clock.svg',
-  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
-  cog: 'assets/icons/cog.svg',
-  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
-  'collapse-content': 'assets/icons/collapse-content.svg',
-  'credit-card': 'assets/icons/credit-card.svg',
-  'currency-dollar': 'assets/icons/currency-dollar.svg',
-  document: 'assets/icons/document.svg',
-  'document-check': 'assets/icons/document-check.svg',
-  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
-  'document-duplicate': 'assets/icons/document-duplicate.svg',
-  'document-text': 'assets/icons/document-text.svg',
-  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  envelope: 'assets/icons/envelope.svg',
-  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
-  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
-  'expand-content': 'assets/icons/expand-content.svg',
-  eye: 'assets/icons/eye.svg',
-  'eye-slash': 'assets/icons/eye-slash.svg',
-  facebook: 'assets/icons/facebook.svg',
-  file: 'assets/icons/file.svg',
-  'file-archive': 'assets/icons/file-archive.svg',
-  'file-audio': 'assets/icons/file-audio.svg',
-  'file-calendar': 'assets/icons/file-calendar.svg',
-  'file-code': 'assets/icons/file-code.svg',
-  'file-contact': 'assets/icons/file-contact.svg',
-  'file-db': 'assets/icons/file-db.svg',
-  'file-design': 'assets/icons/file-design.svg',
-  'file-disk': 'assets/icons/file-disk.svg',
-  'file-doc': 'assets/icons/file-doc.svg',
-  'file-ebook': 'assets/icons/file-ebook.svg',
-  'file-email': 'assets/icons/file-email.svg',
-  'file-exe': 'assets/icons/file-exe.svg',
-  'file-font': 'assets/icons/file-font.svg',
-  'file-image': 'assets/icons/file-image.svg',
-  'file-pdf': 'assets/icons/file-pdf.svg',
-  'file-sheet': 'assets/icons/file-sheet.svg',
-  'file-slides': 'assets/icons/file-slides.svg',
-  'file-text': 'assets/icons/file-text.svg',
-  'file-video': 'assets/icons/file-video.svg',
-  filter: 'assets/icons/funnel.svg',
-  forward: 'assets/icons/forward.svg',
-  funnel: 'assets/icons/funnel.svg',
-  'globe-americas': 'assets/icons/globe-americas.svg',
-  hashtag: 'assets/icons/hashtag.svg',
-  home: 'assets/icons/home.svg',
-  'house-modern': 'assets/icons/house-modern.svg',
-  identification: 'assets/icons/identification.svg',
-  inbox: 'assets/icons/inbox.svg',
-  'inbox-stack': 'assets/icons/inbox-stack.svg',
-  'information-circle': 'assets/icons/information-circle.svg',
-  instagram: 'assets/icons/instagram.svg',
-  label: 'assets/icons/label.svg',
-  linkedin: 'assets/icons/linkedin.svg',
-  'lock-closed': 'assets/icons/lock-closed.svg',
-  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
-  mailbox: 'assets/icons/mailbox.svg',
-  map: 'assets/icons/map.svg',
-  'map-pin': 'assets/icons/map-pin.svg',
-  megaphone: 'assets/icons/megaphone.svg',
-  message: 'assets/icons/message.svg',
-  'menu-open': 'assets/icons/menu-open.svg',
-  merge: 'assets/icons/merge.svg',
-  moon: 'assets/icons/moon.svg',
-  notification: 'assets/icons/notification.svg',
-  'paper-airplane': 'assets/icons/paper-airplane.svg',
-  'paper-clip': 'assets/icons/paper-clip.svg',
-  'pencil-square': 'assets/icons/pencil-square.svg',
-  plus: 'assets/icons/plus.svg',
-  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
-  print: 'assets/icons/print.svg',
-  'queue-list': 'assets/icons/queue-list.svg',
-  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
-  'redo-fat': 'assets/icons/redo-fat.svg',
-  route: 'assets/icons/route.svg',
-  reply: 'assets/icons/reply.svg',
-  'reply-all': 'assets/icons/reply-all.svg',
-  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
-  save: 'assets/icons/save.svg',
-  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
-  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
-  star: 'assets/icons/star.svg',
-  'star-filled': 'assets/icons/star-filled.svg',
-  sun: 'assets/icons/sun.svg',
-  'table-cells': 'assets/icons/table-cells.svg',
-  phone: 'assets/icons/phone.svg',
-  tag: 'assets/icons/tag.svg',
-  task: 'assets/icons/task.svg',
-  ticket: 'assets/icons/ticket.svg',
-  trash: 'assets/icons/trash.svg',
-  'trash-forever': 'assets/icons/trash-forever.svg',
-  'undo-fat': 'assets/icons/undo-fat.svg',
-  unknown: 'assets/icons/unknown.svg',
-  'user-circle': 'assets/icons/user-circle.svg',
-  'user-group': 'assets/icons/user-group.svg',
-  'user-plus': 'assets/icons/user-plus.svg',
-  users: 'assets/icons/users.svg',
-  'view-column': 'assets/icons/view-column.svg',
-  'view-kanban': 'assets/icons/view-kanban.svg',
-  volunteer: 'assets/icons/volunteer.svg',
-  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
-  'x-circle': 'assets/icons/x-circle.svg',
-  x: 'assets/icons/x.svg',
-  'x-mark': 'assets/icons/x-mark.svg',
-} as const;
 `````
 
 ## File: libs/uxcommon/src/components/row-actions/row-actions.ts
@@ -65244,6 +65499,258 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default donationsWebhookRoute;
+`````
+
+## File: apps/backend/src/app/modules/donations/stripe-connect.ts
+`````typescript
+import type { StripeConnectCountry } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
+import { env } from '../../../env';
+import { PreconditionFailedError } from '../../errors/app-errors';
+import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
+import { logger } from '../../logger';
+import { assertNotDemoMode } from '../demo/demo-guard';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+
+/** Settings keys for the tenant's Stripe Connect state. Written ONLY by this module (backend),
+ * never by the generic frontend settings save — the frontend has no secret to enter anymore. */
+export const STRIPE_ACCOUNT_ID_KEY = 'donations.stripe_account_id';
+export const STRIPE_ACCOUNT_STATUS_KEY = 'donations.stripe_account_status';
+
+export interface StripeConnectStatus {
+  connected: boolean;
+  accountId: string | null;
+  detailsSubmitted: boolean;
+  chargesEnabled: boolean;
+  requirementsDue: string[];
+  isMockMode: boolean;
+}
+
+interface CachedAccountStatus {
+  detailsSubmitted: boolean;
+  chargesEnabled: boolean;
+}
+
+const settingsRepo = new SettingsRepo();
+
+const NOT_CONNECTED_MESSAGE =
+  'Connect your Stripe account under Workspace → Donations before accepting card donations.';
+
+/** Settings values may come back as a raw JSON string or already parsed (jsonb), same as the
+ * billing settings reads — normalize both. */
+function parseSettingValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+async function readSetting(tenantId: string, key: string): Promise<unknown> {
+  const row = await settingsRepo.getByKey({ tenant_id: tenantId, key });
+  return parseSettingValue(row?.value);
+}
+
+function asCachedStatus(value: unknown): CachedAccountStatus {
+  if (value && typeof value === 'object') {
+    const v = value as Record<string, unknown>;
+    return {
+      detailsSubmitted: v['detailsSubmitted'] === true,
+      chargesEnabled: v['chargesEnabled'] === true,
+    };
+  }
+  return { detailsSubmitted: false, chargesEnabled: false };
+}
+
+/** The tenant's connected account id, or undefined when Stripe isn't connected. */
+export async function getConnectedAccountId(tenantId: string): Promise<string | undefined> {
+  const value = await readSetting(tenantId, STRIPE_ACCOUNT_ID_KEY);
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** Fast checkout-path gate: cached status only, no Stripe round-trip. Mock mode always passes so
+ * local dev works without keys. */
+export async function getCachedConnectState(
+  tenantId: string,
+): Promise<{ accountId: string | undefined; chargesEnabled: boolean }> {
+  if (isMockMode) {
+    return { accountId: undefined, chargesEnabled: true };
+  }
+  const accountId = await getConnectedAccountId(tenantId);
+  if (!accountId) {
+    return { accountId: undefined, chargesEnabled: false };
+  }
+  const cached = asCachedStatus(await readSetting(tenantId, STRIPE_ACCOUNT_STATUS_KEY));
+  return { accountId, chargesEnabled: cached.chargesEnabled };
+}
+
+/** Throws the fail-closed "connect Stripe first" error unless the tenant has a connected account
+ * with charges enabled (or we're in platform mock mode). Returns the account id for `{stripeAccount}`
+ * request options (undefined only in mock mode). */
+export async function assertStripeConnectReady(tenantId: string): Promise<string | undefined> {
+  const state = await getCachedConnectState(tenantId);
+  if (isMockMode) return undefined;
+  if (!state.accountId || !state.chargesEnabled) {
+    throw new PreconditionFailedError(NOT_CONNECTED_MESSAGE);
+  }
+  return state.accountId;
+}
+
+export async function updateCachedAccountStatus(
+  tenantId: string,
+  userId: string,
+  status: CachedAccountStatus,
+): Promise<void> {
+  await settingsRepo.upsertMany({
+    tenant_id: tenantId,
+    user_id: userId,
+    entries: [{ key: STRIPE_ACCOUNT_STATUS_KEY, value: status }],
+  });
+}
+
+/** Live status for the settings page: retrieves the account from Stripe and refreshes the cache;
+ * falls back to the cache if the retrieve fails. */
+export async function getConnectStatus(tenantId: string, userId: string): Promise<StripeConnectStatus> {
+  if (isMockMode) {
+    return {
+      connected: true,
+      accountId: 'acct_mock_platform',
+      detailsSubmitted: true,
+      chargesEnabled: true,
+      requirementsDue: [],
+      isMockMode: true,
+    };
+  }
+
+  const accountId = await getConnectedAccountId(tenantId);
+  if (!accountId) {
+    return {
+      connected: false,
+      accountId: null,
+      detailsSubmitted: false,
+      chargesEnabled: false,
+      requirementsDue: [],
+      isMockMode: false,
+    };
+  }
+
+  try {
+    const account = await getStripe().accounts.retrieve(accountId);
+    const status: CachedAccountStatus = {
+      detailsSubmitted: account.details_submitted === true,
+      chargesEnabled: account.charges_enabled === true,
+    };
+    await updateCachedAccountStatus(tenantId, userId, status);
+    return {
+      connected: true,
+      accountId,
+      detailsSubmitted: status.detailsSubmitted,
+      chargesEnabled: status.chargesEnabled,
+      requirementsDue: account.requirements?.currently_due ?? [],
+      isMockMode: false,
+    };
+  } catch (err) {
+    logger.error({ err }, `[StripeConnect] accounts.retrieve failed for tenant ${tenantId} — using cached status`);
+    const cached = asCachedStatus(await readSetting(tenantId, STRIPE_ACCOUNT_STATUS_KEY));
+    return {
+      connected: true,
+      accountId,
+      detailsSubmitted: cached.detailsSubmitted,
+      chargesEnabled: cached.chargesEnabled,
+      requirementsDue: [],
+      isMockMode: false,
+    };
+  }
+}
+
+/**
+ * Create the connected account on first call and return a Stripe-hosted onboarding URL.
+ *
+ * Account shape (verified against stripe-node v22 typings + current Connect docs): the legacy
+ * `type: 'express'` param is deprecated — controller properties express the decided configuration:
+ * Express dashboard UX, Stripe owns loss liability, and the campaign pays Stripe's processing fees
+ * directly (`fees.payer: 'account'`), which keeps the platform's application fee (env
+ * DONATIONS_PLATFORM_FEE_PERCENT) as clean margin.
+ */
+export async function startOnboarding(
+  tenantId: string,
+  userId: string,
+  country: StripeConnectCountry,
+): Promise<{ url: string }> {
+  // Connecting a real Stripe account is outward-facing setup — locked during the demo.
+  await assertNotDemoMode(settingsRepo.db, tenantId);
+  if (isMockMode) {
+    await settingsRepo.upsertMany({
+      tenant_id: tenantId,
+      user_id: userId,
+      entries: [
+        { key: STRIPE_ACCOUNT_ID_KEY, value: `acct_mock_${tenantId}` },
+        { key: STRIPE_ACCOUNT_STATUS_KEY, value: { detailsSubmitted: true, chargesEnabled: true } },
+      ],
+    });
+    return { url: `${env.appUrl}/workspace/donations?stripe_connected=true&mock=true` };
+  }
+
+  const stripe = getStripe();
+  let accountId = await getConnectedAccountId(tenantId);
+
+  if (!accountId || accountId.startsWith('acct_mock_')) {
+    const account = await stripe.accounts.create({
+      country,
+      controller: {
+        fees: { payer: 'account' },
+        losses: { payments: 'stripe' },
+        requirement_collection: 'stripe',
+        stripe_dashboard: { type: 'express' },
+      },
+      capabilities: { card_payments: { requested: true } },
+      metadata: { tenantId },
+    });
+    accountId = account.id;
+    await settingsRepo.upsertMany({
+      tenant_id: tenantId,
+      user_id: userId,
+      entries: [
+        { key: STRIPE_ACCOUNT_ID_KEY, value: accountId },
+        { key: STRIPE_ACCOUNT_STATUS_KEY, value: { detailsSubmitted: false, chargesEnabled: false } },
+      ],
+    });
+  }
+
+  const link = await stripe.accountLinks.create({
+    account: accountId,
+    type: 'account_onboarding',
+    refresh_url: `${env.appUrl}/workspace/donations?stripe_refresh=true`,
+    return_url: `${env.appUrl}/workspace/donations?stripe_connected=true`,
+  });
+
+  return { url: link.url };
+}
+
+/** Express-dashboard login link for the "Open Stripe dashboard" button. */
+export async function createDashboardLoginLink(tenantId: string): Promise<{ url: string }> {
+  await assertNotDemoMode(settingsRepo.db, tenantId);
+  if (isMockMode) {
+    return { url: `${env.appUrl}/workspace/donations?mock_stripe_dashboard=true` };
+  }
+  const accountId = await getConnectedAccountId(tenantId);
+  if (!accountId) {
+    throw new PreconditionFailedError(NOT_CONNECTED_MESSAGE);
+  }
+  const link = await getStripe().accounts.createLoginLink(accountId);
+  return { url: link.url };
+}
+
+/** Forget the connection (frees the processor choice). The Stripe account itself belongs to the
+ * campaign — we never delete it; reconnecting later creates a fresh account. */
+export async function disconnect(tenantId: string): Promise<void> {
+  await assertNotDemoMode(settingsRepo.db, tenantId);
+  await settingsRepo.db
+    .deleteFrom('settings')
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', [STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY])
+    .execute();
+}
 `````
 
 ## File: apps/backend/src/app/modules/donations/trpc.router.ts
@@ -71974,390 +72481,6 @@ export class DataOwnershipPage {
 }
 `````
 
-## File: apps/website/src/app/compare/compare-page.ts
-`````typescript
-import { Component } from '@angular/core';
-
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-/** One job, told twice: how the spreadsheet stack does it, how pplCRM does it. */
-interface CompareRow {
-  readonly job: string;
-  readonly stack: string;
-  readonly crm: string;
-}
-
-interface PlatformPoint {
-  readonly title: string;
-  readonly body: string;
-}
-
-@Component({
-  selector: 'pc-compare-page',
-  imports: [SiteHeader, SiteFooter],
-  templateUrl: './compare-page.html',
-})
-export class ComparePage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  protected readonly rows: readonly CompareRow[] = [
-    {
-      job: 'Keeping one person’s story straight',
-      stack: 'Three files hold three versions of the same person, and nobody is sure which one is current.',
-      crm: 'One record holds the household, the emails, the gifts, the knocks and the notes. Update it once; it’s correct everywhere.',
-    },
-    {
-      job: 'Sending the newsletter',
-      stack:
-        'Export a CSV, upload it to the email tool, clean the bounces, repeat next month. Unsubscribes live only in the email tool.',
-      crm: 'Segments come straight from the live list, and every unsubscribe and do-not-contact is honored automatically.',
-    },
-    {
-      job: 'Staying out of spam',
-      stack:
-        'Your mail shares a sending reputation with thousands of strangers on the same platform, including the spammers.',
-      crm: 'You send from your own verified domain. The reputation you build is yours alone.',
-    },
-    {
-      job: 'Answering everyone who writes in',
-      stack: 'Requests live in whoever’s inbox they landed in. Follow-up depends on memory and flags.',
-      crm: 'A shared inbox gives every message an owner and a due date; nothing waits on one person remembering.',
-    },
-    {
-      job: 'The field: knocks, signs, deliveries',
-      stack: 'Paper lists in the car, re-typed into the sheet at night, if it happens at all.',
-      crm: 'Offline-first companion apps for volunteers; every knock and delivery syncs back to the live report.',
-    },
-    {
-      job: 'When a staffer or volunteer leaves',
-      stack: 'The master file lived on their laptop. So did the passwords.',
-      crm: 'History belongs to the workspace, not a laptop. Access ends with one click; the story stays.',
-    },
-    {
-      job: 'What it costs',
-      stack: 'Free, plus the hours spent reconciling files and the mistakes that slip out in between.',
-      crm: 'Free forever for unlimited contacts and 1,000 email subscribers. Paid plans price by the people you email, never the size of your list.',
-    },
-  ];
-
-  /** For visitors evaluating the big organizing platforms; principles, not a feature grid. */
-  protected readonly platformPoints: readonly PlatformPoint[] = [
-    {
-      title: 'Growth is never taxed',
-      body: 'Platforms that price by database size charge you for every name you collect. Here contacts and households are unlimited on every plan; you pay only for emailable subscribers.',
-    },
-    {
-      title: 'No contracts, no exit fee',
-      body: 'Pay month to month — or annually for 2 months free, your choice — and everything exports to plain CSV on every plan. A tool you can leave anytime is a tool you can trust with your list.',
-    },
-    {
-      title: 'Try before you trust',
-      body: 'No sales call, no demo video. The free workspace opens with sample data already in it, so you evaluate with your own hands.',
-    },
-  ];
-}
-`````
-
-## File: apps/website/src/app/home/home-page.html
-`````html
-<pc-site-header variant="over-hero" />
-
-<!-- ============================ HERO ============================ -->
-<section class="bg-navy px-5 pb-12 pt-10 text-center sm:px-8 sm:pb-16 sm:pt-14">
-  <div class="flex flex-wrap items-center justify-center gap-3">
-    <span class="w-full text-center text-[12.5px] font-medium text-white/60">I'm with a</span>
-    <div class="flex gap-1 rounded-lg bg-white/12 p-1">
-      @for (a of audiences; track a.id) {
-      <button
-        type="button"
-        class="rounded-md px-3.5 py-2 text-[13px] font-semibold transition-colors"
-        [class]="aud() === a.id ? 'bg-white text-navy' : 'bg-transparent text-white/80 hover:text-white'"
-        (click)="pick(a.id)"
-      >
-        {{ a.label }}
-      </button>
-      }
-    </div>
-  </div>
-
-  <div class="mx-auto mt-9 max-w-[780px]">
-    <h1
-      class="text-balance text-[clamp(2.125rem,5.5vw,3.125rem)] font-bold leading-[1.1] tracking-[-0.02em] text-white"
-    >
-      {{ hero().h1 }}
-    </h1>
-    <p class="mx-auto mt-5 max-w-[580px] text-[17.5px] leading-relaxed text-white/75">{{ hero().sub }}</p>
-  </div>
-
-  <div class="mt-11">
-    @if (hero().img; as img) {
-    <pc-browser-frame [url]="hero().url" [imageSrc]="img" [imageAlt]="hero().h1" />
-    } @else {
-    <pc-browser-frame [url]="hero().url">
-      <pc-app-preview [kind]="hero().kind" />
-    </pc-browser-frame>
-    }
-  </div>
-</section>
-
-<!-- ========================== WHY PPLCRM ========================== -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="mx-auto max-w-[620px] text-center">
-      <div class="eyebrow">Why pplCRM</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
-        Built for relationships, not pipelines.
-      </h2>
-      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
-        Most CRMs exist to move deals to “closed”. Your work never closes: the same people, the same streets, year after
-        year. That one difference shapes everything below.
-      </p>
-    </div>
-    <div class="mx-auto mt-9 grid max-w-[980px] gap-4 sm:grid-cols-3">
-      @for (pillar of whyPillars; track pillar.title) {
-      <div class="rounded-xl border border-line bg-base-50 p-6">
-        <span class="grid h-10 w-10 place-items-center rounded-[10px] bg-primary/12 text-primary">
-          <pc-site-icon [name]="pillar.icon" [size]="20" />
-        </span>
-        <div class="mt-3.5 text-[15px] font-semibold">{{ pillar.title }}</div>
-        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ pillar.body }}</p>
-      </div>
-      }
-    </div>
-    <div class="mt-6 text-center">
-      <a routerLink="/compare" class="text-[13.5px] font-semibold text-primary hover:text-secondary"
-        >How we compare to the tools you use now →</a
-      >
-    </div>
-  </div>
-</section>
-
-<!-- ========================= HOW IT WORKS ========================= -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="mx-auto max-w-[620px] text-center">
-      <div class="eyebrow">How it works</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Free to start. Yours to keep.</h2>
-    </div>
-    <div class="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      @for (step of steps; track step.n) {
-      <div class="rounded-xl border border-line bg-base-100 p-6">
-        <div class="text-[13px] font-bold tabular-nums text-primary">{{ step.n }}</div>
-        <div class="mt-2.5 text-[15px] font-semibold">{{ step.title }}</div>
-        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ step.body }}</p>
-      </div>
-      }
-    </div>
-  </div>
-</section>
-
-<!-- ========================= WHAT IT DOES ========================= -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="mx-auto max-w-[620px] text-center">
-      <div class="eyebrow">What it does</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Know your neighbours.</h2>
-      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
-        Not “contacts”. Not “leads”. People, with households, histories, and the issues they’ve told you about.
-      </p>
-    </div>
-    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
-      @for (feature of features; track feature.title) {
-      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
-        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
-          <pc-site-icon [name]="feature.icon" [size]="20" />
-        </span>
-        <div>
-          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
-          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
-        </div>
-      </div>
-      }
-    </div>
-  </div>
-</section>
-
-<!-- ======================= THE NETWORK EFFECT ======================= -->
-<section class="bg-navy px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap flex flex-wrap items-center gap-10 lg:gap-14">
-    <div class="min-w-0 flex-1 basis-[360px]">
-      <div class="eyebrow-dark">The network effect</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em] text-white">
-        Your list isn’t a list. It’s a network.
-      </h2>
-      <p class="mt-3.5 max-w-[520px] text-[15px] leading-relaxed text-white/75">
-        One supporter is never just one person. Behind every name is a household, a street, a workplace and a circle of
-        friends. pplCRM remembers how your people connect, so one good conversation can carry to the next three.
-      </p>
-      <div class="mt-4 flex flex-col">
-        @for (item of networkPoints; track item.title; let last = $last) {
-        <div class="flex gap-4 border-white/10 py-4" [class.border-b]="!last">
-          <span class="mt-0.5 flex-none text-secondary">
-            <pc-site-icon [name]="item.icon" [size]="22" />
-          </span>
-          <div>
-            <div class="text-[15px] font-semibold text-white">{{ item.title }}</div>
-            <p class="mt-1 text-[13.5px] leading-relaxed text-white/60">{{ item.body }}</p>
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-
-    <div class="min-w-0 flex-1 basis-[380px]">
-      <pc-constellation class="h-[300px] w-full sm:h-[420px]" [density]="30" [speed]="1.05" />
-    </div>
-  </div>
-</section>
-
-<!-- ===================== BEYOND THE BASICS ===================== -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="mx-auto max-w-[620px] text-center">
-      <div class="eyebrow">Beyond the basics</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Turn a list into momentum.</h2>
-    </div>
-    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
-      @for (feature of growFeatures; track feature.title) {
-      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
-        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
-          <pc-site-icon [name]="feature.icon" [size]="20" />
-        </span>
-        <div>
-          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
-          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
-        </div>
-      </div>
-      }
-    </div>
-  </div>
-</section>
-
-<!-- ======================= COMPANION APPS ======================= -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap flex flex-wrap items-center justify-center gap-10 lg:gap-14">
-    <div class="min-w-0 flex-1 basis-[360px]">
-      <div class="eyebrow">Companion apps · iOS, Android and web</div>
-      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">For the folks in the field.</h2>
-      <div class="mt-6 flex flex-col">
-        @for (item of companionFeatures; track item.title; let last = $last) {
-        <div class="flex gap-4 py-4" [class.border-b]="!last" [class.border-line]="!last">
-          <span class="mt-0.5 flex-none text-secondary">
-            <pc-site-icon [name]="item.icon" [size]="22" />
-          </span>
-          <div>
-            <div class="text-[15px] font-semibold">{{ item.title }}</div>
-            <p class="mt-1 text-[13.5px] leading-relaxed text-base-content/60">{{ item.body }}</p>
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-
-    <!-- Phone mockup -->
-    <div class="w-[264px] flex-none rounded-[42px] bg-navy p-2.5 shadow-[0_24px_70px_rgba(15,23,42,.28)]">
-      <div class="relative flex h-[500px] flex-col overflow-hidden rounded-[34px] bg-base-200">
-        <span class="absolute left-1/2 top-2.5 h-5 w-20 -translate-x-1/2 rounded-full bg-navy"></span>
-        <div class="bg-base-100 px-5 pb-2.5 pt-8">
-          <div class="text-[9px] font-semibold uppercase tracking-[0.08em] text-primary">Demo campaign · Turf 12</div>
-          <div class="mt-0.5 text-[19px] font-bold tracking-[-0.01em]">Maple Heights</div>
-          <div class="mt-0.5 text-[10.5px] text-base-content/50">14 doors · 21 voters</div>
-          <div class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-base-300">
-            <div class="h-full w-[43%] bg-primary"></div>
-          </div>
-          <div class="mt-1.5 flex justify-between text-[10px] tabular-nums text-base-content/55">
-            <span>6 of 14 doors attempted</span><span>5 conversations</span>
-          </div>
-        </div>
-        <div class="flex flex-1 flex-col gap-1.5 overflow-hidden px-3 py-3">
-          @for (door of doors; track door.addr) {
-          <div
-            class="flex items-center justify-between gap-2 rounded-[10px] border border-line bg-base-100 px-3 py-2.5"
-          >
-            <div class="min-w-0">
-              <div class="truncate text-[12px] font-semibold">{{ door.addr }}</div>
-              <div class="truncate text-[9.5px] text-base-content/50">{{ door.who }}</div>
-            </div>
-            <span class="flex-none rounded-full px-2 py-0.5 text-[9px] font-semibold" [class]="door.chipClass"
-              >{{ door.chip }}</span
-            >
-          </div>
-          }
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ PRICING ============================ -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <div class="flex flex-wrap items-baseline justify-between gap-4">
-      <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair, simple pricing.</h2>
-    </div>
-    <p class="mt-3 max-w-[620px] text-[14.5px] leading-relaxed text-base-content/60">
-      Unlimited contacts and households on every plan, including free. You pay only for features and email subscribers,
-      never for the size of your list.
-    </p>
-    <div class="mt-7 grid gap-4 sm:grid-cols-3">
-      @for (tier of tiers; track tier.key) {
-      <div
-        class="rounded-xl bg-base-100 p-6"
-        [class]="tier.featured ? 'border-2 border-primary' : 'border border-line'"
-      >
-        <div class="text-[15px] font-semibold">{{ tier.name }}</div>
-        <div class="mt-2.5 text-[30px] font-bold tabular-nums">{{ startingPrice(tier) }}</div>
-        <div class="text-[12.5px] text-base-content/50">{{ tier.cadence }}</div>
-        <p class="mt-3.5 text-[13.5px] leading-relaxed text-base-content/60">{{ tier.blurb }}</p>
-      </div>
-      }
-    </div>
-    <div class="mt-4 text-right">
-      <a routerLink="/pricing" class="text-[13.5px] font-semibold text-primary hover:text-secondary">Full pricing →</a>
-    </div>
-  </div>
-</section>
-
-<!-- ========================== FAQ PREVIEW ========================== -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <h2 class="text-center text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair questions.</h2>
-    <div class="mt-2.5 text-center">
-      <a routerLink="/faq" class="text-[13.5px] font-semibold text-primary hover:text-secondary">All questions →</a>
-    </div>
-    <div class="mt-9 grid gap-x-10 gap-y-3.5 sm:grid-cols-2">
-      @for (qa of faqs; track qa.q) {
-      <div class="border-t border-line py-5">
-        <div class="text-[15px] font-semibold">{{ qa.q }}</div>
-        <p class="mt-1.5 text-[14px] leading-relaxed text-base-content/60">{{ qa.a }}</p>
-      </div>
-      }
-    </div>
-  </div>
-</section>
-
-<!-- =========================== CLOSING CTA =========================== -->
-<section class="bg-navy px-5 py-14 text-center sm:px-8 sm:py-16">
-  <h2 class="text-[clamp(1.5rem,4vw,1.75rem)] font-bold tracking-[-0.01em] text-white">
-    Try everything before you trust us with a single name.
-  </h2>
-  <p class="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-relaxed text-white/75">
-    Your free workspace opens with sample people, households, turfs and a live inbox already in it. Cut a turf, send a
-    test newsletter, break things. When it clicks, import your real list. No card, no time limit.
-  </p>
-  <div class="mt-6">
-    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
-      Start free with sample data
-    </a>
-  </div>
-</section>
-
-<pc-site-footer />
-`````
-
 ## File: apps/website/src/app/ui/currency.service.ts
 `````typescript
 import { afterNextRender, computed, Injectable, signal } from '@angular/core';
@@ -72564,6 +72687,305 @@ export class CurrencyService {
     return region ? region.toUpperCase() : null;
   }
 }
+`````
+
+## File: apps/website/src/app/ui/site-footer.ts
+`````typescript
+import { Component } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { SiteLogo } from './site-logo';
+import { SIGNUP_URL } from './site-nav';
+
+interface FooterLink {
+  readonly label: string;
+  /** Internal router path. */
+  readonly path?: string;
+  /** External / mailto URL. */
+  readonly href?: string;
+  /** Query params (used with the /soon stub). */
+  readonly qp?: Record<string, string>;
+}
+
+interface FooterColumn {
+  readonly heading: string;
+  readonly links: readonly FooterLink[];
+}
+
+const CONTACT_EMAIL = 'hello@pplcrm.com';
+
+/**
+ * Site footer — the one multi-column footer used on every page. If a future
+ * link's page doesn't exist yet, point it at the /soon stub with its label as
+ * the `pageTitle` query param.
+ */
+@Component({
+  selector: 'pc-site-footer',
+  imports: [RouterLink, SiteLogo],
+  template: `
+    <footer class="border-t border-line bg-base-100 px-5 pt-12 sm:px-8">
+      <div class="site-wrap">
+        <div class="grid grid-cols-2 gap-x-7 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
+          <div class="col-span-2 sm:col-span-3 lg:col-span-1">
+            <pc-site-logo />
+            <p class="mt-3 max-w-[200px] text-[12.5px] leading-relaxed text-base-content/50">
+              One list for constituents, voters, donors and volunteers. Your people are not our product.
+            </p>
+            <a class="mt-3.5 block text-[12.5px] text-base-content/60 hover:text-primary" [href]="mailto">{{
+              email
+            }}</a>
+          </div>
+
+          @for (col of columns; track col.heading) {
+            <div class="flex flex-col gap-2.5 text-[13px]">
+              <div class="eyebrow mb-1">{{ col.heading }}</div>
+              @for (link of col.links; track link.label) {
+                @if (link.href) {
+                  <a class="text-base-content/65 hover:text-primary" [href]="link.href">{{ link.label }}</a>
+                } @else {
+                  <a
+                    class="text-base-content/65 hover:text-primary"
+                    [routerLink]="link.path"
+                    [queryParams]="link.qp ?? null"
+                    >{{ link.label }}</a
+                  >
+                }
+              }
+            </div>
+          }
+        </div>
+
+        <div
+          class="mt-12 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line py-5 text-xs text-base-content/45"
+        >
+          <span>© 2026 pplCRM · pplcrm.com</span>
+          <span>Your data is stored in Canada. Export everything anytime. Delete means deleted.</span>
+        </div>
+      </div>
+    </footer>
+  `,
+})
+export class SiteFooter {
+  protected readonly email = CONTACT_EMAIL;
+  protected readonly mailto = `mailto:${CONTACT_EMAIL}`;
+
+  protected readonly columns: readonly FooterColumn[] = [
+    {
+      heading: 'Product',
+      links: [
+        { label: 'Pricing', path: '/pricing' },
+        { label: 'Compare', path: '/compare' },
+        { label: 'FAQ', path: '/faq' },
+        { label: 'Start free', href: SIGNUP_URL },
+      ],
+    },
+    {
+      heading: 'Industries',
+      links: [
+        { label: 'Constituency offices', path: '/for/offices' },
+        { label: 'Campaigns', path: '/for/campaigns' },
+        { label: 'Non-profits', path: '/for/nonprofits' },
+      ],
+    },
+    {
+      heading: 'Resources',
+      links: [
+        { label: 'Help center', path: '/docs' },
+        { label: 'Support', href: `mailto:${CONTACT_EMAIL}` },
+        { label: 'Data ownership', path: '/data-ownership' },
+      ],
+    },
+    {
+      heading: 'Company',
+      links: [
+        { label: 'About us', path: '/about' },
+        { label: 'Contact', href: `mailto:${CONTACT_EMAIL}` },
+        { label: 'Careers', path: '/careers' },
+      ],
+    },
+    {
+      heading: 'Legal',
+      links: [
+        { label: 'Privacy policy', path: '/privacy' },
+        { label: 'EULA', path: '/eula' },
+        { label: 'Security', path: '/security' },
+      ],
+    },
+  ];
+}
+`````
+
+## File: apps/website/src/app/app.routes.ts
+`````typescript
+import type { Route } from '@angular/router';
+
+/**
+ * The /for/… audience URLs render the home page with that audience's hero
+ * preselected (via route data) — the full story, tailored, instead of a thin
+ * duplicate page that would strand visitors who land on it first. Footer
+ * links to pages we haven't built yet resolve to the shared "coming soon"
+ * stub so the nav never 404s; swap a stub for a real component when the page
+ * exists.
+ */
+export const appRoutes: Route[] = [
+  {
+    path: '',
+    pathMatch: 'full',
+    title: 'pplCRM — One list for constituents, voters, donors and volunteers',
+    data: {
+      description:
+        'One shared list for constituents, voters, donors and volunteers — a shared inbox, ' +
+        'canvassing, donations, newsletters and field apps. Free to start with sample data, no card.',
+    },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'faq',
+    title: 'FAQ — pplCRM',
+    data: {
+      description:
+        'Answers on the free plan, the demo workspace, importing your list, data ownership, ' +
+        'where your data lives, newsletters and how pplCRM pricing works.',
+    },
+    loadComponent: () => import('./faq/faq-page').then((m) => m.FaqPage),
+  },
+  {
+    path: 'for/offices',
+    title: 'For constituency offices — pplCRM',
+    data: {
+      audience: 'office',
+      description:
+        'Casework that survives staff turnover: a shared inbox, tasks with due dates and an ' +
+        'activity log that remembers every constituent touch. Free to start, no card.',
+    },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'for/campaigns',
+    title: 'For campaigns — pplCRM',
+    data: {
+      audience: 'camp',
+      description:
+        'A campaign HQ that keeps score — turf cutting, live field reports, donations and ' +
+        'yard-sign routes on one shared list. Free to start with sample data.',
+    },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'for/nonprofits',
+    title: 'For non-profits — pplCRM',
+    data: {
+      audience: 'np',
+      description:
+        'Donors, volunteers and neighbours on one list. Gifts, drives and newsletters live on ' +
+        "every person's record, so you stop reconciling three spreadsheets.",
+    },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'compare',
+    title: 'pplCRM vs. the spreadsheet stack — pplCRM',
+    data: {
+      description:
+        'See how one people-first list compares to the usual spreadsheet-and-point-tools stack ' +
+        'for constituent, campaign and non-profit work.',
+    },
+    loadComponent: () => import('./compare/compare-page').then((m) => m.ComparePage),
+  },
+  {
+    path: 'pricing',
+    title: 'Pricing — pplCRM',
+    data: {
+      description:
+        'Start free forever, then scale on plans priced by your emailable subscribers, not your ' +
+        'total contacts. Store your whole list for free and pay only for who you email.',
+    },
+    loadComponent: () => import('./pricing/pricing-page').then((m) => m.PricingPage),
+  },
+  {
+    path: 'docs',
+    pathMatch: 'full',
+    title: 'Docs — pplCRM',
+    data: {
+      description:
+        'Guides for pplCRM: getting started, importing your list, the shared inbox, canvassing, ' +
+        'donations, newsletters, forms and the field companions.',
+    },
+    loadComponent: () => import('./docs/docs-home').then((m) => m.DocsHome),
+  },
+  {
+    // Per-article title/meta/canonical are set inside the component from the
+    // resolved article (see DocsArticle).
+    path: 'docs/:id',
+    title: 'Docs — pplCRM',
+    loadComponent: () => import('./docs/docs-article').then((m) => m.DocsArticle),
+  },
+  {
+    path: 'about',
+    title: 'About us — pplCRM',
+    data: {
+      description:
+        'Why we build pplCRM — a people-first CRM for the constituency offices, campaigns and ' +
+        'non-profits that treat their list as their most important asset.',
+    },
+    loadComponent: () => import('./company/about-page').then((m) => m.AboutPage),
+  },
+  {
+    path: 'careers',
+    title: 'Careers — pplCRM',
+    data: {
+      description: 'Interested in helping build pplCRM? Learn how we work and how to get in touch.',
+    },
+    loadComponent: () => import('./company/careers-page').then((m) => m.CareersPage),
+  },
+  {
+    path: 'data-ownership',
+    title: 'Data ownership — pplCRM',
+    data: {
+      description:
+        'Your list is yours: never sold, never shared, never mined. Export everything to plain ' +
+        'CSV on every plan, and delete means deleted.',
+    },
+    loadComponent: () => import('./company/data-ownership-page').then((m) => m.DataOwnershipPage),
+  },
+  {
+    path: 'privacy',
+    title: 'Privacy policy — pplCRM',
+    data: {
+      description:
+        'How pplCRM handles your data: no third-party analytics, no ad trackers, per-organization ' +
+        'isolated workspaces, and plain-CSV export on every plan.',
+    },
+    loadComponent: () => import('./legal/privacy-page').then((m) => m.PrivacyPage),
+  },
+  {
+    path: 'eula',
+    title: 'End user license agreement — pplCRM',
+    data: { description: 'The end user license agreement for pplCRM.' },
+    loadComponent: () => import('./legal/eula-page').then((m) => m.EulaPage),
+  },
+  {
+    path: 'security',
+    title: 'Security — pplCRM',
+    data: {
+      description:
+        'How pplCRM keeps your list safe: isolated per-organization workspaces, encrypted data, ' +
+        'and newsletters sent from your own verified domain.',
+    },
+    loadComponent: () => import('./legal/security-page').then((m) => m.SecurityPage),
+  },
+  {
+    // Generic stub for footer links whose real page doesn't exist yet; the
+    // heading comes from a ?pageTitle= query param (bound via component input).
+    path: 'soon',
+    title: 'Coming soon — pplCRM',
+    loadComponent: () => import('./coming-soon/coming-soon-page').then((m) => m.ComingSoonPage),
+  },
+  {
+    path: '**',
+    redirectTo: '',
+  },
+];
 `````
 
 ## File: apps/website/src/index.html
@@ -72979,415 +73401,6 @@ export function formatCurrency(amount: number, code: CurrencyCode): string {
   const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
   return `${currencyPriceSymbol(code)}${number}`;
 }
-`````
-
-## File: libs/common/src/lib/help/articles/getting-started.ts
-`````typescript
-import type { HelpArticle } from '../help-types';
-
-export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
-  {
-    id: 'welcome',
-    category: 'getting-started',
-    title: 'Welcome to pplCRM',
-    summary: 'What pplCRM is for and a five-minute tour of the main areas.',
-    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
-    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'pplCRM keeps every relationship your organization cares about (supporters, donors, volunteers, households, and companies) in one place, together with the conversations, donations, events, and tasks attached to them.',
-      },
-      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
-      {
-        kind: 'list',
-        items: [
-          '**Dashboard**: your landing page, with key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Work**: [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts; tabs under the People header switch between them.',
-          '**Outreach**: [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
-          '**Field**: [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
-          '**Data**: [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
-          '**Admin** (administrators only): [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Not seeing a section?',
-        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin. See [Users and roles](/help/users-roles).',
-      },
-      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [People](/people)',
-            detail:
-              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
-          },
-          {
-            title: 'Open a profile',
-            detail:
-              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
-          },
-          {
-            title: 'Organize with tags and lists',
-            detail:
-              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
-          },
-          {
-            title: 'Send your first newsletter',
-            detail:
-              'Pick a template, choose an audience, and send. [Create and send a newsletter](/help/newsletters) walks through it.',
-          },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every page in this help center is searchable. Head back to [Help](/help) and start typing.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Your workspace starts in demo mode',
-        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
-      },
-    ],
-  },
-  {
-    id: 'demo-mode',
-    category: 'getting-started',
-    title: 'Demo mode and sample data',
-    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
-    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
-    related: ['welcome', 'add-people', 'import'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of pplCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
-      },
-      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
-      {
-        kind: 'list',
-        items: [
-          '**60 people in 24 households** with real Ottawa street addresses, so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
-          '**10 companies**, with several people linked to them.',
-          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
-          '**Canvassing turfs** cut across the wards (one complete, one being knocked right now, one just assigned, and one still a draft) with real door knocks so the field report and coverage map have something to show.',
-          '**Yard-sign deliveries**: sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
-          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in; their accounts exist so assignment and triage look real.',
-          '**Tasks** in every state: overdue, due this week, waiting, and done.',
-          '**A working inbox**: a handful of emails from demo contacts, some open, some closed, some assigned.',
-          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
-          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
-          '**A donations ledger**: recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Why draft forms show responses',
-        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link. See [Forms](/help/forms).',
-      },
-      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
-      {
-        kind: 'p',
-        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'What stays locked during the demo',
-        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and connecting a Stripe account for donations. Everything else works, including workspace settings; update your organization details, service levels, and defaults at any time and they carry over when you exit the demo. Choose a plan on the [Billing](/workspace/billing) page to unlock the rest.',
-      },
-      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Choose a plan',
-            detail:
-              'Exiting the demo requires an active subscription. Pick one on the [Billing](/workspace/billing) page.',
-          },
-          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
-          {
-            title: 'Choose Exit demo mode',
-            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
-          },
-          {
-            title: 'Start fresh',
-            detail:
-              'A Getting started checklist appears on the [Dashboard](/dashboard) once the demo is gone. Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
-      {
-        kind: 'list',
-        items: [
-          '**Your six draft forms**: volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
-          '**The starter tags and issues**: the tag labels (community leader, lawn sign location, and so on) and the issues list stay as a ready-made vocabulary for your real contacts. They lose their demo attachments and are fully yours to rename, recolor, merge, or delete on the [Tags](/tags) and [Issues](/issues) pages.',
-          '**Anything you created yourself** while exploring: your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address. Tags you applied to your own contacts stay applied.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'getting-around',
-    category: 'getting-started',
-    title: 'Finding your way around',
-    summary:
-      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
-    keywords: [
-      'navigation',
-      'breadcrumbs',
-      'sidebar',
-      'pins',
-      'bookmarks',
-      'favourites',
-      'favorites',
-      'theme',
-      'dark mode',
-      'fullscreen',
-      'next record',
-      'previous record',
-    ],
-    related: ['welcome', 'search', 'shortcuts'],
-    blocks: [
-      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
-      {
-        kind: 'p',
-        text: 'Every page shows a breadcrumb trail in the top bar. The bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from, with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
-      },
-      {
-        kind: 'p',
-        text: 'When you open a record from a grid, the header also shows your position in the filtered set (“4 of 43 filtered”) with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'No pager on a record?',
-        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
-      },
-      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
-      {
-        kind: 'p',
-        text: 'The bookmark icon in the top bar pins the main page you are on (a grid like People, or the dashboard) to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
-      },
-      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
-      {
-        kind: 'list',
-        items: [
-          'Collapse any section by clicking its heading (useful for areas you rarely use).',
-          'On a narrow window the sidebar shrinks to an icon-only rail and the expand control is hidden; hover an icon to see its name. Widen the window past roughly 1024px to get the labels and the toggle back.',
-          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
-          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
-          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list. See [Keyboard shortcuts](/help/shortcuts).',
-        ],
-      },
-      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
-      {
-        kind: 'list',
-        items: [
-          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
-          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'search',
-    category: 'getting-started',
-    title: 'Search with ⌘K',
-    summary: 'The top-bar search filters the page you are on as you type. Here is how to get the most from it.',
-    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
-    related: ['filters', 'shortcuts', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
-      },
-      {
-        kind: 'list',
-        items: [
-          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
-          'Search is case-insensitive and ignores extra spaces.',
-          'Clear the search box to bring every row back.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Search and filters stack',
-        text: 'Text search combines with any tag, issue, or list filters you have applied. The grid states how many rows match the combination, so you always know what you are looking at.',
-      },
-      {
-        kind: 'p',
-        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections. The full map is in [Keyboard shortcuts](/help/shortcuts).',
-      },
-      {
-        kind: 'p',
-        text: 'Need something more precise than text matching (say, everyone in a city with a certain tag)? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
-      },
-    ],
-  },
-  {
-    id: 'dashboard',
-    category: 'getting-started',
-    title: 'The dashboard and SLA health',
-    summary:
-      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
-    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
-    related: ['welcome', 'inbox', 'tasks', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now (unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft), and every number in it is a link straight to that work.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Next-action cards**: the three cards below the briefing surface your most urgent queues (task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send). A card turns quiet when there is nothing to do there.',
-          '**Stat tiles**: a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
-          '**New contacts** and **Coming up**: a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
-          '**Representative performance**: a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
-        ],
-      },
-      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
-      {
-        kind: 'p',
-        text: 'A service-level agreement (SLA) is a promise about response time: for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**On track**: no open items have exceeded their target.',
-          '**Warning**: the number of breached items has reached the warning threshold.',
-          '**Critical**: breaches have reached the critical threshold and need attention now.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels**. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Chase the cause, not the number',
-        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first. Those are the ones breaching.',
-      },
-    ],
-  },
-  {
-    id: 'shortcuts',
-    category: 'getting-started',
-    title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in pplCRM on one page, plus the ? overlay that shows them anywhere.',
-    keywords: [
-      'keyboard',
-      'shortcuts',
-      'keys',
-      'hotkeys',
-      'productivity',
-      'j',
-      'k',
-      'command k',
-      'go to',
-      'g then',
-      'question mark',
-      'palette',
-    ],
-    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Press ? anywhere',
-        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
-      },
-      { kind: 'h2', id: 'global', text: 'Anywhere' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
-          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
-          { keys: ['g'], action: 'Start a “go to” chord, then follow with a section key below' },
-          { keys: ['?'], action: 'Show the shortcuts overlay' },
-          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
-        ],
-      },
-      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
-      {
-        kind: 'p',
-        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
-      },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['g', 'h'], action: 'Dashboard (home)' },
-          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
-          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
-          { keys: ['g', 'l'], action: '[Lists](/lists)' },
-          { keys: ['g', 'a'], action: '[Automations](/automations)' },
-          { keys: ['g', 'p'], action: '[People](/people)' },
-          { keys: ['g', 'u'], action: '[Households](/households)' },
-          { keys: ['g', 'c'], action: '[Companies](/companies)' },
-          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
-          { keys: ['g', 't'], action: '[Teams](/teams)' },
-          { keys: ['g', 'o'], action: '[Donations](/donations)' },
-          { keys: ['g', 'f'], action: '[Forms](/forms)' },
-          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
-        ],
-      },
-      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['c'], action: 'Compose' },
-          { keys: ['r'], action: 'Reply' },
-          { keys: ['a'], action: 'Reply all' },
-          { keys: ['f'], action: 'Forward' },
-          { keys: ['e'], action: 'Mark done' },
-          { keys: ['s'], action: 'Star or unstar' },
-          { keys: ['Shift', 'I'], action: 'Mark as read' },
-          { keys: ['Shift', 'U'], action: 'Mark as unread' },
-          { keys: ['#'], action: 'Delete' },
-          { keys: ['J'], action: 'Next email' },
-          { keys: ['K'], action: 'Previous email' },
-          { keys: ['Enter'], action: 'Open or expand' },
-          { keys: ['U'], action: 'Back to the list' },
-        ],
-      },
-      { kind: 'h2', id: 'records', text: 'On a record page' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['J'], action: 'Next record in the filtered set you came from' },
-          { keys: ['K'], action: 'Previous record in the filtered set' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'When J and K are quiet',
-        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
-      },
-      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
-          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
-      },
-    ],
-  },
-];
 `````
 
 ## File: libs/common/src/lib/schemas/content-check.schema.ts
@@ -80938,301 +80951,411 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 `````
 
-## File: apps/website/src/app/ui/site-footer.ts
+## File: libs/common/src/lib/help/articles/getting-started.ts
 `````typescript
-import { Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import type { HelpArticle } from '../help-types';
 
-import { SiteLogo } from './site-logo';
-import { SIGNUP_URL } from './site-nav';
-
-interface FooterLink {
-  readonly label: string;
-  /** Internal router path. */
-  readonly path?: string;
-  /** External / mailto URL. */
-  readonly href?: string;
-  /** Query params (used with the /soon stub). */
-  readonly qp?: Record<string, string>;
-}
-
-interface FooterColumn {
-  readonly heading: string;
-  readonly links: readonly FooterLink[];
-}
-
-const CONTACT_EMAIL = 'hello@pplcrm.com';
-
-/**
- * Site footer — the one multi-column footer used on every page. If a future
- * link's page doesn't exist yet, point it at the /soon stub with its label as
- * the `pageTitle` query param.
- */
-@Component({
-  selector: 'pc-site-footer',
-  imports: [RouterLink, SiteLogo],
-  template: `
-    <footer class="border-t border-line bg-base-100 px-5 pt-12 sm:px-8">
-      <div class="site-wrap">
-        <div class="grid grid-cols-2 gap-x-7 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
-          <div class="col-span-2 sm:col-span-3 lg:col-span-1">
-            <pc-site-logo />
-            <p class="mt-3 max-w-[200px] text-[12.5px] leading-relaxed text-base-content/50">
-              One list for constituents, voters, donors and volunteers. Your people are not our product.
-            </p>
-            <a class="mt-3.5 block text-[12.5px] text-base-content/60 hover:text-primary" [href]="mailto">{{
-              email
-            }}</a>
-          </div>
-
-          @for (col of columns; track col.heading) {
-            <div class="flex flex-col gap-2.5 text-[13px]">
-              <div class="eyebrow mb-1">{{ col.heading }}</div>
-              @for (link of col.links; track link.label) {
-                @if (link.href) {
-                  <a class="text-base-content/65 hover:text-primary" [href]="link.href">{{ link.label }}</a>
-                } @else {
-                  <a
-                    class="text-base-content/65 hover:text-primary"
-                    [routerLink]="link.path"
-                    [queryParams]="link.qp ?? null"
-                    >{{ link.label }}</a
-                  >
-                }
-              }
-            </div>
-          }
-        </div>
-
-        <div
-          class="mt-12 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line py-5 text-xs text-base-content/45"
-        >
-          <span>© 2026 pplCRM · pplcrm.com</span>
-          <span>Your data is stored in Canada. Export everything anytime. Delete means deleted.</span>
-        </div>
-      </div>
-    </footer>
-  `,
-})
-export class SiteFooter {
-  protected readonly email = CONTACT_EMAIL;
-  protected readonly mailto = `mailto:${CONTACT_EMAIL}`;
-
-  protected readonly columns: readonly FooterColumn[] = [
-    {
-      heading: 'Product',
-      links: [
-        { label: 'Pricing', path: '/pricing' },
-        { label: 'Compare', path: '/compare' },
-        { label: 'FAQ', path: '/faq' },
-        { label: 'Start free', href: SIGNUP_URL },
-      ],
-    },
-    {
-      heading: 'Industries',
-      links: [
-        { label: 'Constituency offices', path: '/for/offices' },
-        { label: 'Campaigns', path: '/for/campaigns' },
-        { label: 'Non-profits', path: '/for/nonprofits' },
-      ],
-    },
-    {
-      heading: 'Resources',
-      links: [
-        { label: 'Help center', path: '/docs' },
-        { label: 'Support', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Data ownership', path: '/data-ownership' },
-      ],
-    },
-    {
-      heading: 'Company',
-      links: [
-        { label: 'About us', path: '/about' },
-        { label: 'Contact', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Careers', path: '/careers' },
-      ],
-    },
-    {
-      heading: 'Legal',
-      links: [
-        { label: 'Privacy policy', path: '/privacy' },
-        { label: 'EULA', path: '/eula' },
-        { label: 'Security', path: '/security' },
-      ],
-    },
-  ];
-}
-`````
-
-## File: apps/website/src/app/app.routes.ts
-`````typescript
-import type { Route } from '@angular/router';
-
-/**
- * The /for/… audience URLs render the home page with that audience's hero
- * preselected (via route data) — the full story, tailored, instead of a thin
- * duplicate page that would strand visitors who land on it first. Footer
- * links to pages we haven't built yet resolve to the shared "coming soon"
- * stub so the nav never 404s; swap a stub for a real component when the page
- * exists.
- */
-export const appRoutes: Route[] = [
+export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
   {
-    path: '',
-    pathMatch: 'full',
-    title: 'pplCRM — One list for constituents, voters, donors and volunteers',
-    data: {
-      description:
-        'One shared list for constituents, voters, donors and volunteers — a shared inbox, ' +
-        'canvassing, donations, newsletters and field apps. Free to start with sample data, no card.',
-    },
-    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+    id: 'welcome',
+    category: 'getting-started',
+    title: 'Welcome to pplCRM',
+    summary: 'What pplCRM is for and a five-minute tour of the main areas.',
+    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
+    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM keeps every relationship your organization cares about (supporters, donors, volunteers, households, and companies) in one place, together with the conversations, donations, events, and tasks attached to them.',
+      },
+      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
+      {
+        kind: 'list',
+        items: [
+          '**Dashboard**: your landing page, with key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Work**: [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts; tabs under the People header switch between them.',
+          '**Outreach**: [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
+          '**Field**: [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
+          '**Data**: [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
+          '**Admin** (administrators only): [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Not seeing a section?',
+        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin. See [Users and roles](/help/users-roles).',
+      },
+      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [People](/people)',
+            detail:
+              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
+          },
+          {
+            title: 'Open a profile',
+            detail:
+              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
+          },
+          {
+            title: 'Organize with tags and lists',
+            detail:
+              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
+          },
+          {
+            title: 'Send your first newsletter',
+            detail:
+              'Pick a template, choose an audience, and send. [Create and send a newsletter](/help/newsletters) walks through it.',
+          },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every page in this help center is searchable. Head back to [Help](/help) and start typing.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Your workspace starts in demo mode',
+        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
+      },
+    ],
   },
   {
-    path: 'faq',
-    title: 'FAQ — pplCRM',
-    data: {
-      description:
-        'Answers on the free plan, the demo workspace, importing your list, data ownership, ' +
-        'where your data lives, newsletters and how pplCRM pricing works.',
-    },
-    loadComponent: () => import('./faq/faq-page').then((m) => m.FaqPage),
+    id: 'demo-mode',
+    category: 'getting-started',
+    title: 'Demo mode and sample data',
+    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
+    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
+    related: ['welcome', 'add-people', 'import'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of pplCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
+      },
+      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
+      {
+        kind: 'list',
+        items: [
+          '**60 people in 24 households** with real Ottawa street addresses, so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
+          '**10 companies**, with several people linked to them.',
+          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
+          '**Canvassing turfs** cut across the wards (one complete, one being knocked right now, one just assigned, and one still a draft) with real door knocks so the field report and coverage map have something to show.',
+          '**Yard-sign deliveries**: sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
+          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in; their accounts exist so assignment and triage look real.',
+          '**Tasks** in every state: overdue, due this week, waiting, and done.',
+          '**A working inbox**: a handful of emails from demo contacts, some open, some closed, some assigned.',
+          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
+          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
+          '**A donations ledger**: recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Why draft forms show responses',
+        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link. See [Forms](/help/forms).',
+      },
+      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
+      {
+        kind: 'p',
+        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'What stays locked during the demo',
+        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and connecting a Stripe account for donations. Everything else works, including workspace settings; update your organization details, service levels, and defaults at any time and they carry over when you exit the demo. Choose a plan on the [Billing](/workspace/billing) page to unlock the rest.',
+      },
+      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Choose a plan',
+            detail:
+              'Exiting the demo requires an active subscription. Pick one on the [Billing](/workspace/billing) page.',
+          },
+          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
+          {
+            title: 'Choose Exit demo mode',
+            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
+          },
+          {
+            title: 'Start fresh',
+            detail:
+              'A Getting started checklist appears on the [Dashboard](/dashboard) once the demo is gone. Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
+      {
+        kind: 'list',
+        items: [
+          '**Your six draft forms**: volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
+          '**The starter tags and issues**: the tag labels (community leader, lawn sign location, and so on) and the issues list stay as a ready-made vocabulary for your real contacts. They lose their demo attachments and are fully yours to rename, recolor, merge, or delete on the [Tags](/tags) and [Issues](/issues) pages.',
+          '**Anything you created yourself** while exploring: your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address. Tags you applied to your own contacts stay applied.',
+        ],
+      },
+    ],
   },
   {
-    path: 'for/offices',
-    title: 'For constituency offices — pplCRM',
-    data: {
-      audience: 'office',
-      description:
-        'Casework that survives staff turnover: a shared inbox, tasks with due dates and an ' +
-        'activity log that remembers every constituent touch. Free to start, no card.',
-    },
-    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+    id: 'getting-around',
+    category: 'getting-started',
+    title: 'Finding your way around',
+    summary:
+      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
+    keywords: [
+      'navigation',
+      'breadcrumbs',
+      'sidebar',
+      'pins',
+      'bookmarks',
+      'favourites',
+      'favorites',
+      'theme',
+      'dark mode',
+      'fullscreen',
+      'next record',
+      'previous record',
+    ],
+    related: ['welcome', 'search', 'shortcuts'],
+    blocks: [
+      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
+      {
+        kind: 'p',
+        text: 'Every page shows a breadcrumb trail in the top bar. The bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from, with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
+      },
+      {
+        kind: 'p',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set (“4 of 43 filtered”) with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'No pager on a record?',
+        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
+      },
+      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
+      {
+        kind: 'p',
+        text: 'The bookmark icon in the top bar pins the main page you are on (a grid like People, or the dashboard) to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+      },
+      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
+      {
+        kind: 'list',
+        items: [
+          'Collapse any section by clicking its heading (useful for areas you rarely use). Collapsing applies to the full-width sidebar only; the icon-only rail always shows every icon.',
+          'On a narrow window the sidebar shrinks to an icon-only rail and the expand control is hidden; hover an icon to see its name. Widen the window past roughly 1024px to get the labels and the toggle back.',
+          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
+          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list. See [Keyboard shortcuts](/help/shortcuts).',
+        ],
+      },
+      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
+      {
+        kind: 'list',
+        items: [
+          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
+          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
+        ],
+      },
+    ],
   },
   {
-    path: 'for/campaigns',
-    title: 'For campaigns — pplCRM',
-    data: {
-      audience: 'camp',
-      description:
-        'A campaign HQ that keeps score — turf cutting, live field reports, donations and ' +
-        'yard-sign routes on one shared list. Free to start with sample data.',
-    },
-    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+    id: 'search',
+    category: 'getting-started',
+    title: 'Search with ⌘K',
+    summary: 'The top-bar search filters the page you are on as you type. Here is how to get the most from it.',
+    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
+    related: ['filters', 'shortcuts', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
+          'Search is case-insensitive and ignores extra spaces.',
+          'Clear the search box to bring every row back.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Search and filters stack',
+        text: 'Text search combines with any tag, issue, or list filters you have applied. The grid states how many rows match the combination, so you always know what you are looking at.',
+      },
+      {
+        kind: 'p',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections. The full map is in [Keyboard shortcuts](/help/shortcuts).',
+      },
+      {
+        kind: 'p',
+        text: 'Need something more precise than text matching (say, everyone in a city with a certain tag)? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+      },
+    ],
   },
   {
-    path: 'for/nonprofits',
-    title: 'For non-profits — pplCRM',
-    data: {
-      audience: 'np',
-      description:
-        'Donors, volunteers and neighbours on one list. Gifts, drives and newsletters live on ' +
-        "every person's record, so you stop reconciling three spreadsheets.",
-    },
-    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+    id: 'dashboard',
+    category: 'getting-started',
+    title: 'The dashboard and SLA health',
+    summary:
+      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
+    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
+    related: ['welcome', 'inbox', 'tasks', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now (unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft), and every number in it is a link straight to that work.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Next-action cards**: the three cards below the briefing surface your most urgent queues (task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send). A card turns quiet when there is nothing to do there.',
+          '**Stat tiles**: a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up**: a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance**: a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+        ],
+      },
+      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
+      {
+        kind: 'p',
+        text: 'A service-level agreement (SLA) is a promise about response time: for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**On track**: no open items have exceeded their target.',
+          '**Warning**: the number of breached items has reached the warning threshold.',
+          '**Critical**: breaches have reached the critical threshold and need attention now.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels**. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Chase the cause, not the number',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first. Those are the ones breaching.',
+      },
+    ],
   },
   {
-    path: 'compare',
-    title: 'pplCRM vs. the spreadsheet stack — pplCRM',
-    data: {
-      description:
-        'See how one people-first list compares to the usual spreadsheet-and-point-tools stack ' +
-        'for constituent, campaign and non-profit work.',
-    },
-    loadComponent: () => import('./compare/compare-page').then((m) => m.ComparePage),
-  },
-  {
-    path: 'pricing',
-    title: 'Pricing — pplCRM',
-    data: {
-      description:
-        'Start free forever, then scale on plans priced by your emailable subscribers, not your ' +
-        'total contacts. Store your whole list for free and pay only for who you email.',
-    },
-    loadComponent: () => import('./pricing/pricing-page').then((m) => m.PricingPage),
-  },
-  {
-    path: 'docs',
-    pathMatch: 'full',
-    title: 'Docs — pplCRM',
-    data: {
-      description:
-        'Guides for pplCRM: getting started, importing your list, the shared inbox, canvassing, ' +
-        'donations, newsletters, forms and the field companions.',
-    },
-    loadComponent: () => import('./docs/docs-home').then((m) => m.DocsHome),
-  },
-  {
-    // Per-article title/meta/canonical are set inside the component from the
-    // resolved article (see DocsArticle).
-    path: 'docs/:id',
-    title: 'Docs — pplCRM',
-    loadComponent: () => import('./docs/docs-article').then((m) => m.DocsArticle),
-  },
-  {
-    path: 'about',
-    title: 'About us — pplCRM',
-    data: {
-      description:
-        'Why we build pplCRM — a people-first CRM for the constituency offices, campaigns and ' +
-        'non-profits that treat their list as their most important asset.',
-    },
-    loadComponent: () => import('./company/about-page').then((m) => m.AboutPage),
-  },
-  {
-    path: 'careers',
-    title: 'Careers — pplCRM',
-    data: {
-      description: 'Interested in helping build pplCRM? Learn how we work and how to get in touch.',
-    },
-    loadComponent: () => import('./company/careers-page').then((m) => m.CareersPage),
-  },
-  {
-    path: 'data-ownership',
-    title: 'Data ownership — pplCRM',
-    data: {
-      description:
-        'Your list is yours: never sold, never shared, never mined. Export everything to plain ' +
-        'CSV on every plan, and delete means deleted.',
-    },
-    loadComponent: () => import('./company/data-ownership-page').then((m) => m.DataOwnershipPage),
-  },
-  {
-    path: 'privacy',
-    title: 'Privacy policy — pplCRM',
-    data: {
-      description:
-        'How pplCRM handles your data: no third-party analytics, no ad trackers, per-organization ' +
-        'isolated workspaces, and plain-CSV export on every plan.',
-    },
-    loadComponent: () => import('./legal/privacy-page').then((m) => m.PrivacyPage),
-  },
-  {
-    path: 'eula',
-    title: 'End user license agreement — pplCRM',
-    data: { description: 'The end user license agreement for pplCRM.' },
-    loadComponent: () => import('./legal/eula-page').then((m) => m.EulaPage),
-  },
-  {
-    path: 'security',
-    title: 'Security — pplCRM',
-    data: {
-      description:
-        'How pplCRM keeps your list safe: isolated per-organization workspaces, encrypted data, ' +
-        'and newsletters sent from your own verified domain.',
-    },
-    loadComponent: () => import('./legal/security-page').then((m) => m.SecurityPage),
-  },
-  {
-    // Generic stub for footer links whose real page doesn't exist yet; the
-    // heading comes from a ?pageTitle= query param (bound via component input).
-    path: 'soon',
-    title: 'Coming soon — pplCRM',
-    loadComponent: () => import('./coming-soon/coming-soon-page').then((m) => m.ComingSoonPage),
-  },
-  {
-    path: '**',
-    redirectTo: '',
+    id: 'shortcuts',
+    category: 'getting-started',
+    title: 'Keyboard shortcuts',
+    summary: 'Every keyboard shortcut in pplCRM on one page, plus the ? overlay that shows them anywhere.',
+    keywords: [
+      'keyboard',
+      'shortcuts',
+      'keys',
+      'hotkeys',
+      'productivity',
+      'j',
+      'k',
+      'command k',
+      'go to',
+      'g then',
+      'question mark',
+      'palette',
+    ],
+    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Press ? anywhere',
+        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
+      },
+      { kind: 'h2', id: 'global', text: 'Anywhere' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
+          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
+          { keys: ['g'], action: 'Start a “go to” chord, then follow with a section key below' },
+          { keys: ['?'], action: 'Show the shortcuts overlay' },
+          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
+        ],
+      },
+      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
+      {
+        kind: 'p',
+        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
+      },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['g', 'h'], action: 'Dashboard (home)' },
+          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
+          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
+          { keys: ['g', 'l'], action: '[Lists](/lists)' },
+          { keys: ['g', 'a'], action: '[Automations](/automations)' },
+          { keys: ['g', 'p'], action: '[People](/people)' },
+          { keys: ['g', 'u'], action: '[Households](/households)' },
+          { keys: ['g', 'c'], action: '[Companies](/companies)' },
+          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
+          { keys: ['g', 't'], action: '[Teams](/teams)' },
+          { keys: ['g', 'o'], action: '[Donations](/donations)' },
+          { keys: ['g', 'f'], action: '[Forms](/forms)' },
+          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
+          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
+        ],
+      },
+      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['c'], action: 'Compose' },
+          { keys: ['r'], action: 'Reply' },
+          { keys: ['a'], action: 'Reply all' },
+          { keys: ['f'], action: 'Forward' },
+          { keys: ['e'], action: 'Mark done' },
+          { keys: ['s'], action: 'Star or unstar' },
+          { keys: ['Shift', 'I'], action: 'Mark as read' },
+          { keys: ['Shift', 'U'], action: 'Mark as unread' },
+          { keys: ['#'], action: 'Delete' },
+          { keys: ['J'], action: 'Next email' },
+          { keys: ['K'], action: 'Previous email' },
+          { keys: ['Enter'], action: 'Open or expand' },
+          { keys: ['U'], action: 'Back to the list' },
+        ],
+      },
+      { kind: 'h2', id: 'records', text: 'On a record page' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['J'], action: 'Next record in the filtered set you came from' },
+          { keys: ['K'], action: 'Previous record in the filtered set' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'When J and K are quiet',
+        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
+      },
+      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
+          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
+      },
+    ],
   },
 ];
 `````
@@ -82946,7 +83069,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new UnauthorizedError();
     }
     const options = {
-      columns: ['id', 'email', 'first_name', 'role', 'verified', 'passkey_setup_dismissed_at'],
+      columns: ['id', 'email', 'first_name', 'role', 'campaign_id', 'verified', 'passkey_setup_dismissed_at'],
     } as QueryParams<'authusers'>;
 
     try {
@@ -83311,6 +83434,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new ForbiddenError('Admins cannot invite users with the Owner role.');
     }
 
+    // Campaigns §15 — the invitee's admin-assigned campaign; null = office context.
+    const campaignId = await this.resolveAssignableCampaignId(auth.tenant_id, input.campaign_id);
+
     const tempPassword = this.generateTempPassword();
     const password = await hashPassword(tempPassword);
     const repo = this.getRepo();
@@ -83322,6 +83448,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         password,
         first_name: input.first_name,
         role,
+        campaign_id: campaignId,
         verified: false,
         createdby_id: auth.user_id,
         updatedby_id: auth.user_id,
@@ -84099,6 +84226,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (data.first_name !== undefined) row['first_name'] = data.first_name;
     if (data.last_name !== undefined) row['last_name'] = data.last_name ?? '';
     if (data.role !== undefined) row['role'] = data.role ?? null;
+    // Campaigns §15 — campaign assignment is an admin/owner decision; users never
+    // reassign themselves (that would be self-service context switching).
+    if (data.campaign_id !== undefined) {
+      const nextAssignment = data.campaign_id != null ? String(data.campaign_id) : null;
+      const currentAssignment = existingUser.campaign_id != null ? String(existingUser.campaign_id) : null;
+      if (nextAssignment !== currentAssignment) {
+        if (callerRole !== 'admin' && callerRole !== 'owner') {
+          throw new ForbiddenError('Only admins and owners can assign users to campaigns.');
+        }
+        row['campaign_id'] = await this.resolveAssignableCampaignId(auth.tenant_id, nextAssignment);
+      }
+    }
     if (data.verified !== undefined) row['verified'] = data.verified;
     if (data.two_factor_enabled !== undefined) row['two_factor_enabled'] = data.two_factor_enabled;
     if (Object.keys(row).length > 0) {
@@ -84665,6 +84804,32 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     );
   }
 
+  /**
+   * Campaigns §15 — validate a campaign-assignment id: it must be a live (not
+   * archived) campaign of this tenant. Returns null for "the office context"
+   * (no explicit assignment stored).
+   */
+  private async resolveAssignableCampaignId(
+    tenant_id: string,
+    campaign_id: string | null | undefined,
+  ): Promise<string | null> {
+    if (campaign_id == null || campaign_id === '') return null;
+    const campaign = await this.getRepo()
+      .db.selectFrom('campaigns')
+      .select(['id', 'status', 'kind'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', campaign_id)
+      .executeTakeFirst();
+    if (!campaign) throw new NotFoundError('Campaign not found');
+    if (campaign.status === 'archived') {
+      throw new BadRequestError('Users cannot be assigned to an archived campaign.');
+    }
+    // The office is the default context; store it as NULL so office members are
+    // unaffected if the office row is ever recreated.
+    if (campaign.kind === 'office') return null;
+    return String(campaign.id);
+  }
+
   private generateTempPassword(length = 18) {
     return randomBytes(Math.max(12, Math.ceil(length / 2)))
       .toString('base64url')
@@ -84779,6 +84944,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       first_name: (record['first_name'] as string | null | undefined) ?? '',
       last_name: lastName,
       role: record['role'] != null ? String(record['role']) : null,
+      campaign_id: record['campaign_id'] != null ? String(record['campaign_id']) : null,
       verified: this.coerceBoolean(record['verified']),
       email_verified: this.coerceBoolean(record['verified']),
       two_factor_enabled: this.coerceBoolean(record['two_factor_enabled']),
@@ -84961,899 +85127,6 @@ export const NewslettersRouter = router({
     delete: authProcedure.input(idSchema).mutation(({ input, ctx }) => templates.deleteTemplate(ctx.auth, input)),
   }),
 });
-`````
-
-## File: apps/backend/src/app/modules/settings/controller.ts
-`````typescript
-import { TRPCError } from '@trpc/server';
-import { createSigner, createVerifier } from 'fast-jwt';
-import type { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
-import { env } from '../../../env';
-
-interface VerifiedDomainEntry {
-  domain: string;
-  domainAuthId?: string | number;
-  linkBrandingId?: string | number;
-  spf?: boolean;
-  dkim?: boolean;
-  dmarc?: boolean;
-  linkBranded?: boolean;
-  status?: string;
-  domainAuthDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
-  linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
-  /** Platform-key mode only: whether the parent-level records were associated with the
-   * subuser the tenant sends through. Retried on verify until true — subuser sends are
-   * unsigned without it. */
-  subuserAssociated?: boolean;
-}
-
-import { randomInt, timingSafeEqual } from 'crypto';
-
-import { BaseController } from '../../lib/base.controller';
-import { BadRequestError, TooManyRequestsError } from '../../errors/app-errors';
-import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import { maskPhone, normalizeE164 } from '../../lib/sms/phone';
-import { SmsService } from '../../lib/sms/sms.service';
-import { hashToken } from '../../lib/token-hash';
-import { getPlanDef } from '@common';
-import { assertNotDemoMode } from '../demo/demo-guard';
-import { DEMO_MANIFEST_SETTINGS_KEY } from '../demo/demo-seed';
-import { STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY } from '../donations/stripe-connect';
-
-/** Server-managed settings keys that must never be written via the public upsert: the
- * verified sender/domain lists back the newsletter send guards, the Stripe Connect account
- * id/status back the donations fail-closed gate, and the demo manifest drives demo-data
- * deletion. A direct write to any of them is a guard bypass or data corruption. */
-const SERVER_MANAGED_SETTINGS_MESSAGES: Record<string, string> = {
-  'communications.verified_emails': 'Verified emails list cannot be modified directly.',
-  'communications.verified_domains': 'Verified domains list cannot be modified directly.',
-  [STRIPE_ACCOUNT_ID_KEY]: 'Stripe connection settings cannot be modified directly.',
-  [STRIPE_ACCOUNT_STATUS_KEY]: 'Stripe connection settings cannot be modified directly.',
-  [DEMO_MANIFEST_SETTINGS_KEY]: 'This setting is managed by pplCRM and cannot be modified directly.',
-};
-import { SettingsRepo } from './repositories/settings.repo';
-
-const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
-const PHONE_CODE_MAX_ATTEMPTS = 5;
-
-// Rate limiting in-memory storage to prevent verification spam/abuse
-const verificationRequestTimestamps = new Map<string, number>(); // key: `${tenant_id}:${email}`, value: timestamp
-const tenantVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
-const domainVerificationTimestamps = new Map<string, number>(); // key: `${tenant_id}:${domain}`, value: timestamp
-const tenantDomainVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
-
-export class SettingsController extends BaseController<'settings', SettingsRepo> {
-  private mailService = new TransactionalEmailService();
-
-  constructor() {
-    super(new SettingsRepo());
-  }
-
-  public async getCurrentCampaignId(auth: IAuthKeyPayload) {
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'current_campaign',
-    });
-
-    if (!row) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Current campaign setting not found.',
-      });
-    }
-
-    const value = row.value;
-
-    if (typeof value === 'number' || typeof value === 'string') {
-      return String(value);
-    }
-
-    if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-      const id = (value as Record<string, unknown>)['id'];
-      if (typeof id === 'number' || typeof id === 'string') {
-        return String(id);
-      }
-    }
-
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: 'Current campaign setting is malformed.',
-    });
-  }
-
-  public async getSnapshot(auth: IAuthKeyPayload) {
-    const rows = await this.getRepo().getAllForTenant(auth.tenant_id);
-
-    return rows.reduce<Record<string, unknown>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-  }
-
-  public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
-    // 1. Block direct updates to server-managed keys (SERVER_MANAGED_SETTINGS_MESSAGES).
-    //    Ordinary workspace settings are deliberately NOT demo-gated — the demo guard covers
-    //    only outward-facing actions (verification, sync, sending, invites, Stripe Connect).
-    for (const entry of entries) {
-      const blockedMessage = SERVER_MANAGED_SETTINGS_MESSAGES[entry.key];
-      if (blockedMessage) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: blockedMessage });
-      }
-    }
-
-    // 2. Validate default from and reply-to emails
-    const defaultFromEntry = entries.find((e) => e.key === 'communications.default_from_email');
-    const replyToEntry = entries.find((e) => e.key === 'communications.reply_to');
-
-    if (defaultFromEntry || replyToEntry) {
-      const snapshot = await this.getSnapshot(auth);
-      const verifiedEmailsRaw = snapshot['communications.verified_emails'];
-      const verifiedEmails = Array.isArray(verifiedEmailsRaw)
-        ? verifiedEmailsRaw.map((e) => String(e).toLowerCase().trim())
-        : [];
-
-      if (defaultFromEntry && typeof defaultFromEntry.value === 'string') {
-        const val = defaultFromEntry.value.toLowerCase().trim();
-        if (val && !verifiedEmails.includes(val)) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Email address must be verified before it can be configured as a Default From Email.',
-          });
-        }
-      }
-
-      if (replyToEntry && typeof replyToEntry.value === 'string') {
-        const val = replyToEntry.value.toLowerCase().trim();
-        if (val && !verifiedEmails.includes(val)) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Email address must be verified before it can be configured as a Reply-to Email.',
-          });
-        }
-      }
-    }
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: entries.map((entry) => ({
-        key: entry.key,
-        value: entry.value,
-      })),
-    });
-
-    return this.getSnapshot(auth);
-  }
-
-  /**
-   * Sending-phone verification (anti-abuse): Free-plan tenants must verify a mobile number by
-   * SMS before their first newsletter send (send-guards enforces it). One number per tenant;
-   * the 6-digit code is stored hashed on the tenant row — never in settings, whose snapshot is
-   * client-readable.
-   */
-  public async getPhoneVerificationStatus(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .select(['sending_phone', 'sending_phone_verified_at', 'pending_phone', 'subscription_plan'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    return {
-      verified: tenant?.sending_phone_verified_at != null,
-      verifiedAt: tenant?.sending_phone_verified_at ?? null,
-      phone: tenant?.sending_phone ? maskPhone(tenant.sending_phone) : null,
-      pendingPhone: tenant?.pending_phone ? maskPhone(tenant.pending_phone) : null,
-      // Whether a send is currently gated on it (Free plan; unknown/legacy values resolve to free).
-      required: (getPlanDef(tenant?.subscription_plan)?.key ?? 'free') === 'free',
-    };
-  }
-
-  public async requestPhoneVerification(auth: IAuthKeyPayload, phone: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const normalized = normalizeE164(phone);
-    if (!normalized) {
-      throw new BadRequestError('Enter a valid mobile number, including the country code for non-US numbers.');
-    }
-    // Throttle per tenant (code farming) and per destination number (SMS-bombing a victim).
-    checkRateLimit(`phoneVerifyRequest:${auth.tenant_id}`, 3, 60 * 60 * 1000);
-    checkRateLimit(`phoneVerifyRequest:${normalized}`, 3, 60 * 60 * 1000);
-
-    const code = String(randomInt(100000, 1000000));
-    const smsService = new SmsService();
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        await trx
-          .updateTable('tenants')
-          .set({
-            pending_phone: normalized,
-            phone_verification_code_hash: hashToken(code),
-            phone_verification_expires_at: new Date(Date.now() + PHONE_CODE_TTL_MS),
-            phone_verification_attempts: 0,
-          })
-          .where('id', '=', auth.tenant_id)
-          .execute();
-        await smsService.enqueueSms(
-          {
-            to: normalized,
-            body: `Your pplCRM verification code is ${code}. It expires in 10 minutes.`,
-            tenant_id: auth.tenant_id,
-          },
-          trx,
-        );
-      });
-
-    return { success: true, phone: maskPhone(normalized) };
-  }
-
-  public async confirmPhoneVerification(auth: IAuthKeyPayload, code: string) {
-    checkRateLimit(`phoneVerifyConfirm:${auth.tenant_id}`, 10, 15 * 60 * 1000);
-    const db = this.getRepo().db;
-    const tenant = await db
-      .selectFrom('tenants')
-      .select([
-        'pending_phone',
-        'phone_verification_code_hash',
-        'phone_verification_expires_at',
-        'phone_verification_attempts',
-      ])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!tenant?.pending_phone || !tenant.phone_verification_code_hash) {
-      throw new BadRequestError('No phone verification is in progress. Request a new code first.');
-    }
-    if (Number(tenant.phone_verification_attempts) >= PHONE_CODE_MAX_ATTEMPTS) {
-      throw new TooManyRequestsError('Too many incorrect codes. Request a new code and try again.');
-    }
-    const expiresAt = tenant.phone_verification_expires_at ? new Date(tenant.phone_verification_expires_at) : null;
-    if (!expiresAt || expiresAt.getTime() < Date.now()) {
-      throw new BadRequestError('That code has expired. Request a new one.');
-    }
-
-    const expected = Buffer.from(tenant.phone_verification_code_hash, 'hex');
-    const actual = Buffer.from(hashToken(code.trim()), 'hex');
-    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
-      await db
-        .updateTable('tenants')
-        .set((eb) => ({ phone_verification_attempts: eb('phone_verification_attempts', '+', 1) }))
-        .where('id', '=', auth.tenant_id)
-        .execute();
-      throw new BadRequestError('Incorrect code. Check the SMS and try again.');
-    }
-
-    await db
-      .updateTable('tenants')
-      .set({
-        sending_phone: tenant.pending_phone,
-        sending_phone_verified_at: new Date(),
-        pending_phone: null,
-        phone_verification_code_hash: null,
-        phone_verification_expires_at: null,
-        phone_verification_attempts: 0,
-      })
-      .where('id', '=', auth.tenant_id)
-      .execute();
-
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'update',
-      entity: 'settings',
-      metadata: { action: 'sending_phone_verified', phone: maskPhone(tenant.pending_phone) },
-    });
-
-    return { success: true, phone: maskPhone(tenant.pending_phone) };
-  }
-
-  public async requestEmailVerification(auth: IAuthKeyPayload, email: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const normalized = email.toLowerCase().trim();
-    const rateLimitKey = `${auth.tenant_id}:${normalized}`;
-    const now = Date.now();
-
-    // 1. Per-email verification limit: max once per minute
-    const lastRequest = verificationRequestTimestamps.get(rateLimitKey);
-    if (lastRequest && now - lastRequest < 60000) {
-      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: `Please wait ${remainingSeconds} seconds before requesting verification again for this email.`,
-      });
-    }
-
-    // 2. Tenant-wide verification limit: max 5 requests per minute
-    let tenantRequests = tenantVerificationTimestamps.get(auth.tenant_id) || [];
-    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
-    if (tenantRequests.length >= 5) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message:
-          'Rate limit exceeded. You can only request up to 5 verification emails per minute across your campaign.',
-      });
-    }
-
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const signer = createSigner({
-      algorithm: 'HS256',
-      key,
-      expiresIn: '24h',
-    });
-
-    const token = signer({
-      tenant_id: auth.tenant_id,
-      email: normalized,
-      purpose: 'verify-sender-email',
-    });
-
-    const verificationLink = `${env.appUrl}/verify-sender-email?token=${token}`;
-
-    await this.mailService.enqueueMail({
-      to: normalized,
-      tenant_id: auth.tenant_id,
-      subject: 'Verify your sender email address',
-      text: `Hi,\n\nWe need to verify this email address before your pplCRM campaign can send from it. Verify it using this link: ${verificationLink}\n\nThis link expires in 24 hours.`,
-      html: `<h2>Verify your sender email address</h2>
-<p>We need to verify this email address before your pplCRM campaign can send from it. Click the button below to verify it:</p>
-<div class="btn-container">
-  <a href="${verificationLink}" class="btn">Verify sender email</a>
-</div>
-<p class="warning">For security, this link expires in 24 hours.</p>`,
-    });
-
-    // Record timestamps if successful
-    tenantRequests.push(now);
-    tenantVerificationTimestamps.set(auth.tenant_id, tenantRequests);
-    verificationRequestTimestamps.set(rateLimitKey, now);
-
-    return { success: true };
-  }
-
-  public async verifySenderEmail(token: string) {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const verifier = createVerifier({
-      algorithms: ['HS256'],
-      key,
-      ignoreExpiration: false,
-    });
-
-    try {
-      const payload = await verifier(token);
-      if (!payload || payload.purpose !== 'verify-sender-email' || !payload.tenant_id || !payload.email) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Invalid verification token.',
-        });
-      }
-
-      const tenantId = String(payload.tenant_id);
-      const email = String(payload.email).toLowerCase().trim();
-
-      const row = await this.getRepo().getByKey({
-        tenant_id: tenantId,
-        key: 'communications.verified_emails',
-      });
-
-      let currentList: string[] = [];
-      if (row && Array.isArray(row.value)) {
-        currentList = row.value.map((e) => String(e).toLowerCase().trim());
-      }
-
-      if (!currentList.includes(email)) {
-        currentList.push(email);
-
-        const tenant = await this.getRepo()
-          .db.selectFrom('tenants')
-          .select('admin_id')
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-        const adminId = tenant?.admin_id ? String(tenant.admin_id) : '1';
-
-        await this.getRepo().upsertMany({
-          tenant_id: tenantId,
-          user_id: adminId,
-          entries: [{ key: 'communications.verified_emails', value: currentList }],
-        });
-      }
-
-      return { success: true, email };
-    } catch (err) {
-      if (err instanceof TRPCError) throw err;
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Invalid or expired verification token.',
-      });
-    }
-  }
-
-  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .selectAll()
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    if (!tenant) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Tenant not found.',
-      });
-    }
-
-    if (String(tenant.admin_id) !== String(auth.user_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Only the organization administrator can schedule deletion.',
-      });
-    }
-
-    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    await this.getRepo()
-      .db.updateTable('tenants')
-      .set({ deletion_scheduled_at: deletionDate })
-      .where('id', '=', auth.tenant_id)
-      .execute();
-
-    const admin = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('id', '=', auth.user_id)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await this.mailService.sendMail({
-        to: admin.email,
-        tenant_id: auth.tenant_id,
-        subject: 'Your organization is scheduled for deletion',
-        text: `Hi ${admin.first_name || 'there'},\n\nYour organization ${tenant.name} has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nTo cancel, open your organization settings: ${env.appUrl}/settings`,
-        html: `<h2>Organization scheduled for deletion</h2>
-<p>Hi ${admin.first_name || 'there'},</p>
-<p>The organization <strong>${tenant.name}</strong> has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
-<p>All data under this organization, including campaigns, contacts, lists, workflows, and user accounts, will be permanently deleted. To cancel the deletion, click the button below:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/settings" class="btn">Open organization settings</a>
-</div>
-<p class="warning">If you did not schedule this deletion, please contact support immediately.</p>`,
-      });
-    }
-
-    return { success: true, deletion_scheduled_at: deletionDate };
-  }
-
-  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .selectAll()
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    if (!tenant) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Tenant not found.',
-      });
-    }
-
-    if (String(tenant.admin_id) !== String(auth.user_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Only the organization administrator can cancel deletion.',
-      });
-    }
-
-    await this.getRepo()
-      .db.updateTable('tenants')
-      .set({ deletion_scheduled_at: null })
-      .where('id', '=', auth.tenant_id)
-      .execute();
-
-    const admin = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('id', '=', auth.user_id)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await this.mailService.sendMail({
-        to: admin.email,
-        tenant_id: auth.tenant_id,
-        subject: 'Your organization deletion was canceled',
-        text: `Your request to delete organization ${tenant.name} has been canceled, and your organization is fully restored.`,
-        html: `<h2>Organization deletion canceled</h2>
-<p>Your request to delete organization <strong>${tenant.name}</strong> has been canceled. Your organization and all associated campaign data are fully restored.</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Resolve the SendGrid credentials the domain-whitelabel operations must run under,
-   * mirroring the newsletter send path (lib/jobs/handlers/newsletter.handlers.ts): a
-   * tenant-owned API key always wins, with operations running on-behalf-of the tenant's own
-   * subuser. Without one, operations run on the PLATFORM key at the parent level — so every
-   * tenant, including Free, gets real SendGrid DNS records and real DKIM instead of mock
-   * records that can never authenticate their mail. `associateSubuser` is then the subuser
-   * the tenant's mail actually flows through (their whitelabel subuser, or the shared
-   * free-tier subuser on the Free plan); the created records must be associated with it or
-   * subuser sends stay unsigned.
-   */
-  private async resolveWhitelabelCredentials(tenantId: string): Promise<{
-    apiKey: string | undefined;
-    subuser: string | undefined;
-    associateSubuser: string | undefined;
-  }> {
-    const db = this.getRepo().db;
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenantId)
-      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
-      .execute();
-
-    const settingsMap: Record<string, unknown> = {};
-    for (const row of settingsRows) {
-      settingsMap[row.key] = row.value;
-    }
-
-    const rawKey = settingsMap['communications.sendgrid_api_key'];
-    const rawSubuser = settingsMap['communications.sendgrid_subuser_username'];
-    const ownApiKey = typeof rawKey === 'string' && rawKey.trim() !== '' ? rawKey : undefined;
-    const ownSubuser = typeof rawSubuser === 'string' && rawSubuser.trim() !== '' ? rawSubuser : undefined;
-
-    if (ownApiKey) {
-      return { apiKey: ownApiKey, subuser: ownSubuser, associateSubuser: undefined };
-    }
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['subscription_plan'])
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
-    const planKey = getPlanDef(tenant?.subscription_plan)?.key ?? 'free';
-    const associateSubuser = ownSubuser ?? (planKey === 'free' ? env.sendgridFreeTierSubuser : undefined);
-
-    return { apiKey: env.sendgridApiKey, subuser: undefined, associateSubuser };
-  }
-
-  public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
-
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'communications.verified_domains',
-    });
-    const currentList: VerifiedDomainEntry[] = Array.isArray(row?.value)
-      ? (row?.value as unknown as VerifiedDomainEntry[])
-      : [];
-
-    if (currentList.some((d) => d.domain === domainVal)) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This domain is already added.',
-      });
-    }
-
-    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
-    const sendgridSvc = new SendGridWhitelabelService();
-    const domainAuth = await sendgridSvc.createDomainAuthentication(domainVal, creds.apiKey, creds.subuser);
-    const linkBranding = await sendgridSvc.createLinkBranding(domainVal, creds.apiKey, creds.subuser);
-
-    // Platform-key mode: the records live at the parent level but the tenant's mail is sent
-    // on-behalf-of a subuser — associate both with it. Failures are recorded and retried on
-    // every verify, and verification never succeeds until the association holds.
-    let subuserAssociated = false;
-    if (creds.associateSubuser) {
-      const domainOk = await sendgridSvc.associateDomainWithSubuser(
-        domainAuth.id,
-        creds.associateSubuser,
-        creds.apiKey,
-      );
-      const linkOk = await sendgridSvc.associateLinkWithSubuser(linkBranding.id, creds.associateSubuser, creds.apiKey);
-      subuserAssociated = domainOk && linkOk;
-    }
-
-    const newEntry = {
-      domain: domainVal,
-      status: 'pending',
-      spf: false,
-      dkim: false,
-      dmarc: false,
-      domainAuthId: domainAuth.id,
-      linkBrandingId: linkBranding.id,
-      domainAuthDns: domainAuth.dns,
-      linkBrandingDns: linkBranding.dns,
-      linkBranded: false,
-      ...(creds.associateSubuser ? { subuserAssociated } : {}),
-    };
-
-    const updatedList = [...currentList, newEntry];
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: [{ key: 'communications.verified_domains', value: updatedList }],
-    });
-
-    return updatedList;
-  }
-
-  public async verifyVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
-    const rateLimitKey = `${auth.tenant_id}:${domainVal}`;
-    const now = Date.now();
-
-    // 1. Per-domain verification check limit: max once per minute
-    const lastRequest = domainVerificationTimestamps.get(rateLimitKey);
-    if (lastRequest && now - lastRequest < 60000) {
-      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: `Please wait ${remainingSeconds} seconds before verifying this domain again.`,
-      });
-    }
-
-    // 2. Tenant-wide domain verification limit: max 5 checks per minute
-    let tenantRequests = tenantDomainVerificationTimestamps.get(auth.tenant_id) || [];
-    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
-    if (tenantRequests.length >= 5) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. You can only verify up to 5 domains per minute across your campaign.',
-      });
-    }
-
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'communications.verified_domains',
-    });
-
-    if (!row || !Array.isArray(row.value)) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Domain configuration not found.',
-      });
-    }
-
-    const currentList = row.value as unknown as VerifiedDomainEntry[];
-    const domainEntry = currentList.find((d) => d.domain === domainVal);
-
-    if (!domainEntry) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: `Domain ${domainVal} not found in verified domains list.`,
-      });
-    }
-
-    // Record timestamps if validation can proceed
-    tenantRequests.push(now);
-    tenantDomainVerificationTimestamps.set(auth.tenant_id, tenantRequests);
-    domainVerificationTimestamps.set(rateLimitKey, now);
-
-    // Resolve credentials the same way the send path does (tenant key, else platform key).
-    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
-    const apiKey = creds.apiKey;
-    const subuser = creds.subuser;
-    const hasValidKey = !!apiKey && apiKey.trim().startsWith('SG.') && apiKey.trim().length > 20;
-
-    const sendgridSvc = new SendGridWhitelabelService();
-
-    // Platform-key mode: if the add-time subuser association failed (SendGrid hiccup), retry
-    // it here — the domain must not verify while subuser sends would go out unsigned.
-    let subuserAssociated = domainEntry.subuserAssociated === true;
-    if (hasValidKey && creds.associateSubuser && !subuserAssociated) {
-      const domainOk = domainEntry.domainAuthId
-        ? await sendgridSvc.associateDomainWithSubuser(Number(domainEntry.domainAuthId), creds.associateSubuser, apiKey)
-        : false;
-      const linkOk = domainEntry.linkBrandingId
-        ? await sendgridSvc.associateLinkWithSubuser(Number(domainEntry.linkBrandingId), creds.associateSubuser, apiKey)
-        : false;
-      subuserAssociated = domainOk && linkOk;
-    }
-    // Association is only load-bearing in platform-key mode with a real key; elsewhere the
-    // records already live where the mail is sent from.
-    const subuserOk = !hasValidKey || !creds.associateSubuser || subuserAssociated;
-
-    let spfVerified = false;
-    let dkimVerified = false;
-    let linkBranded = false;
-    let dmarcVerified = false;
-
-    // Check with SendGrid if IDs are present
-    if (domainEntry.domainAuthId) {
-      const authRes = await sendgridSvc.validateDomainAuthentication(Number(domainEntry.domainAuthId), apiKey, subuser);
-      spfVerified = !!authRes.validationResults?.['mail_cname'];
-      dkimVerified = !!authRes.validationResults?.['dkim1'] && !!authRes.validationResults?.['dkim2'];
-    }
-
-    if (domainEntry.linkBrandingId) {
-      linkBranded = await sendgridSvc.validateLinkBranding(Number(domainEntry.linkBrandingId), apiKey, subuser);
-    }
-
-    // Check DMARC via live DNS check
-    dmarcVerified = await sendgridSvc.verifyDmarc(domainVal);
-
-    // No valid SendGrid key: fall back to live CNAME checks so a correctly configured domain
-    // can still verify against real DNS. Auto-passing every check is a local-dev convenience
-    // behind an EXPLICIT opt-in (ALLOW_MOCK_DOMAIN_VERIFICATION=true) — a missing or
-    // misconfigured key in a real deploy must not silently mark domains verified and open
-    // the send guards (fail closed, same rule as ALLOW_MOCK_PAYMENTS).
-    if (!hasValidKey) {
-      const realSpf = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.['mail_cname']?.host || '',
-        domainEntry.domainAuthDns?.['mail_cname']?.data,
-      );
-      const realDkim1 = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.['dkim1']?.host || '',
-        domainEntry.domainAuthDns?.['dkim1']?.data,
-      );
-      const realDkim2 = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.['dkim2']?.host || '',
-        domainEntry.domainAuthDns?.['dkim2']?.data,
-      );
-      const realLink = await sendgridSvc.verifyCname(
-        domainEntry.linkBrandingDns?.['domain']?.host || '',
-        domainEntry.linkBrandingDns?.['domain']?.data,
-      );
-
-      const mockPass = env.allowMockDomainVerification;
-      spfVerified = realSpf || mockPass;
-      dkimVerified = (realDkim1 && realDkim2) || mockPass;
-      linkBranded = realLink || mockPass;
-      dmarcVerified = dmarcVerified || mockPass;
-    }
-
-    const updatedList = currentList.map((d) => {
-      if (d.domain === domainVal) {
-        // DMARC is recommended but not required for verified status: the sending records
-        // (SPF + DKIM + link branding) authenticate the mail; DMARC is the tenant's own
-        // anti-spoofing policy and must not block their ability to send. The subuser
-        // association IS required (platform-key mode) — without it the DNS can be perfect
-        // and the tenant's mail still goes out unsigned.
-        const isVerified = spfVerified && dkimVerified && linkBranded && subuserOk;
-        return {
-          ...d,
-          spf: spfVerified,
-          dkim: dkimVerified,
-          dmarc: dmarcVerified,
-          linkBranded,
-          ...(creds.associateSubuser ? { subuserAssociated } : {}),
-          status: isVerified ? 'verified' : 'pending',
-          domainAuthDns: {
-            ...d.domainAuthDns,
-            mail_cname: d.domainAuthDns?.['mail_cname']
-              ? { ...d.domainAuthDns['mail_cname'], valid: spfVerified }
-              : undefined,
-            dkim1: d.domainAuthDns?.['dkim1'] ? { ...d.domainAuthDns['dkim1'], valid: dkimVerified } : undefined,
-            dkim2: d.domainAuthDns?.['dkim2'] ? { ...d.domainAuthDns['dkim2'], valid: dkimVerified } : undefined,
-          },
-          linkBrandingDns: {
-            ...d.linkBrandingDns,
-            domain: d.linkBrandingDns?.['domain'] ? { ...d.linkBrandingDns['domain'], valid: linkBranded } : undefined,
-          },
-        };
-      }
-      return d;
-    });
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: [{ key: 'communications.verified_domains', value: updatedList }],
-    });
-
-    return updatedList;
-  }
-
-  public async deleteVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
-
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'communications.verified_domains',
-    });
-
-    if (!row || !Array.isArray(row.value)) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Domain configuration not found.',
-      });
-    }
-
-    const currentList = row.value as unknown as VerifiedDomainEntry[];
-    const domainEntry = currentList.find((d) => d.domain === domainVal);
-
-    if (!domainEntry) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: `Domain ${domainVal} not found in verified domains list.`,
-      });
-    }
-
-    // Resolve credentials the same way add/verify do, so the delete reaches the SendGrid
-    // account the records were actually created under.
-    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
-
-    const sendgridSvc = new SendGridWhitelabelService();
-
-    // Delete from SendGrid
-    if (domainEntry.domainAuthId) {
-      await sendgridSvc.deleteDomainAuthentication(Number(domainEntry.domainAuthId), creds.apiKey, creds.subuser);
-    }
-    if (domainEntry.linkBrandingId) {
-      await sendgridSvc.deleteLinkBranding(Number(domainEntry.linkBrandingId), creds.apiKey, creds.subuser);
-    }
-
-    const updatedList = currentList.filter((d) => d.domain !== domainVal);
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: [{ key: 'communications.verified_domains', value: updatedList }],
-    });
-
-    return updatedList;
-  }
-
-  public async generateApiKey(auth: IAuthKeyPayload) {
-    const { generateApiKey, hashApiKey, getKeyPreview } = await import('../../lib/api-key');
-    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
-    const repo = new workspaceApiKeysRepo();
-
-    // Generate new key
-    const rawKey = generateApiKey();
-    const keyHash = hashApiKey(rawKey);
-    const keyPreview = getKeyPreview(rawKey);
-
-    // Store in database (will overwrite existing key if present)
-    await repo.create(auth.tenant_id, keyHash, keyPreview);
-
-    // Return the full key only once — it's never retrievable again, only the preview
-    return {
-      key: rawKey,
-      preview: keyPreview,
-    };
-  }
-
-  public async getApiKeyPreview(auth: IAuthKeyPayload) {
-    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
-    const repo = new workspaceApiKeysRepo();
-
-    const row = await repo.getByTenantId(auth.tenant_id);
-    if (!row) {
-      return null;
-    }
-
-    return {
-      preview: row.key_preview,
-      createdAt: row.created_at,
-      lastUsedAt: row.last_used_at,
-    };
-  }
-
-  public async regenerateApiKey(auth: IAuthKeyPayload) {
-    // Regenerate is just generate with replace semantics — the repo's
-    // ON CONFLICT handling automatically replaces the old key
-    return this.generateApiKey(auth);
-  }
-}
 `````
 
 ## File: apps/website/src/app/pricing/pricing-page.html
@@ -86103,1200 +85376,6 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
 </section>
 
 <pc-site-footer />
-`````
-
-## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
-`````typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { TRPCError } from '@trpc/server';
-import { getHTTPStatusCodeFromError } from '@trpc/server/http';
-import { WebFormsController } from '../controller';
-import { DonationsController } from '../../donations/controller';
-import formBody from '@fastify/formbody';
-import { resolveTenantById, resolveTenantFromRequest } from '../../../lib/public-tenant';
-import { checkKeyedSubmissionRateLimit, tenantIdFromOptionalApiKey } from '../../../lib/validate-api-key';
-import { env } from '../../../../env';
-
-const webFormsController = new WebFormsController();
-const donationsController = new DonationsController();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-/**
- * HTTP status for an error thrown behind a public REST route. The controller layer throws
- * TRPCError (it also backs the tRPC router), whose string `code` carries no numeric status —
- * without the explicit mapping every BAD_REQUEST/TOO_MANY_REQUESTS surfaced as a 500 and the
- * visitor lost the actionable message. AppError `.status` and Fastify `.statusCode` still win.
- */
-function httpStatusOf(err: unknown): number | undefined {
-  if (isRecord(err) && typeof err['status'] === 'number') return err['status'];
-  if (isRecord(err) && typeof err['statusCode'] === 'number') return err['statusCode'];
-  if (err instanceof TRPCError) return getHTTPStatusCodeFromError(err);
-  return undefined;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-const SUCCESS_HTML = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Submission Successful</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --success: #2dd4bf;
-      --success-glow: rgba(45, 212, 191, 0.15);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --success: #22c55e;
-        --success-glow: rgba(34, 197, 94, 0.15);
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 300px;
-      height: 300px;
-      border-radius: 50%;
-      background: var(--accent);
-      filter: blur(120px);
-      opacity: 0.08;
-      z-index: 0;
-    }
-    body::before { top: 10%; left: 15%; }
-    body::after { bottom: 10%; right: 15%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      padding: 48px 32px;
-      width: 100%;
-      max-width: 440px;
-      text-align: center;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--success-glow);
-      border: 2px solid var(--success);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--success);
-      stroke-dasharray: 100;
-      stroke-dashoffset: 100;
-      stroke-width: 3px;
-      fill: none;
-      animation: drawCheck 0.6s 0.3s ease-out forwards;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      letter-spacing: -0.01em;
-    }
-
-    p {
-      color: var(--text-secondary);
-      font-size: 15px;
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    .btn:active {
-      transform: translateY(0);
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes popIn {
-      0% {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-
-    @keyframes drawCheck {
-      to {
-        stroke-dashoffset: 0;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <h1>Submission Successful</h1>
-    <p>Thank you! Your information has been successfully received and processed.</p>
-  </div>
-</body>
-</html>
-`;
-
-const errorHtml = (message: string) => `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Submission Error</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --error: #f37373;
-      --error-glow: rgba(243, 115, 115, 0.15);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --error: #ef4444;
-        --error-glow: rgba(239, 68, 68, 0.15);
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 300px;
-      height: 300px;
-      border-radius: 50%;
-      background: var(--error);
-      filter: blur(120px);
-      opacity: 0.08;
-      z-index: 0;
-    }
-    body::before { top: 10%; left: 15%; }
-    body::after { bottom: 10%; right: 15%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      padding: 48px 32px;
-      width: 100%;
-      max-width: 440px;
-      text-align: center;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--error), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--error-glow);
-      border: 2px solid var(--error);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--error);
-      stroke-width: 3px;
-      fill: none;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      letter-spacing: -0.01em;
-    }
-
-    p {
-      color: var(--text-secondary);
-      font-size: 15px;
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    .btn:active {
-      transform: translateY(0);
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes popIn {
-      0% {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--error)"/>
-      </svg>
-    </div>
-    <h1>Submission Failed</h1>
-    <p>${escapeHtml(message)}</p>
-  </div>
-</body>
-</html>
-`;
-
-const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Register form URL-encoded parser
-  fastify.register(formBody);
-
-  // These are per-tenant, transactional public pages (donation forms, submit
-  // endpoints, success/error confirmations) — thin and not search content, so
-  // keep them all out of search-engine indexes.
-  fastify.addHook('onRequest', (_req, reply, hookDone) => {
-    reply.header('X-Robots-Tag', 'noindex');
-    hookDone();
-  });
-
-  fastify.get<{
-    Querystring: {
-      checkout_session_id?: string;
-      is_mock?: string;
-      person_id?: string;
-      amount_cents?: string;
-      province?: string;
-      country?: string;
-      tenant_id?: string;
-      user_id?: string;
-    };
-  }>('/success', async (req, reply) => {
-    const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
-    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
-    // unauthenticated and every parameter (tenant_id, person_id, amount) is
-    // attacker-controlled, so it must NEVER record donations unless mock payments are EXPLICITLY
-    // enabled (ALLOW_MOCK_PAYMENTS=true) — an unset NODE_ENV must not fail open (SECURITY-REVIEW 4.2).
-    // Real payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
-    if (env.allowMockPayments && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
-      try {
-        const { DonationsController } = await import('../../donations/controller');
-        const donationsController = new DonationsController();
-        await donationsController.confirmMockDonation(
-          tenant_id,
-          user_id || '1',
-          person_id,
-          Number(amount_cents),
-          checkout_session_id,
-          province || '',
-          country || '',
-        );
-      } catch (err) {
-        fastify.log.error(err as Error, 'Failed to confirm mock donation on public success page:');
-      }
-    }
-    reply.type('text/html');
-    return reply.send(SUCCESS_HTML);
-  });
-
-  // JSON config for the SPA public page (/f/:slug). The tenant is identified by its subdomain — from
-  // the explicit `?t=` param (the SPA passes its own subdomain, robust across hosts) or the Host
-  // header. Published forms return their render config; unpublished/archived slugs return a "closed"
-  // status; unknown tenant/slug 404s.
-  fastify.get<{ Params: { slug: string } }>('/f/:slug', async (req, reply) => {
-    const { slug } = req.params;
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Form not found.' });
-      }
-      const result = await webFormsController.getPublicFormBySlug(String(slug), tenant.id);
-      return reply.status(200).send(result);
-    } catch (err) {
-      const statusCode = httpStatusOf(err) ?? 404;
-      return reply.status(statusCode).send({ error: 'Form not found.' });
-    }
-  });
-
-  // Server-rendered public donation page. Donation forms deliberately stay off the /f/:slug SPA
-  // page (they carry the amount field + Stripe checkout); the lookup is tenant-scoped by slug like
-  // every other public surface.
-  fastify.get<{ Params: { slug: string } }>('/d/:slug', async (req, reply) => {
-    const { slug } = req.params;
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      const form = tenant ? await webFormsController.getDonationFormPublic(tenant.id, String(slug)) : undefined;
-      if (!tenant || !form || form.status !== 'published') {
-        reply.status(404).type('text/html');
-        return reply.send(errorHtml('Web form not found or inactive.'));
-      }
-
-      // Fail-closed residency gate: don't render a live donation form for an org that hasn't
-      // confirmed its residency settings. Friendly copy, not the generic 404.
-      if (!(await donationsController.mayAcceptDonations(tenant.id))) {
-        reply.status(403).type('text/html');
-        return reply.send(errorHtml('This organization isn’t accepting online donations yet. Please check back soon.'));
-      }
-
-      const formName = form.name;
-      const formDescription = form.description || '';
-
-      // Extract fields configuration, default to all fields if null/empty
-      const fields: string[] = form.fields
-        ? Array.isArray(form.fields)
-          ? (form.fields as string[])
-          : JSON.parse(String(form.fields))
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-      const submitAction = `/api/forms/submit/${encodeURIComponent(String(slug))}?t=${encodeURIComponent(tenant.slug)}`;
-      reply.type('text/html');
-      return reply.send(renderFormHtml(submitAction, formName, formDescription, fields, form.form_type));
-    } catch (err) {
-      // Never surface internal error detail to an unauthenticated visitor — log it, show generic
-      // copy (SECURITY-REVIEW 5.2, consistent with the tRPC sanitization boundary).
-      fastify.log.error(err, 'Failed to render public form');
-      reply.status(500).type('text/html');
-      return reply.send(errorHtml('Failed to load form.'));
-    }
-  });
-
-  fastify.post<{ Params: { slug: string }; Body: Record<string, string> }>('/submit/:slug', async (req, reply) => {
-    const { slug } = req.params;
-    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
-    // read the raw header, which a client can spoof to defeat rate limiting.
-    const clientIp = req.ip;
-    const isJsonExpected =
-      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
-
-    try {
-      // Optional workspace API key (server-side "bring your own form" integrations): the key
-      // identifies the tenant and swaps the anonymous per-IP limit for a per-tenant one.
-      // Anonymous browser/embed submissions carry no key and take the subdomain/?t= path.
-      const keyTenantId = await tenantIdFromOptionalApiKey(req);
-      if (keyTenantId) checkKeyedSubmissionRateLimit(keyTenantId, 'forms');
-
-      const tenant = keyTenantId ? await resolveTenantById(keyTenantId) : await resolveTenantFromRequest(req);
-      if (!tenant) {
-        if (isJsonExpected) return reply.status(404).send({ error: 'Web form not found or inactive.' });
-        reply.status(404).type('text/html');
-        return reply.send(errorHtml('Web form not found or inactive.'));
-      }
-      const body = req.body || {};
-      const result = await webFormsController.submitFormPublic(tenant, String(slug), body, clientIp, {
-        skipIpRateLimit: keyTenantId != null,
-      });
-
-      if (isJsonExpected) {
-        // The SPA/JSON caller follows `redirect_url` (Stripe hosted checkout / plain form redirect).
-        return reply.status(200).send({
-          success: true,
-          redirect_url: result.redirect_url ?? null,
-        });
-      }
-
-      if (result.redirect_url) {
-        return reply.redirect(result.redirect_url);
-      }
-
-      return reply.redirect('/api/forms/success');
-    } catch (err) {
-      fastify.log.error(err);
-      const statusCode = httpStatusOf(err) ?? 500;
-      // Client errors (4xx: validation, rate limit) carry user-actionable copy; anything 5xx is an
-      // unexpected internal failure whose detail must not leak to the public (SECURITY-REVIEW 5.2).
-      const message =
-        statusCode < 500 && err instanceof Error && err.message
-          ? err.message
-          : 'An unexpected error occurred during submission.';
-
-      if (isJsonExpected) {
-        return reply.status(statusCode).send({ error: message });
-      }
-
-      reply.status(statusCode).type('text/html');
-      return reply.send(errorHtml(message));
-    }
-  });
-
-  done();
-};
-
-export default webFormsPublicRoute;
-
-const renderFormHtml = (
-  submitAction: string,
-  formName: string,
-  formDescription: string,
-  fields: string[],
-  formType: string,
-) => {
-  const isFieldEnabled = (name: string): boolean => {
-    if (formType === 'donation') {
-      const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-      if (alwaysEnabled.includes(name)) return true;
-    }
-    return fields.includes(name) || fields.includes(`${name}:required`);
-  };
-
-  const isFieldRequired = (name: string): boolean => {
-    if (formType === 'donation') {
-      const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-      if (alwaysRequired.includes(name)) return true;
-    }
-    return fields.includes(`${name}:required`);
-  };
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(formName)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --input-bg: #ffffff;
-      --input-border: #cbd5e1;
-      --input-focus-border: #0ea5e9;
-      --input-focus-ring: rgba(14, 165, 233, 0.15);
-      --label-color: #374151;
-      --placeholder-color: #9ca3af;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --input-bg: #0b1220;
-        --input-border: #1a2b45;
-        --input-focus-border: #3ea6ff;
-        --input-focus-ring: rgba(62, 166, 255, 0.25);
-        --label-color: #cbd5e1;
-        --placeholder-color: #4b5563;
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 40px 24px;
-      position: relative;
-      overflow-x: hidden;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 400px;
-      height: 400px;
-      border-radius: 50%;
-      background: var(--accent);
-      filter: blur(150px);
-      opacity: 0.08;
-      z-index: 0;
-      pointer-events: none;
-    }
-    body::before { top: 15%; left: 10%; }
-    body::after { bottom: 15%; right: 10%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border-radius: 24px;
-      padding: 40px;
-      width: 100%;
-      max-width: 480px;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-
-    h1 {
-      font-size: 26px;
-      font-weight: 500;
-      letter-spacing: -0.015em;
-      margin-bottom: 8px;
-      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .description {
-      color: var(--text-secondary);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-      position: relative;
-    }
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 8px;
-      color: var(--label-color);
-      letter-spacing: 0.01em;
-    }
-
-    input, textarea, select {
-      width: 100%;
-      padding: 12px 16px;
-      background: var(--input-bg);
-      border: 1px solid var(--input-border);
-      border-radius: 12px;
-      color: var(--text-primary);
-      font-size: 14px;
-      font-family: inherit;
-      transition: all 0.2s ease;
-      min-height: 46px;
-    }
-
-    input::placeholder, textarea::placeholder {
-      color: var(--placeholder-color);
-    }
-
-    input:hover, textarea:hover, select:hover {
-      border-color: var(--accent);
-      opacity: 0.95;
-    }
-
-    input:focus, textarea:focus, select:focus {
-      outline: none;
-      border-color: var(--input-focus-border);
-      box-shadow: 0 0 0 4px var(--input-focus-ring);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 90px;
-    }
-
-    button {
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 600;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 8px;
-      min-height: 48px;
-    }
-
-    button:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    button:active {
-      transform: translateY(0);
-    }
-
-    .hp-field {
-      display: none !important;
-    }
-
-    .footer-note {
-      text-align: center;
-      margin-top: 24px;
-      font-size: 11px;
-      color: var(--text-secondary);
-      opacity: 0.6;
-    }
-
-    .footer-note a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .footer-note a:hover {
-      text-decoration: underline;
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h1>${escapeHtml(formName)}</h1>
-      <p class="description">${escapeHtml(formDescription)}</p>
-    </div>
-
-    <form action="${escapeHtml(submitAction)}" method="POST">
-      <!-- Honeypot Bot Field (leave empty!) -->
-      <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
-
-      ${
-        formType === 'donation'
-          ? `
-      <div class="form-group">
-        <label for="amount">Donation Amount ($ CAD) *</label>
-        <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('first_name')
-          ? `
-      <div class="form-group">
-        <label for="first_name">First Name ${isFieldRequired('first_name') ? '*' : ''}</label>
-        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" ${isFieldRequired('first_name') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('last_name')
-          ? `
-      <div class="form-group">
-        <label for="last_name">Last Name ${isFieldRequired('last_name') ? '*' : ''}</label>
-        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" ${isFieldRequired('last_name') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      <div class="form-group">
-        <label for="email">Email Address *</label>
-        <input type="email" id="email" name="email" placeholder="john@example.com" required />
-      </div>
-
-      ${
-        isFieldEnabled('street1')
-          ? `
-      <div class="form-group">
-        <label for="street1">Street Address ${isFieldRequired('street1') ? '*' : ''}</label>
-        <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isFieldRequired('street1') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('city')
-          ? `
-      <div class="form-group">
-        <label for="city">City ${isFieldRequired('city') ? '*' : ''}</label>
-        <input type="text" id="city" name="city" placeholder="E.g. Toronto" ${isFieldRequired('city') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('country')
-          ? `
-      <div class="form-group">
-        <label for="country">Country ${isFieldRequired('country') ? '*' : ''}</label>
-        <select id="country" name="country" ${isFieldRequired('country') ? 'required' : ''}>
-          <option value="CA">Canada</option>
-          <option value="US">United States</option>
-          <option value="GB">United Kingdom</option>
-          <option value="AU">Australia</option>
-        </select>
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('state')
-          ? `
-      <div class="form-group">
-        <label for="state">State / Province ${isFieldRequired('state') ? '*' : ''}</label>
-        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" ${isFieldRequired('state') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('zip')
-          ? `
-      <div class="form-group">
-        <label for="zip">Zip / Postal Code ${isFieldRequired('zip') ? '*' : ''}</label>
-        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isFieldRequired('zip') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('mobile')
-          ? `
-      <div class="form-group">
-        <label for="mobile">Mobile / Phone ${isFieldRequired('mobile') ? '*' : ''}</label>
-        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isFieldRequired('mobile') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('notes')
-          ? `
-      <div class="form-group">
-        <label for="notes">Notes / Message ${isFieldRequired('notes') ? '*' : ''}</label>
-        <textarea id="notes" name="notes" placeholder="How can we help you?" ${isFieldRequired('notes') ? 'required' : ''}></textarea>
-      </div>`
-          : ''
-      }
-
-      <button type="submit">${formType === 'donation' ? 'Next' : 'Submit'}</button>
-    </form>
-
-    <div class="footer-note">
-      Powered by <a href="#" target="_blank">pplCRM</a>
-    </div>
-  </div>
-</body>
-</html>
-`;
-};
-`````
-
-## File: apps/website/src/app/pricing/pricing-page.ts
-`````typescript
-import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import {
-  ANNUAL_MONTHS_FREE,
-  annualPriceForQuantity,
-  bracketIndexForSubscribers,
-  cadenceLabel,
-  FEATURE_MATRIX,
-  GB,
-  PLANS,
-  priceForQuantity,
-} from '@common';
-import type { BillingInterval, FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
-
-import { CurrencyService } from '../ui/currency.service';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
-const SLIDER_STOPS: readonly number[] = [
-  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
-];
-
-/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
-const DEFAULT_STOP_INDEX = 1;
-const DEFAULT_STOP = 2_500;
-
-/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
-type MatrixPlanKey = keyof FeatureMatrixRow['values'];
-
-function isMatrixPlanKey(key: string): key is MatrixPlanKey {
-  return key === 'free' || key === 'grassroots' || key === 'movement';
-}
-
-/** A matrix row is "table stakes" when every displayed plan simply has it (all-true checks).
- * Those rows render as the compact included-everywhere strip, not as table rows. */
-function isAllTrueRow(row: FeatureMatrixRow): boolean {
-  return row.values.free === true && row.values.grassroots === true && row.values.movement === true;
-}
-
-/** One-line "what this tier adds" summary per plan card. Mirrors the GATED_FEATURES split in
- * plans.ts; if a feature moves between tiers, update this wording too (pplcrm-website-claims). */
-const STEP_UP_LABELS: Readonly<Record<string, string>> = {
-  free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
-  grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
-  movement:
-    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers and priority support.',
-};
-
-@Component({
-  selector: 'pc-pricing-page',
-  imports: [RouterLink, SiteHeader, SiteFooter, SiteIcon],
-  templateUrl: './pricing-page.html',
-})
-export class PricingPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  private readonly currency = inject(CurrencyService);
-  /** Whether prices are being shown in a non-USD currency (gates the billing disclaimer). */
-  protected readonly isConverted = this.currency.isConverted;
-  /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
-  protected readonly currencySymbol = this.currency.priceSymbol;
-
-  /** The priced plan cards (Free / Grassroots / Movement); enterprise is a footnote. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-
-  /** Features every plan includes (all-true matrix rows), shown once as a strip instead of
-   * spending a table row on three identical checkmarks. */
-  protected readonly includedEverywhere: readonly string[] = FEATURE_MATRIX.flatMap((group) =>
-    group.rows.filter(isAllTrueRow).map((row) => row.label),
-  );
-
-  /** The comparison table: only groups and rows where plans actually differ. */
-  protected readonly diffMatrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX.map((group) => ({
-    category: group.category,
-    rows: group.rows.filter((row) => !isAllTrueRow(row)),
-  })).filter((group) => group.rows.length > 0);
-
-  /** Billing interval the cards and comparison table price at. The marketing page defaults to
-   * Annual (the in-app billing page keeps Monthly — see the plans.ts decision log). */
-  protected readonly interval = signal<BillingInterval>('year');
-  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
-
-  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
-  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
-  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
-  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
-
-  protected onSlide(event: Event): void {
-    const target = event.target;
-    if (target instanceof HTMLInputElement) {
-      this.stopIndex.set(Number(target.value));
-    }
-  }
-
-  protected setInterval(interval: BillingInterval): void {
-    this.interval.set(interval);
-  }
-
-  /** Live price at the slider's subscriber count, formatted in the active display currency.
-   * On annual, paid tiers show the rounded monthly-equivalent of the annual total (`$24` —
-   * the exact total renders alongside via `annualNote`, with the rounding disclaimer below
-   * the cards); Free keeps its plain `$0` (nothing to bill annually). */
-  protected priceLabel(plan: PlanDef): string {
-    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
-    if (index === null) return 'Contact us';
-    if (this.interval() === 'year' && plan.purchasable) {
-      return this.currency.formatMonthlyEquivalent(annualPriceForQuantity(plan.key, index));
-    }
-    return this.currency.format(priceForQuantity(plan.key, index));
-  }
-
-  /** The card's cadence line ('per month' / 'per month, billed annually' / 'forever'). */
-  protected cadence(plan: PlanDef): string {
-    return cadenceLabel(plan, this.interval());
-  }
-
-  /** "Billed annually as $290 · 2 months free" under an annual paid-tier price; null whenever
-   * the plain monthly presentation applies (monthly interval, Free, out-of-ladder). */
-  protected annualNote(plan: PlanDef): string | null {
-    if (this.interval() !== 'year' || !plan.purchasable) return null;
-    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
-    if (index === null) return null;
-    const total = this.currency.format(annualPriceForQuantity(plan.key, index));
-    return `Billed annually as ${total} · ${this.annualBadge}`;
-  }
-
-  /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */
-  protected zeroPrice(): string {
-    return this.currency.format(0);
-  }
-
-  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
-  protected overMax(plan: PlanDef): boolean {
-    return bracketIndexForSubscribers(plan.key, this.subscribers()) === null;
-  }
-
-  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
-  protected maxSubscribersLabel(plan: PlanDef): string {
-    const brackets = plan.pricing?.brackets;
-    const last = brackets?.[brackets.length - 1];
-    return (last?.upTo ?? 0).toLocaleString('en-US');
-  }
-
-  /** One-line caps summary for a plan card, derived from PlanDef so it can never drift
-   * (e.g. "Up to 100,000 subscribers · 5 seats · 10 GB"). */
-  protected capsLine(plan: PlanDef): string {
-    const parts: string[] = [`Up to ${this.maxSubscribersLabel(plan)} subscribers`];
-    if (plan.seats === null && plan.volunteers === null) {
-      parts.push('unlimited seats & volunteers');
-    } else {
-      parts.push(plan.seats === null ? 'unlimited seats' : `${plan.seats} seats`);
-      if (plan.volunteers === null) parts.push('unlimited volunteers');
-      else if (plan.volunteers > 0) parts.push(`${plan.volunteers} volunteers`);
-    }
-    if (plan.storageBytes !== null) parts.push(`${Math.round(plan.storageBytes / GB)} GB`);
-    return parts.join(' · ');
-  }
-
-  /** The card's "what this tier adds" one-liner. */
-  protected stepUpLabel(plan: PlanDef): string {
-    return STEP_UP_LABELS[plan.key] ?? plan.blurb;
-  }
-
-  /** One matrix cell: true = included, false = not included, string = text value. */
-  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
-    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
-  }
-}
 `````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
@@ -87976,864 +86055,6 @@ function buildNewsletterFooter(address?: string, disclaimer?: string): { html: s
   const text = `\n\n----\n${textParts.join('\n')}`;
 
   return { html, text };
-}
-`````
-
-## File: apps/backend/src/app/modules/billing/controller.ts
-`````typescript
-import { sql } from 'kysely';
-import type Stripe from 'stripe';
-import {
-  BILLING_INTERVALS,
-  bracketIndexForSubscribers,
-  getPlanDef,
-  maxQuantity,
-  PLANS_BY_KEY,
-  PURCHASABLE_PLAN_KEYS,
-  type BillingInterval,
-  type PlanKey,
-  type PurchasablePlanKey,
-} from '@common';
-import { env } from '../../../env';
-import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { logger } from '../../logger';
-import { TenantsRepo } from '../auth/repositories/tenants.repo';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-import { WorkflowsController } from '../workflows/controller';
-import { WebhookEventsRepo } from './repositories/webhook-events.repo';
-import { getStripe, isMockMode, stripe } from '../../lib/stripe-platform-client';
-import { syncSubscriptionQuantity } from './subscription-sync';
-import { countEmailableSubscribers, getPlanLimits } from './usage-limits';
-
-/** Stripe price ID configured for each self-serve plan × billing interval (undefined in mock
- * mode / when unset). The annual prices are exactly 10× the monthly unit amounts — see the
- * Stripe ops comment in libs/common/src/lib/billing/plans.ts. */
-const PRICE_ID_BY_PLAN: Record<PurchasablePlanKey, Record<BillingInterval, string | undefined>> = {
-  grassroots: { month: env.stripePlanGrassrootsPriceId, year: env.stripePlanGrassrootsAnnualPriceId },
-  movement: { month: env.stripePlanMovementPriceId, year: env.stripePlanMovementAnnualPriceId },
-};
-
-/** Reverse-map a Stripe price ID back to our internal plan key + billing interval. */
-function planForPriceId(
-  priceId: string | undefined | null,
-): { plan: PurchasablePlanKey; interval: BillingInterval } | null {
-  if (!priceId) return null;
-  for (const plan of PURCHASABLE_PLAN_KEYS) {
-    for (const interval of BILLING_INTERVALS) {
-      const id = PRICE_ID_BY_PLAN[plan][interval];
-      if (id && id === priceId) return { plan, interval };
-    }
-  }
-  return null;
-}
-
-/** Narrow a stored `tenants.subscription_interval` value (or any unknown) to a BillingInterval. */
-function asBillingInterval(value: unknown): BillingInterval {
-  return value === 'year' ? 'year' : 'month';
-}
-
-/**
- * The Stripe API version stripe-node v22 targets (2025 "basil" and later) removed
- * `current_period_end` from the top-level Subscription object — it now lives on each
- * subscription item. Read it from the first item, and fall back to null on an unexpected
- * shape rather than throwing, so a webhook can never fail to activate a paid plan over a
- * missing timestamp (previously `new Date(undefined * 1000)` threw and left the tenant on
- * the free tier despite a successful charge).
- */
-function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
-  const periodEnd = subscription.items.data[0]?.current_period_end;
-  return typeof periodEnd === 'number' ? new Date(periodEnd * 1000).toISOString() : null;
-}
-
-const tenantsRepo = new TenantsRepo();
-const settingsRepo = new SettingsRepo();
-const webhookEventsRepo = new WebhookEventsRepo();
-
-/** Dedup flag prefix shared with `usage-limits.ts`'s notify-then-adjust bracket alerts — cleared
- * here once a cycle-boundary downgrade lands, so a future re-growth past the same bracket sends
- * a fresh notice instead of staying suppressed forever. */
-const BRACKET_FLAG_PREFIX = 'bracket_';
-
-async function clearBracketFlags(tenantId: string, adminUserId: string): Promise<void> {
-  const row = await settingsRepo.getByKey({ tenant_id: tenantId, key: 'billing.limit_alerts_sent' });
-  if (!row?.value) return;
-
-  const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-  if (!parsed || typeof parsed !== 'object') return;
-
-  const alertSettings: Record<string, boolean> = { ...parsed };
-  let changed = false;
-  for (const key of Object.keys(alertSettings)) {
-    if (key.startsWith(BRACKET_FLAG_PREFIX) && alertSettings[key]) {
-      alertSettings[key] = false;
-      changed = true;
-    }
-  }
-  if (!changed) return;
-
-  await settingsRepo.upsertMany({
-    tenant_id: tenantId,
-    user_id: adminUserId,
-    entries: [{ key: 'billing.limit_alerts_sent', value: alertSettings }],
-  });
-}
-
-/** The subset of `tenants` columns the webhook/reconciliation paths read — `getOneBy` selects
- * every column (no subset requested), so narrowing to just these is honest, not a type lie; see
- * pplcrm-any-exceptions §2. */
-interface TenantBillingRow {
-  id: string;
-  admin_id: string | null;
-  subscription_plan: string | null;
-  subscription_quantity: number | null;
-  subscription_interval: BillingInterval;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-}
-
-function asTenantBillingRow(row: unknown): TenantBillingRow | undefined {
-  if (!row || typeof row !== 'object') return undefined;
-  const r = row as Record<string, unknown>;
-  if (typeof r['id'] !== 'string') return undefined;
-  return {
-    id: r['id'],
-    admin_id: typeof r['admin_id'] === 'string' ? r['admin_id'] : null,
-    subscription_plan: typeof r['subscription_plan'] === 'string' ? r['subscription_plan'] : null,
-    subscription_quantity: typeof r['subscription_quantity'] === 'number' ? r['subscription_quantity'] : null,
-    subscription_interval: asBillingInterval(r['subscription_interval']),
-    stripe_customer_id: typeof r['stripe_customer_id'] === 'string' ? r['stripe_customer_id'] : null,
-    stripe_subscription_id: typeof r['stripe_subscription_id'] === 'string' ? r['stripe_subscription_id'] : null,
-  };
-}
-
-/**
- * Cycle-boundary downgrade reconciliation (base plan §4): notify-then-adjust only ever moves the
- * billed quantity *up* mid-cycle (see `usage-limits.checkTenantUsage`) — a shrink in emailable
- * subscribers is applied here instead, on `invoice.paid`, which proves we've just crossed a
- * billing-cycle boundary. No-ops for free/enterprise (no Stripe quantity to reconcile).
- */
-async function reconcileDowngradeOnInvoicePaid(dbTenant: TenantBillingRow): Promise<void> {
-  const plan = getPlanDef(dbTenant.subscription_plan) ?? PLANS_BY_KEY.free;
-  if (!plan.purchasable) return;
-
-  const billedQuantity = dbTenant.subscription_quantity ?? 1;
-  const subscribers = await countEmailableSubscribers(dbTenant.id, tenantsRepo.db);
-  const targetQuantity = bracketIndexForSubscribers(plan.key, subscribers);
-
-  if (targetQuantity !== null && targetQuantity < billedQuantity) {
-    await syncSubscriptionQuantity(dbTenant.id, targetQuantity);
-    await clearBracketFlags(dbTenant.id, dbTenant.admin_id ?? dbTenant.id);
-  }
-}
-
-export class BillingController {
-  constructor() {
-    if (isMockMode) {
-      logger.info('[BillingController] Running in Mock Mode (no Stripe secret key provided)');
-    }
-  }
-
-  private getFrontendUrl(): string {
-    return env.appUrl.replace(/\/+$/, '');
-  }
-
-  public async getBillingDetails(auth: { tenant_id: string }) {
-    const tenant = (await tenantsRepo.getOneBy('id', {
-      tenant_id: auth.tenant_id,
-      value: auth.tenant_id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-    })) as any;
-
-    if (!tenant) {
-      throw new Error('Tenant not found');
-    }
-
-    return {
-      plan: tenant.subscription_plan || 'free',
-      status: tenant.subscription_status || 'inactive',
-      interval: asBillingInterval(tenant.subscription_interval),
-      endsAt: tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at) : null,
-      stripeCustomerId: tenant.stripe_customer_id || null,
-      stripeSubscriptionId: tenant.stripe_subscription_id || null,
-      hasActiveSubscription: ['active', 'trialing'].includes(tenant.subscription_status || ''),
-      isMockMode,
-    };
-  }
-
-  /** Live usage snapshot for the billing page: emailable-subscriber count against the tenant's
-   * currently billed bracket. Enterprise (no pricing ladder) reports Infinity caps / $0 price —
-   * the frontend special-cases 'enterprise' to not render the bracket clause. */
-  public async getUsage(auth: { tenant_id: string }): Promise<{
-    subscribers: number;
-    billedQuantity: number;
-    subscriberCap: number;
-    emailCap: number;
-    monthlyPrice: number;
-    interval: BillingInterval;
-    tierMax: number;
-  }> {
-    const tenant = asTenantBillingRow(
-      await tenantsRepo.getOneBy('id', {
-        tenant_id: auth.tenant_id,
-        value: auth.tenant_id,
-      }),
-    );
-    if (!tenant) {
-      throw new NotFoundError('Tenant not found');
-    }
-
-    const plan = getPlanDef(tenant.subscription_plan) ?? PLANS_BY_KEY.free;
-    const billedQuantity = tenant.subscription_quantity ?? 1;
-    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
-    const limits = getPlanLimits(plan.key, billedQuantity);
-
-    return {
-      subscribers,
-      billedQuantity,
-      subscriberCap: limits.subscribers,
-      emailCap: limits.emails,
-      monthlyPrice: plan.pricing ? (plan.pricing.brackets[billedQuantity - 1]?.price ?? 0) : 0,
-      interval: tenant.subscription_interval,
-      tierMax: plan.pricing ? maxQuantity(plan.key) : Number.POSITIVE_INFINITY,
-    };
-  }
-
-  public async createCheckoutSession(
-    auth: { tenant_id: string; user_id: string },
-    plan: PurchasablePlanKey,
-    interval: BillingInterval = 'month',
-  ) {
-    const tenant = (await tenantsRepo.getOneBy('id', {
-      tenant_id: auth.tenant_id,
-      value: auth.tenant_id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-    })) as any;
-
-    if (!tenant) {
-      throw new NotFoundError('Tenant not found');
-    }
-
-    const frontendUrl = this.getFrontendUrl();
-
-    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
-    const quantity = bracketIndexForSubscribers(plan, subscribers);
-    if (quantity === null) {
-      throw new BadRequestError('Your list is too large for this tier — contact us so we can find a plan that fits.');
-    }
-
-    if (isMockMode) {
-      // In Mock Mode, direct them to a simulated callback
-      const mockSuccessUrl = `${frontendUrl}/workspace/billing?mock_checkout_success=true&plan=${plan}&qty=${quantity}&interval=${interval}`;
-      return { url: mockSuccessUrl };
-    }
-
-    // Live Stripe Mode
-    let stripeCustomerId = tenant.stripe_customer_id as string | undefined;
-    if (!stripeCustomerId) {
-      const customer = await getStripe().customers.create({
-        email: (tenant.email as string) || undefined,
-        name: tenant.name as string,
-        metadata: {
-          tenantId: auth.tenant_id,
-        },
-      });
-      stripeCustomerId = customer.id;
-
-      // Update tenant in DB with customer ID
-      await tenantsRepo.update({
-        tenant_id: auth.tenant_id,
-        id: auth.tenant_id,
-        row: { stripe_customer_id: stripeCustomerId },
-      });
-    }
-
-    // Determine Stripe Price ID
-    const priceId = PRICE_ID_BY_PLAN[plan][interval];
-
-    if (!priceId) {
-      throw new Error(`Stripe Price ID is not configured for plan: ${plan} (${interval})`);
-    }
-
-    // Stripe Tax: `customer_update.address: 'auto'` saves the checkout billing address onto the
-    // Customer (we always pass an existing `customer`, so Checkout needs explicit permission to
-    // write it back) — renewal invoices reuse it as the tax location. `name: 'auto'` is required
-    // by Stripe for tax_id_collection with an existing customer. Tax is only charged in
-    // jurisdictions with an active registration in the Dashboard; elsewhere it computes to zero.
-    const session = await getStripe().checkout.sessions.create({
-      customer: stripeCustomerId,
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity,
-        },
-      ],
-      mode: 'subscription',
-      automatic_tax: { enabled: true },
-      billing_address_collection: 'required',
-      customer_update: { address: 'auto', name: 'auto' },
-      tax_id_collection: { enabled: true },
-      success_url: `${frontendUrl}/workspace/billing?checkout_success=true`,
-      cancel_url: `${frontendUrl}/workspace/billing`,
-      subscription_data: {
-        metadata: {
-          tenantId: auth.tenant_id,
-        },
-      },
-      metadata: {
-        tenantId: auth.tenant_id,
-      },
-    });
-
-    return { url: session.url };
-  }
-
-  public async createPortalSession(auth: { tenant_id: string }) {
-    const tenant = (await tenantsRepo.getOneBy('id', {
-      tenant_id: auth.tenant_id,
-      value: auth.tenant_id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-    })) as any;
-
-    if (!tenant) {
-      throw new Error('Tenant not found');
-    }
-
-    const frontendUrl = this.getFrontendUrl();
-
-    if (isMockMode) {
-      return { url: `${frontendUrl}/workspace/billing?mock_portal_success=true` };
-    }
-
-    const stripeCustomerId = tenant.stripe_customer_id;
-    if (!stripeCustomerId) {
-      throw new Error('No active billing history found. Please subscribe to a plan first.');
-    }
-
-    const session = await getStripe().billingPortal.sessions.create({
-      customer: stripeCustomerId,
-      // `portal_return` tells the billing page to pull the live subscription state from Stripe
-      // (syncSubscriptionFromStripe) — a plan switched in the Portal is reflected immediately
-      // instead of waiting on webhook delivery.
-      return_url: `${frontendUrl}/workspace/billing?portal_return=true`,
-    });
-
-    return { url: session.url };
-  }
-
-  /**
-   * Mirror the tenant's live Stripe subscription onto the `tenants` row — the same write
-   * `customer.subscription.updated` performs, minus the notification email (the webhook stays
-   * the authoritative sender, so a later-delivered event never duplicates it).
-   *
-   * Called by the billing page when the user returns from Checkout (`checkout_success`) or the
-   * Billing Portal (`portal_return`), so a plan change takes effect immediately even when
-   * webhook delivery is delayed or not configured for the active Stripe mode (e.g. sandbox keys
-   * without a sandbox webhook endpoint). No-ops in mock mode and for tenants with no Stripe
-   * customer.
-   */
-  public async syncSubscriptionFromStripe(auth: { tenant_id: string }): Promise<{ synced: boolean; plan: string }> {
-    const tenant = asTenantBillingRow(
-      await tenantsRepo.getOneBy('id', {
-        tenant_id: auth.tenant_id,
-        value: auth.tenant_id,
-      }),
-    );
-    if (!tenant) {
-      throw new NotFoundError('Tenant not found');
-    }
-
-    const currentPlan = tenant.subscription_plan ?? 'free';
-    if (isMockMode || !tenant.stripe_customer_id) {
-      return { synced: false, plan: currentPlan };
-    }
-
-    const subscriptions = await getStripe().subscriptions.list({
-      customer: tenant.stripe_customer_id,
-      status: 'all',
-      limit: 10,
-    });
-    const live = subscriptions.data.find((s) => ['active', 'trialing', 'past_due'].includes(s.status));
-
-    if (!live) {
-      // Nothing billable on the customer. Only mirror a cancellation if we previously stored a
-      // subscription — a tenant that never subscribed stays untouched.
-      if (!tenant.stripe_subscription_id) {
-        return { synced: false, plan: currentPlan };
-      }
-      await tenantsRepo.update({
-        tenant_id: tenant.id,
-        id: tenant.id,
-        row: {
-          subscription_status: 'canceled',
-          subscription_plan: 'free',
-          subscription_ends_at: new Date().toISOString(),
-          subscription_quantity: 1,
-          subscription_interval: 'month',
-        },
-      });
-      logger.info(`[syncSubscriptionFromStripe] No live subscription — tenant ${tenant.id} set to free`);
-      return { synced: true, plan: 'free' };
-    }
-
-    const item = live.items.data[0];
-    const priceMatch = planForPriceId(item?.price.id);
-    if (item && !priceMatch) {
-      logger.warn(
-        `[syncSubscriptionFromStripe] Price ${item.price.id} matches no configured STRIPE_PLAN_*_PRICE_ID — ` +
-          `tenant ${tenant.id} keeps plan '${currentPlan}'. Check that the env price IDs belong to the active Stripe mode.`,
-      );
-    }
-    const planName: string = priceMatch?.plan ?? currentPlan;
-    const interval: BillingInterval = priceMatch?.interval ?? tenant.subscription_interval;
-
-    await tenantsRepo.update({
-      tenant_id: tenant.id,
-      id: tenant.id,
-      row: {
-        stripe_subscription_id: live.id,
-        subscription_plan: planName,
-        subscription_status: live.status,
-        subscription_ends_at: subscriptionPeriodEnd(live),
-        subscription_quantity: item?.quantity ?? 1,
-        subscription_interval: interval,
-      },
-    });
-    logger.info(`[syncSubscriptionFromStripe] Tenant ${tenant.id} synced to plan '${planName}' (${live.status})`);
-    return { synced: true, plan: planName };
-  }
-
-  public async handleWebhook(payload: string, signature: string) {
-    if (isMockMode || !stripe || !env.stripeWebhookSecret) {
-      logger.info('[BillingController] Webhook received, but ignored due to mock mode or missing secret');
-      return;
-    }
-
-    let event: Stripe.Event;
-
-    try {
-      event = stripe.webhooks.constructEvent(payload, signature, env.stripeWebhookSecret);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logger.error(`Webhook signature verification failed: ${errMsg}`);
-      throw new Error(`Webhook Error: ${errMsg}`);
-    }
-
-    logger.info(`Persisting webhook event: ${event.id} (${event.type})`);
-
-    // Persist event for background worker processing.
-    // Handles idempotency: duplicate events will trigger unique constraint
-    // violation on `stripe_event_id` and be ignored, returning 200 OK.
-    await webhookEventsRepo.db
-      .insertInto('webhook_events')
-      .values({
-        stripe_event_id: event.id,
-        type: event.type,
-        payload: JSON.stringify(event),
-        status: 'pending',
-      })
-      .onConflict((oc) => oc.column('stripe_event_id').doNothing())
-      .execute();
-  }
-
-  public async processWebhookEvent(event: Stripe.Event) {
-    logger.info(`Processing webhook event: ${event.id} (${event.type})`);
-
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const tenantId = session.metadata?.['tenantId'];
-        const subscriptionId = session.subscription as string;
-        const customerId = session.customer as string;
-
-        if (tenantId && subscriptionId) {
-          const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
-          const item = subscription.items.data[0];
-          const priceMatch = planForPriceId(item?.price.id);
-          const planName: PlanKey = priceMatch?.plan ?? 'free';
-          const interval: BillingInterval = priceMatch?.interval ?? 'month';
-          const quantity = item?.quantity ?? 1;
-
-          await tenantsRepo.update({
-            tenant_id: tenantId,
-            id: tenantId,
-            row: {
-              stripe_customer_id: customerId,
-              stripe_subscription_id: subscriptionId,
-              subscription_plan: planName,
-              subscription_status: subscription.status,
-              subscription_ends_at: subscriptionPeriodEnd(subscription),
-              subscription_quantity: quantity,
-              subscription_interval: interval,
-            },
-          });
-          logger.info(`Plan activated successfully for Tenant ID: ${tenantId}`);
-          try {
-            await this.handleSubscriptionChange(tenantId, planName, quantity, false, interval);
-          } catch (mailErr) {
-            logger.error({ err: mailErr }, 'Failed to send subscription changed email on checkout.session.completed');
-          }
-        }
-        break;
-      }
-
-      case 'customer.subscription.updated': {
-        const subscription = event.data.object as Stripe.Subscription;
-        const subscriptionId = subscription.id;
-        const customerId = subscription.customer as string;
-
-        // Search Kysely database for the tenant with matching customer id
-        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1',
-          value: customerId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-        })) as any;
-
-        if (dbTenant) {
-          const item = subscription.items.data[0];
-          const priceMatch = planForPriceId(item?.price.id);
-          const planName: string = priceMatch?.plan ?? dbTenant.subscription_plan;
-          const interval: BillingInterval = priceMatch?.interval ?? asBillingInterval(dbTenant.subscription_interval);
-          const quantity = item?.quantity ?? 1;
-
-          await tenantsRepo.update({
-            tenant_id: dbTenant.id,
-            id: dbTenant.id,
-            row: {
-              stripe_subscription_id: subscriptionId,
-              subscription_plan: planName,
-              subscription_status: subscription.status,
-              subscription_ends_at: subscriptionPeriodEnd(subscription),
-              subscription_quantity: quantity,
-              subscription_interval: interval,
-            },
-          });
-          logger.info(`Subscription updated for Tenant ID: ${dbTenant.id}`);
-          try {
-            await this.handleSubscriptionChange(dbTenant.id, planName, quantity, false, interval);
-          } catch (mailErr) {
-            logger.error(
-              { err: mailErr },
-              'Failed to send subscription changed email on customer.subscription.updated',
-            );
-          }
-        }
-        break;
-      }
-
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription;
-        const customerId = subscription.customer as string;
-
-        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1',
-          value: customerId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-        })) as any;
-
-        if (dbTenant) {
-          await tenantsRepo.update({
-            tenant_id: dbTenant.id,
-            id: dbTenant.id,
-            row: {
-              subscription_status: 'canceled',
-              subscription_plan: 'free',
-              subscription_ends_at: new Date().toISOString(),
-              subscription_quantity: 1,
-              subscription_interval: 'month',
-            },
-          });
-          logger.info(`Subscription canceled for Tenant ID: ${dbTenant.id}`);
-          try {
-            await this.handleSubscriptionChange(dbTenant.id, 'free', 1);
-          } catch (mailErr) {
-            logger.error(
-              { err: mailErr },
-              'Failed to send subscription cancellation email on customer.subscription.deleted',
-            );
-          }
-        }
-        break;
-      }
-
-      case 'invoice.paid': {
-        const invoice = event.data.object as Stripe.Invoice;
-        const customerId = invoice.customer as string;
-        const dbTenant = asTenantBillingRow(
-          await tenantsRepo.getOneBy('stripe_customer_id', {
-            tenant_id: '1',
-            value: customerId,
-          }),
-        );
-
-        if (dbTenant) {
-          try {
-            await reconcileDowngradeOnInvoicePaid(dbTenant);
-          } catch (err) {
-            logger.error({ err }, 'Failed to reconcile bracket downgrade on invoice.paid');
-          }
-
-          const admin = await tenantsRepo.db
-            .selectFrom('authusers')
-            .select(['email', 'first_name'])
-            .where('id', '=', dbTenant.admin_id)
-            .executeTakeFirst();
-
-          if (admin && admin.email) {
-            // Find person matching admin email
-            const person = await tenantsRepo.db
-              .selectFrom('persons')
-              .select('id')
-              .where('tenant_id', '=', dbTenant.id)
-              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
-              .executeTakeFirst();
-            if (person) {
-              try {
-                const workflowsController = new WorkflowsController();
-                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
-              } catch (err) {
-                logger.error({ err }, 'Failed to trigger billing workflow on invoice.paid');
-              }
-            }
-
-            const mailService = new TransactionalEmailService();
-            const amountPaid = invoice.amount_paid / 100;
-            const pdfUrl = invoice.hosted_invoice_url || '';
-
-            // Tax total: on the basil-era API versions stripe-node v22 targets, the invoice tax
-            // total lives in the `total_taxes` array (the legacy top-level `invoice.tax` is gone).
-            // Omitted when absent or zero so a receipt can never fail over a tax field.
-            const totalTax = Array.isArray(invoice.total_taxes)
-              ? invoice.total_taxes.reduce((sum, tax) => sum + (tax?.amount || 0), 0)
-              : 0;
-            const taxLineText = totalTax > 0 ? `\n- Tax: $${(totalTax / 100).toFixed(2)}` : '';
-            const taxLineHtml = totalTax > 0 ? `<li><strong>Tax</strong>: $${(totalTax / 100).toFixed(2)}</li>` : '';
-
-            // Build charges summary
-            let summaryOfCharges = '';
-            let summaryOfChargesHtml = '';
-            if (invoice.lines && Array.isArray(invoice.lines.data)) {
-              summaryOfCharges =
-                '\nSummary of Charges:\n' +
-                invoice.lines.data
-                  .map((line) => {
-                    const lineAmt = (line.amount || 0) / 100;
-                    return `- ${line.description || 'Subscription item'}: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}`;
-                  })
-                  .join('\n') +
-                taxLineText;
-
-              summaryOfChargesHtml =
-                '<div class="panel"><p><strong>Summary of charges:</strong></p><ul>' +
-                invoice.lines.data
-                  .map((line) => {
-                    const lineAmt = (line.amount || 0) / 100;
-                    return `<li><strong>${line.description || 'Subscription item'}</strong>: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}</li>`;
-                  })
-                  .join('') +
-                taxLineHtml +
-                '</ul></div>';
-            }
-
-            await mailService.sendMail({
-              to: admin.email,
-              subject: `Receipt for your pplCRM subscription`,
-              text: `Hi ${admin.first_name || 'there'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was processed.\n\n${summaryOfCharges}\n\nView invoice: ${pdfUrl}`,
-              html: `<h2>Payment received</h2>
-<p>Hi ${admin.first_name || 'there'},</p>
-<p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was processed.</p>${summaryOfChargesHtml}
-<div class="btn-container">
-  <a href="${pdfUrl}" class="btn">View invoice</a>
-</div>`,
-            });
-          }
-        }
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object as Stripe.Invoice;
-        const customerId = invoice.customer as string;
-        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1',
-          value: customerId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-        })) as any;
-
-        if (dbTenant) {
-          const admin = await tenantsRepo.db
-            .selectFrom('authusers')
-            .select(['email', 'first_name'])
-            .where('id', '=', dbTenant.admin_id)
-            .executeTakeFirst();
-
-          if (admin && admin.email) {
-            // Find person matching admin email
-            const person = await tenantsRepo.db
-              .selectFrom('persons')
-              .select('id')
-              .where('tenant_id', '=', dbTenant.id)
-              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
-              .executeTakeFirst();
-            if (person) {
-              try {
-                const workflowsController = new WorkflowsController();
-                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
-              } catch (err) {
-                logger.error({ err }, 'Failed to trigger billing workflow on invoice.payment_failed');
-              }
-            }
-
-            const mailService = new TransactionalEmailService();
-            const billingPageUrl = `${env.appUrl}/workspace/billing`;
-            const amountDue = (invoice.amount_due || 0) / 100;
-            await mailService.sendMail({
-              to: admin.email,
-              subject: `Action needed: your pplCRM subscription payment failed`,
-              text: `Hi ${admin.first_name || 'there'},\n\nWe were unable to process the subscription payment of $${amountDue.toFixed(2)} for your organization.\n\nPlease update your payment card to prevent suspension of your organization's account.\n\nUpdate billing information here: ${billingPageUrl}`,
-              html: `<h2>Payment failed</h2>
-<p>Hi ${admin.first_name || 'there'},</p>
-<p>We were unable to process the subscription payment of <strong>$${amountDue.toFixed(2)}</strong> for your organization.</p>
-<p>Please update your payment card to prevent suspension of your organization's account.</p>
-<div class="btn-container">
-  <a href="${billingPageUrl}" class="btn">Update payment method</a>
-</div>`,
-            });
-          }
-        }
-        break;
-      }
-    }
-  }
-
-  public async activateMockPlan(
-    auth: { tenant_id: string },
-    plan: PurchasablePlanKey,
-    quantity = 1,
-    interval: BillingInterval = 'month',
-  ) {
-    if (!isMockMode) {
-      throw new Error('This helper is only available in local Mock Mode');
-    }
-
-    const expiry = new Date();
-    if (interval === 'year') {
-      expiry.setFullYear(expiry.getFullYear() + 1); // 1 year from now
-    } else {
-      expiry.setMonth(expiry.getMonth() + 1); // 1 month from now
-    }
-    const clampedQuantity = Math.min(Math.max(Math.trunc(quantity) || 1, 1), maxQuantity(plan));
-
-    await tenantsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: auth.tenant_id,
-      row: {
-        stripe_customer_id: 'cus_mock_' + Math.random().toString(36).substring(7),
-        stripe_subscription_id: 'sub_mock_' + Math.random().toString(36).substring(7),
-        subscription_plan: plan,
-        subscription_status: 'active',
-        subscription_ends_at: expiry.toISOString(),
-        subscription_quantity: clampedQuantity,
-        subscription_interval: interval,
-      },
-    });
-
-    try {
-      await this.handleSubscriptionChange(auth.tenant_id, plan, clampedQuantity, true, interval);
-    } catch (mailErr) {
-      logger.error({ err: mailErr }, 'Failed to send mock subscription update email');
-    }
-
-    return { success: true, plan };
-  }
-
-  public async cancelMockPlan(auth: { tenant_id: string }) {
-    if (!isMockMode) {
-      throw new Error('This helper is only available in local Mock Mode');
-    }
-
-    await tenantsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: auth.tenant_id,
-      row: {
-        stripe_subscription_id: null,
-        subscription_plan: 'free',
-        subscription_status: 'inactive',
-        subscription_ends_at: null,
-        subscription_quantity: 1,
-        subscription_interval: 'month',
-      },
-    });
-
-    try {
-      await this.handleSubscriptionChange(auth.tenant_id, 'free', 1, true);
-    } catch (mailErr) {
-      logger.error({ err: mailErr }, 'Failed to send mock subscription cancellation email');
-    }
-
-    return { success: true };
-  }
-
-  private async handleSubscriptionChange(
-    tenantId: string,
-    planName: string,
-    quantity: number,
-    isMock = false,
-    interval: BillingInterval = 'month',
-  ): Promise<void> {
-    const tenant = (await tenantsRepo.getOneBy('id', {
-      tenant_id: tenantId,
-      value: tenantId,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
-    })) as any;
-
-    if (!tenant) return;
-
-    // 1. Reset limit alert settings
-    await tenantsRepo.db
-      .deleteFrom('settings')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'billing.limit_alerts_sent')
-      .execute();
-
-    // 2. Fetch admin user (Organization Owner)
-    if (!tenant.admin_id) return;
-    const admin = await tenantsRepo.db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('id', '=', String(tenant.admin_id))
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      const planLimits = getPlanLimits(planName, quantity, interval);
-      const billingPageUrl = `${env.appUrl}/workspace/billing`;
-      const mockPrefix = isMock ? '[MOCK] ' : '';
-      const fmt = (n: number): string => (Number.isFinite(n) ? n.toLocaleString() : 'Unlimited');
-
-      const mailService = new TransactionalEmailService();
-      const planLabel = planName.charAt(0).toUpperCase() + planName.slice(1);
-      await mailService.sendMail({
-        to: admin.email,
-        subject: `${mockPrefix}Welcome to the ${planLabel} plan`,
-        text: `Hi ${admin.first_name || 'there'},\n\n${mockPrefix}Your subscription has been updated.\n\nNew plan: ${planLabel}\nPrice: ${planLimits.price}\n\nPlan limits:\n- Email subscribers: ${fmt(planLimits.subscribers)}\n- User seats: ${fmt(planLimits.seats)}\n- Monthly emails: ${fmt(planLimits.emails)} outbound emails\n\nManage your billing here: ${billingPageUrl}`,
-        html: `<h2>Subscription updated</h2>
-<p>Hi ${admin.first_name || 'there'},</p>
-<p>${mockPrefix}Your subscription has been updated. Welcome to the <strong>${planLabel}</strong> plan.</p>
-<div class="panel">
-<p><strong>Price:</strong> ${planLimits.price}</p>
-<ul>
-  <li><strong>Email subscribers:</strong> up to ${fmt(planLimits.subscribers)}</li>
-  <li><strong>User seats:</strong> up to ${fmt(planLimits.seats)}</li>
-  <li><strong>Monthly emails:</strong> up to ${fmt(planLimits.emails)} outbound emails</li>
-</ul>
-</div>
-<div class="btn-container">
-  <a href="${billingPageUrl}" class="btn">Manage billing</a>
-</div>`,
-      });
-    }
-  }
 }
 `````
 
@@ -90027,6 +87248,1917 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
 }
 `````
 
+## File: apps/backend/src/app/modules/settings/controller.ts
+`````typescript
+import { TRPCError } from '@trpc/server';
+import { createSigner, createVerifier } from 'fast-jwt';
+import type { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
+import { env } from '../../../env';
+
+interface VerifiedDomainEntry {
+  domain: string;
+  domainAuthId?: string | number;
+  linkBrandingId?: string | number;
+  spf?: boolean;
+  dkim?: boolean;
+  dmarc?: boolean;
+  linkBranded?: boolean;
+  status?: string;
+  domainAuthDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
+  linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
+  /** Platform-key mode only: whether the parent-level records were associated with the
+   * subuser the tenant sends through. Retried on verify until true — subuser sends are
+   * unsigned without it. */
+  subuserAssociated?: boolean;
+}
+
+import { randomInt, timingSafeEqual } from 'crypto';
+
+import { BaseController } from '../../lib/base.controller';
+import { BadRequestError, TooManyRequestsError } from '../../errors/app-errors';
+import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { maskPhone, normalizeE164 } from '../../lib/sms/phone';
+import { SmsService } from '../../lib/sms/sms.service';
+import { hashToken } from '../../lib/token-hash';
+import { getPlanDef } from '@common';
+import { assertNotDemoMode } from '../demo/demo-guard';
+import { DEMO_MANIFEST_SETTINGS_KEY } from '../demo/demo-seed';
+import { STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY } from '../donations/stripe-connect';
+
+/** Server-managed settings keys that must never be written via the public upsert: the
+ * verified sender/domain lists back the newsletter send guards, the Stripe Connect account
+ * id/status back the donations fail-closed gate, and the demo manifest drives demo-data
+ * deletion. A direct write to any of them is a guard bypass or data corruption. */
+const SERVER_MANAGED_SETTINGS_MESSAGES: Record<string, string> = {
+  'communications.verified_emails': 'Verified emails list cannot be modified directly.',
+  'communications.verified_domains': 'Verified domains list cannot be modified directly.',
+  [STRIPE_ACCOUNT_ID_KEY]: 'Stripe connection settings cannot be modified directly.',
+  [STRIPE_ACCOUNT_STATUS_KEY]: 'Stripe connection settings cannot be modified directly.',
+  [DEMO_MANIFEST_SETTINGS_KEY]: 'This setting is managed by pplCRM and cannot be modified directly.',
+};
+import { SettingsRepo } from './repositories/settings.repo';
+
+const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
+const PHONE_CODE_MAX_ATTEMPTS = 5;
+
+// Rate limiting in-memory storage to prevent verification spam/abuse
+const verificationRequestTimestamps = new Map<string, number>(); // key: `${tenant_id}:${email}`, value: timestamp
+const tenantVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
+const domainVerificationTimestamps = new Map<string, number>(); // key: `${tenant_id}:${domain}`, value: timestamp
+const tenantDomainVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
+
+export class SettingsController extends BaseController<'settings', SettingsRepo> {
+  private mailService = new TransactionalEmailService();
+
+  constructor() {
+    super(new SettingsRepo());
+  }
+
+  public async getCurrentCampaignId(auth: IAuthKeyPayload) {
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'current_campaign',
+    });
+
+    if (!row) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Current campaign setting not found.',
+      });
+    }
+
+    const value = row.value;
+
+    if (typeof value === 'number' || typeof value === 'string') {
+      return String(value);
+    }
+
+    if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+      const id = (value as Record<string, unknown>)['id'];
+      if (typeof id === 'number' || typeof id === 'string') {
+        return String(id);
+      }
+    }
+
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Current campaign setting is malformed.',
+    });
+  }
+
+  public async getSnapshot(auth: IAuthKeyPayload) {
+    const rows = await this.getRepo().getAllForTenant(auth.tenant_id);
+
+    return rows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+  }
+
+  public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
+    // 1. Block direct updates to server-managed keys (SERVER_MANAGED_SETTINGS_MESSAGES).
+    //    Ordinary workspace settings are deliberately NOT demo-gated — the demo guard covers
+    //    only outward-facing actions (verification, sync, sending, invites, Stripe Connect).
+    for (const entry of entries) {
+      const blockedMessage = SERVER_MANAGED_SETTINGS_MESSAGES[entry.key];
+      if (blockedMessage) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: blockedMessage });
+      }
+    }
+
+    // 2. Validate default from and reply-to emails
+    const defaultFromEntry = entries.find((e) => e.key === 'communications.default_from_email');
+    const replyToEntry = entries.find((e) => e.key === 'communications.reply_to');
+
+    if (defaultFromEntry || replyToEntry) {
+      const snapshot = await this.getSnapshot(auth);
+      const verifiedEmailsRaw = snapshot['communications.verified_emails'];
+      const verifiedEmails = Array.isArray(verifiedEmailsRaw)
+        ? verifiedEmailsRaw.map((e) => String(e).toLowerCase().trim())
+        : [];
+
+      if (defaultFromEntry && typeof defaultFromEntry.value === 'string') {
+        const val = defaultFromEntry.value.toLowerCase().trim();
+        if (val && !verifiedEmails.includes(val)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Email address must be verified before it can be configured as a Default From Email.',
+          });
+        }
+      }
+
+      if (replyToEntry && typeof replyToEntry.value === 'string') {
+        const val = replyToEntry.value.toLowerCase().trim();
+        if (val && !verifiedEmails.includes(val)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Email address must be verified before it can be configured as a Reply-to Email.',
+          });
+        }
+      }
+    }
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: entries.map((entry) => ({
+        key: entry.key,
+        value: entry.value,
+      })),
+    });
+
+    return this.getSnapshot(auth);
+  }
+
+  /**
+   * Sending-phone verification (anti-abuse): Free-plan tenants must verify a mobile number by
+   * SMS before their first newsletter send (send-guards enforces it). One number per tenant;
+   * the 6-digit code is stored hashed on the tenant row — never in settings, whose snapshot is
+   * client-readable.
+   */
+  public async getPhoneVerificationStatus(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['sending_phone', 'sending_phone_verified_at', 'pending_phone', 'subscription_plan'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    return {
+      verified: tenant?.sending_phone_verified_at != null,
+      verifiedAt: tenant?.sending_phone_verified_at ?? null,
+      phone: tenant?.sending_phone ? maskPhone(tenant.sending_phone) : null,
+      pendingPhone: tenant?.pending_phone ? maskPhone(tenant.pending_phone) : null,
+      // Whether a send is currently gated on it (Free plan; unknown/legacy values resolve to free).
+      required: (getPlanDef(tenant?.subscription_plan)?.key ?? 'free') === 'free',
+    };
+  }
+
+  public async requestPhoneVerification(auth: IAuthKeyPayload, phone: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const normalized = normalizeE164(phone);
+    if (!normalized) {
+      throw new BadRequestError('Enter a valid mobile number, including the country code for non-US numbers.');
+    }
+    // Throttle per tenant (code farming) and per destination number (SMS-bombing a victim).
+    checkRateLimit(`phoneVerifyRequest:${auth.tenant_id}`, 3, 60 * 60 * 1000);
+    checkRateLimit(`phoneVerifyRequest:${normalized}`, 3, 60 * 60 * 1000);
+
+    const code = String(randomInt(100000, 1000000));
+    const smsService = new SmsService();
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await trx
+          .updateTable('tenants')
+          .set({
+            pending_phone: normalized,
+            phone_verification_code_hash: hashToken(code),
+            phone_verification_expires_at: new Date(Date.now() + PHONE_CODE_TTL_MS),
+            phone_verification_attempts: 0,
+          })
+          .where('id', '=', auth.tenant_id)
+          .execute();
+        await smsService.enqueueSms(
+          {
+            to: normalized,
+            body: `Your pplCRM verification code is ${code}. It expires in 10 minutes.`,
+            tenant_id: auth.tenant_id,
+          },
+          trx,
+        );
+      });
+
+    return { success: true, phone: maskPhone(normalized) };
+  }
+
+  public async confirmPhoneVerification(auth: IAuthKeyPayload, code: string) {
+    checkRateLimit(`phoneVerifyConfirm:${auth.tenant_id}`, 10, 15 * 60 * 1000);
+    const db = this.getRepo().db;
+    const tenant = await db
+      .selectFrom('tenants')
+      .select([
+        'pending_phone',
+        'phone_verification_code_hash',
+        'phone_verification_expires_at',
+        'phone_verification_attempts',
+      ])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!tenant?.pending_phone || !tenant.phone_verification_code_hash) {
+      throw new BadRequestError('No phone verification is in progress. Request a new code first.');
+    }
+    if (Number(tenant.phone_verification_attempts) >= PHONE_CODE_MAX_ATTEMPTS) {
+      throw new TooManyRequestsError('Too many incorrect codes. Request a new code and try again.');
+    }
+    const expiresAt = tenant.phone_verification_expires_at ? new Date(tenant.phone_verification_expires_at) : null;
+    if (!expiresAt || expiresAt.getTime() < Date.now()) {
+      throw new BadRequestError('That code has expired. Request a new one.');
+    }
+
+    const expected = Buffer.from(tenant.phone_verification_code_hash, 'hex');
+    const actual = Buffer.from(hashToken(code.trim()), 'hex');
+    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+      await db
+        .updateTable('tenants')
+        .set((eb) => ({ phone_verification_attempts: eb('phone_verification_attempts', '+', 1) }))
+        .where('id', '=', auth.tenant_id)
+        .execute();
+      throw new BadRequestError('Incorrect code. Check the SMS and try again.');
+    }
+
+    await db
+      .updateTable('tenants')
+      .set({
+        sending_phone: tenant.pending_phone,
+        sending_phone_verified_at: new Date(),
+        pending_phone: null,
+        phone_verification_code_hash: null,
+        phone_verification_expires_at: null,
+        phone_verification_attempts: 0,
+      })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'update',
+      entity: 'settings',
+      metadata: { action: 'sending_phone_verified', phone: maskPhone(tenant.pending_phone) },
+    });
+
+    return { success: true, phone: maskPhone(tenant.pending_phone) };
+  }
+
+  public async requestEmailVerification(auth: IAuthKeyPayload, email: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const normalized = email.toLowerCase().trim();
+    const rateLimitKey = `${auth.tenant_id}:${normalized}`;
+    const now = Date.now();
+
+    // 1. Per-email verification limit: max once per minute
+    const lastRequest = verificationRequestTimestamps.get(rateLimitKey);
+    if (lastRequest && now - lastRequest < 60000) {
+      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Please wait ${remainingSeconds} seconds before requesting verification again for this email.`,
+      });
+    }
+
+    // 2. Tenant-wide verification limit: max 5 requests per minute
+    let tenantRequests = tenantVerificationTimestamps.get(auth.tenant_id) || [];
+    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
+    if (tenantRequests.length >= 5) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message:
+          'Rate limit exceeded. You can only request up to 5 verification emails per minute across your campaign.',
+      });
+    }
+
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const signer = createSigner({
+      algorithm: 'HS256',
+      key,
+      expiresIn: '24h',
+    });
+
+    const token = signer({
+      tenant_id: auth.tenant_id,
+      email: normalized,
+      purpose: 'verify-sender-email',
+    });
+
+    const verificationLink = `${env.appUrl}/verify-sender-email?token=${token}`;
+
+    await this.mailService.enqueueMail({
+      to: normalized,
+      tenant_id: auth.tenant_id,
+      subject: 'Verify your sender email address',
+      text: `Hi,\n\nWe need to verify this email address before your pplCRM campaign can send from it. Verify it using this link: ${verificationLink}\n\nThis link expires in 24 hours.`,
+      html: `<h2>Verify your sender email address</h2>
+<p>We need to verify this email address before your pplCRM campaign can send from it. Click the button below to verify it:</p>
+<div class="btn-container">
+  <a href="${verificationLink}" class="btn">Verify sender email</a>
+</div>
+<p class="warning">For security, this link expires in 24 hours.</p>`,
+    });
+
+    // Record timestamps if successful
+    tenantRequests.push(now);
+    tenantVerificationTimestamps.set(auth.tenant_id, tenantRequests);
+    verificationRequestTimestamps.set(rateLimitKey, now);
+
+    return { success: true };
+  }
+
+  public async verifySenderEmail(token: string) {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({
+      algorithms: ['HS256'],
+      key,
+      ignoreExpiration: false,
+    });
+
+    try {
+      const payload = await verifier(token);
+      if (!payload || payload.purpose !== 'verify-sender-email' || !payload.tenant_id || !payload.email) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Invalid verification token.',
+        });
+      }
+
+      const tenantId = String(payload.tenant_id);
+      const email = String(payload.email).toLowerCase().trim();
+
+      const row = await this.getRepo().getByKey({
+        tenant_id: tenantId,
+        key: 'communications.verified_emails',
+      });
+
+      let currentList: string[] = [];
+      if (row && Array.isArray(row.value)) {
+        currentList = row.value.map((e) => String(e).toLowerCase().trim());
+      }
+
+      if (!currentList.includes(email)) {
+        currentList.push(email);
+
+        const tenant = await this.getRepo()
+          .db.selectFrom('tenants')
+          .select('admin_id')
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+        const adminId = tenant?.admin_id ? String(tenant.admin_id) : '1';
+
+        await this.getRepo().upsertMany({
+          tenant_id: tenantId,
+          user_id: adminId,
+          entries: [{ key: 'communications.verified_emails', value: currentList }],
+        });
+      }
+
+      return { success: true, email };
+    } catch (err) {
+      if (err instanceof TRPCError) throw err;
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Invalid or expired verification token.',
+      });
+    }
+  }
+
+  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .selectAll()
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!tenant) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Tenant not found.',
+      });
+    }
+
+    if (String(tenant.admin_id) !== String(auth.user_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Only the organization administrator can schedule deletion.',
+      });
+    }
+
+    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await this.getRepo()
+      .db.updateTable('tenants')
+      .set({ deletion_scheduled_at: deletionDate })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    const admin = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', auth.user_id)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await this.mailService.sendMail({
+        to: admin.email,
+        tenant_id: auth.tenant_id,
+        subject: 'Your organization is scheduled for deletion',
+        text: `Hi ${admin.first_name || 'there'},\n\nYour organization ${tenant.name} has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nTo cancel, open your organization settings: ${env.appUrl}/settings`,
+        html: `<h2>Organization scheduled for deletion</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>The organization <strong>${tenant.name}</strong> has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>All data under this organization, including campaigns, contacts, lists, workflows, and user accounts, will be permanently deleted. To cancel the deletion, click the button below:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/settings" class="btn">Open organization settings</a>
+</div>
+<p class="warning">If you did not schedule this deletion, please contact support immediately.</p>`,
+      });
+    }
+
+    return { success: true, deletion_scheduled_at: deletionDate };
+  }
+
+  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .selectAll()
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!tenant) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Tenant not found.',
+      });
+    }
+
+    if (String(tenant.admin_id) !== String(auth.user_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Only the organization administrator can cancel deletion.',
+      });
+    }
+
+    await this.getRepo()
+      .db.updateTable('tenants')
+      .set({ deletion_scheduled_at: null })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    const admin = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', auth.user_id)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await this.mailService.sendMail({
+        to: admin.email,
+        tenant_id: auth.tenant_id,
+        subject: 'Your organization deletion was canceled',
+        text: `Your request to delete organization ${tenant.name} has been canceled, and your organization is fully restored.`,
+        html: `<h2>Organization deletion canceled</h2>
+<p>Your request to delete organization <strong>${tenant.name}</strong> has been canceled. Your organization and all associated campaign data are fully restored.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Resolve the SendGrid credentials the domain-whitelabel operations must run under,
+   * mirroring the newsletter send path (lib/jobs/handlers/newsletter.handlers.ts): a
+   * tenant-owned API key always wins, with operations running on-behalf-of the tenant's own
+   * subuser. Without one, operations run on the PLATFORM key at the parent level — so every
+   * tenant, including Free, gets real SendGrid DNS records and real DKIM instead of mock
+   * records that can never authenticate their mail. `associateSubuser` is then the subuser
+   * the tenant's mail actually flows through (their whitelabel subuser, or the shared
+   * free-tier subuser on the Free plan); the created records must be associated with it or
+   * subuser sends stay unsigned.
+   */
+  private async resolveWhitelabelCredentials(tenantId: string): Promise<{
+    apiKey: string | undefined;
+    subuser: string | undefined;
+    associateSubuser: string | undefined;
+  }> {
+    const db = this.getRepo().db;
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenantId)
+      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
+      .execute();
+
+    const settingsMap: Record<string, unknown> = {};
+    for (const row of settingsRows) {
+      settingsMap[row.key] = row.value;
+    }
+
+    const rawKey = settingsMap['communications.sendgrid_api_key'];
+    const rawSubuser = settingsMap['communications.sendgrid_subuser_username'];
+    const ownApiKey = typeof rawKey === 'string' && rawKey.trim() !== '' ? rawKey : undefined;
+    const ownSubuser = typeof rawSubuser === 'string' && rawSubuser.trim() !== '' ? rawSubuser : undefined;
+
+    if (ownApiKey) {
+      return { apiKey: ownApiKey, subuser: ownSubuser, associateSubuser: undefined };
+    }
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['subscription_plan'])
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    const planKey = getPlanDef(tenant?.subscription_plan)?.key ?? 'free';
+    const associateSubuser = ownSubuser ?? (planKey === 'free' ? env.sendgridFreeTierSubuser : undefined);
+
+    return { apiKey: env.sendgridApiKey, subuser: undefined, associateSubuser };
+  }
+
+  public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'communications.verified_domains',
+    });
+    const currentList: VerifiedDomainEntry[] = Array.isArray(row?.value)
+      ? (row?.value as unknown as VerifiedDomainEntry[])
+      : [];
+
+    if (currentList.some((d) => d.domain === domainVal)) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This domain is already added.',
+      });
+    }
+
+    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
+    const sendgridSvc = new SendGridWhitelabelService();
+    const domainAuth = await sendgridSvc.createDomainAuthentication(domainVal, creds.apiKey, creds.subuser);
+    const linkBranding = await sendgridSvc.createLinkBranding(domainVal, creds.apiKey, creds.subuser);
+
+    // Platform-key mode: the records live at the parent level but the tenant's mail is sent
+    // on-behalf-of a subuser — associate both with it. Failures are recorded and retried on
+    // every verify, and verification never succeeds until the association holds.
+    let subuserAssociated = false;
+    if (creds.associateSubuser) {
+      const domainOk = await sendgridSvc.associateDomainWithSubuser(
+        domainAuth.id,
+        creds.associateSubuser,
+        creds.apiKey,
+      );
+      const linkOk = await sendgridSvc.associateLinkWithSubuser(linkBranding.id, creds.associateSubuser, creds.apiKey);
+      subuserAssociated = domainOk && linkOk;
+    }
+
+    const newEntry = {
+      domain: domainVal,
+      status: 'pending',
+      spf: false,
+      dkim: false,
+      dmarc: false,
+      domainAuthId: domainAuth.id,
+      linkBrandingId: linkBranding.id,
+      domainAuthDns: domainAuth.dns,
+      linkBrandingDns: linkBranding.dns,
+      linkBranded: false,
+      ...(creds.associateSubuser ? { subuserAssociated } : {}),
+    };
+
+    const updatedList = [...currentList, newEntry];
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: [{ key: 'communications.verified_domains', value: updatedList }],
+    });
+
+    return updatedList;
+  }
+
+  public async verifyVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+    const rateLimitKey = `${auth.tenant_id}:${domainVal}`;
+    const now = Date.now();
+
+    // 1. Per-domain verification check limit: max once per minute
+    const lastRequest = domainVerificationTimestamps.get(rateLimitKey);
+    if (lastRequest && now - lastRequest < 60000) {
+      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Please wait ${remainingSeconds} seconds before verifying this domain again.`,
+      });
+    }
+
+    // 2. Tenant-wide domain verification limit: max 5 checks per minute
+    let tenantRequests = tenantDomainVerificationTimestamps.get(auth.tenant_id) || [];
+    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
+    if (tenantRequests.length >= 5) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. You can only verify up to 5 domains per minute across your campaign.',
+      });
+    }
+
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'communications.verified_domains',
+    });
+
+    if (!row || !Array.isArray(row.value)) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Domain configuration not found.',
+      });
+    }
+
+    const currentList = row.value as unknown as VerifiedDomainEntry[];
+    const domainEntry = currentList.find((d) => d.domain === domainVal);
+
+    if (!domainEntry) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Domain ${domainVal} not found in verified domains list.`,
+      });
+    }
+
+    // Record timestamps if validation can proceed
+    tenantRequests.push(now);
+    tenantDomainVerificationTimestamps.set(auth.tenant_id, tenantRequests);
+    domainVerificationTimestamps.set(rateLimitKey, now);
+
+    // Resolve credentials the same way the send path does (tenant key, else platform key).
+    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
+    const apiKey = creds.apiKey;
+    const subuser = creds.subuser;
+    const hasValidKey = !!apiKey && apiKey.trim().startsWith('SG.') && apiKey.trim().length > 20;
+
+    const sendgridSvc = new SendGridWhitelabelService();
+
+    // Platform-key mode: if the add-time subuser association failed (SendGrid hiccup), retry
+    // it here — the domain must not verify while subuser sends would go out unsigned.
+    let subuserAssociated = domainEntry.subuserAssociated === true;
+    if (hasValidKey && creds.associateSubuser && !subuserAssociated) {
+      const domainOk = domainEntry.domainAuthId
+        ? await sendgridSvc.associateDomainWithSubuser(Number(domainEntry.domainAuthId), creds.associateSubuser, apiKey)
+        : false;
+      const linkOk = domainEntry.linkBrandingId
+        ? await sendgridSvc.associateLinkWithSubuser(Number(domainEntry.linkBrandingId), creds.associateSubuser, apiKey)
+        : false;
+      subuserAssociated = domainOk && linkOk;
+    }
+    // Association is only load-bearing in platform-key mode with a real key; elsewhere the
+    // records already live where the mail is sent from.
+    const subuserOk = !hasValidKey || !creds.associateSubuser || subuserAssociated;
+
+    let spfVerified = false;
+    let dkimVerified = false;
+    let linkBranded = false;
+    let dmarcVerified = false;
+
+    // Check with SendGrid if IDs are present
+    if (domainEntry.domainAuthId) {
+      const authRes = await sendgridSvc.validateDomainAuthentication(Number(domainEntry.domainAuthId), apiKey, subuser);
+      spfVerified = !!authRes.validationResults?.['mail_cname'];
+      dkimVerified = !!authRes.validationResults?.['dkim1'] && !!authRes.validationResults?.['dkim2'];
+    }
+
+    if (domainEntry.linkBrandingId) {
+      linkBranded = await sendgridSvc.validateLinkBranding(Number(domainEntry.linkBrandingId), apiKey, subuser);
+    }
+
+    // Check DMARC via live DNS check
+    dmarcVerified = await sendgridSvc.verifyDmarc(domainVal);
+
+    // No valid SendGrid key: fall back to live CNAME checks so a correctly configured domain
+    // can still verify against real DNS. Auto-passing every check is a local-dev convenience
+    // behind an EXPLICIT opt-in (ALLOW_MOCK_DOMAIN_VERIFICATION=true) — a missing or
+    // misconfigured key in a real deploy must not silently mark domains verified and open
+    // the send guards (fail closed, same rule as ALLOW_MOCK_PAYMENTS).
+    if (!hasValidKey) {
+      const realSpf = await sendgridSvc.verifyCname(
+        domainEntry.domainAuthDns?.['mail_cname']?.host || '',
+        domainEntry.domainAuthDns?.['mail_cname']?.data,
+      );
+      const realDkim1 = await sendgridSvc.verifyCname(
+        domainEntry.domainAuthDns?.['dkim1']?.host || '',
+        domainEntry.domainAuthDns?.['dkim1']?.data,
+      );
+      const realDkim2 = await sendgridSvc.verifyCname(
+        domainEntry.domainAuthDns?.['dkim2']?.host || '',
+        domainEntry.domainAuthDns?.['dkim2']?.data,
+      );
+      const realLink = await sendgridSvc.verifyCname(
+        domainEntry.linkBrandingDns?.['domain']?.host || '',
+        domainEntry.linkBrandingDns?.['domain']?.data,
+      );
+
+      const mockPass = env.allowMockDomainVerification;
+      spfVerified = realSpf || mockPass;
+      dkimVerified = (realDkim1 && realDkim2) || mockPass;
+      linkBranded = realLink || mockPass;
+      dmarcVerified = dmarcVerified || mockPass;
+    }
+
+    const updatedList = currentList.map((d) => {
+      if (d.domain === domainVal) {
+        // DMARC is recommended but not required for verified status: the sending records
+        // (SPF + DKIM + link branding) authenticate the mail; DMARC is the tenant's own
+        // anti-spoofing policy and must not block their ability to send. The subuser
+        // association IS required (platform-key mode) — without it the DNS can be perfect
+        // and the tenant's mail still goes out unsigned.
+        const isVerified = spfVerified && dkimVerified && linkBranded && subuserOk;
+        return {
+          ...d,
+          spf: spfVerified,
+          dkim: dkimVerified,
+          dmarc: dmarcVerified,
+          linkBranded,
+          ...(creds.associateSubuser ? { subuserAssociated } : {}),
+          status: isVerified ? 'verified' : 'pending',
+          domainAuthDns: {
+            ...d.domainAuthDns,
+            mail_cname: d.domainAuthDns?.['mail_cname']
+              ? { ...d.domainAuthDns['mail_cname'], valid: spfVerified }
+              : undefined,
+            dkim1: d.domainAuthDns?.['dkim1'] ? { ...d.domainAuthDns['dkim1'], valid: dkimVerified } : undefined,
+            dkim2: d.domainAuthDns?.['dkim2'] ? { ...d.domainAuthDns['dkim2'], valid: dkimVerified } : undefined,
+          },
+          linkBrandingDns: {
+            ...d.linkBrandingDns,
+            domain: d.linkBrandingDns?.['domain'] ? { ...d.linkBrandingDns['domain'], valid: linkBranded } : undefined,
+          },
+        };
+      }
+      return d;
+    });
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: [{ key: 'communications.verified_domains', value: updatedList }],
+    });
+
+    return updatedList;
+  }
+
+  public async deleteVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'communications.verified_domains',
+    });
+
+    if (!row || !Array.isArray(row.value)) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Domain configuration not found.',
+      });
+    }
+
+    const currentList = row.value as unknown as VerifiedDomainEntry[];
+    const domainEntry = currentList.find((d) => d.domain === domainVal);
+
+    if (!domainEntry) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Domain ${domainVal} not found in verified domains list.`,
+      });
+    }
+
+    // Resolve credentials the same way add/verify do, so the delete reaches the SendGrid
+    // account the records were actually created under.
+    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
+
+    const sendgridSvc = new SendGridWhitelabelService();
+
+    // Delete from SendGrid
+    if (domainEntry.domainAuthId) {
+      await sendgridSvc.deleteDomainAuthentication(Number(domainEntry.domainAuthId), creds.apiKey, creds.subuser);
+    }
+    if (domainEntry.linkBrandingId) {
+      await sendgridSvc.deleteLinkBranding(Number(domainEntry.linkBrandingId), creds.apiKey, creds.subuser);
+    }
+
+    const updatedList = currentList.filter((d) => d.domain !== domainVal);
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: [{ key: 'communications.verified_domains', value: updatedList }],
+    });
+
+    return updatedList;
+  }
+
+  public async generateApiKey(auth: IAuthKeyPayload) {
+    const { generateApiKey, hashApiKey, getKeyPreview } = await import('../../lib/api-key');
+    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
+    const repo = new workspaceApiKeysRepo();
+
+    // Generate new key
+    const rawKey = generateApiKey();
+    const keyHash = hashApiKey(rawKey);
+    const keyPreview = getKeyPreview(rawKey);
+
+    // Store in database (will overwrite existing key if present)
+    await repo.create(auth.tenant_id, keyHash, keyPreview);
+
+    // Return the full key only once — it's never retrievable again, only the preview
+    return {
+      key: rawKey,
+      preview: keyPreview,
+    };
+  }
+
+  public async getApiKeyPreview(auth: IAuthKeyPayload) {
+    const workspaceApiKeysRepo = (await import('./repositories/workspace-api-keys.repo')).WorkspaceApiKeysRepo;
+    const repo = new workspaceApiKeysRepo();
+
+    const row = await repo.getByTenantId(auth.tenant_id);
+    if (!row) {
+      return null;
+    }
+
+    return {
+      preview: row.key_preview,
+      createdAt: row.created_at,
+      lastUsedAt: row.last_used_at,
+    };
+  }
+
+  public async regenerateApiKey(auth: IAuthKeyPayload) {
+    // Regenerate is just generate with replace semantics — the repo's
+    // ON CONFLICT handling automatically replaces the old key
+    return this.generateApiKey(auth);
+  }
+}
+`````
+
+## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
+`````typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { TRPCError } from '@trpc/server';
+import { getHTTPStatusCodeFromError } from '@trpc/server/http';
+import { WebFormsController } from '../controller';
+import { DonationsController } from '../../donations/controller';
+import formBody from '@fastify/formbody';
+import { resolveTenantById, resolveTenantFromRequest } from '../../../lib/public-tenant';
+import { checkKeyedSubmissionRateLimit, tenantIdFromOptionalApiKey } from '../../../lib/validate-api-key';
+import { env } from '../../../../env';
+
+const webFormsController = new WebFormsController();
+const donationsController = new DonationsController();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * HTTP status for an error thrown behind a public REST route. The controller layer throws
+ * TRPCError (it also backs the tRPC router), whose string `code` carries no numeric status —
+ * without the explicit mapping every BAD_REQUEST/TOO_MANY_REQUESTS surfaced as a 500 and the
+ * visitor lost the actionable message. AppError `.status` and Fastify `.statusCode` still win.
+ */
+function httpStatusOf(err: unknown): number | undefined {
+  if (isRecord(err) && typeof err['status'] === 'number') return err['status'];
+  if (isRecord(err) && typeof err['statusCode'] === 'number') return err['statusCode'];
+  if (err instanceof TRPCError) return getHTTPStatusCodeFromError(err);
+  return undefined;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const SUCCESS_HTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Successful</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --success: #2dd4bf;
+      --success-glow: rgba(45, 212, 191, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --success: #22c55e;
+        --success-glow: rgba(34, 197, 94, 0.15);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: var(--accent);
+      filter: blur(120px);
+      opacity: 0.08;
+      z-index: 0;
+    }
+    body::before { top: 10%; left: 15%; }
+    body::after { bottom: 10%; right: 15%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 48px 32px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--success-glow);
+      border: 2px solid var(--success);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--success);
+      stroke-dasharray: 100;
+      stroke-dashoffset: 100;
+      stroke-width: 3px;
+      fill: none;
+      animation: drawCheck 0.6s 0.3s ease-out forwards;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes popIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes drawCheck {
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>Submission Successful</h1>
+    <p>Thank you! Your information has been successfully received and processed.</p>
+  </div>
+</body>
+</html>
+`;
+
+const errorHtml = (message: string) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Error</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --error: #f37373;
+      --error-glow: rgba(243, 115, 115, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --error: #ef4444;
+        --error-glow: rgba(239, 68, 68, 0.15);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: var(--error);
+      filter: blur(120px);
+      opacity: 0.08;
+      z-index: 0;
+    }
+    body::before { top: 10%; left: 15%; }
+    body::after { bottom: 10%; right: 15%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 48px 32px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--error), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--error-glow);
+      border: 2px solid var(--error);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--error);
+      stroke-width: 3px;
+      fill: none;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes popIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--error)"/>
+      </svg>
+    </div>
+    <h1>Submission Failed</h1>
+    <p>${escapeHtml(message)}</p>
+  </div>
+</body>
+</html>
+`;
+
+const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Register form URL-encoded parser
+  fastify.register(formBody);
+
+  // These are per-tenant, transactional public pages (donation forms, submit
+  // endpoints, success/error confirmations) — thin and not search content, so
+  // keep them all out of search-engine indexes.
+  fastify.addHook('onRequest', (_req, reply, hookDone) => {
+    reply.header('X-Robots-Tag', 'noindex');
+    hookDone();
+  });
+
+  fastify.get<{
+    Querystring: {
+      checkout_session_id?: string;
+      is_mock?: string;
+      person_id?: string;
+      amount_cents?: string;
+      province?: string;
+      country?: string;
+      tenant_id?: string;
+      user_id?: string;
+    };
+  }>('/success', async (req, reply) => {
+    const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
+    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
+    // unauthenticated and every parameter (tenant_id, person_id, amount) is
+    // attacker-controlled, so it must NEVER record donations unless mock payments are EXPLICITLY
+    // enabled (ALLOW_MOCK_PAYMENTS=true) — an unset NODE_ENV must not fail open (SECURITY-REVIEW 4.2).
+    // Real payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
+    if (env.allowMockPayments && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
+      try {
+        const { DonationsController } = await import('../../donations/controller');
+        const donationsController = new DonationsController();
+        await donationsController.confirmMockDonation(
+          tenant_id,
+          user_id || '1',
+          person_id,
+          Number(amount_cents),
+          checkout_session_id,
+          province || '',
+          country || '',
+        );
+      } catch (err) {
+        fastify.log.error(err as Error, 'Failed to confirm mock donation on public success page:');
+      }
+    }
+    reply.type('text/html');
+    return reply.send(SUCCESS_HTML);
+  });
+
+  // JSON config for the SPA public page (/f/:slug). The tenant is identified by its subdomain — from
+  // the explicit `?t=` param (the SPA passes its own subdomain, robust across hosts) or the Host
+  // header. Published forms return their render config; unpublished/archived slugs return a "closed"
+  // status; unknown tenant/slug 404s.
+  fastify.get<{ Params: { slug: string } }>('/f/:slug', async (req, reply) => {
+    const { slug } = req.params;
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Form not found.' });
+      }
+      const result = await webFormsController.getPublicFormBySlug(String(slug), tenant.id);
+      return reply.status(200).send(result);
+    } catch (err) {
+      const statusCode = httpStatusOf(err) ?? 404;
+      return reply.status(statusCode).send({ error: 'Form not found.' });
+    }
+  });
+
+  // Server-rendered public donation page. Donation forms deliberately stay off the /f/:slug SPA
+  // page (they carry the amount field + Stripe checkout); the lookup is tenant-scoped by slug like
+  // every other public surface.
+  fastify.get<{ Params: { slug: string } }>('/d/:slug', async (req, reply) => {
+    const { slug } = req.params;
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      const form = tenant ? await webFormsController.getDonationFormPublic(tenant.id, String(slug)) : undefined;
+      if (!tenant || !form || form.status !== 'published') {
+        reply.status(404).type('text/html');
+        return reply.send(errorHtml('Web form not found or inactive.'));
+      }
+
+      // Fail-closed residency gate: don't render a live donation form for an org that hasn't
+      // confirmed its residency settings. Friendly copy, not the generic 404.
+      if (!(await donationsController.mayAcceptDonations(tenant.id))) {
+        reply.status(403).type('text/html');
+        return reply.send(errorHtml('This organization isn’t accepting online donations yet. Please check back soon.'));
+      }
+
+      const formName = form.name;
+      const formDescription = form.description || '';
+
+      // Extract fields configuration, default to all fields if null/empty
+      const fields: string[] = form.fields
+        ? Array.isArray(form.fields)
+          ? (form.fields as string[])
+          : JSON.parse(String(form.fields))
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+      const submitAction = `/api/forms/submit/${encodeURIComponent(String(slug))}?t=${encodeURIComponent(tenant.slug)}`;
+      reply.type('text/html');
+      return reply.send(renderFormHtml(submitAction, formName, formDescription, fields, form.form_type));
+    } catch (err) {
+      // Never surface internal error detail to an unauthenticated visitor — log it, show generic
+      // copy (SECURITY-REVIEW 5.2, consistent with the tRPC sanitization boundary).
+      fastify.log.error(err, 'Failed to render public form');
+      reply.status(500).type('text/html');
+      return reply.send(errorHtml('Failed to load form.'));
+    }
+  });
+
+  fastify.post<{ Params: { slug: string }; Body: Record<string, string> }>('/submit/:slug', async (req, reply) => {
+    const { slug } = req.params;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
+    const isJsonExpected =
+      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
+
+    try {
+      // Optional workspace API key (server-side "bring your own form" integrations): the key
+      // identifies the tenant and swaps the anonymous per-IP limit for a per-tenant one.
+      // Anonymous browser/embed submissions carry no key and take the subdomain/?t= path.
+      const keyTenantId = await tenantIdFromOptionalApiKey(req);
+      if (keyTenantId) checkKeyedSubmissionRateLimit(keyTenantId, 'forms');
+
+      const tenant = keyTenantId ? await resolveTenantById(keyTenantId) : await resolveTenantFromRequest(req);
+      if (!tenant) {
+        if (isJsonExpected) return reply.status(404).send({ error: 'Web form not found or inactive.' });
+        reply.status(404).type('text/html');
+        return reply.send(errorHtml('Web form not found or inactive.'));
+      }
+      const body = req.body || {};
+      const result = await webFormsController.submitFormPublic(tenant, String(slug), body, clientIp, {
+        skipIpRateLimit: keyTenantId != null,
+      });
+
+      if (isJsonExpected) {
+        // The SPA/JSON caller follows `redirect_url` (Stripe hosted checkout / plain form redirect).
+        return reply.status(200).send({
+          success: true,
+          redirect_url: result.redirect_url ?? null,
+        });
+      }
+
+      if (result.redirect_url) {
+        return reply.redirect(result.redirect_url);
+      }
+
+      return reply.redirect('/api/forms/success');
+    } catch (err) {
+      fastify.log.error(err);
+      const statusCode = httpStatusOf(err) ?? 500;
+      // Client errors (4xx: validation, rate limit) carry user-actionable copy; anything 5xx is an
+      // unexpected internal failure whose detail must not leak to the public (SECURITY-REVIEW 5.2).
+      const message =
+        statusCode < 500 && err instanceof Error && err.message
+          ? err.message
+          : 'An unexpected error occurred during submission.';
+
+      if (isJsonExpected) {
+        return reply.status(statusCode).send({ error: message });
+      }
+
+      reply.status(statusCode).type('text/html');
+      return reply.send(errorHtml(message));
+    }
+  });
+
+  done();
+};
+
+export default webFormsPublicRoute;
+
+const renderFormHtml = (
+  submitAction: string,
+  formName: string,
+  formDescription: string,
+  fields: string[],
+  formType: string,
+) => {
+  const isFieldEnabled = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysEnabled.includes(name)) return true;
+    }
+    return fields.includes(name) || fields.includes(`${name}:required`);
+  };
+
+  const isFieldRequired = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysRequired.includes(name)) return true;
+    }
+    return fields.includes(`${name}:required`);
+  };
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(formName)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --input-focus-border: #0ea5e9;
+      --input-focus-ring: rgba(14, 165, 233, 0.15);
+      --label-color: #374151;
+      --placeholder-color: #9ca3af;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --input-bg: #0b1220;
+        --input-border: #1a2b45;
+        --input-focus-border: #3ea6ff;
+        --input-focus-ring: rgba(62, 166, 255, 0.25);
+        --label-color: #cbd5e1;
+        --placeholder-color: #4b5563;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: var(--accent);
+      filter: blur(150px);
+      opacity: 0.08;
+      z-index: 0;
+      pointer-events: none;
+    }
+    body::before { top: 15%; left: 10%; }
+    body::after { bottom: 15%; right: 10%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-radius: 24px;
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 500;
+      letter-spacing: -0.015em;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .description {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--label-color);
+      letter-spacing: 0.01em;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+      min-height: 46px;
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: var(--placeholder-color);
+    }
+
+    input:hover, textarea:hover, select:hover {
+      border-color: var(--accent);
+      opacity: 0.95;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: 0 0 0 4px var(--input-focus-ring);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 8px;
+      min-height: 48px;
+    }
+
+    button:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .hp-field {
+      display: none !important;
+    }
+
+    .footer-note {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      opacity: 0.6;
+    }
+
+    .footer-note a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .footer-note a:hover {
+      text-decoration: underline;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>${escapeHtml(formName)}</h1>
+      <p class="description">${escapeHtml(formDescription)}</p>
+    </div>
+
+    <form action="${escapeHtml(submitAction)}" method="POST">
+      <!-- Honeypot Bot Field (leave empty!) -->
+      <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
+
+      ${
+        formType === 'donation'
+          ? `
+      <div class="form-group">
+        <label for="amount">Donation Amount ($ CAD) *</label>
+        <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('first_name')
+          ? `
+      <div class="form-group">
+        <label for="first_name">First Name ${isFieldRequired('first_name') ? '*' : ''}</label>
+        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" ${isFieldRequired('first_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('last_name')
+          ? `
+      <div class="form-group">
+        <label for="last_name">Last Name ${isFieldRequired('last_name') ? '*' : ''}</label>
+        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" ${isFieldRequired('last_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      <div class="form-group">
+        <label for="email">Email Address *</label>
+        <input type="email" id="email" name="email" placeholder="john@example.com" required />
+      </div>
+
+      ${
+        isFieldEnabled('street1')
+          ? `
+      <div class="form-group">
+        <label for="street1">Street Address ${isFieldRequired('street1') ? '*' : ''}</label>
+        <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isFieldRequired('street1') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('city')
+          ? `
+      <div class="form-group">
+        <label for="city">City ${isFieldRequired('city') ? '*' : ''}</label>
+        <input type="text" id="city" name="city" placeholder="E.g. Toronto" ${isFieldRequired('city') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('country')
+          ? `
+      <div class="form-group">
+        <label for="country">Country ${isFieldRequired('country') ? '*' : ''}</label>
+        <select id="country" name="country" ${isFieldRequired('country') ? 'required' : ''}>
+          <option value="CA">Canada</option>
+          <option value="US">United States</option>
+          <option value="GB">United Kingdom</option>
+          <option value="AU">Australia</option>
+        </select>
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('state')
+          ? `
+      <div class="form-group">
+        <label for="state">State / Province ${isFieldRequired('state') ? '*' : ''}</label>
+        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" ${isFieldRequired('state') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('zip')
+          ? `
+      <div class="form-group">
+        <label for="zip">Zip / Postal Code ${isFieldRequired('zip') ? '*' : ''}</label>
+        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isFieldRequired('zip') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('mobile')
+          ? `
+      <div class="form-group">
+        <label for="mobile">Mobile / Phone ${isFieldRequired('mobile') ? '*' : ''}</label>
+        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isFieldRequired('mobile') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('notes')
+          ? `
+      <div class="form-group">
+        <label for="notes">Notes / Message ${isFieldRequired('notes') ? '*' : ''}</label>
+        <textarea id="notes" name="notes" placeholder="How can we help you?" ${isFieldRequired('notes') ? 'required' : ''}></textarea>
+      </div>`
+          : ''
+      }
+
+      <button type="submit">${formType === 'donation' ? 'Next' : 'Submit'}</button>
+    </form>
+
+    <div class="footer-note">
+      Powered by <a href="#" target="_blank">pplCRM</a>
+    </div>
+  </div>
+</body>
+</html>
+`;
+};
+`````
+
 ## File: apps/website/src/app/home/home-page.ts
 `````typescript
 import { Component, computed, inject, signal } from '@angular/core';
@@ -90244,7 +89376,7 @@ export class HomePage {
     {
       icon: 'rectangle-stack',
       title: 'One list, every campaign',
-      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf; switch context and the whole workspace follows.',
+      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf; admins decide who works in which campaign, and the whole workspace follows.',
     },
   ];
 
@@ -90353,6 +89485,1040 @@ export class HomePage {
 
   protected pick(id: Audience): void {
     this.aud.set(id);
+  }
+}
+`````
+
+## File: apps/website/src/app/pricing/pricing-page.ts
+`````typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import {
+  ANNUAL_MONTHS_FREE,
+  annualPriceForQuantity,
+  bracketIndexForSubscribers,
+  cadenceLabel,
+  FEATURE_MATRIX,
+  GB,
+  PLANS,
+  priceForQuantity,
+} from '@common';
+import type { BillingInterval, FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
+
+import { CurrencyService } from '../ui/currency.service';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SiteIcon } from '../ui/site-icon';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
+const SLIDER_STOPS: readonly number[] = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+];
+
+/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
+const DEFAULT_STOP_INDEX = 1;
+const DEFAULT_STOP = 2_500;
+
+/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
+type MatrixPlanKey = keyof FeatureMatrixRow['values'];
+
+function isMatrixPlanKey(key: string): key is MatrixPlanKey {
+  return key === 'free' || key === 'grassroots' || key === 'movement';
+}
+
+/** A matrix row is "table stakes" when every displayed plan simply has it (all-true checks).
+ * Those rows render as the compact included-everywhere strip, not as table rows. */
+function isAllTrueRow(row: FeatureMatrixRow): boolean {
+  return row.values.free === true && row.values.grassroots === true && row.values.movement === true;
+}
+
+/** One-line "what this tier adds" summary per plan card. Mirrors the GATED_FEATURES split in
+ * plans.ts; if a feature moves between tiers, update this wording too (pplcrm-website-claims). */
+const STEP_UP_LABELS: Readonly<Record<string, string>> = {
+  free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
+  grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
+  movement:
+    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers and priority support.',
+};
+
+@Component({
+  selector: 'pc-pricing-page',
+  imports: [RouterLink, SiteHeader, SiteFooter, SiteIcon],
+  templateUrl: './pricing-page.html',
+})
+export class PricingPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  private readonly currency = inject(CurrencyService);
+  /** Whether prices are being shown in a non-USD currency (gates the billing disclaimer). */
+  protected readonly isConverted = this.currency.isConverted;
+  /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
+  protected readonly currencySymbol = this.currency.priceSymbol;
+
+  /** The priced plan cards (Free / Grassroots / Movement); enterprise is a footnote. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+
+  /** Features every plan includes (all-true matrix rows), shown once as a strip instead of
+   * spending a table row on three identical checkmarks. */
+  protected readonly includedEverywhere: readonly string[] = FEATURE_MATRIX.flatMap((group) =>
+    group.rows.filter(isAllTrueRow).map((row) => row.label),
+  );
+
+  /** The comparison table: only groups and rows where plans actually differ. */
+  protected readonly diffMatrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX.map((group) => ({
+    category: group.category,
+    rows: group.rows.filter((row) => !isAllTrueRow(row)),
+  })).filter((group) => group.rows.length > 0);
+
+  /** Billing interval the cards and comparison table price at. The marketing page defaults to
+   * Annual (the in-app billing page keeps Monthly — see the plans.ts decision log). */
+  protected readonly interval = signal<BillingInterval>('year');
+  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
+
+  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
+  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
+  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
+  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
+
+  protected onSlide(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) {
+      this.stopIndex.set(Number(target.value));
+    }
+  }
+
+  protected setInterval(interval: BillingInterval): void {
+    this.interval.set(interval);
+  }
+
+  /** Live price at the slider's subscriber count, formatted in the active display currency.
+   * On annual, paid tiers show the rounded monthly-equivalent of the annual total (`$24` —
+   * the exact total renders alongside via `annualNote`, with the rounding disclaimer below
+   * the cards); Free keeps its plain `$0` (nothing to bill annually). */
+  protected priceLabel(plan: PlanDef): string {
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return 'Contact us';
+    if (this.interval() === 'year' && plan.purchasable) {
+      return this.currency.formatMonthlyEquivalent(annualPriceForQuantity(plan.key, index));
+    }
+    return this.currency.format(priceForQuantity(plan.key, index));
+  }
+
+  /** The card's cadence line ('per month' / 'per month, billed annually' / 'forever'). */
+  protected cadence(plan: PlanDef): string {
+    return cadenceLabel(plan, this.interval());
+  }
+
+  /** "Billed annually as $290 · 2 months free" under an annual paid-tier price; null whenever
+   * the plain monthly presentation applies (monthly interval, Free, out-of-ladder). */
+  protected annualNote(plan: PlanDef): string | null {
+    if (this.interval() !== 'year' || !plan.purchasable) return null;
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return null;
+    const total = this.currency.format(annualPriceForQuantity(plan.key, index));
+    return `Billed annually as ${total} · ${this.annualBadge}`;
+  }
+
+  /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */
+  protected zeroPrice(): string {
+    return this.currency.format(0);
+  }
+
+  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
+  protected overMax(plan: PlanDef): boolean {
+    return bracketIndexForSubscribers(plan.key, this.subscribers()) === null;
+  }
+
+  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
+  protected maxSubscribersLabel(plan: PlanDef): string {
+    const brackets = plan.pricing?.brackets;
+    const last = brackets?.[brackets.length - 1];
+    return (last?.upTo ?? 0).toLocaleString('en-US');
+  }
+
+  /** One-line caps summary for a plan card, derived from PlanDef so it can never drift
+   * (e.g. "Up to 100,000 subscribers · 5 seats · 10 GB"). */
+  protected capsLine(plan: PlanDef): string {
+    const parts: string[] = [`Up to ${this.maxSubscribersLabel(plan)} subscribers`];
+    if (plan.seats === null && plan.volunteers === null) {
+      parts.push('unlimited seats & volunteers');
+    } else {
+      parts.push(plan.seats === null ? 'unlimited seats' : `${plan.seats} seats`);
+      if (plan.volunteers === null) parts.push('unlimited volunteers');
+      else if (plan.volunteers > 0) parts.push(`${plan.volunteers} volunteers`);
+    }
+    if (plan.storageBytes !== null) parts.push(`${Math.round(plan.storageBytes / GB)} GB`);
+    return parts.join(' · ');
+  }
+
+  /** The card's "what this tier adds" one-liner. */
+  protected stepUpLabel(plan: PlanDef): string {
+    return STEP_UP_LABELS[plan.key] ?? plan.blurb;
+  }
+
+  /** One matrix cell: true = included, false = not included, string = text value. */
+  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
+    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
+  }
+}
+`````
+
+## File: apps/backend/src/app/modules/billing/controller.ts
+`````typescript
+import { sql } from 'kysely';
+import type Stripe from 'stripe';
+import {
+  BILLING_INTERVALS,
+  bracketIndexForSubscribers,
+  getPlanDef,
+  maxQuantity,
+  PLANS_BY_KEY,
+  PURCHASABLE_PLAN_KEYS,
+  type BillingInterval,
+  type PlanKey,
+  type PurchasablePlanKey,
+} from '@common';
+import { env } from '../../../env';
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { logger } from '../../logger';
+import { TenantsRepo } from '../auth/repositories/tenants.repo';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { WorkflowsController } from '../workflows/controller';
+import { WebhookEventsRepo } from './repositories/webhook-events.repo';
+import { getStripe, isMockMode, stripe } from '../../lib/stripe-platform-client';
+import { syncSubscriptionQuantity } from './subscription-sync';
+import { countEmailableSubscribers, getPlanLimits } from './usage-limits';
+
+/** Stripe price ID configured for each self-serve plan × billing interval (undefined in mock
+ * mode / when unset). The annual prices are exactly 10× the monthly unit amounts — see the
+ * Stripe ops comment in libs/common/src/lib/billing/plans.ts. */
+const PRICE_ID_BY_PLAN: Record<PurchasablePlanKey, Record<BillingInterval, string | undefined>> = {
+  grassroots: { month: env.stripePlanGrassrootsPriceId, year: env.stripePlanGrassrootsAnnualPriceId },
+  movement: { month: env.stripePlanMovementPriceId, year: env.stripePlanMovementAnnualPriceId },
+};
+
+/** Reverse-map a Stripe price ID back to our internal plan key + billing interval. */
+function planForPriceId(
+  priceId: string | undefined | null,
+): { plan: PurchasablePlanKey; interval: BillingInterval } | null {
+  if (!priceId) return null;
+  for (const plan of PURCHASABLE_PLAN_KEYS) {
+    for (const interval of BILLING_INTERVALS) {
+      const id = PRICE_ID_BY_PLAN[plan][interval];
+      if (id && id === priceId) return { plan, interval };
+    }
+  }
+  return null;
+}
+
+/** Narrow a stored `tenants.subscription_interval` value (or any unknown) to a BillingInterval. */
+function asBillingInterval(value: unknown): BillingInterval {
+  return value === 'year' ? 'year' : 'month';
+}
+
+/**
+ * The Stripe API version stripe-node v22 targets (2025 "basil" and later) removed
+ * `current_period_end` from the top-level Subscription object — it now lives on each
+ * subscription item. Read it from the first item, and fall back to null on an unexpected
+ * shape rather than throwing, so a webhook can never fail to activate a paid plan over a
+ * missing timestamp (previously `new Date(undefined * 1000)` threw and left the tenant on
+ * the free tier despite a successful charge).
+ */
+function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
+  const periodEnd = subscription.items.data[0]?.current_period_end;
+  return typeof periodEnd === 'number' ? new Date(periodEnd * 1000).toISOString() : null;
+}
+
+const tenantsRepo = new TenantsRepo();
+const settingsRepo = new SettingsRepo();
+const webhookEventsRepo = new WebhookEventsRepo();
+
+/** Dedup flag prefix shared with `usage-limits.ts`'s notify-then-adjust bracket alerts — cleared
+ * here once a cycle-boundary downgrade lands, so a future re-growth past the same bracket sends
+ * a fresh notice instead of staying suppressed forever. */
+const BRACKET_FLAG_PREFIX = 'bracket_';
+
+async function clearBracketFlags(tenantId: string, adminUserId: string): Promise<void> {
+  const row = await settingsRepo.getByKey({ tenant_id: tenantId, key: 'billing.limit_alerts_sent' });
+  if (!row?.value) return;
+
+  const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+  if (!parsed || typeof parsed !== 'object') return;
+
+  const alertSettings: Record<string, boolean> = { ...parsed };
+  let changed = false;
+  for (const key of Object.keys(alertSettings)) {
+    if (key.startsWith(BRACKET_FLAG_PREFIX) && alertSettings[key]) {
+      alertSettings[key] = false;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+
+  await settingsRepo.upsertMany({
+    tenant_id: tenantId,
+    user_id: adminUserId,
+    entries: [{ key: 'billing.limit_alerts_sent', value: alertSettings }],
+  });
+}
+
+/** The subset of `tenants` columns the webhook/reconciliation paths read — `getOneBy` selects
+ * every column (no subset requested), so narrowing to just these is honest, not a type lie; see
+ * pplcrm-any-exceptions §2. */
+interface TenantBillingRow {
+  id: string;
+  admin_id: string | null;
+  subscription_plan: string | null;
+  subscription_quantity: number | null;
+  subscription_interval: BillingInterval;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+}
+
+function asTenantBillingRow(row: unknown): TenantBillingRow | undefined {
+  if (!row || typeof row !== 'object') return undefined;
+  const r = row as Record<string, unknown>;
+  if (typeof r['id'] !== 'string') return undefined;
+  return {
+    id: r['id'],
+    admin_id: typeof r['admin_id'] === 'string' ? r['admin_id'] : null,
+    subscription_plan: typeof r['subscription_plan'] === 'string' ? r['subscription_plan'] : null,
+    subscription_quantity: typeof r['subscription_quantity'] === 'number' ? r['subscription_quantity'] : null,
+    subscription_interval: asBillingInterval(r['subscription_interval']),
+    stripe_customer_id: typeof r['stripe_customer_id'] === 'string' ? r['stripe_customer_id'] : null,
+    stripe_subscription_id: typeof r['stripe_subscription_id'] === 'string' ? r['stripe_subscription_id'] : null,
+  };
+}
+
+/**
+ * Cycle-boundary downgrade reconciliation (base plan §4): notify-then-adjust only ever moves the
+ * billed quantity *up* mid-cycle (see `usage-limits.checkTenantUsage`) — a shrink in emailable
+ * subscribers is applied here instead, on `invoice.paid`, which proves we've just crossed a
+ * billing-cycle boundary. No-ops for free/enterprise (no Stripe quantity to reconcile).
+ */
+async function reconcileDowngradeOnInvoicePaid(dbTenant: TenantBillingRow): Promise<void> {
+  const plan = getPlanDef(dbTenant.subscription_plan) ?? PLANS_BY_KEY.free;
+  if (!plan.purchasable) return;
+
+  const billedQuantity = dbTenant.subscription_quantity ?? 1;
+  const subscribers = await countEmailableSubscribers(dbTenant.id, tenantsRepo.db);
+  const targetQuantity = bracketIndexForSubscribers(plan.key, subscribers);
+
+  if (targetQuantity !== null && targetQuantity < billedQuantity) {
+    await syncSubscriptionQuantity(dbTenant.id, targetQuantity);
+    await clearBracketFlags(dbTenant.id, dbTenant.admin_id ?? dbTenant.id);
+  }
+}
+
+export class BillingController {
+  constructor() {
+    if (isMockMode) {
+      logger.info('[BillingController] Running in Mock Mode (no Stripe secret key provided)');
+    }
+  }
+
+  private getFrontendUrl(): string {
+    return env.appUrl.replace(/\/+$/, '');
+  }
+
+  public async getBillingDetails(auth: { tenant_id: string }) {
+    const tenant = (await tenantsRepo.getOneBy('id', {
+      tenant_id: auth.tenant_id,
+      value: auth.tenant_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+    })) as any;
+
+    if (!tenant) {
+      throw new Error('Tenant not found');
+    }
+
+    return {
+      plan: tenant.subscription_plan || 'free',
+      status: tenant.subscription_status || 'inactive',
+      interval: asBillingInterval(tenant.subscription_interval),
+      endsAt: tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at) : null,
+      stripeCustomerId: tenant.stripe_customer_id || null,
+      stripeSubscriptionId: tenant.stripe_subscription_id || null,
+      hasActiveSubscription: ['active', 'trialing'].includes(tenant.subscription_status || ''),
+      isMockMode,
+    };
+  }
+
+  /** Live usage snapshot for the billing page: emailable-subscriber count against the tenant's
+   * currently billed bracket. Enterprise (no pricing ladder) reports Infinity caps / $0 price —
+   * the frontend special-cases 'enterprise' to not render the bracket clause. */
+  public async getUsage(auth: { tenant_id: string }): Promise<{
+    subscribers: number;
+    billedQuantity: number;
+    subscriberCap: number;
+    emailCap: number;
+    monthlyPrice: number;
+    interval: BillingInterval;
+    tierMax: number;
+  }> {
+    const tenant = asTenantBillingRow(
+      await tenantsRepo.getOneBy('id', {
+        tenant_id: auth.tenant_id,
+        value: auth.tenant_id,
+      }),
+    );
+    if (!tenant) {
+      throw new NotFoundError('Tenant not found');
+    }
+
+    const plan = getPlanDef(tenant.subscription_plan) ?? PLANS_BY_KEY.free;
+    const billedQuantity = tenant.subscription_quantity ?? 1;
+    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
+    const limits = getPlanLimits(plan.key, billedQuantity);
+
+    return {
+      subscribers,
+      billedQuantity,
+      subscriberCap: limits.subscribers,
+      emailCap: limits.emails,
+      monthlyPrice: plan.pricing ? (plan.pricing.brackets[billedQuantity - 1]?.price ?? 0) : 0,
+      interval: tenant.subscription_interval,
+      tierMax: plan.pricing ? maxQuantity(plan.key) : Number.POSITIVE_INFINITY,
+    };
+  }
+
+  public async createCheckoutSession(
+    auth: { tenant_id: string; user_id: string },
+    plan: PurchasablePlanKey,
+    interval: BillingInterval = 'month',
+  ) {
+    const tenant = (await tenantsRepo.getOneBy('id', {
+      tenant_id: auth.tenant_id,
+      value: auth.tenant_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+    })) as any;
+
+    if (!tenant) {
+      throw new NotFoundError('Tenant not found');
+    }
+
+    const frontendUrl = this.getFrontendUrl();
+
+    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
+    const quantity = bracketIndexForSubscribers(plan, subscribers);
+    if (quantity === null) {
+      throw new BadRequestError('Your list is too large for this tier — contact us so we can find a plan that fits.');
+    }
+
+    if (isMockMode) {
+      // In Mock Mode, direct them to a simulated callback
+      const mockSuccessUrl = `${frontendUrl}/workspace/billing?mock_checkout_success=true&plan=${plan}&qty=${quantity}&interval=${interval}`;
+      return { url: mockSuccessUrl };
+    }
+
+    // Live Stripe Mode
+    let stripeCustomerId = tenant.stripe_customer_id as string | undefined;
+    if (!stripeCustomerId) {
+      const customer = await getStripe().customers.create({
+        email: (tenant.email as string) || undefined,
+        name: tenant.name as string,
+        metadata: {
+          tenantId: auth.tenant_id,
+        },
+      });
+      stripeCustomerId = customer.id;
+
+      // Update tenant in DB with customer ID
+      await tenantsRepo.update({
+        tenant_id: auth.tenant_id,
+        id: auth.tenant_id,
+        row: { stripe_customer_id: stripeCustomerId },
+      });
+    }
+
+    // Determine Stripe Price ID
+    const priceId = PRICE_ID_BY_PLAN[plan][interval];
+
+    if (!priceId) {
+      throw new Error(`Stripe Price ID is not configured for plan: ${plan} (${interval})`);
+    }
+
+    // Stripe Tax: `customer_update.address: 'auto'` saves the checkout billing address onto the
+    // Customer (we always pass an existing `customer`, so Checkout needs explicit permission to
+    // write it back) — renewal invoices reuse it as the tax location. `name: 'auto'` is required
+    // by Stripe for tax_id_collection with an existing customer. Tax is only charged in
+    // jurisdictions with an active registration in the Dashboard; elsewhere it computes to zero.
+    const session = await getStripe().checkout.sessions.create({
+      customer: stripeCustomerId,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity,
+        },
+      ],
+      mode: 'subscription',
+      automatic_tax: { enabled: true },
+      billing_address_collection: 'required',
+      customer_update: { address: 'auto', name: 'auto' },
+      tax_id_collection: { enabled: true },
+      success_url: `${frontendUrl}/workspace/billing?checkout_success=true`,
+      cancel_url: `${frontendUrl}/workspace/billing`,
+      subscription_data: {
+        metadata: {
+          tenantId: auth.tenant_id,
+        },
+      },
+      metadata: {
+        tenantId: auth.tenant_id,
+      },
+    });
+
+    return { url: session.url };
+  }
+
+  public async createPortalSession(auth: { tenant_id: string }) {
+    const tenant = (await tenantsRepo.getOneBy('id', {
+      tenant_id: auth.tenant_id,
+      value: auth.tenant_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+    })) as any;
+
+    if (!tenant) {
+      throw new Error('Tenant not found');
+    }
+
+    const frontendUrl = this.getFrontendUrl();
+
+    if (isMockMode) {
+      return { url: `${frontendUrl}/workspace/billing?mock_portal_success=true` };
+    }
+
+    const stripeCustomerId = tenant.stripe_customer_id;
+    if (!stripeCustomerId) {
+      throw new Error('No active billing history found. Please subscribe to a plan first.');
+    }
+
+    const session = await getStripe().billingPortal.sessions.create({
+      customer: stripeCustomerId,
+      // `portal_return` tells the billing page to pull the live subscription state from Stripe
+      // (syncSubscriptionFromStripe) — a plan switched in the Portal is reflected immediately
+      // instead of waiting on webhook delivery.
+      return_url: `${frontendUrl}/workspace/billing?portal_return=true`,
+    });
+
+    return { url: session.url };
+  }
+
+  /**
+   * Mirror the tenant's live Stripe subscription onto the `tenants` row — the same write
+   * `customer.subscription.updated` performs, minus the notification email (the webhook stays
+   * the authoritative sender, so a later-delivered event never duplicates it).
+   *
+   * Called by the billing page when the user returns from Checkout (`checkout_success`) or the
+   * Billing Portal (`portal_return`), so a plan change takes effect immediately even when
+   * webhook delivery is delayed or not configured for the active Stripe mode (e.g. sandbox keys
+   * without a sandbox webhook endpoint). No-ops in mock mode and for tenants with no Stripe
+   * customer.
+   */
+  public async syncSubscriptionFromStripe(auth: { tenant_id: string }): Promise<{ synced: boolean; plan: string }> {
+    const tenant = asTenantBillingRow(
+      await tenantsRepo.getOneBy('id', {
+        tenant_id: auth.tenant_id,
+        value: auth.tenant_id,
+      }),
+    );
+    if (!tenant) {
+      throw new NotFoundError('Tenant not found');
+    }
+
+    const currentPlan = tenant.subscription_plan ?? 'free';
+    if (isMockMode || !tenant.stripe_customer_id) {
+      return { synced: false, plan: currentPlan };
+    }
+
+    const subscriptions = await getStripe().subscriptions.list({
+      customer: tenant.stripe_customer_id,
+      status: 'all',
+      limit: 10,
+    });
+    const live = subscriptions.data.find((s) => ['active', 'trialing', 'past_due'].includes(s.status));
+
+    if (!live) {
+      // Nothing billable on the customer. Only mirror a cancellation if we previously stored a
+      // subscription — a tenant that never subscribed stays untouched.
+      if (!tenant.stripe_subscription_id) {
+        return { synced: false, plan: currentPlan };
+      }
+      await tenantsRepo.update({
+        tenant_id: tenant.id,
+        id: tenant.id,
+        row: {
+          subscription_status: 'canceled',
+          subscription_plan: 'free',
+          subscription_ends_at: new Date().toISOString(),
+          subscription_quantity: 1,
+          subscription_interval: 'month',
+        },
+      });
+      logger.info(`[syncSubscriptionFromStripe] No live subscription — tenant ${tenant.id} set to free`);
+      return { synced: true, plan: 'free' };
+    }
+
+    const item = live.items.data[0];
+    const priceMatch = planForPriceId(item?.price.id);
+    if (item && !priceMatch) {
+      logger.warn(
+        `[syncSubscriptionFromStripe] Price ${item.price.id} matches no configured STRIPE_PLAN_*_PRICE_ID — ` +
+          `tenant ${tenant.id} keeps plan '${currentPlan}'. Check that the env price IDs belong to the active Stripe mode.`,
+      );
+    }
+    const planName: string = priceMatch?.plan ?? currentPlan;
+    const interval: BillingInterval = priceMatch?.interval ?? tenant.subscription_interval;
+
+    await tenantsRepo.update({
+      tenant_id: tenant.id,
+      id: tenant.id,
+      row: {
+        stripe_subscription_id: live.id,
+        subscription_plan: planName,
+        subscription_status: live.status,
+        subscription_ends_at: subscriptionPeriodEnd(live),
+        subscription_quantity: item?.quantity ?? 1,
+        subscription_interval: interval,
+      },
+    });
+    logger.info(`[syncSubscriptionFromStripe] Tenant ${tenant.id} synced to plan '${planName}' (${live.status})`);
+    return { synced: true, plan: planName };
+  }
+
+  public async handleWebhook(payload: string, signature: string) {
+    if (isMockMode || !stripe || !env.stripeWebhookSecret) {
+      logger.info('[BillingController] Webhook received, but ignored due to mock mode or missing secret');
+      return;
+    }
+
+    let event: Stripe.Event;
+
+    try {
+      event = stripe.webhooks.constructEvent(payload, signature, env.stripeWebhookSecret);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error(`Webhook signature verification failed: ${errMsg}`);
+      throw new Error(`Webhook Error: ${errMsg}`);
+    }
+
+    logger.info(`Persisting webhook event: ${event.id} (${event.type})`);
+
+    // Persist event for background worker processing.
+    // Handles idempotency: duplicate events will trigger unique constraint
+    // violation on `stripe_event_id` and be ignored, returning 200 OK.
+    await webhookEventsRepo.db
+      .insertInto('webhook_events')
+      .values({
+        stripe_event_id: event.id,
+        type: event.type,
+        payload: JSON.stringify(event),
+        status: 'pending',
+      })
+      .onConflict((oc) => oc.column('stripe_event_id').doNothing())
+      .execute();
+  }
+
+  public async processWebhookEvent(event: Stripe.Event) {
+    logger.info(`Processing webhook event: ${event.id} (${event.type})`);
+
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const tenantId = session.metadata?.['tenantId'];
+        const subscriptionId = session.subscription as string;
+        const customerId = session.customer as string;
+
+        if (tenantId && subscriptionId) {
+          const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+          const item = subscription.items.data[0];
+          const priceMatch = planForPriceId(item?.price.id);
+          const planName: PlanKey = priceMatch?.plan ?? 'free';
+          const interval: BillingInterval = priceMatch?.interval ?? 'month';
+          const quantity = item?.quantity ?? 1;
+
+          await tenantsRepo.update({
+            tenant_id: tenantId,
+            id: tenantId,
+            row: {
+              stripe_customer_id: customerId,
+              stripe_subscription_id: subscriptionId,
+              subscription_plan: planName,
+              subscription_status: subscription.status,
+              subscription_ends_at: subscriptionPeriodEnd(subscription),
+              subscription_quantity: quantity,
+              subscription_interval: interval,
+            },
+          });
+          logger.info(`Plan activated successfully for Tenant ID: ${tenantId}`);
+          try {
+            await this.handleSubscriptionChange(tenantId, planName, quantity, false, interval);
+          } catch (mailErr) {
+            logger.error({ err: mailErr }, 'Failed to send subscription changed email on checkout.session.completed');
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const subscriptionId = subscription.id;
+        const customerId = subscription.customer as string;
+
+        // Search Kysely database for the tenant with matching customer id
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
+          tenant_id: '1',
+          value: customerId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+        })) as any;
+
+        if (dbTenant) {
+          const item = subscription.items.data[0];
+          const priceMatch = planForPriceId(item?.price.id);
+          const planName: string = priceMatch?.plan ?? dbTenant.subscription_plan;
+          const interval: BillingInterval = priceMatch?.interval ?? asBillingInterval(dbTenant.subscription_interval);
+          const quantity = item?.quantity ?? 1;
+
+          await tenantsRepo.update({
+            tenant_id: dbTenant.id,
+            id: dbTenant.id,
+            row: {
+              stripe_subscription_id: subscriptionId,
+              subscription_plan: planName,
+              subscription_status: subscription.status,
+              subscription_ends_at: subscriptionPeriodEnd(subscription),
+              subscription_quantity: quantity,
+              subscription_interval: interval,
+            },
+          });
+          logger.info(`Subscription updated for Tenant ID: ${dbTenant.id}`);
+          try {
+            await this.handleSubscriptionChange(dbTenant.id, planName, quantity, false, interval);
+          } catch (mailErr) {
+            logger.error(
+              { err: mailErr },
+              'Failed to send subscription changed email on customer.subscription.updated',
+            );
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
+
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
+          tenant_id: '1',
+          value: customerId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+        })) as any;
+
+        if (dbTenant) {
+          await tenantsRepo.update({
+            tenant_id: dbTenant.id,
+            id: dbTenant.id,
+            row: {
+              subscription_status: 'canceled',
+              subscription_plan: 'free',
+              subscription_ends_at: new Date().toISOString(),
+              subscription_quantity: 1,
+              subscription_interval: 'month',
+            },
+          });
+          logger.info(`Subscription canceled for Tenant ID: ${dbTenant.id}`);
+          try {
+            await this.handleSubscriptionChange(dbTenant.id, 'free', 1);
+          } catch (mailErr) {
+            logger.error(
+              { err: mailErr },
+              'Failed to send subscription cancellation email on customer.subscription.deleted',
+            );
+          }
+        }
+        break;
+      }
+
+      case 'invoice.paid': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        const dbTenant = asTenantBillingRow(
+          await tenantsRepo.getOneBy('stripe_customer_id', {
+            tenant_id: '1',
+            value: customerId,
+          }),
+        );
+
+        if (dbTenant) {
+          try {
+            await reconcileDowngradeOnInvoicePaid(dbTenant);
+          } catch (err) {
+            logger.error({ err }, 'Failed to reconcile bracket downgrade on invoice.paid');
+          }
+
+          const admin = await tenantsRepo.db
+            .selectFrom('authusers')
+            .select(['email', 'first_name'])
+            .where('id', '=', dbTenant.admin_id)
+            .executeTakeFirst();
+
+          if (admin && admin.email) {
+            // Find person matching admin email
+            const person = await tenantsRepo.db
+              .selectFrom('persons')
+              .select('id')
+              .where('tenant_id', '=', dbTenant.id)
+              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
+              .executeTakeFirst();
+            if (person) {
+              try {
+                const workflowsController = new WorkflowsController();
+                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
+              } catch (err) {
+                logger.error({ err }, 'Failed to trigger billing workflow on invoice.paid');
+              }
+            }
+
+            const mailService = new TransactionalEmailService();
+            const amountPaid = invoice.amount_paid / 100;
+            const pdfUrl = invoice.hosted_invoice_url || '';
+
+            // Tax total: on the basil-era API versions stripe-node v22 targets, the invoice tax
+            // total lives in the `total_taxes` array (the legacy top-level `invoice.tax` is gone).
+            // Omitted when absent or zero so a receipt can never fail over a tax field.
+            const totalTax = Array.isArray(invoice.total_taxes)
+              ? invoice.total_taxes.reduce((sum, tax) => sum + (tax?.amount || 0), 0)
+              : 0;
+            const taxLineText = totalTax > 0 ? `\n- Tax: $${(totalTax / 100).toFixed(2)}` : '';
+            const taxLineHtml = totalTax > 0 ? `<li><strong>Tax</strong>: $${(totalTax / 100).toFixed(2)}</li>` : '';
+
+            // Build charges summary
+            let summaryOfCharges = '';
+            let summaryOfChargesHtml = '';
+            if (invoice.lines && Array.isArray(invoice.lines.data)) {
+              summaryOfCharges =
+                '\nSummary of Charges:\n' +
+                invoice.lines.data
+                  .map((line) => {
+                    const lineAmt = (line.amount || 0) / 100;
+                    return `- ${line.description || 'Subscription item'}: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}`;
+                  })
+                  .join('\n') +
+                taxLineText;
+
+              summaryOfChargesHtml =
+                '<div class="panel"><p><strong>Summary of charges:</strong></p><ul>' +
+                invoice.lines.data
+                  .map((line) => {
+                    const lineAmt = (line.amount || 0) / 100;
+                    return `<li><strong>${line.description || 'Subscription item'}</strong>: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}</li>`;
+                  })
+                  .join('') +
+                taxLineHtml +
+                '</ul></div>';
+            }
+
+            await mailService.sendMail({
+              to: admin.email,
+              subject: `Receipt for your pplCRM subscription`,
+              text: `Hi ${admin.first_name || 'there'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was processed.\n\n${summaryOfCharges}\n\nView invoice: ${pdfUrl}`,
+              html: `<h2>Payment received</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was processed.</p>${summaryOfChargesHtml}
+<div class="btn-container">
+  <a href="${pdfUrl}" class="btn">View invoice</a>
+</div>`,
+            });
+          }
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
+          tenant_id: '1',
+          value: customerId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+        })) as any;
+
+        if (dbTenant) {
+          const admin = await tenantsRepo.db
+            .selectFrom('authusers')
+            .select(['email', 'first_name'])
+            .where('id', '=', dbTenant.admin_id)
+            .executeTakeFirst();
+
+          if (admin && admin.email) {
+            // Find person matching admin email
+            const person = await tenantsRepo.db
+              .selectFrom('persons')
+              .select('id')
+              .where('tenant_id', '=', dbTenant.id)
+              .where(sql`lower(email)`, '=', admin.email.toLowerCase())
+              .executeTakeFirst();
+            if (person) {
+              try {
+                const workflowsController = new WorkflowsController();
+                await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
+              } catch (err) {
+                logger.error({ err }, 'Failed to trigger billing workflow on invoice.payment_failed');
+              }
+            }
+
+            const mailService = new TransactionalEmailService();
+            const billingPageUrl = `${env.appUrl}/workspace/billing`;
+            const amountDue = (invoice.amount_due || 0) / 100;
+            await mailService.sendMail({
+              to: admin.email,
+              subject: `Action needed: your pplCRM subscription payment failed`,
+              text: `Hi ${admin.first_name || 'there'},\n\nWe were unable to process the subscription payment of $${amountDue.toFixed(2)} for your organization.\n\nPlease update your payment card to prevent suspension of your organization's account.\n\nUpdate billing information here: ${billingPageUrl}`,
+              html: `<h2>Payment failed</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>We were unable to process the subscription payment of <strong>$${amountDue.toFixed(2)}</strong> for your organization.</p>
+<p>Please update your payment card to prevent suspension of your organization's account.</p>
+<div class="btn-container">
+  <a href="${billingPageUrl}" class="btn">Update payment method</a>
+</div>`,
+            });
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  public async activateMockPlan(
+    auth: { tenant_id: string },
+    plan: PurchasablePlanKey,
+    quantity = 1,
+    interval: BillingInterval = 'month',
+  ) {
+    if (!isMockMode) {
+      throw new Error('This helper is only available in local Mock Mode');
+    }
+
+    const expiry = new Date();
+    if (interval === 'year') {
+      expiry.setFullYear(expiry.getFullYear() + 1); // 1 year from now
+    } else {
+      expiry.setMonth(expiry.getMonth() + 1); // 1 month from now
+    }
+    const clampedQuantity = Math.min(Math.max(Math.trunc(quantity) || 1, 1), maxQuantity(plan));
+
+    await tenantsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: auth.tenant_id,
+      row: {
+        stripe_customer_id: 'cus_mock_' + Math.random().toString(36).substring(7),
+        stripe_subscription_id: 'sub_mock_' + Math.random().toString(36).substring(7),
+        subscription_plan: plan,
+        subscription_status: 'active',
+        subscription_ends_at: expiry.toISOString(),
+        subscription_quantity: clampedQuantity,
+        subscription_interval: interval,
+      },
+    });
+
+    try {
+      await this.handleSubscriptionChange(auth.tenant_id, plan, clampedQuantity, true, interval);
+    } catch (mailErr) {
+      logger.error({ err: mailErr }, 'Failed to send mock subscription update email');
+    }
+
+    return { success: true, plan };
+  }
+
+  public async cancelMockPlan(auth: { tenant_id: string }) {
+    if (!isMockMode) {
+      throw new Error('This helper is only available in local Mock Mode');
+    }
+
+    await tenantsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: auth.tenant_id,
+      row: {
+        stripe_subscription_id: null,
+        subscription_plan: 'free',
+        subscription_status: 'inactive',
+        subscription_ends_at: null,
+        subscription_quantity: 1,
+        subscription_interval: 'month',
+      },
+    });
+
+    try {
+      await this.handleSubscriptionChange(auth.tenant_id, 'free', 1, true);
+    } catch (mailErr) {
+      logger.error({ err: mailErr }, 'Failed to send mock subscription cancellation email');
+    }
+
+    return { success: true };
+  }
+
+  private async handleSubscriptionChange(
+    tenantId: string,
+    planName: string,
+    quantity: number,
+    isMock = false,
+    interval: BillingInterval = 'month',
+  ): Promise<void> {
+    const tenant = (await tenantsRepo.getOneBy('id', {
+      tenant_id: tenantId,
+      value: tenantId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
+    })) as any;
+
+    if (!tenant) return;
+
+    // 1. Reset limit alert settings
+    await tenantsRepo.db
+      .deleteFrom('settings')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'billing.limit_alerts_sent')
+      .execute();
+
+    // 2. Fetch admin user (Organization Owner)
+    if (!tenant.admin_id) return;
+    const admin = await tenantsRepo.db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', String(tenant.admin_id))
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      const planLimits = getPlanLimits(planName, quantity, interval);
+      const billingPageUrl = `${env.appUrl}/workspace/billing`;
+      const mockPrefix = isMock ? '[MOCK] ' : '';
+      const fmt = (n: number): string => (Number.isFinite(n) ? n.toLocaleString() : 'Unlimited');
+
+      const mailService = new TransactionalEmailService();
+      const planLabel = planName.charAt(0).toUpperCase() + planName.slice(1);
+      await mailService.sendMail({
+        to: admin.email,
+        subject: `${mockPrefix}Welcome to the ${planLabel} plan`,
+        text: `Hi ${admin.first_name || 'there'},\n\n${mockPrefix}Your subscription has been updated.\n\nNew plan: ${planLabel}\nPrice: ${planLimits.price}\n\nPlan limits:\n- Email subscribers: ${fmt(planLimits.subscribers)}\n- User seats: ${fmt(planLimits.seats)}\n- Monthly emails: ${fmt(planLimits.emails)} outbound emails\n\nManage your billing here: ${billingPageUrl}`,
+        html: `<h2>Subscription updated</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>${mockPrefix}Your subscription has been updated. Welcome to the <strong>${planLabel}</strong> plan.</p>
+<div class="panel">
+<p><strong>Price:</strong> ${planLimits.price}</p>
+<ul>
+  <li><strong>Email subscribers:</strong> up to ${fmt(planLimits.subscribers)}</li>
+  <li><strong>User seats:</strong> up to ${fmt(planLimits.seats)}</li>
+  <li><strong>Monthly emails:</strong> up to ${fmt(planLimits.emails)} outbound emails</li>
+</ul>
+</div>
+<div class="btn-container">
+  <a href="${billingPageUrl}" class="btn">Manage billing</a>
+</div>`,
+      });
+    }
   }
 }
 `````
@@ -90870,330 +91036,229 @@ export const PRIVACY_DOC: LegalDoc = {
 };
 `````
 
-## File: libs/common/src/lib/help/articles/administration.ts
+## File: apps/backend/src/env.ts
 `````typescript
-import type { HelpArticle } from '../help-types';
+import { z } from 'zod';
 
-export const ADMIN_ARTICLES: HelpArticle[] = [
-  {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
-      },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
-      },
-    ],
+const envSchema = z.object({
+  HOST: z.string().default('localhost'),
+  PORT: z.coerce.number().default(3000),
+  DB_USER: z.string().min(1, 'DB_USER is required'),
+  DB_NAME: z.string().min(1, 'DB_NAME is required'),
+  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
+  DB_PORT: z.coerce.number().default(5432),
+  DB_HOST: z.string().default('localhost'),
+  // S-2 (schema review 2026-07-06): least-privilege role split. DB_USER is the
+  // runtime role (CRUD only, not an object owner, cannot bypass RLS). Migrations
+  // need DDL and object ownership, so they connect as DB_MIGRATION_USER (the
+  // owner role). When these are unset they fall back to DB_USER/DB_PASSWORD, so
+  // a single-role setup keeps working unchanged.
+  DB_MIGRATION_USER: z.string().optional(),
+  DB_MIGRATION_PASSWORD: z.string().optional(),
+  // Whether the serve process runs pending migrations at boot. Convenient in dev
+  // (default true); set to false in production, where migrations are a separate
+  // deploy step run as the owner role and the runtime role has no DDL rights.
+  MIGRATE_ON_BOOT: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((val) => val !== 'false'),
+  DB_SSL: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  API_URL: z.string().url().default('http://localhost:3000'),
+  APP_URL: z.string().url().default('http://localhost:4200'),
+  // Public origin of the volunteer companion app (/t and /r links). Prod: https://go.pplcrm.com —
+  // must match the frontend's environment.companionOrigin or emailed links 404.
+  COMPANION_URL: z.string().url().default('http://localhost:4300'),
+  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
+  MS_CLIENT_ID: z.string().optional(),
+  MS_CLIENT_SECRET: z.string().optional(),
+  MS_TENANT_ID: z.string().optional().default('common'),
+  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
+  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
+  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
+  STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
+  // Annual (interval = year) graduated prices — unit amounts are exactly 10× the monthly ones
+  // ("2 months free"; see libs/common/src/lib/billing/plans.ts → Stripe ops).
+  STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID: z.string().optional(),
+  STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID: z.string().optional(),
+  // Signing secret of the platform's CONNECT webhook endpoint ("Listen to events on connected
+  // accounts") — routes donation events for every tenant's connected account; tenants no longer
+  // hold webhook secrets of their own.
+  STRIPE_CONNECT_WEBHOOK_SECRET: z.string().optional(),
+  // Platform application fee on Stripe card donations, as a percent of the gift (decided
+  // 2026-07-16: 1%; campaign pays Stripe's own processing fees directly on top). Percent-only
+  // because recurring donations support only `application_fee_percent`.
+  DONATIONS_PLATFORM_FEE_PERCENT: z.coerce.number().min(0).max(100).default(1),
+  POSTMARK_SERVER_TOKEN: z.string().optional(),
+  POSTMARK_FROM_EMAIL: z.string().email().default('hello@pplcrm.com'),
+  // Display name on transactional email; without it, clients fall back to the Postmark
+  // sender-signature name (a personal name), which reads wrong on product email.
+  POSTMARK_FROM_NAME: z.string().min(1).default('pplCRM'),
+  SENDGRID_API_KEY: z.string().optional(),
+  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
+  // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
+  // is used and the tenant has no whitelabel subuser of its own. Isolates free-tier sending
+  // reputation (IP pool) from paying customers'.
+  SENDGRID_FREE_TIER_SUBUSER: z.string().optional(),
+  // Shared secret Postmark is configured to send in the X-Postmark-Webhook-Token header of
+  // bounce/complaint webhooks. The webhook rejects requests without it.
+  POSTMARK_WEBHOOK_TOKEN: z.string().optional(),
+  // Where the ops watchdog cron emails its failed-jobs/backlog digest (via Postmark, directly —
+  // not through the job queue). Unset = digest is logged but not emailed.
+  OPS_ALERT_EMAIL: z.string().email().optional(),
+  // Sentry error tracking. Unset = Sentry disabled entirely (no startup cost, no traffic).
+  // NOTE: instrument.ts reads this from process.env directly (it must run before this file's
+  // parse); it is declared here so the schema stays the single inventory of backend config.
+  SENTRY_DSN: z.string().optional(),
+  // Anthropic Claude API key for the newsletter preflight's AI content review. Optional — when
+  // unset the preflight scores from the deterministic lint alone (fail-open, layer skipped).
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
+  // Twilio SMS (companion verification codes). All optional — the SMS service
+  // logs a dev mock instead of sending when these are unset.
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
+  WEBAUTHN_RP_NAME: z.string().optional().default('pplCRM'),
+  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
+  // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
+  // Dev default is 'localhost' so `<slug>.localhost` works.
+  PUBLIC_BASE_DOMAIN: z.string().optional().default('localhost'),
+  // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
+  // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
+  //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
+  //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
+  //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
+  TRUST_PROXY: z.string().optional().default('false'),
+  // How many background jobs the worker may process concurrently. One slow job (a large sync or
+  // import) must not block latency-sensitive mail behind it, so we run a small bounded pool of
+  // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
+  // this comfortably below the Postgres pool size. Default 4.
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+  // Max real Google Geocoding API calls per tenant per calendar day. A large voter-file import is
+  // spread across days at this rate instead of geocoding the whole list in one night (see
+  // lib/gis/geocode-queue.ts). Caps daily Google spend per tenant; only bites very large imports.
+  GEOCODE_DAILY_BUDGET: z.coerce.number().int().min(1).default(25000),
+  // Max connections in the shared pg pool. The API server, the job worker (up to
+  // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
+  // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
+  // and well under Postgres max_connections. Default 20 (pg's own default is 10).
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
+  // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
+  // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
+  // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
+  ALLOW_MOCK_PAYMENTS: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  // Auto-passing domain verification when no valid SendGrid key is configured requires an
+  // EXPLICIT opt-in, never merely "key is missing" — a misconfigured key in a real deploy
+  // must not silently mark sending domains verified and open the send guards. Only ever
+  // set this in local dev.
+  ALLOW_MOCK_DOMAIN_VERIFICATION: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
+  // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
+  // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
+  // unset, tokens are stored as plaintext (the pre-encryption behavior), so this
+  // MUST be set in any environment that connects real mailboxes. Rotating it
+  // invalidates existing encrypted tokens (users just re-consent).
+  OAUTH_TOKEN_ENC_KEY: z.string().optional(),
+});
+
+/** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
+function parseTrustProxy(raw: string): boolean | number | string {
+  const value = raw.trim();
+  if (value === '' || value.toLowerCase() === 'false') return false;
+  if (value.toLowerCase() === 'true') return true;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
+}
+
+const parsedEnv = envSchema.parse(process.env);
+
+export const env = {
+  host: parsedEnv.HOST,
+  port: parsedEnv.PORT,
+  db: {
+    user: parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
   },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      {
-        kind: 'p',
-        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
-      },
-      { kind: 'h2', id: 'user-page', text: 'The user page' },
-      {
-        kind: 'p',
-        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
-      },
-      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
-      {
-        kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The roles' },
-      {
-        kind: 'list',
-        items: [
-          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
-          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
-          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
-      },
-    ],
+  // Same target database, but connecting as the owner role for DDL/migrations.
+  // Falls back to the runtime credentials when the migration role is unset.
+  migrationDb: {
+    user: parsedEnv.DB_MIGRATION_USER ?? parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_MIGRATION_PASSWORD ?? parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
   },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization**: your name, contact details, and mailing address.',
-          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
-          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access**: default role for invitations and the MFA requirement.',
-          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance**: default theme and date format for the workspace.',
-          '**API keys**: the workspace API key for server-side integrations — submitting forms, RSVPs, and volunteer signups from your own backend, or connecting Zapier. Shown once at generation; regenerating invalidates the old key.',
-          '**Billing**: your plan, live usage, and payment details.',
-        ],
-      },
-      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
-      {
-        kind: 'p',
-        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
-          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
-          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus priority support.',
-          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
-      },
-      {
-        kind: 'p',
-        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
-      },
-      {
-        kind: 'p',
-        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
-      },
-      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
-      {
-        kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, the subscription moves to the new bracket, and the prorated difference for the remainder of your current billing period is charged right away — on **either** interval. Growth never interrupts sending, and your monthly email allowance rises with the new bracket the moment it applies. If your list shrinks back below a bracket, the lower price reconciles at the next renewal rather than refunding the current period. If a payment fails, newsletter sending goes on hold until the payment method is updated on the [Billing](/workspace/billing) page — everything else keeps working.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
-      },
-    ],
-  },
-  {
-    id: 'volunteer-access',
-    category: 'admin',
-    title: 'Volunteer access approvals',
-    summary:
-      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
-    keywords: [
-      'volunteer',
-      'access',
-      'approve',
-      'companion',
-      'canvass',
-      'delivery',
-      'link',
-      'verify',
-      'revoke',
-      'code',
-    ],
-    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
-      },
-      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
-      {
-        kind: 'p',
-        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
-      },
-      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
-      {
-        kind: 'p',
-        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Verification needs a contact on file',
-        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
-      {
-        kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
-      },
-    ],
-  },
-  {
-    id: 'campaigns-contexts',
-    category: 'admin',
-    title: 'Campaigns and contexts',
-    summary:
-      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
-    keywords: [
-      'campaigns',
-      'campaign',
-      'context',
-      'office',
-      'election',
-      'switcher',
-      'archive',
-      'workspace',
-      'constituency',
-    ],
-    related: ['users-roles', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
-      },
-      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
-      {
-        kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
-      },
-      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
-      {
-        kind: 'list',
-        items: [
-          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
-          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
-          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
-          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
-          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
-        ],
-      },
-      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
-      {
-        kind: 'list',
-        items: [
-          '**Create** a campaign before the race, with a start date and election day.',
-          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
-          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
-          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The office cannot be archived or deleted',
-        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
-      },
-    ],
-  },
-];
+  migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
+  apiUrl: parsedEnv.API_URL,
+  appUrl: parsedEnv.APP_URL,
+  companionUrl: parsedEnv.COMPANION_URL,
+  publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
+  trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
+  workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
+  geocodeDailyBudget: parsedEnv.GEOCODE_DAILY_BUDGET,
+  dbPoolMax: parsedEnv.DB_POOL_MAX,
+  allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
+  allowMockDomainVerification: parsedEnv.ALLOW_MOCK_DOMAIN_VERIFICATION,
+  oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
+  sharedSecret: parsedEnv.SHARED_SECRET,
+  msClientId: parsedEnv.MS_CLIENT_ID,
+  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
+  msTenantId: parsedEnv.MS_TENANT_ID,
+  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
+  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
+  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
+  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
+  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
+  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
+  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
+  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
+  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
+  stripePlanMovementPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_PRICE_ID,
+  stripePlanGrassrootsAnnualPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID,
+  stripePlanMovementAnnualPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID,
+  stripeConnectWebhookSecret: parsedEnv.STRIPE_CONNECT_WEBHOOK_SECRET,
+  donationsPlatformFeePercent: parsedEnv.DONATIONS_PLATFORM_FEE_PERCENT,
+  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
+  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
+  postmarkFromName: parsedEnv.POSTMARK_FROM_NAME,
+  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
+  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
+  sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
+  postmarkWebhookToken: parsedEnv.POSTMARK_WEBHOOK_TOKEN,
+  opsAlertEmail: parsedEnv.OPS_ALERT_EMAIL,
+  sentryDsn: parsedEnv.SENTRY_DSN,
+  anthropicApiKey: parsedEnv.ANTHROPIC_API_KEY,
+  anthropicModel: parsedEnv.ANTHROPIC_MODEL,
+  twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
+  twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
+  twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
+  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
+  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
+};
 `````
 
 ## File: libs/common/src/lib/billing/plans.ts
@@ -91786,6 +91851,358 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
 ];
 `````
 
+## File: libs/common/src/lib/help/articles/administration.ts
+`````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: [
+      'users',
+      'roles',
+      'invite',
+      'admin',
+      'editor',
+      'viewer',
+      'permissions',
+      'access',
+      'mfa',
+      'security',
+      'campaign',
+      'assignment',
+    ],
+    related: ['settings', 'profile', 'activity-log', 'campaigns-contexts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. Once an election campaign exists, a **Campaign** column appears too: pick which campaign each Editor or Viewer works in (admins and owners always have every campaign, so their cell reads “All campaigns”). The **⋯** menu on each row opens the profile or sends a password reset email.',
+      },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why), assigns the user’s campaign once an election campaign exists (see [Campaigns and contexts](/help/campaigns-contexts)), and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role — plus, when your workspace has more than one campaign, the campaign the new Editor or Viewer will work in. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
+          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Editors and Viewers also **belong to exactly one campaign** — the one an admin assigned them to (unassigned means the office). They cannot switch campaigns themselves; admins and owners can work in every campaign. See [Campaigns and contexts](/help/campaigns-contexts).',
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'p',
+        text: 'The sidebar clusters the sections into four groups: **Workspace**, **Email**, **Features**, and **Plan & account**.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Organization**: your name, contact details, and mailing address.',
+          '**Campaigns**: your permanent office context and any election campaigns — create and archive them, switch which one you (as an admin) are working in, and read how user assignment works. See [Campaigns and contexts](/help/campaigns-contexts).',
+          '**Teams & access**: default role for invitations and the MFA requirement.',
+          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Email sync**: connect your email provider so incoming and outgoing email syncs into your pplCRM inbox.',
+          '**Domain verification**: the DNS records (SPF, DKIM, DMARC) that let you send email from your own domain.',
+          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Donations**: donation limit, residency restrictions, tax credit tiers, and your Stripe connection.',
+          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
+          '**Storage**: your plan quota, live usage, and the files taking up the most space.',
+          '**Billing**: your plan, live usage, and payment details.',
+          '**API keys**: the workspace API key for server-side integrations (submitting forms, RSVPs, and volunteer signups from your own backend, or connecting Zapier). Shown once at generation; regenerating invalidates the old key.',
+          '**Account**: pause your organization account, or permanently delete it and all its data.',
+        ],
+      },
+      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
+      {
+        kind: 'p',
+        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
+          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
+          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus priority support.',
+          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
+      },
+      {
+        kind: 'p',
+        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
+      },
+      {
+        kind: 'p',
+        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
+      },
+      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
+      {
+        kind: 'p',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, the subscription moves to the new bracket, and the prorated difference for the remainder of your current billing period is charged right away — on **either** interval. Growth never interrupts sending, and your monthly email allowance rises with the new bracket the moment it applies. If your list shrinks back below a bracket, the lower price reconciles at the next renewal rather than refunding the current period. If a payment fails, newsletter sending goes on hold until the payment method is updated on the [Billing](/workspace/billing) page — everything else keeps working.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'assign',
+      'assignment',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'settings', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, an administrator creates an **election campaign** alongside it under [Workspace → Campaigns](/workspace/campaigns). People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'assignment', text: 'Who works in which campaign' },
+      {
+        kind: 'p',
+        text: 'Campaign membership is an admin decision, not a personal choice. **Editors and Viewers belong to exactly one campaign**: the one an admin assigned them to on the [Users](/users) page or in the invite dialog (unassigned members work in the office). Everything they see and do — newsletters, forms, donations, canvassing, the inbox — stays inside that campaign, and their [Profile](/profile) shows which campaign they are part of. **Admins and owners can work in every campaign**: they pick the context they are currently working in from [Workspace → Campaigns](/workspace/campaigns) (**Work in this campaign**), and that choice is theirs alone and follows them across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, users assigned to it move back to the office context, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+      },
+    ],
+  },
+];
+`````
+
 ## File: libs/common/src/lib/kysely.models.ts
 `````typescript
 // tsco:ignore
@@ -92004,6 +92421,11 @@ interface AuthUsers extends RecordType {
   previous_email: string | null;
   previous_role: string | null;
   passkey_setup_dismissed_at: Timestamp | null;
+  /**
+   * Campaigns §15 — admin-assigned campaign for Editors/Viewers; NULL = the
+   * permanent office context. Ignored for admins/owners (they see every campaign).
+   */
+  campaign_id: string | null;
 }
 
 /** Per-campaign email CONSENT (§15). Address health lives in EmailSuppressions; DNC on Persons. */
@@ -93687,229 +94109,171 @@ export { classifyHelpRoute } from './lib/help/help-links';
 export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
 `````
 
-## File: apps/backend/src/env.ts
+## File: apps/website/src/app/faq/faq-page.ts
 `````typescript
-import { z } from 'zod';
+import { Component, inject } from '@angular/core';
 
-const envSchema = z.object({
-  HOST: z.string().default('localhost'),
-  PORT: z.coerce.number().default(3000),
-  DB_USER: z.string().min(1, 'DB_USER is required'),
-  DB_NAME: z.string().min(1, 'DB_NAME is required'),
-  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
-  DB_PORT: z.coerce.number().default(5432),
-  DB_HOST: z.string().default('localhost'),
-  // S-2 (schema review 2026-07-06): least-privilege role split. DB_USER is the
-  // runtime role (CRUD only, not an object owner, cannot bypass RLS). Migrations
-  // need DDL and object ownership, so they connect as DB_MIGRATION_USER (the
-  // owner role). When these are unset they fall back to DB_USER/DB_PASSWORD, so
-  // a single-role setup keeps working unchanged.
-  DB_MIGRATION_USER: z.string().optional(),
-  DB_MIGRATION_PASSWORD: z.string().optional(),
-  // Whether the serve process runs pending migrations at boot. Convenient in dev
-  // (default true); set to false in production, where migrations are a separate
-  // deploy step run as the owner role and the runtime role has no DDL rights.
-  MIGRATE_ON_BOOT: z
-    .string()
-    .optional()
-    .default('true')
-    .transform((val) => val !== 'false'),
-  DB_SSL: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  API_URL: z.string().url().default('http://localhost:3000'),
-  APP_URL: z.string().url().default('http://localhost:4200'),
-  // Public origin of the volunteer companion app (/t and /r links). Prod: https://go.pplcrm.com —
-  // must match the frontend's environment.companionOrigin or emailed links 404.
-  COMPANION_URL: z.string().url().default('http://localhost:4300'),
-  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
-  MS_CLIENT_ID: z.string().optional(),
-  MS_CLIENT_SECRET: z.string().optional(),
-  MS_TENANT_ID: z.string().optional().default('common'),
-  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
-  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
-  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
-  STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
-  // Annual (interval = year) graduated prices — unit amounts are exactly 10× the monthly ones
-  // ("2 months free"; see libs/common/src/lib/billing/plans.ts → Stripe ops).
-  STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID: z.string().optional(),
-  STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID: z.string().optional(),
-  // Signing secret of the platform's CONNECT webhook endpoint ("Listen to events on connected
-  // accounts") — routes donation events for every tenant's connected account; tenants no longer
-  // hold webhook secrets of their own.
-  STRIPE_CONNECT_WEBHOOK_SECRET: z.string().optional(),
-  // Platform application fee on Stripe card donations, as a percent of the gift (decided
-  // 2026-07-16: 1%; campaign pays Stripe's own processing fees directly on top). Percent-only
-  // because recurring donations support only `application_fee_percent`.
-  DONATIONS_PLATFORM_FEE_PERCENT: z.coerce.number().min(0).max(100).default(1),
-  POSTMARK_SERVER_TOKEN: z.string().optional(),
-  POSTMARK_FROM_EMAIL: z.string().email().default('hello@pplcrm.com'),
-  // Display name on transactional email; without it, clients fall back to the Postmark
-  // sender-signature name (a personal name), which reads wrong on product email.
-  POSTMARK_FROM_NAME: z.string().min(1).default('pplCRM'),
-  SENDGRID_API_KEY: z.string().optional(),
-  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
-  // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
-  // is used and the tenant has no whitelabel subuser of its own. Isolates free-tier sending
-  // reputation (IP pool) from paying customers'.
-  SENDGRID_FREE_TIER_SUBUSER: z.string().optional(),
-  // Shared secret Postmark is configured to send in the X-Postmark-Webhook-Token header of
-  // bounce/complaint webhooks. The webhook rejects requests without it.
-  POSTMARK_WEBHOOK_TOKEN: z.string().optional(),
-  // Where the ops watchdog cron emails its failed-jobs/backlog digest (via Postmark, directly —
-  // not through the job queue). Unset = digest is logged but not emailed.
-  OPS_ALERT_EMAIL: z.string().email().optional(),
-  // Sentry error tracking. Unset = Sentry disabled entirely (no startup cost, no traffic).
-  // NOTE: instrument.ts reads this from process.env directly (it must run before this file's
-  // parse); it is declared here so the schema stays the single inventory of backend config.
-  SENTRY_DSN: z.string().optional(),
-  // Anthropic Claude API key for the newsletter preflight's AI content review. Optional — when
-  // unset the preflight scores from the deterministic lint alone (fail-open, layer skipped).
-  ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
-  // Twilio SMS (companion verification codes). All optional — the SMS service
-  // logs a dev mock instead of sending when these are unset.
-  TWILIO_ACCOUNT_SID: z.string().optional(),
-  TWILIO_AUTH_TOKEN: z.string().optional(),
-  TWILIO_FROM_NUMBER: z.string().optional(),
-  GOOGLE_MAPS_API_KEY: z.string().optional(),
-  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
-  WEBAUTHN_RP_NAME: z.string().optional().default('pplCRM'),
-  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
-  // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
-  // Dev default is 'localhost' so `<slug>.localhost` works.
-  PUBLIC_BASE_DOMAIN: z.string().optional().default('localhost'),
-  // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
-  // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
-  //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
-  //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
-  //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
-  TRUST_PROXY: z.string().optional().default('false'),
-  // How many background jobs the worker may process concurrently. One slow job (a large sync or
-  // import) must not block latency-sensitive mail behind it, so we run a small bounded pool of
-  // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
-  // this comfortably below the Postgres pool size. Default 4.
-  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
-  // Max real Google Geocoding API calls per tenant per calendar day. A large voter-file import is
-  // spread across days at this rate instead of geocoding the whole list in one night (see
-  // lib/gis/geocode-queue.ts). Caps daily Google spend per tenant; only bites very large imports.
-  GEOCODE_DAILY_BUDGET: z.coerce.number().int().min(1).default(25000),
-  // Max connections in the shared pg pool. The API server, the job worker (up to
-  // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
-  // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
-  // and well under Postgres max_connections. Default 20 (pg's own default is 10).
-  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
-  // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
-  // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
-  // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
-  ALLOW_MOCK_PAYMENTS: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  // Auto-passing domain verification when no valid SendGrid key is configured requires an
-  // EXPLICIT opt-in, never merely "key is missing" — a misconfigured key in a real deploy
-  // must not silently mark sending domains verified and open the send guards. Only ever
-  // set this in local dev.
-  ALLOW_MOCK_DOMAIN_VERIFICATION: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
-  // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
-  // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
-  // unset, tokens are stored as plaintext (the pre-encryption behavior), so this
-  // MUST be set in any environment that connects real mailboxes. Rotating it
-  // invalidates existing encrypted tokens (users just re-consent).
-  OAUTH_TOKEN_ENC_KEY: z.string().optional(),
-});
+import { SeoService } from '../ui/seo';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
 
-/** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
-function parseTrustProxy(raw: string): boolean | number | string {
-  const value = raw.trim();
-  if (value === '' || value.toLowerCase() === 'false') return false;
-  if (value.toLowerCase() === 'true') return true;
-  if (/^\d+$/.test(value)) return Number(value);
-  return value;
+interface Qa {
+  readonly q: string;
+  readonly a: string;
 }
 
-const parsedEnv = envSchema.parse(process.env);
+interface Group {
+  readonly label: string;
+  readonly items: readonly Qa[];
+}
 
-export const env = {
-  host: parsedEnv.HOST,
-  port: parsedEnv.PORT,
-  db: {
-    user: parsedEnv.DB_USER,
-    database: parsedEnv.DB_NAME,
-    password: parsedEnv.DB_PASSWORD,
-    port: parsedEnv.DB_PORT,
-    host: parsedEnv.DB_HOST,
-    ssl: parsedEnv.DB_SSL,
-  },
-  // Same target database, but connecting as the owner role for DDL/migrations.
-  // Falls back to the runtime credentials when the migration role is unset.
-  migrationDb: {
-    user: parsedEnv.DB_MIGRATION_USER ?? parsedEnv.DB_USER,
-    database: parsedEnv.DB_NAME,
-    password: parsedEnv.DB_MIGRATION_PASSWORD ?? parsedEnv.DB_PASSWORD,
-    port: parsedEnv.DB_PORT,
-    host: parsedEnv.DB_HOST,
-    ssl: parsedEnv.DB_SSL,
-  },
-  migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
-  apiUrl: parsedEnv.API_URL,
-  appUrl: parsedEnv.APP_URL,
-  companionUrl: parsedEnv.COMPANION_URL,
-  publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
-  trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
-  workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
-  geocodeDailyBudget: parsedEnv.GEOCODE_DAILY_BUDGET,
-  dbPoolMax: parsedEnv.DB_POOL_MAX,
-  allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
-  allowMockDomainVerification: parsedEnv.ALLOW_MOCK_DOMAIN_VERIFICATION,
-  oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
-  sharedSecret: parsedEnv.SHARED_SECRET,
-  msClientId: parsedEnv.MS_CLIENT_ID,
-  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
-  msTenantId: parsedEnv.MS_TENANT_ID,
-  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
-  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
-  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
-  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
-  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
-  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
-  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
-  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
-  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
-  stripePlanMovementPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_PRICE_ID,
-  stripePlanGrassrootsAnnualPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID,
-  stripePlanMovementAnnualPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID,
-  stripeConnectWebhookSecret: parsedEnv.STRIPE_CONNECT_WEBHOOK_SECRET,
-  donationsPlatformFeePercent: parsedEnv.DONATIONS_PLATFORM_FEE_PERCENT,
-  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
-  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
-  postmarkFromName: parsedEnv.POSTMARK_FROM_NAME,
-  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
-  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
-  sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
-  postmarkWebhookToken: parsedEnv.POSTMARK_WEBHOOK_TOKEN,
-  opsAlertEmail: parsedEnv.OPS_ALERT_EMAIL,
-  sentryDsn: parsedEnv.SENTRY_DSN,
-  anthropicApiKey: parsedEnv.ANTHROPIC_API_KEY,
-  anthropicModel: parsedEnv.ANTHROPIC_MODEL,
-  twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
-  twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
-  twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
-  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
-  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
-};
+@Component({
+  selector: 'pc-faq-page',
+  imports: [SiteHeader, SiteFooter],
+  templateUrl: './faq-page.html',
+})
+export class FaqPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  private readonly seo = inject(SeoService);
+
+  constructor() {
+    // FAQPage rich-result data, built from the same Q&A shown on the page.
+    this.seo.setJsonLd('faq', {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: this.groups.flatMap((group) =>
+        group.items.map((item) => ({
+          '@type': 'Question',
+          name: item.q,
+          acceptedAnswer: { '@type': 'Answer', text: item.a },
+        })),
+      ),
+    });
+  }
+
+  protected readonly groups: readonly Group[] = [
+    {
+      label: 'Getting started',
+      items: [
+        {
+          q: 'Is the free plan really free?',
+          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
+        },
+        {
+          q: 'What is the demo workspace?',
+          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
+        },
+        {
+          q: 'Do I need training to get started?',
+          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
+        },
+        {
+          q: 'How do I move from the demo to real work?',
+          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
+        },
+      ],
+    },
+    {
+      label: 'Your data',
+      items: [
+        {
+          q: 'Who owns the data?',
+          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
+        },
+        {
+          q: 'Can I get my data back out?',
+          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
+        },
+        {
+          q: 'Is my workspace shared with other organizations?',
+          a: 'No. Each organization runs in its own isolated workspace.',
+        },
+        {
+          q: 'Where is my data stored?',
+          a: 'In Canada. Your workspace data stays there for processing and backups.',
+        },
+        {
+          q: 'What happens when I delete something?',
+          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
+        },
+      ],
+    },
+    {
+      label: 'Newsletters',
+      items: [
+        {
+          q: 'Will my newsletter land in spam?',
+          a: 'Your mail goes out from your own verified domain, so inbox providers judge you on your own sending record, not on the worst spammer sharing your pipe. And before every send, an AI deliverability check scores your draft 0–100 against spam patterns and shows you exactly what to fix — on every plan, including Free.',
+        },
+        {
+          q: 'Why do I verify a domain before sending?',
+          a: 'Verification proves to inbox providers that the mail really comes from you. It is the single most effective thing that keeps a newsletter out of spam, and it means the reputation you build belongs to you.',
+        },
+        {
+          q: 'What about unsubscribes and do-not-contact?',
+          a: 'Honored automatically, everywhere. When someone unsubscribes or is marked do-not-contact, every future send skips them; nobody has to remember.',
+        },
+      ],
+    },
+    {
+      label: 'Field apps',
+      items: [
+        {
+          q: 'What do volunteers see?',
+          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
+        },
+        {
+          q: 'Do the apps work offline?',
+          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
+        },
+        {
+          q: 'Do field volunteers need their own seats?',
+          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Companion volunteers are part of the Movement plan, and they’re unlimited.',
+        },
+      ],
+    },
+    {
+      label: 'Pricing',
+      items: [
+        {
+          q: 'How much does it cost?',
+          a: 'Grassroots starts at $29/month and Movement at $55/month, each covering your first 1,000 emailable subscribers. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
+        },
+        {
+          q: 'Can I pay annually?',
+          a: 'Yes. Annual billing costs exactly 10× the monthly price — 2 months free — at every subscriber bracket, paid up front for the year. Monthly stays the default: campaigns that wrap up mid-year shouldn’t prepay twelve months. If your list grows into a higher bracket mid-year, the prorated difference for the rest of your current billing period is charged right away on either interval.',
+        },
+        {
+          q: 'How is pricing metered?',
+          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
+        },
+        {
+          q: 'Are there fees on donations?',
+          a: 'Donations processed through Stripe carry a 1% platform fee on top of Stripe’s own processing fees, shown transparently in the product. Subscriptions have no hidden fees.',
+        },
+        {
+          q: 'Can I see prices in euros, pounds or Canadian dollars?',
+          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
+        },
+        {
+          q: 'What happens when my list grows?',
+          a: 'Nothing surprising, and nothing ever blocks. When your emailable subscribers cross into a new bracket we email your admins, move you to the new bracket, and charge the prorated difference for the rest of your current billing period — so your monthly email allowance grows the moment your list does. If your list shrinks, the price drops at the next renewal automatically.',
+        },
+        {
+          q: 'Do you have a plan for larger organizations?',
+          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO and multiple linked workspaces. Write to hello@pplcrm.com and we’ll tailor it.',
+        },
+        {
+          q: 'Can I talk to a human before committing?',
+          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
+        },
+      ],
+    },
+  ];
+}
 `````
 
 ## File: libs/common/src/lib/help/articles/engagement.ts
@@ -94214,7 +94578,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/workspace/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
       },
       {
         kind: 'p',
@@ -94303,173 +94667,6 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
     ],
   },
 ];
-`````
-
-## File: apps/website/src/app/faq/faq-page.ts
-`````typescript
-import { Component, inject } from '@angular/core';
-
-import { SeoService } from '../ui/seo';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Group {
-  readonly label: string;
-  readonly items: readonly Qa[];
-}
-
-@Component({
-  selector: 'pc-faq-page',
-  imports: [SiteHeader, SiteFooter],
-  templateUrl: './faq-page.html',
-})
-export class FaqPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  private readonly seo = inject(SeoService);
-
-  constructor() {
-    // FAQPage rich-result data, built from the same Q&A shown on the page.
-    this.seo.setJsonLd('faq', {
-      '@context': 'https://schema.org',
-      '@type': 'FAQPage',
-      mainEntity: this.groups.flatMap((group) =>
-        group.items.map((item) => ({
-          '@type': 'Question',
-          name: item.q,
-          acceptedAnswer: { '@type': 'Answer', text: item.a },
-        })),
-      ),
-    });
-  }
-
-  protected readonly groups: readonly Group[] = [
-    {
-      label: 'Getting started',
-      items: [
-        {
-          q: 'Is the free plan really free?',
-          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
-        },
-        {
-          q: 'What is the demo workspace?',
-          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
-        },
-        {
-          q: 'Do I need training to get started?',
-          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
-        },
-        {
-          q: 'How do I move from the demo to real work?',
-          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
-        },
-      ],
-    },
-    {
-      label: 'Your data',
-      items: [
-        {
-          q: 'Who owns the data?',
-          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
-        },
-        {
-          q: 'Can I get my data back out?',
-          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
-        },
-        {
-          q: 'Is my workspace shared with other organizations?',
-          a: 'No. Each organization runs in its own isolated workspace.',
-        },
-        {
-          q: 'Where is my data stored?',
-          a: 'In Canada. Your workspace data stays there for processing and backups.',
-        },
-        {
-          q: 'What happens when I delete something?',
-          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
-        },
-      ],
-    },
-    {
-      label: 'Newsletters',
-      items: [
-        {
-          q: 'Will my newsletter land in spam?',
-          a: 'Your mail goes out from your own verified domain, so inbox providers judge you on your own sending record, not on the worst spammer sharing your pipe. And before every send, an AI deliverability check scores your draft 0–100 against spam patterns and shows you exactly what to fix — on every plan, including Free.',
-        },
-        {
-          q: 'Why do I verify a domain before sending?',
-          a: 'Verification proves to inbox providers that the mail really comes from you. It is the single most effective thing that keeps a newsletter out of spam, and it means the reputation you build belongs to you.',
-        },
-        {
-          q: 'What about unsubscribes and do-not-contact?',
-          a: 'Honored automatically, everywhere. When someone unsubscribes or is marked do-not-contact, every future send skips them; nobody has to remember.',
-        },
-      ],
-    },
-    {
-      label: 'Field apps',
-      items: [
-        {
-          q: 'What do volunteers see?',
-          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
-        },
-        {
-          q: 'Do the apps work offline?',
-          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
-        },
-        {
-          q: 'Do field volunteers need their own seats?',
-          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Companion volunteers are part of the Movement plan, and they’re unlimited.',
-        },
-      ],
-    },
-    {
-      label: 'Pricing',
-      items: [
-        {
-          q: 'How much does it cost?',
-          a: 'Grassroots starts at $29/month and Movement at $55/month, each covering your first 1,000 emailable subscribers. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
-        },
-        {
-          q: 'Can I pay annually?',
-          a: 'Yes. Annual billing costs exactly 10× the monthly price — 2 months free — at every subscriber bracket, paid up front for the year. Monthly stays the default: campaigns that wrap up mid-year shouldn’t prepay twelve months. If your list grows into a higher bracket mid-year, the prorated difference for the rest of your current billing period is charged right away on either interval.',
-        },
-        {
-          q: 'How is pricing metered?',
-          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
-        },
-        {
-          q: 'Are there fees on donations?',
-          a: 'Donations processed through Stripe carry a 1% platform fee on top of Stripe’s own processing fees, shown transparently in the product. Subscriptions have no hidden fees.',
-        },
-        {
-          q: 'Can I see prices in euros, pounds or Canadian dollars?',
-          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
-        },
-        {
-          q: 'What happens when my list grows?',
-          a: 'Nothing surprising, and nothing ever blocks. When your emailable subscribers cross into a new bracket we email your admins, move you to the new bracket, and charge the prorated difference for the rest of your current billing period — so your monthly email allowance grows the moment your list does. If your list shrinks, the price drops at the next renewal automatically.',
-        },
-        {
-          q: 'Do you have a plan for larger organizations?',
-          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO and multiple linked workspaces. Write to hello@pplcrm.com and we’ll tailor it.',
-        },
-        {
-          q: 'Can I talk to a human before committing?',
-          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
-        },
-      ],
-    },
-  ];
-}
 `````
 
 ## File: apps/website/src/app/legal/security-content.ts
@@ -105999,7 +106196,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'warning',
         title: 'What stays locked during the demo',
-        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
+        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and connecting a Stripe account for donations. Everything else works, including workspace settings; update your organization details, service levels, and defaults at any time and they carry over when you exit the demo. Choose a plan on the [Billing](/workspace/billing) page to unlock the rest.',
       },
       { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
       {
@@ -107631,399 +107828,6 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       {
         label: 'Support',
         values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
-      },
-    ],
-  },
-];
-````
-
-## File: libs/common/src/lib/help/articles/engagement.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-      'stripe',
-      'processor',
-      'residency',
-      'paused',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
-      },
-      {
-        kind: 'p',
-        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
-      },
-      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
-      {
-        kind: 'p',
-        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
-      },
-      {
-        kind: 'p',
-        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
-      },
-      {
-        kind: 'p',
-        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Donations are paused until you confirm residency',
-        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page: your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Add ticket tiers and set their order',
-            detail:
-              'On the event’s edit page, add ticket types under **Ticket types** (leave it empty for a free RSVP). Drag a ticket by its handle to set the order; the order you set is the order attendees see on the public page.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-      'api',
-      'api key',
-      'zapier',
-      'integration',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Drag a field by its handle to reorder it; the order you set is the order people see on the public form. Changes apply to the live form instantly. There is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
-      {
-        kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
-      },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
-      {
-        kind: 'list',
-        items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
-        ],
-      },
-      { kind: 'h2', id: 'api', text: 'Bring your own form (API)' },
-      {
-        kind: 'p',
-        text: 'Already have a form that matches your website’s design? Keep it. Point its submit action at your form’s public endpoint — `POST /api/forms/submit/<slug>?t=<workspace>` on the API domain (the same URL the raw-HTML embed uses) — with your enabled field names, and every submission still becomes a person, applies your tags and lists, and respects double opt-in. Include the hidden `_hp` field and leave it empty; it’s the spam trap.',
-      },
-      {
-        kind: 'p',
-        text: 'Submitting from your own server or backend instead? Generate a **workspace API key** (Workspace settings → **API keys**) and send it as an `Authorization: Bearer` header. The key identifies your workspace on its own — no `?t=` needed — and lifts the anonymous per-visitor rate limit in favor of a per-workspace one built for batch traffic. The same key authenticates Zapier and the event RSVP and volunteer signup endpoints.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Never put the API key in a public page',
-        text: 'The key is a secret — anyone who has it can write into your workspace. Browser-side forms don’t need it (the public endpoint works keyless); the key belongs only in server-side code. If it ever leaks, regenerate it in Workspace settings → API keys, which invalidates the old key instantly.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Donation forms show here too',
-        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip, and selecting one previews it right beside the list like any other form. Because they collect card payments through your connected Stripe account, they aren’t edited in the live editor. **Edit donation form** opens the [Donations](/donations) fundraising builder, where the amount and payment settings live, and their responses arrive as gifts in the Donations ledger rather than a form responses tab.',
-      },
-    ],
-  },
-  {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
-    summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
-      },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
-          },
-          {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
-          },
-          {
-            title: 'Confirm',
-            detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
-      {
-        kind: 'p',
-        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link, **sends it to them automatically** by email and text (whichever contacts their [person record](/people) has on file), and copies it to your clipboard as a backup. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the same email or mobile, and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Before you assign',
-        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their link and verification code go. No contact on file means nothing can be sent and the link can’t be opened — the app warns you and leaves the copied link for you to deliver another way.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      {
-        kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
-      },
-      {
-        kind: 'p',
-        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Assigning **sends the volunteer their private link automatically** by email and text, using whichever contacts their person record has on file — no contact on file, and the app warns you to share the link yourself via **Copy volunteer link** (note that copying mints a fresh link, which replaces the one that was sent). If the message went missing — or the volunteer’s contact details changed — pick **Resend link to volunteer** from the route’s ⋯ menu: it emails/texts them a fresh link (the old one stops working). The link expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy or resend the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
-      },
-      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
-      {
-        kind: 'p',
-        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
-      },
-      {
-        kind: 'p',
-        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
       },
     ],
   },
@@ -109929,6 +109733,399 @@ export type { HelpRouteTarget } from './lib/help/help-links';
 export { classifyHelpRoute } from './lib/help/help-links';
 
 export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
+````
+
+## File: libs/common/src/lib/help/articles/engagement.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+      'stripe',
+      'processor',
+      'residency',
+      'paused',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
+      },
+      {
+        kind: 'p',
+        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
+      },
+      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
+      {
+        kind: 'p',
+        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
+      },
+      {
+        kind: 'p',
+        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
+      },
+      {
+        kind: 'p',
+        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Donations are paused until you confirm residency',
+        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page: your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Add ticket tiers and set their order',
+            detail:
+              'On the event’s edit page, add ticket types under **Ticket types** (leave it empty for a free RSVP). Drag a ticket by its handle to set the order; the order you set is the order attendees see on the public page.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+      'api',
+      'api key',
+      'zapier',
+      'integration',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Drag a field by its handle to reorder it; the order you set is the order people see on the public form. Changes apply to the live form instantly. There is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      { kind: 'h2', id: 'api', text: 'Bring your own form (API)' },
+      {
+        kind: 'p',
+        text: 'Already have a form that matches your website’s design? Keep it. Point its submit action at your form’s public endpoint — `POST /api/forms/submit/<slug>?t=<workspace>` on the API domain (the same URL the raw-HTML embed uses) — with your enabled field names, and every submission still becomes a person, applies your tags and lists, and respects double opt-in. Include the hidden `_hp` field and leave it empty; it’s the spam trap.',
+      },
+      {
+        kind: 'p',
+        text: 'Submitting from your own server or backend instead? Generate a **workspace API key** (Workspace settings → **API keys**) and send it as an `Authorization: Bearer` header. The key identifies your workspace on its own — no `?t=` needed — and lifts the anonymous per-visitor rate limit in favor of a per-workspace one built for batch traffic. The same key authenticates Zapier and the event RSVP and volunteer signup endpoints.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Never put the API key in a public page',
+        text: 'The key is a secret — anyone who has it can write into your workspace. Browser-side forms don’t need it (the public endpoint works keyless); the key belongs only in server-side code. If it ever leaks, regenerate it in Workspace settings → API keys, which invalidates the old key instantly.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Donation forms show here too',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip, and selecting one previews it right beside the list like any other form. Because they collect card payments through your connected Stripe account, they aren’t edited in the live editor. **Edit donation form** opens the [Donations](/donations) fundraising builder, where the amount and payment settings live, and their responses arrive as gifts in the Donations ledger rather than a form responses tab.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link, **sends it to them automatically** by email and text (whichever contacts their [person record](/people) has on file), and copies it to your clipboard as a backup. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the same email or mobile, and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their link and verification code go. No contact on file means nothing can be sent and the link can’t be opened — the app warns you and leaves the copied link for you to deliver another way.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Assigning **sends the volunteer their private link automatically** by email and text, using whichever contacts their person record has on file — no contact on file, and the app warns you to share the link yourself via **Copy volunteer link** (note that copying mints a fresh link, which replaces the one that was sent). If the message went missing — or the volunteer’s contact details changed — pick **Resend link to volunteer** from the route’s ⋯ menu: it emails/texts them a fresh link (the old one stops working). The link expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy or resend the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
+      {
+        kind: 'p',
+        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
+      },
+      {
+        kind: 'p',
+        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
+      },
+    ],
+  },
+];
 ````
 
 ## File: libs/common/src/lib/help/articles/outreach.ts

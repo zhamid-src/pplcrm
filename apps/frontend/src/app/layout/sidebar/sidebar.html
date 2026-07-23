@@ -12,7 +12,10 @@
     [class.!text-primary]="isNavActive(nav)"
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
+    <span
+      class="indicator whitespace-nowrap pl-2 text-[13px] tracking-[0.03em]"
+      [class.invisible]="isEffectivelyNarrow()"
+    >
       {{ nav.name }} @if (nav.indicator) {
       <span class="indicator-item status status-primary"></span>
       } @if (nav.badgeCount) {
@@ -68,13 +71,14 @@
   <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
     @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
     <div
-      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
-      (click)="toggleCollapse(item.name)"
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em]"
+      [class.hover:cursor-pointer]="!isEffectivelyNarrow()"
+      (click)="!isEffectivelyNarrow() && toggleCollapse(item.name)"
     >
       <span class="flex-1 min-w-0">
-        @if (isEffectivelyNarrow()) { @if (!isCollapsed(item.name)) {
+        @if (isEffectivelyNarrow()) {
         <hr class="text-neutral w-6" />
-        } } @else { {{ item.name }} }
+        } @else { {{ item.name }} }
       </span>
       @if (item.children?.length) {
       <pc-swap
@@ -92,7 +96,7 @@
       }
     </div>
 
-    @if (item.children && !isCollapsed(item.name)) {
+    @if (item.children && !isVisuallyCollapsed(item.name)) {
     <div class="flex flex-col space-y-1">
       @for (child of item.children; track child.name) {
       <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>

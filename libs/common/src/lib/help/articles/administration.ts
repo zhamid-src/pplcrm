@@ -41,8 +41,21 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     category: 'admin',
     title: 'Users and roles',
     summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
+    keywords: [
+      'users',
+      'roles',
+      'invite',
+      'admin',
+      'editor',
+      'viewer',
+      'permissions',
+      'access',
+      'mfa',
+      'security',
+      'campaign',
+      'assignment',
+    ],
+    related: ['settings', 'profile', 'activity-log', 'campaigns-contexts'],
     blocks: [
       {
         kind: 'p',
@@ -50,17 +63,17 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. Once an election campaign exists, a **Campaign** column appears too: pick which campaign each Editor or Viewer works in (admins and owners always have every campaign, so their cell reads “All campaigns”). The **⋯** menu on each row opens the profile or sends a password reset email.',
       },
       { kind: 'h2', id: 'user-page', text: 'The user page' },
       {
         kind: 'p',
-        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why), assigns the user’s campaign once an election campaign exists (see [Campaigns and contexts](/help/campaigns-contexts)), and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
       },
       { kind: 'h2', id: 'invite', text: 'Inviting someone' },
       {
         kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role — plus, when your workspace has more than one campaign, the campaign the new Editor or Viewer will work in. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
       },
       { kind: 'h2', id: 'roles', text: 'The roles' },
       {
@@ -71,6 +84,10 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
           '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
           '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
         ],
+      },
+      {
+        kind: 'p',
+        text: 'Editors and Viewers also **belong to exactly one campaign** — the one an admin assigned them to (unassigned means the office). They cannot switch campaigns themselves; admins and owners can work in every campaign. See [Campaigns and contexts](/help/campaigns-contexts).',
       },
       {
         kind: 'p',
@@ -129,6 +146,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '**Organization**: your name, contact details, and mailing address.',
+          '**Campaigns**: your permanent office context and any election campaigns — create and archive them, switch which one you (as an admin) are working in, and read how user assignment works. See [Campaigns and contexts](/help/campaigns-contexts).',
           '**Teams & access**: default role for invitations and the MFA requirement.',
           '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
           '**Email sync**: connect your email provider so incoming and outgoing email syncs into your pplCRM inbox.',
@@ -281,21 +299,22 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       'context',
       'office',
       'election',
-      'switcher',
+      'assign',
+      'assignment',
       'archive',
       'workspace',
       'constituency',
     ],
-    related: ['users-roles', 'activity-log'],
+    related: ['users-roles', 'settings', 'activity-log'],
     blocks: [
       {
         kind: 'p',
-        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, an administrator creates an **election campaign** alongside it under [Workspace → Campaigns](/workspace/campaigns). People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
       },
-      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      { kind: 'h2', id: 'assignment', text: 'Who works in which campaign' },
       {
         kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+        text: 'Campaign membership is an admin decision, not a personal choice. **Editors and Viewers belong to exactly one campaign**: the one an admin assigned them to on the [Users](/users) page or in the invite dialog (unassigned members work in the office). Everything they see and do — newsletters, forms, donations, canvassing, the inbox — stays inside that campaign, and their [Profile](/profile) shows which campaign they are part of. **Admins and owners can work in every campaign**: they pick the context they are currently working in from [Workspace → Campaigns](/workspace/campaigns) (**Work in this campaign**), and that choice is theirs alone and follows them across devices.',
       },
       { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
       {
@@ -315,7 +334,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
           '**Create** a campaign before the race, with a start date and election day.',
           '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
           '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
-          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+          '**Archive** it after the race: everything stays viewable as read-only history, users assigned to it move back to the office context, and you can unarchive if late data needs to be entered.',
         ],
       },
       {

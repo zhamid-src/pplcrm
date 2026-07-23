@@ -14,6 +14,7 @@ import { Icon } from '@icons/icon';
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { AuthService } from '../../auth/auth-service';
+import { CampaignContextService } from '../../services/campaign-context.service';
 import { UserService } from '../../services/user.service';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 
@@ -26,6 +27,7 @@ export class ProfilePage implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly auth = inject(AuthService);
   private readonly userService = inject(UserService);
+  private readonly campaignContext = inject(CampaignContextService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -69,6 +71,25 @@ export class ProfilePage implements OnInit {
 
   /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
   protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
+
+  /**
+   * Campaigns §15 — which campaign this account works in. Admins/owners see every
+   * campaign; everyone else is pinned to their admin-assigned one (the backend
+   * returns exactly that campaign as the active context).
+   */
+  protected readonly campaignLabel = computed(() => {
+    const role = this.detail()?.role;
+    if (role === 'admin' || role === 'owner') {
+      const active = this.campaignContext.activeCampaign();
+      return active ? `All campaigns (working in ${active.name})` : 'All campaigns';
+    }
+    return this.campaignContext.activeCampaign()?.name ?? 'Office';
+  });
+
+  protected readonly isCampaignScoped = computed(() => {
+    const role = this.detail()?.role;
+    return role !== 'admin' && role !== 'owner';
+  });
 
   /** Account-panel variant with the access summary, e.g. "Owner — full access". */
   protected readonly roleWithAccess = computed(() => {
@@ -364,6 +385,7 @@ export class ProfilePage implements OnInit {
       }
 
       const user = await this.userService.getProfileById(currentUser.id);
+      await this.campaignContext.ensureLoaded();
       this.detail.set(user);
       this.stats.set(user.stats as any);
       this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));

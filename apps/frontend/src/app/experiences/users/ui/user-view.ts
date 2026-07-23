@@ -13,6 +13,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
@@ -58,6 +59,7 @@ export class UserViewComponent {
   private readonly users = inject(UserAdminService);
   private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly campaignContext = inject(CampaignContextService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -131,6 +133,48 @@ export class UserViewComponent {
 
   protected roleLabelFor(role: string): string {
     return authRoleLabel(role);
+  }
+
+  // Campaigns §15 — assignment select (instant-apply, same idiom as Role).
+  protected readonly campaignSaving = signal(false);
+  protected readonly campaignFlash = signal(false);
+  protected readonly assignableCampaigns = computed(() =>
+    this.campaignContext.campaigns().filter((c) => c.status === 'active'),
+  );
+  /** Only worth showing once an election campaign exists alongside the office. */
+  protected readonly showCampaignControl = computed(() => this.assignableCampaigns().length > 1);
+  /** Admins/owners can work in every campaign, so the assignment doesn't scope them. */
+  protected readonly targetIsCampaignScoped = computed(() => {
+    const role = this.detail()?.role;
+    return role !== 'admin' && role !== 'owner';
+  });
+  protected readonly assignedCampaignName = computed(() => {
+    const id = this.detail()?.campaign_id ?? null;
+    if (id == null) return 'Office';
+    return this.assignableCampaigns().find((c) => String(c.id) === id)?.name ?? 'Office';
+  });
+
+  protected async changeCampaign(event: Event): Promise<void> {
+    const select = event.target as HTMLSelectElement;
+    const campaignId = select.value || null;
+    const user = this.detail();
+    if (!user || campaignId === (user.campaign_id ?? null)) return;
+
+    this.campaignSaving.set(true);
+    try {
+      await this.users.update(this.id(), { campaign_id: campaignId } as UpdateAuthUserType);
+      this.detail.update((d) => (d ? { ...d, campaign_id: campaignId } : d));
+      this.users.triggerRefresh();
+      this.campaignFlash.set(true);
+      const FLASH_MS = 1300;
+      setTimeout(() => this.campaignFlash.set(false), FLASH_MS);
+      this.alerts.showSuccess(`${this.displayName()} now works in ${this.assignedCampaignName()}`);
+    } catch (err) {
+      select.value = user.campaign_id ?? '';
+      this.alerts.showError(getUserErrorMessage(err, 'Unable to update the campaign'));
+    } finally {
+      this.campaignSaving.set(false);
+    }
   }
 
   protected readonly lastActiveLabel = computed(() => {
@@ -423,7 +467,7 @@ export class UserViewComponent {
     const end = this._loading.begin();
     this.error.set(null);
     try {
-      const user = await this.users.getById(this.id());
+      const [user] = await Promise.all([this.users.getById(this.id()), this.campaignContext.ensureLoaded()]);
       this.detail.set(user);
       this.stats.set(user.stats);
       this.setForm(user);

@@ -26,6 +26,8 @@ export interface SettingsFieldConfig {
   helper?: string;
   options?: SettingsOptionConfig[];
   defaultValue?: unknown;
+  /** Span both columns of the section grid (textareas always do). */
+  fullWidth?: boolean;
 }
 
 export interface SettingsSectionConfig {
@@ -46,7 +48,7 @@ export interface SettingsNavGroup {
 }
 
 export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
-  { label: 'Workspace', ids: ['organization', 'access'] },
+  { label: 'Workspace', ids: ['organization', 'campaigns', 'access'] },
   { label: 'Email', ids: ['communications', 'email-sync', 'domains'] },
   { label: 'Features', ids: ['sla', 'donations', 'app'] },
   { label: 'Plan & account', ids: ['storage', 'billing', 'api-keys', 'account'] },
@@ -104,6 +106,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         label: 'Volunteer route links expire after 30 days',
         type: 'toggle',
         defaultValue: true,
+        fullWidth: true,
         helper:
           'Links expire for security: if a route link is forwarded on or turns up on a lost phone months later, it no longer works, and volunteers aren’t confused by stale routes reappearing. Anyone opening a link still verifies a one-time code and needs your one-time approval, so turning expiry off is safe if your deliveries run longer than 30 days and you’re tired of re-sending links. Existing links follow whatever this is set to right now, and you can always revoke a single route’s link from its ⋯ menu.',
       },

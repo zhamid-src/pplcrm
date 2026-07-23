@@ -297,13 +297,13 @@ export const dashboardRoutes: Routes = [
   },
 
   {
+    // Campaigns §15 — management is admin/owner-only and lives in Workspace
+    // settings; these deep routes host the detail/add/edit pages it links to.
     path: 'campaigns',
-    data: { breadcrumb: 'Campaigns' },
+    canActivate: [roleGuard],
+    data: { breadcrumb: [{ label: 'Campaigns', route: '/workspace/campaigns' }] },
     children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/campaigns/ui/campaigns-page').then((m) => m.CampaignsPageComponent),
-      },
+      { path: '', redirectTo: '/workspace/campaigns', pathMatch: 'full' },
       {
         path: 'add',
         loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),

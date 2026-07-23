@@ -4,6 +4,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from '@frontend/auth/auth-service';
 import { UserViewComponent } from './user-view';
@@ -69,6 +70,15 @@ describe('UserViewComponent (merged view + edit)', () => {
         { provide: Router, useValue: mockRouter },
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: vi.fn().mockReturnValue('user-123') } } } },
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
+        {
+          provide: CampaignContextService,
+          useValue: {
+            campaigns: () => [],
+            activeCampaign: () => null,
+            activeCampaignId: () => null,
+            ensureLoaded: () => Promise.resolve(),
+          },
+        },
       ],
     }).compileComponents();
 

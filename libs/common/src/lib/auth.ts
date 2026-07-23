@@ -67,6 +67,8 @@ export interface IUserStatsSnapshot {
 export interface IAuthUserRecord extends IAuthUser {
   last_name: string;
   role: string | null;
+  /** Campaigns §15 — admin-assigned campaign; null = office. Not enforced for admins/owners. */
+  campaign_id: string | null;
   verified: boolean;
   two_factor_enabled: boolean;
   deletion_scheduled_at: Date | null;

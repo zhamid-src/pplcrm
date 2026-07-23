@@ -6,6 +6,8 @@ export const InviteAuthUserObj = z.object({
   first_name: nameSchema('First name'),
   last_name: nameSchema('Last name').nullable().optional(),
   role: z.string().max(100).nullable().optional(),
+  /** Campaigns §15 — assign the invitee to a campaign; null/absent = the office context. */
+  campaign_id: z.string().nullable().optional(),
 });
 
 export const NotificationPreferencesObj = z.object({
@@ -46,6 +48,8 @@ export const UpdateAuthUserObj = z.object({
   verified: z.boolean().optional(),
   two_factor_enabled: z.boolean().optional(),
   notification_preferences: NotificationPreferencesObj.optional(),
+  /** Campaigns §15 — admin-assigned campaign; null = the office context. Admin/owner callers only. */
+  campaign_id: z.string().nullable().optional(),
 });
 
 export const Verify2FAObj = z.object({

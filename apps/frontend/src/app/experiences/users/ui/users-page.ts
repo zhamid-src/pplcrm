@@ -15,6 +15,7 @@ import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-heade
 import { UserService } from '@frontend/services/user.service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { authRoleLabel } from '../../../../../../../libs/common/src';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 import { UserAdminService } from '../services/useradmin-service';
 import {
   userIsDeactivated,
@@ -32,6 +33,7 @@ export interface UserRow {
   first_name: string;
   last_name: string;
   role: string | null;
+  campaign_id: string | null;
   verified: boolean;
   two_factor_enabled: boolean;
   deletion_scheduled_at: string | null;
@@ -67,6 +69,7 @@ export class UsersPageComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly alerts = inject(AlertService);
   private readonly userService = inject(UserService);
+  private readonly campaignContext = inject(CampaignContextService);
 
   private readonly inviteDlg = viewChild.required(InviteUserDialog);
 
@@ -101,6 +104,14 @@ export class UsersPageComponent implements OnInit {
     const usage = this.seatUsage();
     return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
   });
+
+  /** Campaigns §15 — active contexts an Editor/Viewer can be assigned to. */
+  protected readonly assignableCampaigns = computed(() =>
+    this.campaignContext.campaigns().filter((c) => c.status === 'active'),
+  );
+  /** The column only earns its space once an election campaign exists. */
+  protected readonly showCampaignColumn = computed(() => this.assignableCampaigns().length > 1);
+  protected readonly columnCount = computed(() => (this.showCampaignColumn() ? 7 : 6));
 
   private readonly userSignal = this.auth.getUserSignal();
   private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
@@ -190,6 +201,40 @@ export class UsersPageComponent implements OnInit {
     return userLastActiveLabel(row);
   }
 
+  /** Admins/owners aren't scoped by an assignment; everyone else shows their campaign. */
+  protected isCampaignScoped(row: UserRow): boolean {
+    return row.role !== 'admin' && row.role !== 'owner';
+  }
+
+  protected campaignName(campaignId: string | null): string {
+    if (campaignId == null) return 'Office';
+    return this.assignableCampaigns().find((c) => String(c.id) === campaignId)?.name ?? 'Office';
+  }
+
+  protected async changeCampaign(row: UserRow, event: Event): Promise<void> {
+    const select = event.target as HTMLSelectElement;
+    const campaignId = select.value || null;
+    if (campaignId === row.campaign_id) return;
+
+    this.savingIds.update((ids) => new Set(ids).add(row.id));
+    try {
+      await this.users.update(row.id, { campaign_id: campaignId });
+      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, campaign_id: campaignId } : r)));
+      this.flashRow(row.id);
+      this.alerts.showSuccess(`${this.displayName(row)} now works in ${this.campaignName(campaignId)}`);
+    } catch (err) {
+      select.value = row.campaign_id ?? '';
+      const message = err instanceof Error && err.message ? err.message : 'Unable to update the campaign';
+      this.alerts.showError(message);
+    } finally {
+      this.savingIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(row.id);
+        return next;
+      });
+    }
+  }
+
   protected async changeRole(row: UserRow, event: Event): Promise<void> {
     const select = event.target as HTMLSelectElement;
     const role = select.value;
@@ -230,6 +275,7 @@ export class UsersPageComponent implements OnInit {
       const [list, seats] = await Promise.all([
         this.users.getAll({ startRow: 0, endRow: 500 }),
         this.users.getSeatUsage(),
+        this.campaignContext.ensureLoaded(),
       ]);
       this.rows.set(list.rows.map((raw) => this.toRow(raw)));
       this.seatUsage.set(seats);
@@ -248,6 +294,7 @@ export class UsersPageComponent implements OnInit {
       first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
       last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
       role: typeof raw['role'] === 'string' ? raw['role'] : null,
+      campaign_id: raw['campaign_id'] != null ? String(raw['campaign_id']) : null,
       verified: raw['verified'] === true,
       two_factor_enabled: raw['two_factor_enabled'] === true,
       deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),

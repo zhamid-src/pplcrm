@@ -37,7 +37,7 @@
 Project-specific how-tos live in `.claude/skills/<name>/SKILL.md`. If one exists for your task, read it first — it already has the verified file paths, commands, and examples so you don't have to re-grep the codebase from scratch:
 
 - `pplcrm-add-entity` — scaffolding a new CRUD entity end-to-end (schema → backend module → frontend experience)
-- `pplcrm-campaigns` — the Campaigns feature (§15): office/election contexts, shared rolodex vs campaign-scoped facts (`campaign_person_facts`, `campaign_subscriptions`, `email_suppressions`, DNC flag), the context switcher, domain scoping via `options.campaignId`, archive/carry-over rules
+- `pplcrm-campaigns` — the Campaigns feature (§15): office/election contexts, shared rolodex vs campaign-scoped facts (`campaign_person_facts`, `campaign_subscriptions`, `email_suppressions`, DNC flag), admin-assigned campaign membership (`authusers.campaign_id`) with admin-only context switching, domain scoping via `options.campaignId`, archive/carry-over rules
 - `pplcrm-trpc-backend` — tRPC/Fastify/Kysely conventions, error handling, transactions, background jobs
 - `pplcrm-tenant-safety` — multi-tenant query scoping and the `local/no-unscoped-db-query` rule
 - `pplcrm-migrations` — writing/applying DB migrations, `schema.sql` baseline

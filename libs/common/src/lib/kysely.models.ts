@@ -214,6 +214,11 @@ interface AuthUsers extends RecordType {
   previous_email: string | null;
   previous_role: string | null;
   passkey_setup_dismissed_at: Timestamp | null;
+  /**
+   * Campaigns §15 — admin-assigned campaign for Editors/Viewers; NULL = the
+   * permanent office context. Ignored for admins/owners (they see every campaign).
+   */
+  campaign_id: string | null;
 }
 
 /** Per-campaign email CONSENT (§15). Address health lives in EmailSuppressions; DNC on Persons. */

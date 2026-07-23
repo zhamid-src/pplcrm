@@ -1,0 +1,121 @@
+<div class="space-y-6">
+  <!-- What campaigns are + how assignment works (§3 guide-don't-error) -->
+  <div class="flex items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3.5 py-2.5">
+    <pc-icon name="information-circle" [size]="5" class="mt-0.5 shrink-0 text-info"></pc-icon>
+    <div class="space-y-1.5 text-xs leading-relaxed text-base-content/80">
+      <p>
+        <span class="font-semibold">Campaigns are separate working contexts that share one contact list.</span>
+        Your office is the permanent context; election campaigns are created before a race and archived after it.
+        Contacts, households, and tags are shared across all of them — what stays separate per campaign is supporter
+        data (support level, voting status), email consent, newsletters, forms, donations, canvassing, and the inbox.
+      </p>
+      <p>
+        <span class="font-semibold">Only admins and owners manage campaigns or switch between them.</span>
+        Editors and Viewers belong to exactly one campaign and everything they see and do stays in it. Assign a member
+        to a campaign from the
+        <a routerLink="/users" class="link text-primary">Users</a> page (or when inviting them); unassigned members work
+        in the office context. Archiving a campaign moves its members back to the office.
+      </p>
+    </div>
+  </div>
+
+  <!-- Active contexts -->
+  <div class="flex items-center justify-between">
+    <h3 class="pc-eyebrow" i18n>Your campaigns</h3>
+    <a routerLink="/campaigns/add" class="btn btn-primary btn-sm gap-2 shrink-0">
+      <pc-icon name="square-3-stack-3d" [size]="4"></pc-icon>
+      <span i18n>New campaign</span>
+    </a>
+  </div>
+
+  @if (!loaded()) {
+  <div class="grid gap-4 sm:grid-cols-2">
+    @for (i of [1, 2]; track i) {
+    <div class="rounded-xl border border-base-200 p-5">
+      <div class="skeleton mb-3 h-5 w-1/2"></div>
+      <div class="skeleton mb-2 h-3 w-full"></div>
+      <div class="skeleton h-3 w-2/3"></div>
+    </div>
+    }
+  </div>
+  } @else {
+  <div class="grid gap-4 sm:grid-cols-2">
+    @for (campaign of current(); track campaign.id) {
+    <a
+      [routerLink]="['/campaigns', campaign.id]"
+      class="group flex flex-col gap-3 rounded-xl border border-base-200 bg-base-50/50 p-5 transition-all duration-200 hover:border-primary/30 hover:shadow-md"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h4 class="truncate text-[15px] font-semibold text-base-content group-hover:text-primary">
+            {{ campaign.name }}
+          </h4>
+          <p class="mt-0.5 text-xs text-base-content/55">
+            <span class="font-medium uppercase tracking-wide">{{ kindLabel(campaign.kind) }}</span>
+            @if (campaign.startdate || campaign.enddate) {
+            <span>
+              · {{ campaign.startdate ? (campaign.startdate | date: 'MMM d, y') : '…' }} – {{ campaign.enddate ?
+              (campaign.enddate | date: 'MMM d, y') : 'ongoing' }}
+            </span>
+            }
+          </p>
+        </div>
+        @if (campaign.kind === 'office') {
+        <span class="badge badge-ghost shrink-0 gap-1">
+          <pc-icon name="house-modern" [size]="3"></pc-icon>
+          <span i18n>Permanent</span>
+        </span>
+        }
+      </div>
+
+      <div class="flex items-center justify-between border-t border-base-200 pt-3">
+        @if (activeContextId() === campaign.id + '') {
+        <span class="flex items-center gap-1.5 text-xs font-medium text-primary">
+          <pc-icon name="check-circle" [size]="4"></pc-icon>
+          <span i18n>You're working in this campaign</span>
+        </span>
+        } @else {
+        <button type="button" class="btn btn-ghost btn-xs gap-1" (click)="switchTo(campaign, $event)">
+          <pc-icon name="arrow-path" [size]="3"></pc-icon>
+          <span i18n>Work in this campaign</span>
+        </button>
+        }
+      </div>
+    </a>
+    }
+  </div>
+
+  <!-- Archived campaigns: read-only history, disclosed rather than hidden (§3) -->
+  @if (archived().length) {
+  <h3 class="pc-eyebrow" i18n>Archived</h3>
+  <div class="grid gap-4 sm:grid-cols-2">
+    @for (campaign of archived(); track campaign.id) {
+    <a
+      [routerLink]="['/campaigns', campaign.id]"
+      class="group flex flex-col gap-3 rounded-xl border border-base-200 bg-base-100/60 p-5 opacity-80 transition-all duration-200 hover:border-primary/30 hover:opacity-100"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h4 class="truncate text-[15px] font-semibold text-base-content/80 group-hover:text-primary">
+            {{ campaign.name }}
+          </h4>
+          <p class="mt-0.5 text-xs text-base-content/55">
+            <span class="font-medium uppercase tracking-wide">{{ kindLabel(campaign.kind) }}</span>
+            @if (campaign.startdate || campaign.enddate) {
+            <span>
+              · {{ campaign.startdate ? (campaign.startdate | date: 'MMM d, y') : '…' }} – {{ campaign.enddate ?
+              (campaign.enddate | date: 'MMM d, y') : '…' }}
+            </span>
+            }
+          </p>
+        </div>
+        <span class="badge badge-ghost shrink-0 gap-1">
+          <pc-icon name="archive-box" [size]="3"></pc-icon>
+          <span i18n>Read-only</span>
+        </span>
+      </div>
+    </a>
+    }
+  </div>
+  } }
+</div>
