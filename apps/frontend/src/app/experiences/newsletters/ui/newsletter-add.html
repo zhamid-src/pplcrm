@@ -8,11 +8,13 @@
       <pc-icon name="chevron-left" [size]="3"></pc-icon>
       Newsletters
     </button>
-    <p class="pc-eyebrow">Newsletter</p>
-    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
+    <p class="pc-eyebrow">{{ isEditing ? 'Edit draft' : 'Newsletter' }}</p>
+    <h1 class="text-[22px] font-bold text-base-content">
+      {{ isEditing ? editName() || 'Untitled newsletter' : 'New newsletter' }}
+    </h1>
 
     <!-- Pill steps: current = solid, completed = tint & clickable, future = muted & locked (narrates why) -->
-    <ol class="mt-4 flex flex-wrap gap-2">
+    <ol class="mt-4 hidden flex-wrap gap-2 sm:flex">
       @for (label of steps; track label; let idx = $index) { @let stepNo = idx + 1; @let isCurrent = currentStep() ===
       stepNo; @let isDone = currentStep() > stepNo; @let isLocked = stepNo > currentStep();
       <li>
@@ -50,8 +52,26 @@
   </header>
 
   <main class="flex-1 overflow-y-auto px-6 py-6">
+    <!-- The wizard needs desktop real estate; on a phone we say so instead of rendering a broken editor. -->
+    <div class="sm:hidden">
+      <pc-empty-state
+        icon="pencil-square"
+        [bordered]="false"
+        [title]="isEditing ? 'Drafts are edited on a desktop' : 'Newsletters are created on a desktop'"
+        hint="Open pplCRM on a desktop to work on this. You can still view reports and send finished drafts from your phone."
+      >
+        <a routerLink="/newsletters" class="btn btn-primary btn-sm">Back to newsletters</a>
+      </pc-empty-state>
+    </div>
+
+    @if (isEditing && !editLoaded()) {
+    <!-- Edit mode: the draft is still loading; the gate keeps this from flashing on fast responses. -->
+    <div class="hidden justify-center py-16 sm:flex">
+      @if (editLoading()) { <span class="loading loading-spinner loading-md text-primary"></span> }
+    </div>
+    } @else {
     <form
-      class="mx-auto flex w-full flex-col gap-6"
+      class="mx-auto hidden w-full flex-col gap-6 sm:flex"
       [class.max-w-3xl]="currentStepId() !== 'content'"
       [class.max-w-none]="currentStepId() === 'content'"
     >
@@ -654,10 +674,12 @@
       </section>
       } }
     </form>
+    }
   </main>
 
   <!-- Persistent footer: Back/Cancel · Save draft · [spacer] · Next / Send to N people -->
-  <footer class="flex items-center gap-3 border-t border-base-200 bg-base-100 px-6 py-4">
+  @if (!isEditing || editLoaded()) {
+  <footer class="hidden items-center gap-3 border-t border-base-200 bg-base-100 px-6 py-4 sm:flex">
     <button type="button" class="btn btn-ghost btn-sm" (click)="handleBack()">
       <pc-icon name="chevron-left" [size]="4"></pc-icon>
       Back
@@ -687,6 +709,7 @@
     </span>
     }
   </footer>
+  }
 
   <!-- Save as template: the house modal with the one field the action needs -->
   <pc-modal-shell title="Save as template" icon="bookmark" [open]="saveTemplateOpen()" (closed)="closeSaveTemplate()">

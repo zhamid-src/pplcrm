@@ -27,6 +27,7 @@ import {
   type PreflightSeverity,
 } from '@common';
 
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
@@ -100,7 +101,15 @@ const EMPTY_REGULAR_PAYLOAD: RegularNewsletterPayload = {
 
 @Component({
   selector: 'pc-newsletter-add',
-  imports: [FormField, RouterLink, Icon, ModalShell, TemplateThumbComponent, VisualNewsletterEditorComponent],
+  imports: [
+    EmptyState,
+    FormField,
+    RouterLink,
+    Icon,
+    ModalShell,
+    TemplateThumbComponent,
+    VisualNewsletterEditorComponent,
+  ],
   templateUrl: './newsletter-add.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
@@ -122,6 +131,16 @@ export class NewsletterAddComponent implements OnInit {
   /** Sending is blocked server-side during demo mode; the disabled buttons explain it (§2 explained-disabled). */
   protected readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
   protected readonly demoSendTooltip = DEMO_SEND_TOOLTIP;
+
+  /** Draft id when opened as newsletters/:id/edit; null when creating a new newsletter. */
+  private readonly editId = this.route.snapshot.paramMap.get('id');
+  protected readonly isEditing = this.editId !== null;
+  /** Edit mode: true once the stored draft has been hydrated into the wizard. */
+  protected readonly editLoaded = signal(false);
+  /** Edit mode: the stored draft name, shown as the page title (§1 real record name). */
+  protected readonly editName = signal('');
+  private readonly _editLoading = createLoadingGate();
+  protected readonly editLoading = this._editLoading.visible;
 
   /** Raw wizard payload — the single source of truth the signal-form wraps. */
   protected readonly regularPayload = signal<RegularNewsletterPayload>({ ...EMPTY_REGULAR_PAYLOAD });
@@ -257,9 +276,13 @@ export class NewsletterAddComponent implements OnInit {
     void this.loadCommsDefaults();
     void this.loadSendQuota();
     void this.loadSavedTemplates();
-    // Land directly in the wizard with the default template applied; not a user edit.
-    this.applyTemplate('welcome');
-    this.dirty.set(false);
+    if (this.editId) {
+      void this.loadDraft(this.editId);
+    } else {
+      // Land directly in the wizard with the default template applied; not a user edit.
+      this.applyTemplate('welcome');
+      this.dirty.set(false);
+    }
   }
 
   /** Route-level leave guard (wired via unsavedChangesGuard in dashboard.routes.ts). */
@@ -710,13 +733,22 @@ export class NewsletterAddComponent implements OnInit {
 
   protected async saveDraft(): Promise<void> {
     if (this.saving()) return;
+    // Edit mode: never write an empty payload over the draft before hydration lands.
+    if (this.isEditing && !this.editLoaded()) return;
     const raw = this.regularPayload();
     const subject = raw.subject || 'Untitled draft';
     this.saving.set(true);
     try {
-      await this.newslettersSvc.add(this.buildPayload('draft'));
+      if (this.editId) {
+        await this.newslettersSvc.update(this.editId, this.buildPayload('draft'));
+      } else {
+        await this.newslettersSvc.add(this.buildPayload('draft'));
+      }
       this.dirty.set(false);
-      this.alertSvc.showSuccess(`Saved draft "${subject}". Find it in Newsletters`);
+      // Edit mode closes onto the draft's own page; create mode closes onto the list.
+      this.alertSvc.showSuccess(
+        this.editId ? `Saved draft "${subject}"` : `Saved draft "${subject}". Find it in Newsletters`,
+      );
       this.close();
     } catch (err) {
       this.alertSvc.showError(this.errorMessage(err, 'We could not save your draft. Try again.'));
@@ -729,6 +761,7 @@ export class NewsletterAddComponent implements OnInit {
 
   protected async sendRegular(): Promise<void> {
     if (this.saving()) return;
+    if (this.isEditing && !this.editLoaded()) return;
     if (!this.validateDetails()) {
       this.goToStepId('audience');
       return;
@@ -771,10 +804,15 @@ export class NewsletterAddComponent implements OnInit {
 
     this.saving.set(true);
     try {
-      const created = await this.newslettersSvc.add(this.buildPayload(scheduled ? 'scheduled' : 'draft'));
-      const createdId = this.extractId(created);
-      if (!scheduled && createdId) {
-        await this.newslettersSvc.send(createdId);
+      let targetId: string | null = this.editId;
+      if (this.editId) {
+        await this.newslettersSvc.update(this.editId, this.buildPayload(scheduled ? 'scheduled' : 'draft'));
+      } else {
+        const created = await this.newslettersSvc.add(this.buildPayload(scheduled ? 'scheduled' : 'draft'));
+        targetId = this.extractId(created);
+      }
+      if (!scheduled && targetId) {
+        await this.newslettersSvc.send(targetId);
       }
       this.dirty.set(false);
       this.alertSvc.showSuccess(
@@ -799,6 +837,79 @@ export class NewsletterAddComponent implements OnInit {
       htmlContent: compileTemplateHtml(preset),
       plainTextContent: compileTemplatePlainText(preset),
     }));
+  }
+
+  /** Edit mode: hydrate the wizard from the stored draft, then land on the content step. */
+  private async loadDraft(id: string): Promise<void> {
+    const end = this._editLoading.begin();
+    try {
+      const record: unknown = await this.newslettersSvc.getById(id);
+      const row = record && typeof record === 'object' ? (record as Record<string, unknown>) : null;
+      if (!row) {
+        this.alertSvc.showError('We could not find this newsletter.');
+        this.close();
+        return;
+      }
+      if (row['status'] !== 'draft') {
+        // Only drafts are editable; anything further along opens as its details/report page.
+        void this.router.navigate(['/newsletters', id]);
+        return;
+      }
+      const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+      const name = str(row['name']);
+      const lists = this.parseIdSets(row['target_lists']);
+      const tags = this.parseIdSets(row['segments']);
+      const rawDate = row['send_date'];
+      const sendDate = rawDate instanceof Date && !Number.isNaN(rawDate.getTime()) ? rawDate : null;
+      const pad = (n: number) => String(n).padStart(2, '0');
+      this.regularPayload.update((p) => ({
+        ...p,
+        // Drafts saved without a subject fall back to a placeholder name; don't hydrate that back in.
+        subject: str(row['subject']) || (name === 'Unnamed Newsletter' || name === 'Untitled draft' ? '' : name),
+        previewText: str(row['preview_text']),
+        htmlContent: str(row['html_content']),
+        plainTextContent: str(row['plain_text_content']),
+        includeLists: lists.include,
+        excludeLists: lists.exclude,
+        includeTags: tags.include,
+        excludeTags: tags.exclude,
+        timingMode: sendDate ? 'schedule' : p.timingMode,
+        scheduledDate: sendDate
+          ? `${sendDate.getFullYear()}-${pad(sendDate.getMonth() + 1)}-${pad(sendDate.getDate())}`
+          : p.scheduledDate,
+        scheduledTime: sendDate ? `${pad(sendDate.getHours())}:${pad(sendDate.getMinutes())}` : p.scheduledTime,
+      }));
+      this.editName.set(name);
+      // The template step is moot for an existing draft; its saved content is the design.
+      this.currentStep.set(2);
+      this.editLoaded.set(true);
+      this.dirty.set(false);
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not open this draft. Try again.'));
+      this.close();
+    } finally {
+      end();
+    }
+  }
+
+  /** Tolerates the shapes drafts have stored: {include, exclude} JSON, a bare array, or null. */
+  private parseIdSets(value: unknown): { include: string[]; exclude: string[] } {
+    let parsed: unknown = value;
+    if (typeof parsed === 'string') {
+      if (!parsed.trim()) return { include: [], exclude: [] };
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        return { include: [], exclude: [] };
+      }
+    }
+    if (Array.isArray(parsed)) return { include: parsed.map((v) => String(v)), exclude: [] };
+    if (parsed && typeof parsed === 'object') {
+      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
+      const obj = parsed as Record<string, unknown>;
+      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
+    }
+    return { include: [], exclude: [] };
   }
 
   private validateDetails(): boolean {

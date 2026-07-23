@@ -27,10 +27,11 @@
     <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReportCsv()">
       Export report CSV
     </button>
-    }
+    } @if (em.status === 'draft') {
+    <!-- Drafts: editing is the main act; duplicating steps back. Both need the desktop wizard, so phones hide them. -->
     <button
       type="button"
-      class="btn btn-primary btn-sm gap-2"
+      class="btn btn-outline btn-secondary btn-sm hidden gap-2 sm:inline-flex"
       [disabled]="isDuplicating()"
       (click)="duplicateNewsletter()"
     >
@@ -40,7 +41,24 @@
       <pc-icon name="document-duplicate" [size]="4"></pc-icon>
       } Duplicate newsletter
     </button>
-    }
+    <a routerLink="edit" class="btn btn-primary btn-sm hidden gap-2 sm:inline-flex">
+      <pc-icon name="pencil-square" [size]="4"></pc-icon>
+      Edit draft
+    </a>
+    } @else {
+    <button
+      type="button"
+      class="btn btn-primary btn-sm hidden gap-2 sm:inline-flex"
+      [disabled]="isDuplicating()"
+      (click)="duplicateNewsletter()"
+    >
+      @if (isDuplicating()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } @else {
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      } Duplicate newsletter
+    </button>
+    } }
   </div>
 
   @if (email(); as em) {

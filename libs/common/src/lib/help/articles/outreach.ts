@@ -50,6 +50,10 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         title: 'Personalize with merge fields',
         text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
       },
+      {
+        kind: 'p',
+        text: 'Not ready to send? **Save draft** keeps your work, and the newsletter waits on the [Newsletters](/newsletters) list as a **Draft**. Click its name to open it, or **Edit draft** (on the list row or on its page) to pick up where you left off in the editor. Creating and editing newsletters needs a desktop browser; on a phone you can still review drafts, view reports and send a finished draft.',
+      },
       { kind: 'h2', id: 'templates', text: 'Save and reuse your own templates' },
       {
         kind: 'p',

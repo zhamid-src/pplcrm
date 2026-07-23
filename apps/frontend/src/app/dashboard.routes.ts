@@ -164,6 +164,13 @@ export const dashboardRoutes: Routes = [
         data: { breadcrumb: 'New newsletter' },
       },
       {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'Edit draft' },
+      },
+      {
         path: ':id',
         loadComponent: () =>
           import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
