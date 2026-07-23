@@ -75,6 +75,7 @@ describe('SettingsPage', () => {
 
     mockAuthSvc = {
       getCurrentUser: vi.fn().mockResolvedValue(mockAuthUser),
+      getUserSignal: vi.fn().mockReturnValue(signal(null)),
     };
 
     mockUserService = {

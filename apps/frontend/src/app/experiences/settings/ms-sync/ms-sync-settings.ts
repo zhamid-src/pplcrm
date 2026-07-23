@@ -26,6 +26,8 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
   }
 
   protected readonly status = signal<{
+    /** False when the server has no Microsoft OAuth credentials (sync is optional per deployment). */
+    configured?: boolean;
     connected: boolean;
     msEmail: string | null;
     syncedAt: Date | string | null;

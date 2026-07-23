@@ -3,6 +3,7 @@ import { env } from '../../../env';
 import { PreconditionFailedError } from '../../errors/app-errors';
 import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
 import { logger } from '../../logger';
+import { assertNotDemoMode } from '../demo/demo-guard';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 /** Settings keys for the tenant's Stripe Connect state. Written ONLY by this module (backend),
@@ -171,6 +172,8 @@ export async function startOnboarding(
   userId: string,
   country: StripeConnectCountry,
 ): Promise<{ url: string }> {
+  // Connecting a real Stripe account is outward-facing setup — locked during the demo.
+  await assertNotDemoMode(settingsRepo.db, tenantId);
   if (isMockMode) {
     await settingsRepo.upsertMany({
       tenant_id: tenantId,
@@ -221,6 +224,7 @@ export async function startOnboarding(
 
 /** Express-dashboard login link for the "Open Stripe dashboard" button. */
 export async function createDashboardLoginLink(tenantId: string): Promise<{ url: string }> {
+  await assertNotDemoMode(settingsRepo.db, tenantId);
   if (isMockMode) {
     return { url: `${env.appUrl}/workspace/donations?mock_stripe_dashboard=true` };
   }
@@ -235,6 +239,7 @@ export async function createDashboardLoginLink(tenantId: string): Promise<{ url:
 /** Forget the connection (frees the processor choice). The Stripe account itself belongs to the
  * campaign — we never delete it; reconnecting later creates a fresh account. */
 export async function disconnect(tenantId: string): Promise<void> {
+  await assertNotDemoMode(settingsRepo.db, tenantId);
   await settingsRepo.db
     .deleteFrom('settings')
     .where('tenant_id', '=', tenantId)

@@ -11015,10 +11015,13 @@ import { ForbiddenError } from '../../errors/app-errors';
 
 /**
  * Demo mode is the pre-plan test drive: the tenant can explore and edit the
- * seeded data freely, but must not touch outward-facing configuration (sender
- * identities, domains, mailbox sync), send email, or invite teammates. Those
- * unlock when they subscribe and exit demo mode. Enforced server-side at the
- * mutation entry points — the UI copy is a courtesy, this guard is the contract.
+ * seeded data and ordinary workspace settings freely, but must not touch
+ * outward-facing setup (sender email/phone/domain verification, mailbox sync,
+ * Stripe Connect), send email, or invite teammates. Those unlock when they
+ * subscribe and exit demo mode. Enforced server-side at the mutation entry
+ * points — the UI copy is a courtesy, this guard is the contract. Plain
+ * `settings.upsert` is deliberately not guarded; its server-managed keys are
+ * protected individually.
  */
 export const DEMO_MODE_BLOCKED_MESSAGE =
   'This is part of the demo. Choose a plan on the Billing page, then exit demo mode to unlock configuration and sending.';
@@ -17766,11 +17769,23 @@ import { idSchema } from '@common';
 import { sql } from 'kysely';
 import { encodeOAuthState } from '../../lib/oauth-state';
 import { assertNotDemoMode } from '../demo/demo-guard';
+import { BadRequestError } from '../../errors/app-errors';
 
 let _oauthSvc: GoogleOAuthService | null = null;
 let _syncSvc: GoogleSyncService | null = null;
 
+/** Mailbox sync is optional per deployment (the env vars are optional by design). */
+function isConfigured(): boolean {
+  return !!env.googleClientId && !!env.googleClientSecret;
+}
+
 function getServices() {
+  // Unlike MSAL, Google's client constructs fine with empty credentials — the
+  // failure would surface later as a dead-end Google error page. Same guard,
+  // same user-facing copy as the Microsoft router.
+  if (!isConfigured()) {
+    throw new BadRequestError('Google email sync is not configured on this server.');
+  }
   if (!_oauthSvc || !_syncSvc) {
     const db = BaseRepository.dbInstance; // reuse the shared Kysely instance
     _oauthSvc = new GoogleOAuthService(db, {
@@ -17807,6 +17822,19 @@ function getAuthUrl() {
 
 function getConnectionStatus() {
   return authProcedure.input(campaignInput).query(async ({ ctx, input }) => {
+    // Unconfigured is a normal state (e.g. local dev): render the section calmly
+    // instead of erroring on load.
+    if (!isConfigured()) {
+      return {
+        configured: false,
+        connected: false,
+        googleEmail: null,
+        syncedAt: null,
+        lastSyncError: null,
+        lastSyncErrorAt: null,
+        syncing: false,
+      };
+    }
     const { oauthSvc } = getServices();
     const db = BaseRepository.dbInstance;
     const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id, input.campaignId);
@@ -17821,6 +17849,7 @@ function getConnectionStatus() {
       .executeTakeFirst();
 
     return {
+      configured: true,
       ...status,
       syncing: !!activeJob,
     };
@@ -20271,11 +20300,23 @@ import { idSchema } from '@common';
 import { sql } from 'kysely';
 import { encodeOAuthState } from '../../lib/oauth-state';
 import { assertNotDemoMode } from '../demo/demo-guard';
+import { BadRequestError } from '../../errors/app-errors';
 
 let _oauthSvc: MsOAuthService | null = null;
 let _syncSvc: MsSyncService | null = null;
 
+/** Mailbox sync is optional per deployment (the env vars are optional by design). */
+function isConfigured(): boolean {
+  return !!env.msClientId && !!env.msClientSecret;
+}
+
 function getServices() {
+  // msal-node's ConfidentialClientApplication rejects an empty clientSecret at
+  // construction with a raw invalid_client_credential error — fail with
+  // user-facing copy before it gets the chance.
+  if (!isConfigured()) {
+    throw new BadRequestError('Microsoft email sync is not configured on this server.');
+  }
   if (!_oauthSvc || !_syncSvc) {
     const db = BaseRepository.dbInstance; // reuse the shared Kysely instance
     _oauthSvc = new MsOAuthService(db, {
@@ -20313,6 +20354,19 @@ function getAuthUrl() {
 
 function getConnectionStatus() {
   return authProcedure.input(campaignInput).query(async ({ ctx, input }) => {
+    // Unconfigured is a normal state (e.g. local dev): render the section calmly
+    // instead of erroring on load.
+    if (!isConfigured()) {
+      return {
+        configured: false,
+        connected: false,
+        msEmail: null,
+        syncedAt: null,
+        lastSyncError: null,
+        lastSyncErrorAt: null,
+        syncing: false,
+      };
+    }
     const { oauthSvc } = getServices();
     const db = BaseRepository.dbInstance;
     const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id, input.campaignId);
@@ -20327,6 +20381,7 @@ function getConnectionStatus() {
       .executeTakeFirst();
 
     return {
+      configured: true,
       ...status,
       syncing: !!activeJob,
     };
@@ -24310,6 +24365,190 @@ export const VolunteerRouter = router({
 
   getVolunteerStats: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getVolunteerStats(input, ctx.auth)),
 });
+`````
+
+## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
+`````typescript
+import type { ReferenceExpression, Transaction } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
+import { sql } from 'kysely';
+
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export class WebFormsRepo extends BaseRepository<'web_forms'> {
+  constructor() {
+    super('web_forms');
+  }
+
+  /** Public lookup by slug within a known tenant (resolved from the subdomain — lib/public-tenant). */
+  public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('slug', '=', slug)
+      .executeTakeFirst();
+  }
+
+  public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenantId).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /**
+   * Cards for the new Forms page: every form with a live submission count. Donation forms are
+   * included here too so the list is unified, but the frontend routes clicks on them to their own
+   * /donation-pages (Stripe) editor rather than the living-funnel inline editor.
+   */
+  public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
+    return (
+      this.getSelect()
+        .selectAll('web_forms')
+        .select((eb) =>
+          eb
+            .selectFrom('form_submissions')
+            .select((eb2) => eb2.fn.countAll<number>().as('c'))
+            .whereRef('form_submissions.form_id', '=', 'web_forms.id')
+            .where('form_submissions.tenant_id', '=', tenantId)
+            .as('submission_count'),
+        )
+        .where('web_forms.tenant_id', '=', tenantId)
+        // Donation forms are surfaced in the unified Forms list too; the frontend routes clicks on
+        // them to the Stripe-backed fundraising editor rather than the living-funnel inline editor.
+        .orderBy('web_forms.updated_at', 'desc')
+        .execute()
+    );
+  }
+
+  public async countSubmissions(tenantId: string, formId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom('form_submissions')
+      .select((eb) => eb.fn.countAll<number>().as('c'))
+      .where('tenant_id', '=', tenantId)
+      .where('form_id', '=', formId)
+      .executeTakeFirst();
+    return Number(row?.c ?? 0);
+  }
+
+  public async getFormSubmissions(
+    tenantId: string,
+    formId: string,
+    limit: number,
+    offset: number,
+  ): Promise<Record<string, unknown>[]> {
+    return this.db
+      .selectFrom('form_submissions')
+      .leftJoin('persons', (join) =>
+        join.onRef('persons.id', '=', 'form_submissions.person_id').on('persons.tenant_id', '=', tenantId),
+      )
+      .select([
+        'form_submissions.id',
+        'form_submissions.person_id',
+        'form_submissions.answers',
+        'form_submissions.created_at',
+        'persons.first_name',
+        'persons.last_name',
+      ])
+      .where('form_submissions.tenant_id', '=', tenantId)
+      .where('form_submissions.form_id', '=', formId)
+      .orderBy('form_submissions.created_at', 'desc')
+      .limit(limit)
+      .offset(offset)
+      .execute();
+  }
+
+  public override async getAllWithCounts(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'web_forms'>;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: string } | undefined>;
+
+    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
+    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
+
+    const applyFilters = <QB extends AnyQB>(qb: QB) =>
+      qb
+        .where('web_forms.tenant_id', '=', tenantId)
+        // Campaigns §15 — the forms page shows the active context's forms.
+        .$if(!!(options as { campaignId?: string }).campaignId, (qb: any) =>
+          qb.where('web_forms.campaign_id', '=', (options as { campaignId?: string }).campaignId as string),
+        )
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          return qb.where(
+            sql<boolean>`(
+            LOWER(web_forms.name) LIKE ${text} OR
+            LOWER(web_forms.description) LIKE ${text}
+          )`,
+          );
+        })
+        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name']?.value}%`))
+        .$if(!!filterModel['description']?.value, (q) =>
+          q.where('web_forms.description', 'ilike', `%${filterModel['description']?.value}%`),
+        )
+        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status']?.value));
+
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT web_forms.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    const rows = await applyFilters(this.getSelect(trx))
+      .select([
+        'web_forms.id',
+        'web_forms.tenant_id',
+        'web_forms.name',
+        'web_forms.description',
+        'web_forms.redirect_url',
+        'web_forms.target_tags',
+        'web_forms.target_lists',
+        'web_forms.status',
+        'web_forms.createdby_id',
+        'web_forms.updatedby_id',
+        'web_forms.created_at',
+        'web_forms.updated_at',
+        'web_forms.send_confirmation',
+        'web_forms.send_alert',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce(
+          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
+          qb,
+        ),
+      )
+      .offset(startRow)
+      .limit(endRow - startRow)
+      .execute();
+
+    const formattedRows = rows.map((row) => ({
+      ...row,
+      id: String(row['id']),
+      target_tags: Array.isArray(row['target_tags'])
+        ? row['target_tags']
+        : JSON.parse(String(row['target_tags'] || '[]')),
+      target_lists: Array.isArray(row['target_lists'])
+        ? row['target_lists']
+        : JSON.parse(String(row['target_lists'] || '[]')),
+    }));
+
+    return {
+      rows: formattedRows,
+      count,
+    };
+  }
+}
 `````
 
 ## File: apps/backend/src/app/modules/web-forms/trpc.router.ts
@@ -53885,101 +54124,6 @@ export const CompanionAccessRouter = router({
 });
 `````
 
-## File: apps/backend/src/app/modules/deliveries/trpc.router.ts
-`````typescript
-import {
-  AddDeliveryRequestObj,
-  AssignVolunteerObj,
-  CommitDeliveriesObj,
-  GetSignStatusObj,
-  MintShareLinkObj,
-  PlanDeliveriesObj,
-  ReorderStopObj,
-  ReorderStopsObj,
-  RouteIdObj,
-  SetDeliveryRequestStatusObj,
-  SetDeliveryRouteStatusObj,
-  StopActionObj,
-  UpdateDeliveryRequestObj,
-  UpdateDeliveryRouteObj,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-
-import { z } from 'zod';
-
-import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import { planFeatureGate } from '../billing/plan-gate';
-import { DeliveriesController } from './controller';
-
-const controller = new DeliveriesController();
-
-// FEATURE_MATRIX plan gate: deliveries are Movement-only; mutations below are blocked on lower plans.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('deliveries'));
-
-export const DeliveriesRouter = router({
-  // Requests
-  getAllRequests: authProcedure
-    .input(getAllOptions.optional())
-    .query(({ ctx, input }) => controller.getAllRequests(ctx.auth.tenant_id, input)),
-  getRequestCounts: authProcedure.query(({ ctx }) => controller.getRequestCounts(ctx.auth.tenant_id)),
-  getReadyCount: authProcedure.query(({ ctx }) => controller.getReadyCount(ctx.auth.tenant_id)),
-  getSignStatus: authProcedure
-    .input(GetSignStatusObj)
-    .query(({ ctx, input }) => controller.getSignStatus(ctx.auth, input)),
-  addRequest: authProcedure
-    .input(AddDeliveryRequestObj)
-    .mutation(({ ctx, input }) => controller.addRequest(ctx.auth, input)),
-  updateRequestNotes: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateDeliveryRequestObj }))
-    .mutation(({ ctx, input }) => controller.updateRequestNotes(ctx.auth, input.id, input.data)),
-  setRequestStatus: authProcedure
-    .input(SetDeliveryRequestStatusObj)
-    .mutation(({ ctx, input }) => controller.setRequestStatus(ctx.auth, input)),
-
-  // Planning
-  getRouteDefaults: authProcedure.query(({ ctx }) => controller.getRouteDefaults(ctx.auth.tenant_id)),
-  previewPlan: authProcedure
-    .input(PlanDeliveriesObj)
-    .mutation(({ ctx, input }) => controller.previewPlan(ctx.auth, input)),
-  commitPlan: authProcedure
-    .input(CommitDeliveriesObj)
-    .mutation(({ ctx, input }) => controller.commitPlan(ctx.auth, input)),
-
-  // Routes
-  getAllRoutes: authProcedure
-    .input(getAllOptions.optional())
-    .query(({ ctx, input }) => controller.getAllRoutes(ctx.auth.tenant_id, input)),
-  getRouteById: authProcedure.input(idSchema).query(({ ctx, input }) => controller.getRouteById(ctx.auth, input)),
-  updateRoute: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateDeliveryRouteObj }))
-    .mutation(({ ctx, input }) => controller.updateRoute(ctx.auth, input.id, input.data)),
-  assignVolunteer: authProcedure
-    .input(AssignVolunteerObj)
-    .mutation(({ ctx, input }) => controller.assignVolunteer(ctx.auth, input)),
-  resendVolunteerLink: authProcedure
-    .input(RouteIdObj)
-    .mutation(({ ctx, input }) => controller.resendVolunteerLink(ctx.auth, input.route_id)),
-  setRouteStatus: authProcedure
-    .input(SetDeliveryRouteStatusObj)
-    .mutation(({ ctx, input }) => controller.setRouteStatus(ctx.auth, input)),
-  deleteRoute: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteRoute(ctx.auth, input)),
-  stopAction: authProcedure.input(StopActionObj).mutation(({ ctx, input }) => controller.stopAction(ctx.auth, input)),
-  reorderStop: authProcedure
-    .input(ReorderStopObj)
-    .mutation(({ ctx, input }) => controller.reorderStop(ctx.auth, input)),
-  reorderStops: authProcedure
-    .input(ReorderStopsObj)
-    .mutation(({ ctx, input }) => controller.reorderStops(ctx.auth, input)),
-  mintShareLink: authProcedure
-    .input(MintShareLinkObj)
-    .mutation(({ ctx, input }) => controller.mintShareLink(ctx.auth, input)),
-  revokeShareLink: authProcedure
-    .input(RouteIdObj)
-    .mutation(({ ctx, input }) => controller.revokeShareLink(ctx.auth, input.route_id)),
-});
-`````
-
 ## File: apps/backend/src/app/modules/donations/stripe-connect.ts
 `````typescript
 import type { StripeConnectCountry } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
@@ -53987,6 +54131,7 @@ import { env } from '../../../env';
 import { PreconditionFailedError } from '../../errors/app-errors';
 import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
 import { logger } from '../../logger';
+import { assertNotDemoMode } from '../demo/demo-guard';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 /** Settings keys for the tenant's Stripe Connect state. Written ONLY by this module (backend),
@@ -54155,6 +54300,8 @@ export async function startOnboarding(
   userId: string,
   country: StripeConnectCountry,
 ): Promise<{ url: string }> {
+  // Connecting a real Stripe account is outward-facing setup — locked during the demo.
+  await assertNotDemoMode(settingsRepo.db, tenantId);
   if (isMockMode) {
     await settingsRepo.upsertMany({
       tenant_id: tenantId,
@@ -54205,6 +54352,7 @@ export async function startOnboarding(
 
 /** Express-dashboard login link for the "Open Stripe dashboard" button. */
 export async function createDashboardLoginLink(tenantId: string): Promise<{ url: string }> {
+  await assertNotDemoMode(settingsRepo.db, tenantId);
   if (isMockMode) {
     return { url: `${env.appUrl}/workspace/donations?mock_stripe_dashboard=true` };
   }
@@ -54219,6 +54367,7 @@ export async function createDashboardLoginLink(tenantId: string): Promise<{ url:
 /** Forget the connection (frees the processor choice). The Stripe account itself belongs to the
  * campaign — we never delete it; reconnecting later creates a fresh account. */
 export async function disconnect(tenantId: string): Promise<void> {
+  await assertNotDemoMode(settingsRepo.db, tenantId);
   await settingsRepo.db
     .deleteFrom('settings')
     .where('tenant_id', '=', tenantId)
@@ -56877,190 +57026,6 @@ export const TasksRouter = router({
       }),
     ),
 });
-`````
-
-## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
-`````typescript
-import type { ReferenceExpression, Transaction } from 'kysely';
-import type { AnyQB } from '../../../lib/base.repo';
-import { sql } from 'kysely';
-
-import type { QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export class WebFormsRepo extends BaseRepository<'web_forms'> {
-  constructor() {
-    super('web_forms');
-  }
-
-  /** Public lookup by slug within a known tenant (resolved from the subdomain — lib/public-tenant). */
-  public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('slug', '=', slug)
-      .executeTakeFirst();
-  }
-
-  public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
-    let query = this.getSelect().select('id').where('tenant_id', '=', tenantId).where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const row = await query.limit(1).executeTakeFirst();
-    return !!row;
-  }
-
-  /**
-   * Cards for the new Forms page: every form with a live submission count. Donation forms are
-   * included here too so the list is unified, but the frontend routes clicks on them to their own
-   * /donation-pages (Stripe) editor rather than the living-funnel inline editor.
-   */
-  public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
-    return (
-      this.getSelect()
-        .selectAll('web_forms')
-        .select((eb) =>
-          eb
-            .selectFrom('form_submissions')
-            .select((eb2) => eb2.fn.countAll<number>().as('c'))
-            .whereRef('form_submissions.form_id', '=', 'web_forms.id')
-            .where('form_submissions.tenant_id', '=', tenantId)
-            .as('submission_count'),
-        )
-        .where('web_forms.tenant_id', '=', tenantId)
-        // Donation forms are surfaced in the unified Forms list too; the frontend routes clicks on
-        // them to the Stripe-backed fundraising editor rather than the living-funnel inline editor.
-        .orderBy('web_forms.updated_at', 'desc')
-        .execute()
-    );
-  }
-
-  public async countSubmissions(tenantId: string, formId: string): Promise<number> {
-    const row = await this.db
-      .selectFrom('form_submissions')
-      .select((eb) => eb.fn.countAll<number>().as('c'))
-      .where('tenant_id', '=', tenantId)
-      .where('form_id', '=', formId)
-      .executeTakeFirst();
-    return Number(row?.c ?? 0);
-  }
-
-  public async getFormSubmissions(
-    tenantId: string,
-    formId: string,
-    limit: number,
-    offset: number,
-  ): Promise<Record<string, unknown>[]> {
-    return this.db
-      .selectFrom('form_submissions')
-      .leftJoin('persons', (join) =>
-        join.onRef('persons.id', '=', 'form_submissions.person_id').on('persons.tenant_id', '=', tenantId),
-      )
-      .select([
-        'form_submissions.id',
-        'form_submissions.person_id',
-        'form_submissions.answers',
-        'form_submissions.created_at',
-        'persons.first_name',
-        'persons.last_name',
-      ])
-      .where('form_submissions.tenant_id', '=', tenantId)
-      .where('form_submissions.form_id', '=', formId)
-      .orderBy('form_submissions.created_at', 'desc')
-      .limit(limit)
-      .offset(offset)
-      .execute();
-  }
-
-  public override async getAllWithCounts(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'web_forms'>;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: string } | undefined>;
-
-    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
-    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
-
-    const applyFilters = <QB extends AnyQB>(qb: QB) =>
-      qb
-        .where('web_forms.tenant_id', '=', tenantId)
-        // Campaigns §15 — the forms page shows the active context's forms.
-        .$if(!!(options as { campaignId?: string }).campaignId, (qb: any) =>
-          qb.where('web_forms.campaign_id', '=', (options as { campaignId?: string }).campaignId as string),
-        )
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          return qb.where(
-            sql<boolean>`(
-            LOWER(web_forms.name) LIKE ${text} OR
-            LOWER(web_forms.description) LIKE ${text}
-          )`,
-          );
-        })
-        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name']?.value}%`))
-        .$if(!!filterModel['description']?.value, (q) =>
-          q.where('web_forms.description', 'ilike', `%${filterModel['description']?.value}%`),
-        )
-        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status']?.value));
-
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT web_forms.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    const rows = await applyFilters(this.getSelect(trx))
-      .select([
-        'web_forms.id',
-        'web_forms.tenant_id',
-        'web_forms.name',
-        'web_forms.description',
-        'web_forms.redirect_url',
-        'web_forms.target_tags',
-        'web_forms.target_lists',
-        'web_forms.status',
-        'web_forms.createdby_id',
-        'web_forms.updatedby_id',
-        'web_forms.created_at',
-        'web_forms.updated_at',
-        'web_forms.send_confirmation',
-        'web_forms.send_alert',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce(
-          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
-          qb,
-        ),
-      )
-      .offset(startRow)
-      .limit(endRow - startRow)
-      .execute();
-
-    const formattedRows = rows.map((row) => ({
-      ...row,
-      id: String(row['id']),
-      target_tags: Array.isArray(row['target_tags'])
-        ? row['target_tags']
-        : JSON.parse(String(row['target_tags'] || '[]')),
-      target_lists: Array.isArray(row['target_lists'])
-        ? row['target_lists']
-        : JSON.parse(String(row['target_lists'] || '[]')),
-    }));
-
-    return {
-      rows: formattedRows,
-      count,
-    };
-  }
-}
 `````
 
 ## File: apps/backend/src/app/modules/workflows/automation-consent.ts
@@ -65007,1424 +64972,99 @@ export const BillingRouter = router({
 });
 `````
 
-## File: apps/backend/src/app/modules/deliveries/controller.ts
+## File: apps/backend/src/app/modules/deliveries/trpc.router.ts
 `````typescript
-import { createHash, randomBytes } from 'crypto';
-
-import type { Transaction } from 'kysely';
-
-import type {
-  AddDeliveryRequestType,
-  AssignVolunteerType,
-  CommitDeliveriesType,
-  GetSignStatusType,
-  IAuthKeyPayload,
-  PlanDeliveriesType,
-  ReorderStopType,
-  ReorderStopsType,
-  SetDeliveryRequestStatusType,
-  SetDeliveryRouteStatusType,
-  StopActionType,
-  UpdateDeliveryRequestType,
-  UpdateDeliveryRouteType,
-  getAllOptionsType,
+import {
+  AddDeliveryRequestObj,
+  AssignVolunteerObj,
+  CommitDeliveriesObj,
+  GetSignStatusObj,
+  MintShareLinkObj,
+  PlanDeliveriesObj,
+  ReorderStopObj,
+  ReorderStopsObj,
+  RouteIdObj,
+  SetDeliveryRequestStatusObj,
+  SetDeliveryRouteStatusObj,
+  StopActionObj,
+  UpdateDeliveryRequestObj,
+  UpdateDeliveryRouteObj,
+  getAllOptions,
+  idSchema,
 } from '../../../../../../libs/common/src';
 
-import { env } from '../../../env';
-import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
-import { geocodeAddress } from '../../lib/gis/geocode-address';
-import { notifyVolunteerOfLink, type VolunteerLinkSendResult } from '../../lib/mail/volunteer-link-notify';
-import { legMinutes, roadKm, type LatLng } from '../../lib/routing/geo';
-import { planRoutes, type PlanParams, type PlanStopInput } from '../../lib/routing/plan-routes';
-import {
-  AVG_SPEED_KMH,
-  MAX_STOPS_PER_PLAN,
-  SERVICE_MINUTES_PER_STOP,
-  SHARE_TOKEN_TTL_DAYS,
-} from '../../lib/routing/route-constants';
-import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
-import { logger } from '../../logger';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { CompanionAccessController } from '../companion-access/controller';
-import { DeliveryRequestsRepo } from './repositories/delivery-requests.repo';
-import { DeliveryRouteStopsRepo } from './repositories/delivery-route-stops.repo';
-import { DeliveryRoutesRepo } from './repositories/delivery-routes.repo';
-
-const ROUTE_DEFAULTS_SETTING_KEY = 'deliveries.route_defaults';
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-type StopVia = 'staff' | 'volunteer_link';
-
-interface RouteParamsSnapshot {
-  serviceMinutes: number;
-  avgSpeedKmh: number;
-  includeReturnLeg: boolean;
-  drivers: number | null;
-}
-
-function resolveParams(input: PlanDeliveriesType): PlanParams {
-  return {
-    serviceMinutes: input.service_minutes ?? SERVICE_MINUTES_PER_STOP,
-    avgSpeedKmh: input.avg_speed_kmh ?? AVG_SPEED_KMH,
-    includeReturnLeg: input.include_return_leg ?? false,
-    drivers: input.drivers ?? null,
-  };
-}
-
-/** Human-readable route name: "Maple St area — Jul 10" derived from the first stop + today. */
-function deriveRouteName(firstAddress: string, date: Date): string {
-  const firstSegment = (firstAddress.split(',')[0] ?? '').trim();
-  const streetOnly = firstSegment.replace(/^\d+\s+/, '').trim();
-  const area = streetOnly || firstSegment || 'Delivery';
-  const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return `${area} area — ${label}`;
-}
-
-export class DeliveriesController {
-  private readonly requestsRepo = new DeliveryRequestsRepo();
-  private readonly campaignsRepo = new CampaignsRepo();
-  private readonly companionAccess = new CompanionAccessController();
-  private readonly routesRepo = new DeliveryRoutesRepo();
-  private readonly stopsRepo = new DeliveryRouteStopsRepo();
-  private readonly userActivity = new UserActivityRepo();
-
-  // ---- Requests -----------------------------------------------------------
-  public getAllRequests(tenant: string, options?: getAllOptionsType) {
-    return this.requestsRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
-  }
-
-  public getRequestCounts(tenant: string) {
-    return this.requestsRepo.getStatusCounts(tenant);
-  }
-
-  public getReadyCount(tenant: string) {
-    return this.requestsRepo.getReadyCount(tenant);
-  }
-
-  /** Yard-sign standing for one household in one campaign context (household/person pages). */
-  public async getSignStatus(auth: IAuthKeyPayload, input: GetSignStatusType) {
-    const request = await this.requestsRepo.getSignStatus(auth.tenant_id, input.household_id, input.campaign_id);
-    return { request };
-  }
-
-  public async addRequest(auth: IAuthKeyPayload, input: AddDeliveryRequestType) {
-    // Guard: a household with an OPEN request (new/approved, incl. routed) can't have a second.
-    const open = await this.requestsRepo.db
-      .selectFrom('delivery_requests')
-      .select(['id'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('household_id', '=', input.household_id)
-      .where('status', 'in', ['new', 'approved'])
-      .executeTakeFirst();
-    if (open) {
-      throw new ConflictError('This household already has an open delivery request.');
-    }
-    const personId = input.person_id ? String(input.person_id) : null;
-    const row = {
-      tenant_id: auth.tenant_id,
-      // The context this yard-sign request belongs to (§15); defaults to the office.
-      campaign_id: await this.campaignsRepo.resolveForWrite({
-        tenant_id: auth.tenant_id,
-        campaign_id: input.campaign_id,
-      }),
-      household_id: input.household_id,
-      person_id: personId,
-      web_form_id: null,
-      source: 'manual',
-      status: 'new',
-      notes: input.notes ?? null,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'delivery_requests', 'insert'>;
-    const created = await this.requestsRepo.add({ row });
-    await this.logRequestStanding(undefined, auth, [String(created.id)], 'recorded');
-    return { id: String(created.id) };
-  }
-
-  public async updateRequestNotes(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRequestType) {
-    const updated = await this.requestsRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { notes: input.notes ?? null, updatedby_id: auth.user_id, updated_at: new Date() } as OperationDataType<
-        'delivery_requests',
-        'update'
-      >,
-    });
-    if (!updated) throw new NotFoundError('Request not found');
-    return { id };
-  }
-
-  public async setRequestStatus(auth: IAuthKeyPayload, input: SetDeliveryRequestStatusType) {
-    // A request sitting on an active (pending) stop can't be declined or reset out from under a
-    // route. Approved + pending stop is the normal on-route state, and 'delivered' flows THROUGH
-    // the stop below so route progress stays truthful.
-    if (input.status === 'declined' || input.status === 'new') {
-      const onRoute = await this.requestsRepo.db
-        .selectFrom('delivery_route_stops')
-        .select(['id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('request_id', 'in', input.ids)
-        .where('status', '=', 'pending')
-        .executeTakeFirst();
-      if (onRoute) {
-        throw new BadRequestError('Remove these requests from their route first, or cancel that route.');
-      }
-    }
-    return this.requestsRepo.transaction().execute(async (trx) => {
-      let directIds = input.ids;
-      if (input.status === 'delivered') {
-        // Manual "the sign is in the ground" flip: requests on an active route deliver via their
-        // stop (staff-attributed), which also advances/auto-completes the route.
-        const pendingStops = await trx
-          .selectFrom('delivery_route_stops')
-          .select(['id', 'route_id', 'request_id'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('request_id', 'in', input.ids)
-          .where('status', '=', 'pending')
-          .execute();
-        for (const stop of pendingStops) {
-          await this.applyStopTransition(trx, auth, String(stop.route_id), String(stop.id), 'deliver', null, 'staff');
-        }
-        const handled = new Set(pendingStops.map((s) => String(s.request_id)));
-        directIds = input.ids.filter((id) => !handled.has(id));
-      }
-      if (directIds.length > 0) {
-        await trx
-          .updateTable('delivery_requests')
-          .set({
-            status: input.status,
-            ...(input.status === 'delivered' ? { skip_reason: null } : {}),
-            updatedby_id: auth.user_id,
-            updated_at: new Date(),
-          })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', 'in', directIds)
-          .execute();
-      }
-      await this.logRequestStanding(trx, auth, input.ids, input.status);
-      return { updated: input.ids.length };
-    });
-  }
-
-  // ---- Planning -----------------------------------------------------------
-  public async previewPlan(auth: IAuthKeyPayload, input: PlanDeliveriesType) {
-    const geo = await geocodeAddress(input.start_address);
-    if (!geo) {
-      throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
-    }
-    const start: LatLng = { lat: geo.lat, lng: geo.lng };
-    const params = resolveParams(input);
-
-    const eligible = await this.requestsRepo.getEligibleForPlanning(auth.tenant_id, MAX_STOPS_PER_PLAN + 1);
-    const capApplied = eligible.length > MAX_STOPS_PER_PLAN;
-    const capped = capApplied ? eligible.slice(0, MAX_STOPS_PER_PLAN) : eligible;
-    const byId = new Map(capped.map((e) => [e.request_id, e] as const));
-
-    const stops: PlanStopInput[] = capped.map((e) => ({ requestId: e.request_id, lat: e.lat, lng: e.lng }));
-    const result = planRoutes(start, stops, params);
-
-    const routes = result.routes.map((route, i) => ({
-      index: i + 1,
-      total_minutes: route.totalMinutes,
-      total_km: route.totalKm,
-      stops: route.stops.map((s) => {
-        const info = byId.get(s.requestId);
-        return {
-          request_id: s.requestId,
-          seq: s.seq,
-          leg_minutes: s.legMinutes,
-          address: info?.address ?? '',
-          name: info?.name ?? null,
-        };
-      }),
-    }));
-
-    const unroutable = result.unroutable.map((u) => {
-      const info = byId.get(u.requestId);
-      const reasonText =
-        u.reason === 'isolated'
-          ? `Isolated. The nearest other stop is ${u.nearestKm} km away`
-          : `Too far to reach within an hour from this start (${u.nearestKm} km out)`;
-      return { request_id: u.requestId, reason: u.reason, reason_text: reasonText, address: info?.address ?? '' };
-    });
-
-    const buckets = await this.requestsRepo.getIneligibleBuckets(auth.tenant_id);
-
-    return {
-      start: { address: geo.formatted_address, lat: geo.lat, lng: geo.lng },
-      eligible_count: capped.length,
-      cap_applied: capApplied,
-      routes,
-      unroutable,
-      ineligible: buckets,
-    };
-  }
-
-  public async commitPlan(auth: IAuthKeyPayload, input: CommitDeliveriesType) {
-    const geo = await geocodeAddress(input.start_address);
-    if (!geo) throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
-    const start: LatLng = { lat: geo.lat, lng: geo.lng };
-    const params = resolveParams(input);
-    const snapshot: RouteParamsSnapshot = {
-      serviceMinutes: params.serviceMinutes,
-      avgSpeedKmh: params.avgSpeedKmh,
-      includeReturnLeg: params.includeReturnLeg,
-      drivers: params.drivers ?? null,
-    };
-    const now = new Date();
-
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const skipped: Array<{ request_id: string; reason: string }> = [];
-      let created = 0;
-      let firstRouteId: string | null = null;
-
-      for (const proposed of input.routes) {
-        const eligible = await this.requestsRepo.getEligibleByIds(auth.tenant_id, proposed.request_ids, trx);
-        const eligibleById = new Map(eligible.map((e) => [e.request_id, e] as const));
-        // Preserve the client's order, dropping any request that lost eligibility (concurrent planner).
-        const ordered = proposed.request_ids.filter((id) => eligibleById.has(id));
-        for (const id of proposed.request_ids) {
-          if (!eligibleById.has(id)) skipped.push({ request_id: id, reason: 'no_longer_eligible' });
-        }
-        if (ordered.length === 0) continue;
-
-        // Recompute legs server-side — never trust client math.
-        let cursor: LatLng = start;
-        let totalMinutes = 0;
-        let totalKm = 0;
-        const legs: number[] = [];
-        for (const id of ordered) {
-          const e = eligibleById.get(id);
-          if (!e) continue;
-          const point: LatLng = { lat: e.lat, lng: e.lng };
-          const leg = legMinutes(cursor, point, params.avgSpeedKmh);
-          legs.push(leg);
-          totalMinutes += leg + params.serviceMinutes;
-          totalKm += roadKm(cursor, point);
-          cursor = point;
-        }
-        if (params.includeReturnLeg) totalKm += roadKm(cursor, start);
-
-        const firstAddress = eligibleById.get(ordered[0] ?? '')?.address ?? '';
-        // A route inherits the campaign of the requests it serves (§15); the
-        // eligibility query keeps plans single-campaign, so the first stop is
-        // representative.
-        const firstRequest = await trx
-          .selectFrom('delivery_requests')
-          .select(['campaign_id'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', String(ordered[0]))
-          .executeTakeFirstOrThrow();
-        const routeRow = {
-          tenant_id: auth.tenant_id,
-          campaign_id: String(firstRequest.campaign_id),
-          name: deriveRouteName(firstAddress, now),
-          status: 'draft',
-          volunteer_person_id: null,
-          start_address: geo.formatted_address,
-          start_lat: start.lat,
-          start_lng: start.lng,
-          est_minutes: Math.round(totalMinutes * 10) / 10,
-          est_km: Math.round(totalKm * 10) / 10,
-          scheduled_for: null,
-          share_token_hash: null,
-          share_token_expires_at: null,
-          params: JSON.stringify(snapshot),
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        } as OperationDataType<'delivery_routes', 'insert'>;
-        const route = await this.routesRepo.add({ row: routeRow }, trx);
-        const routeId = String(route.id);
-        if (!firstRouteId) firstRouteId = routeId;
-
-        const stopRows = ordered.map(
-          (id, i) =>
-            ({
-              tenant_id: auth.tenant_id,
-              route_id: routeId,
-              request_id: id,
-              seq: i + 1,
-              leg_minutes: Math.round((legs[i] ?? 0) * 10) / 10,
-              status: 'pending',
-              reason: null,
-              acted_at: null,
-              acted_via: null,
-              createdby_id: auth.user_id,
-              updatedby_id: auth.user_id,
-            }) as OperationDataType<'delivery_route_stops', 'insert'>,
-        );
-        await this.stopsRepo.addMany({ rows: stopRows }, trx);
-        created++;
-        await this.logRouteActivity(trx, auth, routeId, 'create', 'route_created', 'Route created from plan');
-      }
-
-      // Persist the start address as the tenant default for the next plan.
-      await this.saveRouteDefaults(trx, auth, { start_address: geo.formatted_address });
-
-      return { created, skipped, first_route_id: firstRouteId };
-    });
-  }
-
-  public async getRouteDefaults(tenant: string): Promise<{ start_address: string | null }> {
-    const row = await this.routesRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenant)
-      .where('key', '=', ROUTE_DEFAULTS_SETTING_KEY)
-      .executeTakeFirst();
-    const value = row?.value as { start_address?: string } | null | undefined;
-    return { start_address: value?.start_address ?? null };
-  }
-
-  private async saveRouteDefaults(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    value: { start_address: string },
-  ): Promise<void> {
-    await trx
-      .insertInto('settings')
-      .values({
-        tenant_id: auth.tenant_id,
-        key: ROUTE_DEFAULTS_SETTING_KEY,
-        value: JSON.stringify(value),
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
-      })
-      .onConflict((oc) =>
-        oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(value), updatedby_id: auth.user_id }),
-      )
-      .execute();
-  }
-
-  // ---- Routes -------------------------------------------------------------
-  public getAllRoutes(tenant: string, options?: getAllOptionsType) {
-    return this.routesRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
-  }
-
-  public async getRouteById(auth: IAuthKeyPayload, id: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
-    if (!route) throw new NotFoundError('Route not found');
-    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, id);
-    let volunteerName: string | null = null;
-    if (route.volunteer_person_id) {
-      const v = await this.routesRepo.db
-        .selectFrom('persons')
-        .select(['first_name', 'last_name'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(route.volunteer_person_id))
-        .executeTakeFirst();
-      if (v) volunteerName = `${v.first_name ?? ''} ${v.last_name ?? ''}`.trim() || null;
-    }
-    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
-    return this.sanitizeRoute(route, stops, volunteerName, expiryEnforced);
-  }
-
-  public async updateRoute(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRouteType) {
-    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
-    if (input.name !== undefined) row['name'] = input.name;
-    if (input.scheduled_for !== undefined) {
-      row['scheduled_for'] = input.scheduled_for ? new Date(input.scheduled_for) : null;
-    }
-    const updated = await this.routesRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: row as OperationDataType<'delivery_routes', 'update'>,
-    });
-    if (!updated) throw new NotFoundError('Route not found');
-    return { id };
-  }
-
-  public async assignVolunteer(auth: IAuthKeyPayload, input: AssignVolunteerType) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
-    if (!route) throw new NotFoundError('Route not found');
-    const personId = input.person_id ? String(input.person_id) : null;
-    // Assigning moves draft → assigned; clearing a volunteer on a draft/assigned route → draft.
-    let status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled' = route.status;
-    if (personId && status === 'draft') status = 'assigned';
-    if (!personId && status === 'assigned') status = 'draft';
-
-    if (!personId) {
-      await this.routesRepo.db
-        .updateTable('delivery_routes')
-        .set({ volunteer_person_id: null, status, updatedby_id: auth.user_id, updated_at: new Date() })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', input.route_id)
-        .execute();
-      await this.logRouteActivity(
-        undefined,
-        auth,
-        input.route_id,
-        'unassign',
-        'volunteer_unassigned',
-        'Volunteer removed',
-      );
-      return { id: input.route_id, status, sent: { email: false, sms: false } };
-    }
-
-    const person = await this.routesRepo.db
-      .selectFrom('persons')
-      .select(['first_name', 'email', 'mobile'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', personId)
-      .executeTakeFirst();
-    if (!person) throw new BadRequestError('Pick the volunteer this route belongs to.');
-
-    // The link is personal, so assignment sends it: mint a fresh token (the raw
-    // token is never stored — this is the only moment we can put it in a message)
-    // and enqueue the email/SMS in the same transaction as the assignment. A new
-    // token also retires any link a previously assigned volunteer still holds.
-    const rawToken = randomBytes(32).toString('base64url');
-    const url = `${env.companionUrl}/r/${rawToken}`;
-    const orgName = await this.publicOrgName(auth.tenant_id);
-    let sent: VolunteerLinkSendResult = { email: false, sms: false };
-    await this.routesRepo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('delivery_routes')
-        .set({
-          volunteer_person_id: personId,
-          status,
-          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
-          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
-          updatedby_id: auth.user_id,
-          updated_at: new Date(),
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', input.route_id)
-        .execute();
-      sent = await notifyVolunteerOfLink(
-        {
-          tenant_id: auth.tenant_id,
-          person,
-          orgName,
-          kindLabel: 'delivery route',
-          itemName: String(route.name ?? 'Delivery route'),
-          url,
-        },
-        trx,
-      );
-      await this.logRouteActivity(
-        trx,
-        auth,
-        input.route_id,
-        'assign',
-        'volunteer_assigned',
-        sent.email || sent.sms
-          ? `Volunteer assigned — link sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`
-          : 'Volunteer assigned — no contact info on file, link not sent',
-      );
-    });
-    return { id: input.route_id, status, sent };
-  }
-
-  /**
-   * Re-send the assigned volunteer their personal link (lost email, new phone…).
-   * The raw token is never stored, so re-sending means minting a fresh link — the
-   * previously sent one stops working, same rule as re-assignment and regenerate.
-   */
-  public async resendVolunteerLink(auth: IAuthKeyPayload, routeId: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
-    if (!route) throw new NotFoundError('Route not found');
-    if (route.volunteer_person_id == null) {
-      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
-    }
-    if (route.status === 'canceled' || route.status === 'completed') {
-      throw new BadRequestError('This route is over — there is nothing for the volunteer to open.');
-    }
-    const person = await this.routesRepo.db
-      .selectFrom('persons')
-      .select(['first_name', 'email', 'mobile'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', String(route.volunteer_person_id))
-      .executeTakeFirst();
-    if (!person) throw new BadRequestError('The assigned volunteer no longer exists. Assign another volunteer.');
-
-    const rawToken = randomBytes(32).toString('base64url');
-    const url = `${env.companionUrl}/r/${rawToken}`;
-    const orgName = await this.publicOrgName(auth.tenant_id);
-    let sent: VolunteerLinkSendResult = { email: false, sms: false };
-    await this.routesRepo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('delivery_routes')
-        .set({
-          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
-          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
-          updatedby_id: auth.user_id,
-          updated_at: new Date(),
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .execute();
-      sent = await notifyVolunteerOfLink(
-        {
-          tenant_id: auth.tenant_id,
-          person,
-          orgName,
-          kindLabel: 'delivery route',
-          itemName: String(route.name ?? 'Delivery route'),
-          url,
-        },
-        trx,
-      );
-      if (!sent.email && !sent.sms) {
-        // Rolls back the mint: a resend that reaches nobody must not retire the link they already have.
-        throw new BadRequestError(
-          'This volunteer has no email or mobile on file — add one to their record, or use "Copy volunteer link" to share it yourself.',
-        );
-      }
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'update',
-        'link_resent',
-        `Volunteer link re-sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`,
-      );
-    });
-    return { id: routeId, sent };
-  }
-
-  public async setRouteStatus(auth: IAuthKeyPayload, input: SetDeliveryRouteStatusType) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
-    if (!route) throw new NotFoundError('Route not found');
-    if (input.status === 'canceled') {
-      return this.cancelRoute(auth, input.route_id);
-    }
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({ status: input.status, updatedby_id: auth.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', input.route_id)
-      .execute();
-    return { id: input.route_id, status: input.status };
-  }
-
-  private async cancelRoute(auth: IAuthKeyPayload, routeId: string) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      // Undelivered (pending) stops return their requests to the pool; delivered stay delivered.
-      const pending = await trx
-        .selectFrom('delivery_route_stops')
-        .select(['id', 'request_id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('route_id', '=', routeId)
-        .where('status', '=', 'pending')
-        .execute();
-      const requestIds = pending.map((p) => String(p.request_id));
-      if (requestIds.length > 0) {
-        await trx
-          .updateTable('delivery_requests')
-          .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', 'in', requestIds)
-          .execute();
-        await trx
-          .updateTable('delivery_route_stops')
-          .set({ status: 'skipped', reason: 'Other', updatedby_id: auth.user_id, updated_at: new Date() })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where(
-            'id',
-            'in',
-            pending.map((p) => String(p.id)),
-          )
-          .execute();
-      }
-      await trx
-        .updateTable('delivery_routes')
-        .set({ status: 'canceled', updatedby_id: auth.user_id, updated_at: new Date() })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .execute();
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'update',
-        'route_canceled',
-        `Route canceled. ${requestIds.length} undelivered stops returned to the pool`,
-      );
-      return { id: routeId, status: 'canceled' as const, returned: requestIds.length };
-    });
-  }
-
-  public async deleteRoute(auth: IAuthKeyPayload, id: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
-    if (!route) throw new NotFoundError('Route not found');
-    const status = String(route.status);
-    if (status !== 'draft' && status !== 'assigned') {
-      throw new BadRequestError('Only draft or assigned routes can be deleted. Cancel the route first.');
-    }
-    // Stops cascade via FK; requests free automatically once their pending stop is gone.
-    await this.routesRepo.delete({ tenant_id: auth.tenant_id, id });
-    return { id };
-  }
-
-  // ---- Stops (staff) ------------------------------------------------------
-  public async stopAction(auth: IAuthKeyPayload, input: StopActionType) {
-    if (input.action === 'remove') {
-      return this.removeStop(auth, input.route_id, input.stop_id);
-    }
-    const action = input.action; // narrowed to 'deliver' | 'skip'
-    return this.routesRepo.transaction().execute(async (trx) => {
-      await this.applyStopTransition(trx, auth, input.route_id, input.stop_id, action, input.reason ?? null, 'staff');
-      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-    });
-  }
-
-  private async removeStop(auth: IAuthKeyPayload, routeId: string, stopId: string) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const stop = await trx
-        .selectFrom('delivery_route_stops')
-        .selectAll()
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .where('route_id', '=', routeId)
-        .executeTakeFirst();
-      if (!stop) throw new NotFoundError('Stop not found');
-      // Free the request back to the pool then delete the stop and renumber/recompute.
-      await trx
-        .updateTable('delivery_requests')
-        .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(stop.request_id))
-        .execute();
-      await trx
-        .deleteFrom('delivery_route_stops')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .execute();
-      await this.renumberAndRecompute(trx, auth, routeId);
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'update',
-        'stop_removed',
-        'Stop removed. Request returned to the pool',
-      );
-      return this.readRouteProgress(trx, auth.tenant_id, routeId);
-    });
-  }
-
-  /**
-   * Drag-to-reorder: reseat only the PENDING stops of a route into the given order. Delivered and
-   * skipped stops are not movable — they keep their exact seq, and the pending stops are permuted
-   * across the seq slots they already occupy. `ordered_stop_ids` must be exactly the set of the
-   * route's pending stop ids (any foreign, non-pending, or missing id is rejected). Seq writes go
-   * through `applySeqOrder`'s temp-offset trick to dodge the unique(route_id, seq) index, then legs
-   * and the route estimate are recomputed. One `stop_reordered` activity is logged, matching the
-   * adjacent-swap path.
-   */
-  public async reorderStops(auth: IAuthKeyPayload, input: ReorderStopsType) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const route = await trx
-        .selectFrom('delivery_routes')
-        .select(['id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', input.route_id)
-        .executeTakeFirst();
-      if (!route) throw new NotFoundError('Route not found');
-
-      const stops = await trx
-        .selectFrom('delivery_route_stops')
-        .select(['id', 'seq', 'status'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('route_id', '=', input.route_id)
-        .orderBy('seq', 'asc')
-        .execute();
-
-      const pendingIds = stops.filter((s) => s.status === 'pending').map((s) => String(s.id));
-      const requested = input.ordered_stop_ids;
-      // Exact set equality: same length + same members. This one check rejects a foreign/other-route
-      // stop, a delivered/skipped id, and a missing pending id all at once.
-      const pendingSet = new Set(pendingIds);
-      const sameMembers =
-        requested.length === pendingIds.length &&
-        new Set(requested).size === requested.length &&
-        requested.every((id) => pendingSet.has(id));
-      if (!sameMembers) {
-        throw new BadRequestError('The new order must list exactly the route’s pending stops.');
-      }
-      if (pendingIds.length < 2) {
-        // Nothing to permute — no-op, but return the current authoritative shape.
-        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-      }
-
-      // Drop the pending stops into the slots they currently occupy, in the requested order, while
-      // every non-pending stop stays exactly where it is (so it keeps its seq).
-      const queue = [...requested];
-      const finalOrder = stops.map((s) => (s.status === 'pending' ? (queue.shift() ?? String(s.id)) : String(s.id)));
-      await this.applySeqOrder(trx, auth.tenant_id, finalOrder);
-      await this.renumberAndRecompute(trx, auth, input.route_id);
-      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
-      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-    });
-  }
-
-  public async reorderStop(auth: IAuthKeyPayload, input: ReorderStopType) {
-    return this.routesRepo.transaction().execute(async (trx) => {
-      const stops = await trx
-        .selectFrom('delivery_route_stops')
-        .select(['id', 'seq'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('route_id', '=', input.route_id)
-        .orderBy('seq', 'asc')
-        .execute();
-      const idx = stops.findIndex((s) => String(s.id) === input.stop_id);
-      if (idx === -1) throw new NotFoundError('Stop not found');
-      const swapIdx = input.direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= stops.length) {
-        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-      }
-      const a = stops[idx];
-      const b = stops[swapIdx];
-      if (!a || !b) return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-      // Swap seq via a temporary value to avoid the unique(route_id, seq) collision.
-      await this.setStopSeq(trx, auth.tenant_id, String(a.id), -1);
-      await this.setStopSeq(trx, auth.tenant_id, String(b.id), Number(a.seq));
-      await this.setStopSeq(trx, auth.tenant_id, String(a.id), Number(b.seq));
-      await this.renumberAndRecompute(trx, auth, input.route_id);
-      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
-      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
-    });
-  }
-
-  // ---- Share links --------------------------------------------------------
-  public async mintShareLink(auth: IAuthKeyPayload, input: { route_id: string; regenerate?: boolean }) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
-    if (!route) throw new NotFoundError('Route not found');
-    // The companion access layer verifies the volunteer BEHIND the link, so a
-    // link with nobody behind it can never pass the gate — refuse to mint one.
-    if (route.volunteer_person_id == null) {
-      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
-    }
-    // Whether the 30-day expiry is enforced is a live workspace policy (Workspace → App).
-    // The date is always STORED at mint time; the setting decides whether it counts.
-    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
-    const active =
-      route.share_token_hash != null &&
-      (!expiryEnforced ||
-        (route.share_token_expires_at != null && new Date(route.share_token_expires_at) > new Date()));
-    if (active && !input.regenerate) {
-      // A live link already exists; the raw token is never stored, so we can't return it. Tell the
-      // UI so it can offer copy-vs-regenerate. expires_at is null when the workspace disables expiry.
-      return { status: 'exists' as const, expires_at: expiryEnforced ? route.share_token_expires_at : null };
-    }
-    const rawToken = randomBytes(32).toString('base64url');
-    const hash = createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY);
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({
-        share_token_hash: hash,
-        share_token_expires_at: expiresAt,
-        updatedby_id: auth.user_id,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', input.route_id)
-      .execute();
-    await this.logRouteActivity(undefined, auth, input.route_id, 'update', 'link_created', 'Volunteer link created');
-    return { status: 'minted' as const, token: rawToken, expires_at: expiryEnforced ? expiresAt.toISOString() : null };
-  }
-
-  public async revokeShareLink(auth: IAuthKeyPayload, routeId: string) {
-    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
-    if (!route) throw new NotFoundError('Route not found');
-    await this.routesRepo.db
-      .updateTable('delivery_routes')
-      .set({ share_token_hash: null, share_token_expires_at: null, updatedby_id: auth.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .execute();
-    return { id: routeId };
-  }
-
-  // ---- Public volunteer path (token is the credential) --------------------
-  public hashToken(rawToken: string): string {
-    return createHash('sha256').update(rawToken).digest('hex');
-  }
-
-  /**
-   * Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload.
-   * The capability token says WHAT may be touched; the companion session (X-Companion-Session)
-   * proves WHO is touching it — both are required (COMPANION-APPS-PLAN.md §2).
-   */
-  public async getPublicRoute(rawToken: string, sessionToken: string | null) {
-    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
-    if (!route) return null;
-    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
-    if (!this.isTokenUsable(route, expiryEnforced)) return null;
-    await this.requireCompanionSession(route, sessionToken);
-    const tenantId = String(route.tenant_id);
-    const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
-    const orgName = await this.publicOrgName(tenantId);
-    return this.publicRoutePayload(route, stops, orgName);
-  }
-
-  public async publicStopAction(
-    rawToken: string,
-    stopId: string,
-    action: 'deliver' | 'skip' | 'defer' | 'undo',
-    reason: string | null,
-    sessionToken: string | null,
-    opId: string | null,
-  ) {
-    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
-    if (!route) return null;
-    const enforceExpiry = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
-    if (!this.isTokenUsable(route, enforceExpiry)) return null;
-    await this.requireCompanionSession(route, sessionToken);
-    const tenantId = String(route.tenant_id);
-    const routeId = String(route.id);
-    const actor: IAuthKeyPayload = {
-      tenant_id: tenantId,
-      user_id: String(route.createdby_id),
-      session_id: 'volunteer-link',
-    };
-    await this.routesRepo.transaction().execute(async (trx) => {
-      // Idempotency ledger (companion_ops, scope 'deliveries'): claim the opId
-      // inside the SAME transaction as the action, so claim + apply commit or
-      // roll back together. A replayed opId conflicts, applies nothing, and
-      // falls through to return the current authoritative payload — this is
-      // what makes a retried "defer" move the stop once, not twice.
-      if (opId) {
-        const claimed = await trx
-          .insertInto('companion_ops')
-          .values({ tenant_id: tenantId, op_id: opId, scope: 'deliveries' })
-          .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
-          .returning('op_id')
-          .executeTakeFirst();
-        if (!claimed) return;
-      }
-      const stop = await trx
-        .selectFrom('delivery_route_stops')
-        .selectAll()
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', stopId)
-        .where('route_id', '=', routeId)
-        .executeTakeFirst();
-      if (!stop) throw new NotFoundError('Stop not found');
-
-      if (action === 'defer') {
-        await this.deferStop(trx, actor, routeId, stopId);
-      } else if (action === 'undo') {
-        await this.undoStop(trx, actor, routeId, stopId);
-      } else {
-        await this.applyStopTransition(trx, actor, routeId, stopId, action, reason, 'volunteer_link');
-      }
-    });
-    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId);
-    const fresh = await this.routesRepo.getRouteRow(tenantId, routeId);
-    const orgName = await this.publicOrgName(tenantId);
-    return fresh ? this.publicRoutePayload(fresh, stops, orgName) : null;
-  }
-
-  /**
-   * The volunteer-identity gate on every public data request. Throws
-   * UnauthorizedError (401 — no/invalid device session, the gate re-verifies)
-   * or ForbiddenError (403 — verified but not yet admin-approved); the route
-   * handler passes those two statuses through so the companion gate can render
-   * its verify/pending states, and keeps the uniform 404 for dead tokens.
-   */
-  private async requireCompanionSession(
-    route: { tenant_id: string } & Record<string, unknown>,
-    sessionToken: string | null,
-  ): Promise<void> {
-    const volunteerId = route['volunteer_person_id'];
-    await this.companionAccess.requireSession(sessionToken, {
-      tenant_id: String(route.tenant_id),
-      volunteer_person_id: volunteerId == null ? null : String(volunteerId),
-    });
-  }
-
-  // ---- Shared transition helpers ------------------------------------------
-  private async applyStopTransition(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    stopId: string,
-    action: 'deliver' | 'skip',
-    reason: string | null,
-    via: StopVia,
-  ): Promise<void> {
-    const stop = await trx
-      .selectFrom('delivery_route_stops')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', stopId)
-      .where('route_id', '=', routeId)
-      .executeTakeFirst();
-    if (!stop) throw new NotFoundError('Stop not found');
-
-    const now = new Date();
-    if (action === 'deliver') {
-      await trx
-        .updateTable('delivery_route_stops')
-        .set({
-          status: 'delivered',
-          reason: null,
-          acted_at: now,
-          acted_via: via,
-          updatedby_id: auth.user_id,
-          updated_at: now,
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .execute();
-      await trx
-        .updateTable('delivery_requests')
-        .set({ status: 'delivered', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(stop.request_id))
-        .execute();
-    } else {
-      const skipReason = reason ?? 'Other';
-      await trx
-        .updateTable('delivery_route_stops')
-        .set({
-          status: 'skipped',
-          reason: skipReason,
-          acted_at: now,
-          acted_via: via,
-          updatedby_id: auth.user_id,
-          updated_at: now,
-        })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stopId)
-        .execute();
-      // A skipped house returns to the planning pool automatically.
-      await trx
-        .updateTable('delivery_requests')
-        .set({ status: 'approved', skip_reason: skipReason, updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', String(stop.request_id))
-        .execute();
-    }
-
-    await this.advanceRouteStatus(trx, auth, routeId, via);
-    const message =
-      action === 'deliver'
-        ? `Stop ${stop.seq} delivered${via === 'volunteer_link' ? ' via volunteer link' : ''}`
-        : `Stop ${stop.seq} skipped: ${(reason ?? 'Other').toLowerCase()}${via === 'volunteer_link' ? ' via volunteer link' : ''}`;
-    await this.logRouteActivity(
-      trx,
-      auth,
-      routeId,
-      'update',
-      action === 'deliver' ? 'stop_delivered' : 'stop_skipped',
-      message,
-      via,
-    );
-  }
-
-  private async deferStop(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    stopId: string,
-  ): Promise<void> {
-    const stops = await trx
-      .selectFrom('delivery_route_stops')
-      .select(['id', 'seq', 'status'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('route_id', '=', routeId)
-      .orderBy('seq', 'asc')
-      .execute();
-    const target = stops.find((s) => String(s.id) === stopId);
-    if (!target || target.status !== 'pending') return;
-    // Move the target to the end: rebuild the order with it last, then renumber via a temp offset.
-    const others = stops.filter((s) => String(s.id) !== stopId);
-    const newOrder = [...others.map((s) => String(s.id)), stopId];
-    await this.applySeqOrder(trx, auth.tenant_id, newOrder);
-    await this.renumberAndRecompute(trx, auth, routeId);
-    await this.logRouteActivity(
-      trx,
-      auth,
-      routeId,
-      'update',
-      'stop_deferred',
-      'Stop moved to the end of the route',
-      'volunteer_link',
-    );
-  }
-
-  private async undoStop(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    stopId: string,
-  ): Promise<void> {
-    const stop = await trx
-      .selectFrom('delivery_route_stops')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', stopId)
-      .where('route_id', '=', routeId)
-      .executeTakeFirst();
-    if (!stop) throw new NotFoundError('Stop not found');
-    const now = new Date();
-    await trx
-      .updateTable('delivery_route_stops')
-      .set({
-        status: 'pending',
-        reason: null,
-        acted_at: null,
-        acted_via: null,
-        updatedby_id: auth.user_id,
-        updated_at: now,
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', stopId)
-      .execute();
-    // Restore the request to the pool state (approved) — undo clears the delivered/skipped result.
-    await trx
-      .updateTable('delivery_requests')
-      .set({ status: 'approved', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', String(stop.request_id))
-      .execute();
-    // Undoing from a completed route reopens it to in_progress.
-    await trx
-      .updateTable('delivery_routes')
-      .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .where('status', '=', 'completed')
-      .execute();
-    await this.logRouteActivity(trx, auth, routeId, 'update', 'stop_undo', `Stop ${stop.seq} undone`, 'volunteer_link');
-  }
-
-  /** First action flips assigned → in_progress; all-terminal auto-completes the route. */
-  private async advanceRouteStatus(
-    trx: Transaction<Models>,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    _via: StopVia,
-  ): Promise<void> {
-    const now = new Date();
-    const counts = await trx
-      .selectFrom('delivery_route_stops')
-      .select([
-        ({ fn }) => fn.count<number>('id').as('total'),
-        ({ fn }) => fn.count<number>('id').filterWhere('status', '=', 'pending').as('pending'),
-      ])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('route_id', '=', routeId)
-      .executeTakeFirst();
-    const total = Number(counts?.total ?? 0);
-    const pending = Number(counts?.pending ?? 0);
-    if (total > 0 && pending === 0) {
-      await trx
-        .updateTable('delivery_routes')
-        .set({ status: 'completed', updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .execute();
-      await this.logRouteActivity(
-        trx,
-        auth,
-        routeId,
-        'close',
-        'route_completed',
-        'Route auto-completed: every stop handled',
-      );
-    } else {
-      await trx
-        .updateTable('delivery_routes')
-        .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', routeId)
-        .where('status', 'in', ['assigned', 'draft'])
-        .execute();
-    }
-  }
-
-  private async setStopSeq(trx: Transaction<Models>, tenantId: string, stopId: string, seq: number): Promise<void> {
-    await trx
-      .updateTable('delivery_route_stops')
-      .set({ seq })
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', stopId)
-      .execute();
-  }
-
-  /** Assign contiguous 1..n seq values to the given ordered stop ids, avoiding unique collisions. */
-  private async applySeqOrder(trx: Transaction<Models>, tenantId: string, orderedIds: string[]): Promise<void> {
-    const OFFSET = 100000;
-    for (let i = 0; i < orderedIds.length; i++) {
-      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', OFFSET + i);
-    }
-    for (let i = 0; i < orderedIds.length; i++) {
-      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', i + 1);
-    }
-  }
-
-  /** Renumber stops to contiguous seq in current order and recompute leg times + route estimate. */
-  private async renumberAndRecompute(trx: Transaction<Models>, auth: IAuthKeyPayload, routeId: string): Promise<void> {
-    const route = await trx
-      .selectFrom('delivery_routes')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .executeTakeFirst();
-    if (!route) return;
-    const params = this.paramsFromRoute(route.params);
-    const start: LatLng = { lat: Number(route.start_lat), lng: Number(route.start_lng) };
-    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, routeId, trx);
-    // Ensure contiguous seq.
-    await this.applySeqOrder(
-      trx,
-      auth.tenant_id,
-      stops.map((s) => s.id),
-    );
-
-    let cursor: LatLng = start;
-    let totalMinutes = 0;
-    let totalKm = 0;
-    for (const stop of stops) {
-      const point: LatLng = { lat: stop.lat ?? start.lat, lng: stop.lng ?? start.lng };
-      const leg = legMinutes(cursor, point, params.avgSpeedKmh);
-      await trx
-        .updateTable('delivery_route_stops')
-        .set({ leg_minutes: Math.round(leg * 10) / 10 })
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', stop.id)
-        .execute();
-      totalMinutes += leg + params.serviceMinutes;
-      totalKm += roadKm(cursor, point);
-      cursor = point;
-    }
-    if (params.includeReturnLeg && stops.length > 0) totalKm += roadKm(cursor, start);
-    await trx
-      .updateTable('delivery_routes')
-      .set({
-        est_minutes: Math.round(totalMinutes * 10) / 10,
-        est_km: Math.round(totalKm * 10) / 10,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', routeId)
-      .execute();
-  }
-
-  private paramsFromRoute(raw: unknown): RouteParamsSnapshot {
-    const obj = typeof raw === 'string' ? safeParse(raw) : raw;
-    const rec = (obj ?? {}) as Record<string, unknown>;
-    return {
-      serviceMinutes: typeof rec['serviceMinutes'] === 'number' ? rec['serviceMinutes'] : SERVICE_MINUTES_PER_STOP,
-      avgSpeedKmh: typeof rec['avgSpeedKmh'] === 'number' ? rec['avgSpeedKmh'] : AVG_SPEED_KMH,
-      includeReturnLeg: rec['includeReturnLeg'] === true,
-      drivers: typeof rec['drivers'] === 'number' ? rec['drivers'] : null,
-    };
-  }
-
-  private async readRouteProgress(trx: Transaction<Models>, tenantId: string, routeId: string) {
-    const route = await trx
-      .selectFrom('delivery_routes')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', routeId)
-      .executeTakeFirst();
-    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId, trx);
-    return {
-      id: routeId,
-      status: route ? String(route.status) : 'unknown',
-      est_minutes: route ? Number(route.est_minutes) : 0,
-      est_km: route ? Number(route.est_km) : 0,
-      stops,
-    };
-  }
-
-  /** `enforceExpiry` is the live Workspace → App policy (volunteerLinksExpire) — when the
-   * workspace disables expiry, a link stays usable for the life of the route (until revoked
-   * or the route is canceled). */
-  private isTokenUsable(
-    route: { status?: unknown; share_token_expires_at?: unknown } | undefined,
-    enforceExpiry: boolean,
-  ): route is {
-    id: string;
-    tenant_id: string;
-    createdby_id: string;
-    status: string;
-    share_token_expires_at: Date | string | null;
-  } & Record<string, unknown> {
-    if (!route) return false;
-    const status = String((route as Record<string, unknown>)['status']);
-    if (status === 'canceled') return false;
-    if (!enforceExpiry) return true;
-    const exp = (route as Record<string, unknown>)['share_token_expires_at'];
-    if (!exp) return false;
-    return new Date(String(exp)) > new Date();
-  }
-
-  private async publicOrgName(tenantId: string): Promise<string> {
-    const row = await this.routesRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    return typeof value === 'string' && value.trim() ? value : 'Our organization';
-  }
-
-  private publicRoutePayload(
-    route: Record<string, unknown>,
-    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
-    orgName: string,
-  ) {
-    const delivered = stops.filter((s) => s.status === 'delivered').length;
-    // Data minimization (spec §4.4): first name + address only. No email/phone/notes/person_id.
-    return {
-      organization_name: orgName,
-      route_name: String(route['name'] ?? 'Delivery route'),
-      status: String(route['status'] ?? 'assigned'),
-      start: { lat: Number(route['start_lat']), lng: Number(route['start_lng']) },
-      stops_total: stops.length,
-      stops_delivered: delivered,
-      stops: stops.map((s) => ({
-        id: s.id,
-        seq: s.seq,
-        first_name: s.first_name ?? 'Neighbour',
-        address: s.address,
-        lat: s.lat,
-        lng: s.lng,
-        status: s.status,
-        reason: s.reason,
-        acted_at: s.acted_at,
-      })),
-    };
-  }
-
-  private sanitizeRoute(
-    route: Record<string, unknown>,
-    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
-    volunteerName: string | null,
-    expiryEnforced: boolean,
-  ) {
-    // link_expires_at is a POLICY-shaped value: null when the workspace disables expiry, so the
-    // UI never shows a date that won't be enforced.
-    const expiresAt = expiryEnforced ? route['share_token_expires_at'] : null;
-    const linkActive =
-      route['share_token_hash'] != null &&
-      (!expiryEnforced || (!!expiresAt && new Date(String(expiresAt)) > new Date()));
-    return {
-      id: String(route['id']),
-      name: String(route['name'] ?? ''),
-      status: String(route['status'] ?? 'draft'),
-      volunteer_person_id: route['volunteer_person_id'] != null ? String(route['volunteer_person_id']) : null,
-      volunteer_name: volunteerName,
-      start_address: String(route['start_address'] ?? ''),
-      start_lat: Number(route['start_lat']),
-      start_lng: Number(route['start_lng']),
-      est_minutes: Number(route['est_minutes'] ?? 0),
-      est_km: Number(route['est_km'] ?? 0),
-      scheduled_for: (route['scheduled_for'] as Date | string | null) ?? null,
-      link_active: linkActive,
-      link_expires_at: (expiresAt as Date | string | null) ?? null,
-      stops,
-    };
-  }
-
-  /**
-   * Yard-sign standing changes surface on the household's (and requester's) activity feed —
-   * the sign lives at the door, so that's where its history belongs (honest attribution, §22.7).
-   * Route-level history is logged separately by applyStopTransition/logRouteActivity.
-   */
-  private async logRequestStanding(
-    trx: Transaction<Models> | undefined,
-    auth: IAuthKeyPayload,
-    requestIds: string[],
-    status: 'recorded' | SetDeliveryRequestStatusType['status'],
-  ): Promise<void> {
-    const db = trx ?? this.requestsRepo.db;
-    const labels: Record<string, string> = {
-      recorded: 'Yard sign request recorded',
-      new: 'Yard sign request reopened',
-      approved: 'Yard sign request approved',
-      declined: 'Yard sign request declined',
-      delivered: 'Yard sign marked delivered',
-    };
-    const message = labels[status] ?? `Yard sign request ${status}`;
-    try {
-      const rows = await db
-        .selectFrom('delivery_requests')
-        .select(['id', 'household_id', 'person_id'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', 'in', requestIds)
-        .execute();
-      for (const r of rows) {
-        const targets: Array<{ entity: string; entity_id: string }> = [
-          { entity: 'households', entity_id: String(r.household_id) },
-        ];
-        if (r.person_id != null) targets.push({ entity: 'persons', entity_id: String(r.person_id) });
-        for (const target of targets) {
-          await this.userActivity.log(
-            {
-              tenant_id: auth.tenant_id,
-              user_id: auth.user_id,
-              activity: status === 'recorded' ? 'create' : 'update',
-              entity: target.entity,
-              entity_id: target.entity_id,
-              quantity: 1,
-              metadata: {
-                action: 'yard_sign_status',
-                message,
-                entity_label: message,
-                request_id: String(r.id),
-                via: 'staff',
-              },
-            },
-            trx,
-          );
-        }
-      }
-    } catch (err) {
-      logger.error({ err }, 'Failed to log yard sign standing activity');
-    }
-  }
-
-  private async logRouteActivity(
-    trxOrAny: Transaction<Models> | unknown,
-    auth: IAuthKeyPayload,
-    routeId: string,
-    activity: 'create' | 'update' | 'assign' | 'unassign' | 'close' | 'reopen' | 'delete',
-    action: string,
-    message: string,
-    via?: StopVia,
-  ): Promise<void> {
-    const trx = isTransaction(trxOrAny) ? trxOrAny : undefined;
-    try {
-      await this.userActivity.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity,
-          entity: 'delivery_routes',
-          entity_id: routeId,
-          quantity: 1,
-          metadata: { action, message, entity_label: message, via: via ?? 'staff' },
-        },
-        trx,
-      );
-    } catch (err) {
-      logger.error({ err }, 'Failed to log delivery route activity');
-    }
-  }
-}
-
-function isTransaction(value: unknown): value is Transaction<Models> {
-  return typeof value === 'object' && value !== null && 'selectFrom' in (value as Record<string, unknown>);
-}
-
-function safeParse(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
+import { z } from 'zod';
+
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
+import { DeliveriesController } from './controller';
+
+const controller = new DeliveriesController();
+
+// FEATURE_MATRIX plan gate: deliveries are Movement-only; mutations below are blocked on lower plans.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('deliveries'));
+
+export const DeliveriesRouter = router({
+  // Requests
+  getAllRequests: authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllRequests(ctx.auth.tenant_id, input)),
+  getRequestCounts: authProcedure.query(({ ctx }) => controller.getRequestCounts(ctx.auth.tenant_id)),
+  getReadyCount: authProcedure.query(({ ctx }) => controller.getReadyCount(ctx.auth.tenant_id)),
+  getSignStatus: authProcedure
+    .input(GetSignStatusObj)
+    .query(({ ctx, input }) => controller.getSignStatus(ctx.auth, input)),
+  addRequest: authProcedure
+    .input(AddDeliveryRequestObj)
+    .mutation(({ ctx, input }) => controller.addRequest(ctx.auth, input)),
+  updateRequestNotes: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateDeliveryRequestObj }))
+    .mutation(({ ctx, input }) => controller.updateRequestNotes(ctx.auth, input.id, input.data)),
+  setRequestStatus: authProcedure
+    .input(SetDeliveryRequestStatusObj)
+    .mutation(({ ctx, input }) => controller.setRequestStatus(ctx.auth, input)),
+
+  // Planning
+  getRouteDefaults: authProcedure.query(({ ctx }) => controller.getRouteDefaults(ctx.auth.tenant_id)),
+  previewPlan: authProcedure
+    .input(PlanDeliveriesObj)
+    .mutation(({ ctx, input }) => controller.previewPlan(ctx.auth, input)),
+  commitPlan: authProcedure
+    .input(CommitDeliveriesObj)
+    .mutation(({ ctx, input }) => controller.commitPlan(ctx.auth, input)),
+
+  // Routes
+  getAllRoutes: authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllRoutes(ctx.auth.tenant_id, input)),
+  getRouteById: authProcedure.input(idSchema).query(({ ctx, input }) => controller.getRouteById(ctx.auth, input)),
+  updateRoute: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateDeliveryRouteObj }))
+    .mutation(({ ctx, input }) => controller.updateRoute(ctx.auth, input.id, input.data)),
+  assignVolunteer: authProcedure
+    .input(AssignVolunteerObj)
+    .mutation(({ ctx, input }) => controller.assignVolunteer(ctx.auth, input)),
+  resendVolunteerLink: authProcedure
+    .input(RouteIdObj)
+    .mutation(({ ctx, input }) => controller.resendVolunteerLink(ctx.auth, input.route_id)),
+  setRouteStatus: authProcedure
+    .input(SetDeliveryRouteStatusObj)
+    .mutation(({ ctx, input }) => controller.setRouteStatus(ctx.auth, input)),
+  deleteRoute: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteRoute(ctx.auth, input)),
+  stopAction: authProcedure.input(StopActionObj).mutation(({ ctx, input }) => controller.stopAction(ctx.auth, input)),
+  reorderStop: authProcedure
+    .input(ReorderStopObj)
+    .mutation(({ ctx, input }) => controller.reorderStop(ctx.auth, input)),
+  reorderStops: authProcedure
+    .input(ReorderStopsObj)
+    .mutation(({ ctx, input }) => controller.reorderStops(ctx.auth, input)),
+  mintShareLink: authProcedure
+    .input(MintShareLinkObj)
+    .mutation(({ ctx, input }) => controller.mintShareLink(ctx.auth, input)),
+  revokeShareLink: authProcedure
+    .input(RouteIdObj)
+    .mutation(({ ctx, input }) => controller.revokeShareLink(ctx.auth, input.route_id)),
+});
 `````
 
 ## File: apps/backend/src/app/modules/donations/processors/stripe-processor.ts
@@ -73086,6 +71726,74 @@ export class FastifyServer {
 }
 `````
 
+## File: apps/backend/Dockerfile
+`````dockerfile
+# syntax=docker/dockerfile:1
+#
+# Production image for the pplCRM backend (Fastify + tRPC + Kysely).
+#
+# The backend is a SINGLE process: it serves the API *and* runs the in-process background-job
+# worker, the webhook worker, and self-scheduled cron (via the background_jobs table + Postgres
+# LISTEN/NOTIFY). There is no separate worker/scheduler to deploy — but for that reason, run one
+# instance to start (the DB queue makes scaling out safe later via SELECT ... FOR UPDATE SKIP LOCKED).
+#
+# Migrations are NOT run here. They run as a separate deploy step as the `pplcrm_owner` role, via
+# `npx tsx apps/backend/src/app/kyselyinit.ts` over the source tree (the migrator imports the .ts
+# migration files). This image sets MIGRATE_ON_BOOT=false and carries no migration files.
+
+##############################
+# Stage 1 — build the backend
+##############################
+# Node 26 matches the repo's local runtime. esbuild bundles main.ts to an ESM file but keeps
+# node_modules EXTERNAL (project.json: packages "external", generatePackageJson false), so the
+# runtime image must ship the production node_modules alongside the bundle.
+FROM node:26-bookworm-slim AS builder
+WORKDIR /app
+
+# Install ALL deps (incl. dev) for the Nx/esbuild build. Lockfile first for layer caching.
+# .npmrc carries legacy-peer-deps=true (Nx 23 vs Angular 22 peer conflict) — npm ci needs it here too.
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci
+
+# The backend build pulls cross-package types (@common, the tRPC router type) from elsewhere in the
+# monorepo, so the whole repo must be present. The build's `generate-context` step runs `npx repomix`
+# to refresh STRUCTURE.md and needs network access at build time (standard for image builds).
+COPY . .
+
+# Produce dist/apps/backend (ESM bundle; node_modules NOT bundled).
+RUN npx nx build backend --configuration=production
+
+# Re-resolve node_modules to production-only for the runtime image. Because esbuild left every
+# dependency external, all *runtime* deps must remain — only devDependencies are dropped.
+# The `prepare` script runs husky (a devDependency); under --omit=dev husky is gone and the script
+# fails with 127. Strip the hook first — dependency install scripts still run (no native-dep risk).
+RUN npm pkg delete scripts.prepare && npm ci --omit=dev
+
+######################################
+# Stage 2 — slim runtime (serve only)
+######################################
+FROM node:26-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3000 \
+    MIGRATE_ON_BOOT=false
+
+# Ship the pruned prod deps + the bundle. Run as the image's built-in unprivileged `node` user.
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/dist/apps/backend ./dist/apps/backend
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+
+USER node
+EXPOSE 3000
+
+# Readiness probe hits the DB-aware /healthz (returns 503 when Postgres is unreachable).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "--enable-source-maps", "dist/apps/backend/main.js"]
+`````
+
 ## File: apps/website/src/app/company/about-page.html
 `````html
 <pc-site-header variant="solid" />
@@ -74390,7 +73098,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'warning',
         title: 'What stays locked during the demo',
-        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
+        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and connecting a Stripe account for donations. Everything else works, including workspace settings; update your organization details, service levels, and defaults at any time and they carry over when you exit the demo. Choose a plan on the [Billing](/workspace/billing) page to unlock the rest.',
       },
       { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
       {
@@ -76724,6 +75432,1426 @@ export async function queueUsageLimitCheck(tenantId: string, db: Kysely<Models>)
         max_attempts: 3,
       })
       .execute();
+  }
+}
+`````
+
+## File: apps/backend/src/app/modules/deliveries/controller.ts
+`````typescript
+import { createHash, randomBytes } from 'crypto';
+
+import type { Transaction } from 'kysely';
+
+import type {
+  AddDeliveryRequestType,
+  AssignVolunteerType,
+  CommitDeliveriesType,
+  GetSignStatusType,
+  IAuthKeyPayload,
+  PlanDeliveriesType,
+  ReorderStopType,
+  ReorderStopsType,
+  SetDeliveryRequestStatusType,
+  SetDeliveryRouteStatusType,
+  StopActionType,
+  UpdateDeliveryRequestType,
+  UpdateDeliveryRouteType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+
+import { env } from '../../../env';
+import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
+import { geocodeAddress } from '../../lib/gis/geocode-address';
+import { notifyVolunteerOfLink, type VolunteerLinkSendResult } from '../../lib/mail/volunteer-link-notify';
+import { legMinutes, roadKm, type LatLng } from '../../lib/routing/geo';
+import { planRoutes, type PlanParams, type PlanStopInput } from '../../lib/routing/plan-routes';
+import {
+  AVG_SPEED_KMH,
+  MAX_STOPS_PER_PLAN,
+  SERVICE_MINUTES_PER_STOP,
+  SHARE_TOKEN_TTL_DAYS,
+} from '../../lib/routing/route-constants';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
+import { logger } from '../../logger';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { CompanionAccessController } from '../companion-access/controller';
+import { DeliveryRequestsRepo } from './repositories/delivery-requests.repo';
+import { DeliveryRouteStopsRepo } from './repositories/delivery-route-stops.repo';
+import { DeliveryRoutesRepo } from './repositories/delivery-routes.repo';
+
+const ROUTE_DEFAULTS_SETTING_KEY = 'deliveries.route_defaults';
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+type StopVia = 'staff' | 'volunteer_link';
+
+interface RouteParamsSnapshot {
+  serviceMinutes: number;
+  avgSpeedKmh: number;
+  includeReturnLeg: boolean;
+  drivers: number | null;
+}
+
+function resolveParams(input: PlanDeliveriesType): PlanParams {
+  return {
+    serviceMinutes: input.service_minutes ?? SERVICE_MINUTES_PER_STOP,
+    avgSpeedKmh: input.avg_speed_kmh ?? AVG_SPEED_KMH,
+    includeReturnLeg: input.include_return_leg ?? false,
+    drivers: input.drivers ?? null,
+  };
+}
+
+/** Human-readable route name: "Maple St area — Jul 10" derived from the first stop + today. */
+function deriveRouteName(firstAddress: string, date: Date): string {
+  const firstSegment = (firstAddress.split(',')[0] ?? '').trim();
+  const streetOnly = firstSegment.replace(/^\d+\s+/, '').trim();
+  const area = streetOnly || firstSegment || 'Delivery';
+  const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${area} area — ${label}`;
+}
+
+export class DeliveriesController {
+  private readonly requestsRepo = new DeliveryRequestsRepo();
+  private readonly campaignsRepo = new CampaignsRepo();
+  private readonly companionAccess = new CompanionAccessController();
+  private readonly routesRepo = new DeliveryRoutesRepo();
+  private readonly stopsRepo = new DeliveryRouteStopsRepo();
+  private readonly userActivity = new UserActivityRepo();
+
+  // ---- Requests -----------------------------------------------------------
+  public getAllRequests(tenant: string, options?: getAllOptionsType) {
+    return this.requestsRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
+  }
+
+  public getRequestCounts(tenant: string) {
+    return this.requestsRepo.getStatusCounts(tenant);
+  }
+
+  public getReadyCount(tenant: string) {
+    return this.requestsRepo.getReadyCount(tenant);
+  }
+
+  /** Yard-sign standing for one household in one campaign context (household/person pages). */
+  public async getSignStatus(auth: IAuthKeyPayload, input: GetSignStatusType) {
+    const request = await this.requestsRepo.getSignStatus(auth.tenant_id, input.household_id, input.campaign_id);
+    return { request };
+  }
+
+  public async addRequest(auth: IAuthKeyPayload, input: AddDeliveryRequestType) {
+    // Guard: a household with an OPEN request (new/approved, incl. routed) can't have a second.
+    const open = await this.requestsRepo.db
+      .selectFrom('delivery_requests')
+      .select(['id'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('household_id', '=', input.household_id)
+      .where('status', 'in', ['new', 'approved'])
+      .executeTakeFirst();
+    if (open) {
+      throw new ConflictError('This household already has an open delivery request.');
+    }
+    const personId = input.person_id ? String(input.person_id) : null;
+    const row = {
+      tenant_id: auth.tenant_id,
+      // The context this yard-sign request belongs to (§15); defaults to the office.
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: input.campaign_id,
+      }),
+      household_id: input.household_id,
+      person_id: personId,
+      web_form_id: null,
+      source: 'manual',
+      status: 'new',
+      notes: input.notes ?? null,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'delivery_requests', 'insert'>;
+    const created = await this.requestsRepo.add({ row });
+    await this.logRequestStanding(undefined, auth, [String(created.id)], 'recorded');
+    return { id: String(created.id) };
+  }
+
+  public async updateRequestNotes(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRequestType) {
+    const updated = await this.requestsRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { notes: input.notes ?? null, updatedby_id: auth.user_id, updated_at: new Date() } as OperationDataType<
+        'delivery_requests',
+        'update'
+      >,
+    });
+    if (!updated) throw new NotFoundError('Request not found');
+    return { id };
+  }
+
+  public async setRequestStatus(auth: IAuthKeyPayload, input: SetDeliveryRequestStatusType) {
+    // A request sitting on an active (pending) stop can't be declined or reset out from under a
+    // route. Approved + pending stop is the normal on-route state, and 'delivered' flows THROUGH
+    // the stop below so route progress stays truthful.
+    if (input.status === 'declined' || input.status === 'new') {
+      const onRoute = await this.requestsRepo.db
+        .selectFrom('delivery_route_stops')
+        .select(['id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('request_id', 'in', input.ids)
+        .where('status', '=', 'pending')
+        .executeTakeFirst();
+      if (onRoute) {
+        throw new BadRequestError('Remove these requests from their route first, or cancel that route.');
+      }
+    }
+    return this.requestsRepo.transaction().execute(async (trx) => {
+      let directIds = input.ids;
+      if (input.status === 'delivered') {
+        // Manual "the sign is in the ground" flip: requests on an active route deliver via their
+        // stop (staff-attributed), which also advances/auto-completes the route.
+        const pendingStops = await trx
+          .selectFrom('delivery_route_stops')
+          .select(['id', 'route_id', 'request_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('request_id', 'in', input.ids)
+          .where('status', '=', 'pending')
+          .execute();
+        for (const stop of pendingStops) {
+          await this.applyStopTransition(trx, auth, String(stop.route_id), String(stop.id), 'deliver', null, 'staff');
+        }
+        const handled = new Set(pendingStops.map((s) => String(s.request_id)));
+        directIds = input.ids.filter((id) => !handled.has(id));
+      }
+      if (directIds.length > 0) {
+        await trx
+          .updateTable('delivery_requests')
+          .set({
+            status: input.status,
+            ...(input.status === 'delivered' ? { skip_reason: null } : {}),
+            updatedby_id: auth.user_id,
+            updated_at: new Date(),
+          })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', 'in', directIds)
+          .execute();
+      }
+      await this.logRequestStanding(trx, auth, input.ids, input.status);
+      return { updated: input.ids.length };
+    });
+  }
+
+  // ---- Planning -----------------------------------------------------------
+  public async previewPlan(auth: IAuthKeyPayload, input: PlanDeliveriesType) {
+    const geo = await geocodeAddress(input.start_address);
+    if (!geo) {
+      throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
+    }
+    const start: LatLng = { lat: geo.lat, lng: geo.lng };
+    const params = resolveParams(input);
+
+    const eligible = await this.requestsRepo.getEligibleForPlanning(auth.tenant_id, MAX_STOPS_PER_PLAN + 1);
+    const capApplied = eligible.length > MAX_STOPS_PER_PLAN;
+    const capped = capApplied ? eligible.slice(0, MAX_STOPS_PER_PLAN) : eligible;
+    const byId = new Map(capped.map((e) => [e.request_id, e] as const));
+
+    const stops: PlanStopInput[] = capped.map((e) => ({ requestId: e.request_id, lat: e.lat, lng: e.lng }));
+    const result = planRoutes(start, stops, params);
+
+    const routes = result.routes.map((route, i) => ({
+      index: i + 1,
+      total_minutes: route.totalMinutes,
+      total_km: route.totalKm,
+      stops: route.stops.map((s) => {
+        const info = byId.get(s.requestId);
+        return {
+          request_id: s.requestId,
+          seq: s.seq,
+          leg_minutes: s.legMinutes,
+          address: info?.address ?? '',
+          name: info?.name ?? null,
+        };
+      }),
+    }));
+
+    const unroutable = result.unroutable.map((u) => {
+      const info = byId.get(u.requestId);
+      const reasonText =
+        u.reason === 'isolated'
+          ? `Isolated. The nearest other stop is ${u.nearestKm} km away`
+          : `Too far to reach within an hour from this start (${u.nearestKm} km out)`;
+      return { request_id: u.requestId, reason: u.reason, reason_text: reasonText, address: info?.address ?? '' };
+    });
+
+    const buckets = await this.requestsRepo.getIneligibleBuckets(auth.tenant_id);
+
+    return {
+      start: { address: geo.formatted_address, lat: geo.lat, lng: geo.lng },
+      eligible_count: capped.length,
+      cap_applied: capApplied,
+      routes,
+      unroutable,
+      ineligible: buckets,
+    };
+  }
+
+  public async commitPlan(auth: IAuthKeyPayload, input: CommitDeliveriesType) {
+    const geo = await geocodeAddress(input.start_address);
+    if (!geo) throw new BadRequestError("We couldn't locate that start address. Check it and try again.");
+    const start: LatLng = { lat: geo.lat, lng: geo.lng };
+    const params = resolveParams(input);
+    const snapshot: RouteParamsSnapshot = {
+      serviceMinutes: params.serviceMinutes,
+      avgSpeedKmh: params.avgSpeedKmh,
+      includeReturnLeg: params.includeReturnLeg,
+      drivers: params.drivers ?? null,
+    };
+    const now = new Date();
+
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const skipped: Array<{ request_id: string; reason: string }> = [];
+      let created = 0;
+      let firstRouteId: string | null = null;
+
+      for (const proposed of input.routes) {
+        const eligible = await this.requestsRepo.getEligibleByIds(auth.tenant_id, proposed.request_ids, trx);
+        const eligibleById = new Map(eligible.map((e) => [e.request_id, e] as const));
+        // Preserve the client's order, dropping any request that lost eligibility (concurrent planner).
+        const ordered = proposed.request_ids.filter((id) => eligibleById.has(id));
+        for (const id of proposed.request_ids) {
+          if (!eligibleById.has(id)) skipped.push({ request_id: id, reason: 'no_longer_eligible' });
+        }
+        if (ordered.length === 0) continue;
+
+        // Recompute legs server-side — never trust client math.
+        let cursor: LatLng = start;
+        let totalMinutes = 0;
+        let totalKm = 0;
+        const legs: number[] = [];
+        for (const id of ordered) {
+          const e = eligibleById.get(id);
+          if (!e) continue;
+          const point: LatLng = { lat: e.lat, lng: e.lng };
+          const leg = legMinutes(cursor, point, params.avgSpeedKmh);
+          legs.push(leg);
+          totalMinutes += leg + params.serviceMinutes;
+          totalKm += roadKm(cursor, point);
+          cursor = point;
+        }
+        if (params.includeReturnLeg) totalKm += roadKm(cursor, start);
+
+        const firstAddress = eligibleById.get(ordered[0] ?? '')?.address ?? '';
+        // A route inherits the campaign of the requests it serves (§15); the
+        // eligibility query keeps plans single-campaign, so the first stop is
+        // representative.
+        const firstRequest = await trx
+          .selectFrom('delivery_requests')
+          .select(['campaign_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', String(ordered[0]))
+          .executeTakeFirstOrThrow();
+        const routeRow = {
+          tenant_id: auth.tenant_id,
+          campaign_id: String(firstRequest.campaign_id),
+          name: deriveRouteName(firstAddress, now),
+          status: 'draft',
+          volunteer_person_id: null,
+          start_address: geo.formatted_address,
+          start_lat: start.lat,
+          start_lng: start.lng,
+          est_minutes: Math.round(totalMinutes * 10) / 10,
+          est_km: Math.round(totalKm * 10) / 10,
+          scheduled_for: null,
+          share_token_hash: null,
+          share_token_expires_at: null,
+          params: JSON.stringify(snapshot),
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        } as OperationDataType<'delivery_routes', 'insert'>;
+        const route = await this.routesRepo.add({ row: routeRow }, trx);
+        const routeId = String(route.id);
+        if (!firstRouteId) firstRouteId = routeId;
+
+        const stopRows = ordered.map(
+          (id, i) =>
+            ({
+              tenant_id: auth.tenant_id,
+              route_id: routeId,
+              request_id: id,
+              seq: i + 1,
+              leg_minutes: Math.round((legs[i] ?? 0) * 10) / 10,
+              status: 'pending',
+              reason: null,
+              acted_at: null,
+              acted_via: null,
+              createdby_id: auth.user_id,
+              updatedby_id: auth.user_id,
+            }) as OperationDataType<'delivery_route_stops', 'insert'>,
+        );
+        await this.stopsRepo.addMany({ rows: stopRows }, trx);
+        created++;
+        await this.logRouteActivity(trx, auth, routeId, 'create', 'route_created', 'Route created from plan');
+      }
+
+      // Persist the start address as the tenant default for the next plan.
+      await this.saveRouteDefaults(trx, auth, { start_address: geo.formatted_address });
+
+      return { created, skipped, first_route_id: firstRouteId };
+    });
+  }
+
+  public async getRouteDefaults(tenant: string): Promise<{ start_address: string | null }> {
+    const row = await this.routesRepo.db
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenant)
+      .where('key', '=', ROUTE_DEFAULTS_SETTING_KEY)
+      .executeTakeFirst();
+    const value = row?.value as { start_address?: string } | null | undefined;
+    return { start_address: value?.start_address ?? null };
+  }
+
+  private async saveRouteDefaults(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    value: { start_address: string },
+  ): Promise<void> {
+    await trx
+      .insertInto('settings')
+      .values({
+        tenant_id: auth.tenant_id,
+        key: ROUTE_DEFAULTS_SETTING_KEY,
+        value: JSON.stringify(value),
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      })
+      .onConflict((oc) =>
+        oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(value), updatedby_id: auth.user_id }),
+      )
+      .execute();
+  }
+
+  // ---- Routes -------------------------------------------------------------
+  public getAllRoutes(tenant: string, options?: getAllOptionsType) {
+    return this.routesRepo.getAllWithCounts({ tenant_id: tenant, options: options as never });
+  }
+
+  public async getRouteById(auth: IAuthKeyPayload, id: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
+    if (!route) throw new NotFoundError('Route not found');
+    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, id);
+    let volunteerName: string | null = null;
+    if (route.volunteer_person_id) {
+      const v = await this.routesRepo.db
+        .selectFrom('persons')
+        .select(['first_name', 'last_name'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(route.volunteer_person_id))
+        .executeTakeFirst();
+      if (v) volunteerName = `${v.first_name ?? ''} ${v.last_name ?? ''}`.trim() || null;
+    }
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
+    return this.sanitizeRoute(route, stops, volunteerName, expiryEnforced);
+  }
+
+  public async updateRoute(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRouteType) {
+    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
+    if (input.name !== undefined) row['name'] = input.name;
+    if (input.scheduled_for !== undefined) {
+      row['scheduled_for'] = input.scheduled_for ? new Date(input.scheduled_for) : null;
+    }
+    const updated = await this.routesRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: row as OperationDataType<'delivery_routes', 'update'>,
+    });
+    if (!updated) throw new NotFoundError('Route not found');
+    return { id };
+  }
+
+  public async assignVolunteer(auth: IAuthKeyPayload, input: AssignVolunteerType) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
+    if (!route) throw new NotFoundError('Route not found');
+    const personId = input.person_id ? String(input.person_id) : null;
+    // Assigning moves draft → assigned; clearing a volunteer on a draft/assigned route → draft.
+    let status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled' = route.status;
+    if (personId && status === 'draft') status = 'assigned';
+    if (!personId && status === 'assigned') status = 'draft';
+
+    if (!personId) {
+      await this.routesRepo.db
+        .updateTable('delivery_routes')
+        .set({ volunteer_person_id: null, status, updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .execute();
+      await this.logRouteActivity(
+        undefined,
+        auth,
+        input.route_id,
+        'unassign',
+        'volunteer_unassigned',
+        'Volunteer removed',
+      );
+      return { id: input.route_id, status, sent: { email: false, sms: false } };
+    }
+
+    const person = await this.routesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', personId)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('Pick the volunteer this route belongs to.');
+
+    // The link is personal, so assignment sends it: mint a fresh token (the raw
+    // token is never stored — this is the only moment we can put it in a message)
+    // and enqueue the email/SMS in the same transaction as the assignment. A new
+    // token also retires any link a previously assigned volunteer still holds.
+    const rawToken = randomBytes(32).toString('base64url');
+    const url = `${env.companionUrl}/r/${rawToken}`;
+    const orgName = await this.publicOrgName(auth.tenant_id);
+    let sent: VolunteerLinkSendResult = { email: false, sms: false };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('delivery_routes')
+        .set({
+          volunteer_person_id: personId,
+          status,
+          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
+          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .execute();
+      sent = await notifyVolunteerOfLink(
+        {
+          tenant_id: auth.tenant_id,
+          person,
+          orgName,
+          kindLabel: 'delivery route',
+          itemName: String(route.name ?? 'Delivery route'),
+          url,
+        },
+        trx,
+      );
+      await this.logRouteActivity(
+        trx,
+        auth,
+        input.route_id,
+        'assign',
+        'volunteer_assigned',
+        sent.email || sent.sms
+          ? `Volunteer assigned — link sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`
+          : 'Volunteer assigned — no contact info on file, link not sent',
+      );
+    });
+    return { id: input.route_id, status, sent };
+  }
+
+  /**
+   * Re-send the assigned volunteer their personal link (lost email, new phone…).
+   * The raw token is never stored, so re-sending means minting a fresh link — the
+   * previously sent one stops working, same rule as re-assignment and regenerate.
+   */
+  public async resendVolunteerLink(auth: IAuthKeyPayload, routeId: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
+    if (!route) throw new NotFoundError('Route not found');
+    if (route.volunteer_person_id == null) {
+      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
+    }
+    if (route.status === 'canceled' || route.status === 'completed') {
+      throw new BadRequestError('This route is over — there is nothing for the volunteer to open.');
+    }
+    const person = await this.routesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', String(route.volunteer_person_id))
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('The assigned volunteer no longer exists. Assign another volunteer.');
+
+    const rawToken = randomBytes(32).toString('base64url');
+    const url = `${env.companionUrl}/r/${rawToken}`;
+    const orgName = await this.publicOrgName(auth.tenant_id);
+    let sent: VolunteerLinkSendResult = { email: false, sms: false };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('delivery_routes')
+        .set({
+          share_token_hash: createHash('sha256').update(rawToken).digest('hex'),
+          share_token_expires_at: new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY),
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .execute();
+      sent = await notifyVolunteerOfLink(
+        {
+          tenant_id: auth.tenant_id,
+          person,
+          orgName,
+          kindLabel: 'delivery route',
+          itemName: String(route.name ?? 'Delivery route'),
+          url,
+        },
+        trx,
+      );
+      if (!sent.email && !sent.sms) {
+        // Rolls back the mint: a resend that reaches nobody must not retire the link they already have.
+        throw new BadRequestError(
+          'This volunteer has no email or mobile on file — add one to their record, or use "Copy volunteer link" to share it yourself.',
+        );
+      }
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'update',
+        'link_resent',
+        `Volunteer link re-sent by ${[sent.email ? 'email' : null, sent.sms ? 'text' : null].filter(Boolean).join(' and ')}`,
+      );
+    });
+    return { id: routeId, sent };
+  }
+
+  public async setRouteStatus(auth: IAuthKeyPayload, input: SetDeliveryRouteStatusType) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
+    if (!route) throw new NotFoundError('Route not found');
+    if (input.status === 'canceled') {
+      return this.cancelRoute(auth, input.route_id);
+    }
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({ status: input.status, updatedby_id: auth.user_id, updated_at: new Date() })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', input.route_id)
+      .execute();
+    return { id: input.route_id, status: input.status };
+  }
+
+  private async cancelRoute(auth: IAuthKeyPayload, routeId: string) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      // Undelivered (pending) stops return their requests to the pool; delivered stay delivered.
+      const pending = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'request_id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', routeId)
+        .where('status', '=', 'pending')
+        .execute();
+      const requestIds = pending.map((p) => String(p.request_id));
+      if (requestIds.length > 0) {
+        await trx
+          .updateTable('delivery_requests')
+          .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', 'in', requestIds)
+          .execute();
+        await trx
+          .updateTable('delivery_route_stops')
+          .set({ status: 'skipped', reason: 'Other', updatedby_id: auth.user_id, updated_at: new Date() })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where(
+            'id',
+            'in',
+            pending.map((p) => String(p.id)),
+          )
+          .execute();
+      }
+      await trx
+        .updateTable('delivery_routes')
+        .set({ status: 'canceled', updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .execute();
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'update',
+        'route_canceled',
+        `Route canceled. ${requestIds.length} undelivered stops returned to the pool`,
+      );
+      return { id: routeId, status: 'canceled' as const, returned: requestIds.length };
+    });
+  }
+
+  public async deleteRoute(auth: IAuthKeyPayload, id: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, id);
+    if (!route) throw new NotFoundError('Route not found');
+    const status = String(route.status);
+    if (status !== 'draft' && status !== 'assigned') {
+      throw new BadRequestError('Only draft or assigned routes can be deleted. Cancel the route first.');
+    }
+    // Stops cascade via FK; requests free automatically once their pending stop is gone.
+    await this.routesRepo.delete({ tenant_id: auth.tenant_id, id });
+    return { id };
+  }
+
+  // ---- Stops (staff) ------------------------------------------------------
+  public async stopAction(auth: IAuthKeyPayload, input: StopActionType) {
+    if (input.action === 'remove') {
+      return this.removeStop(auth, input.route_id, input.stop_id);
+    }
+    const action = input.action; // narrowed to 'deliver' | 'skip'
+    return this.routesRepo.transaction().execute(async (trx) => {
+      await this.applyStopTransition(trx, auth, input.route_id, input.stop_id, action, input.reason ?? null, 'staff');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+    });
+  }
+
+  private async removeStop(auth: IAuthKeyPayload, routeId: string, stopId: string) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const stop = await trx
+        .selectFrom('delivery_route_stops')
+        .selectAll()
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .where('route_id', '=', routeId)
+        .executeTakeFirst();
+      if (!stop) throw new NotFoundError('Stop not found');
+      // Free the request back to the pool then delete the stop and renumber/recompute.
+      await trx
+        .updateTable('delivery_requests')
+        .set({ status: 'approved', updatedby_id: auth.user_id, updated_at: new Date() })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(stop.request_id))
+        .execute();
+      await trx
+        .deleteFrom('delivery_route_stops')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .execute();
+      await this.renumberAndRecompute(trx, auth, routeId);
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'update',
+        'stop_removed',
+        'Stop removed. Request returned to the pool',
+      );
+      return this.readRouteProgress(trx, auth.tenant_id, routeId);
+    });
+  }
+
+  /**
+   * Drag-to-reorder: reseat only the PENDING stops of a route into the given order. Delivered and
+   * skipped stops are not movable — they keep their exact seq, and the pending stops are permuted
+   * across the seq slots they already occupy. `ordered_stop_ids` must be exactly the set of the
+   * route's pending stop ids (any foreign, non-pending, or missing id is rejected). Seq writes go
+   * through `applySeqOrder`'s temp-offset trick to dodge the unique(route_id, seq) index, then legs
+   * and the route estimate are recomputed. One `stop_reordered` activity is logged, matching the
+   * adjacent-swap path.
+   */
+  public async reorderStops(auth: IAuthKeyPayload, input: ReorderStopsType) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const route = await trx
+        .selectFrom('delivery_routes')
+        .select(['id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .executeTakeFirst();
+      if (!route) throw new NotFoundError('Route not found');
+
+      const stops = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'seq', 'status'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', input.route_id)
+        .orderBy('seq', 'asc')
+        .execute();
+
+      const pendingIds = stops.filter((s) => s.status === 'pending').map((s) => String(s.id));
+      const requested = input.ordered_stop_ids;
+      // Exact set equality: same length + same members. This one check rejects a foreign/other-route
+      // stop, a delivered/skipped id, and a missing pending id all at once.
+      const pendingSet = new Set(pendingIds);
+      const sameMembers =
+        requested.length === pendingIds.length &&
+        new Set(requested).size === requested.length &&
+        requested.every((id) => pendingSet.has(id));
+      if (!sameMembers) {
+        throw new BadRequestError('The new order must list exactly the route’s pending stops.');
+      }
+      if (pendingIds.length < 2) {
+        // Nothing to permute — no-op, but return the current authoritative shape.
+        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      }
+
+      // Drop the pending stops into the slots they currently occupy, in the requested order, while
+      // every non-pending stop stays exactly where it is (so it keeps its seq).
+      const queue = [...requested];
+      const finalOrder = stops.map((s) => (s.status === 'pending' ? (queue.shift() ?? String(s.id)) : String(s.id)));
+      await this.applySeqOrder(trx, auth.tenant_id, finalOrder);
+      await this.renumberAndRecompute(trx, auth, input.route_id);
+      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+    });
+  }
+
+  public async reorderStop(auth: IAuthKeyPayload, input: ReorderStopType) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const stops = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'seq'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', input.route_id)
+        .orderBy('seq', 'asc')
+        .execute();
+      const idx = stops.findIndex((s) => String(s.id) === input.stop_id);
+      if (idx === -1) throw new NotFoundError('Stop not found');
+      const swapIdx = input.direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= stops.length) {
+        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      }
+      const a = stops[idx];
+      const b = stops[swapIdx];
+      if (!a || !b) return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      // Swap seq via a temporary value to avoid the unique(route_id, seq) collision.
+      await this.setStopSeq(trx, auth.tenant_id, String(a.id), -1);
+      await this.setStopSeq(trx, auth.tenant_id, String(b.id), Number(a.seq));
+      await this.setStopSeq(trx, auth.tenant_id, String(a.id), Number(b.seq));
+      await this.renumberAndRecompute(trx, auth, input.route_id);
+      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+    });
+  }
+
+  // ---- Share links --------------------------------------------------------
+  public async mintShareLink(auth: IAuthKeyPayload, input: { route_id: string; regenerate?: boolean }) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
+    if (!route) throw new NotFoundError('Route not found');
+    // The companion access layer verifies the volunteer BEHIND the link, so a
+    // link with nobody behind it can never pass the gate — refuse to mint one.
+    if (route.volunteer_person_id == null) {
+      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
+    }
+    // Whether the 30-day expiry is enforced is a live workspace policy (Workspace → App).
+    // The date is always STORED at mint time; the setting decides whether it counts.
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
+    const active =
+      route.share_token_hash != null &&
+      (!expiryEnforced ||
+        (route.share_token_expires_at != null && new Date(route.share_token_expires_at) > new Date()));
+    if (active && !input.regenerate) {
+      // A live link already exists; the raw token is never stored, so we can't return it. Tell the
+      // UI so it can offer copy-vs-regenerate. expires_at is null when the workspace disables expiry.
+      return { status: 'exists' as const, expires_at: expiryEnforced ? route.share_token_expires_at : null };
+    }
+    const rawToken = randomBytes(32).toString('base64url');
+    const hash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + SHARE_TOKEN_TTL_DAYS * MS_PER_DAY);
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({
+        share_token_hash: hash,
+        share_token_expires_at: expiresAt,
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', input.route_id)
+      .execute();
+    await this.logRouteActivity(undefined, auth, input.route_id, 'update', 'link_created', 'Volunteer link created');
+    return { status: 'minted' as const, token: rawToken, expires_at: expiryEnforced ? expiresAt.toISOString() : null };
+  }
+
+  public async revokeShareLink(auth: IAuthKeyPayload, routeId: string) {
+    const route = await this.routesRepo.getRouteRow(auth.tenant_id, routeId);
+    if (!route) throw new NotFoundError('Route not found');
+    await this.routesRepo.db
+      .updateTable('delivery_routes')
+      .set({ share_token_hash: null, share_token_expires_at: null, updatedby_id: auth.user_id, updated_at: new Date() })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .execute();
+    return { id: routeId };
+  }
+
+  // ---- Public volunteer path (token is the credential) --------------------
+  public hashToken(rawToken: string): string {
+    return createHash('sha256').update(rawToken).digest('hex');
+  }
+
+  /**
+   * Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload.
+   * The capability token says WHAT may be touched; the companion session (X-Companion-Session)
+   * proves WHO is touching it — both are required (COMPANION-APPS-PLAN.md §2).
+   */
+  public async getPublicRoute(rawToken: string, sessionToken: string | null) {
+    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
+    if (!route) return null;
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
+    if (!this.isTokenUsable(route, expiryEnforced)) return null;
+    await this.requireCompanionSession(route, sessionToken);
+    const tenantId = String(route.tenant_id);
+    const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
+    const orgName = await this.publicOrgName(tenantId);
+    return this.publicRoutePayload(route, stops, orgName);
+  }
+
+  public async publicStopAction(
+    rawToken: string,
+    stopId: string,
+    action: 'deliver' | 'skip' | 'defer' | 'undo',
+    reason: string | null,
+    sessionToken: string | null,
+    opId: string | null,
+  ) {
+    const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
+    if (!route) return null;
+    const enforceExpiry = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
+    if (!this.isTokenUsable(route, enforceExpiry)) return null;
+    await this.requireCompanionSession(route, sessionToken);
+    const tenantId = String(route.tenant_id);
+    const routeId = String(route.id);
+    const actor: IAuthKeyPayload = {
+      tenant_id: tenantId,
+      user_id: String(route.createdby_id),
+      session_id: 'volunteer-link',
+    };
+    await this.routesRepo.transaction().execute(async (trx) => {
+      // Idempotency ledger (companion_ops, scope 'deliveries'): claim the opId
+      // inside the SAME transaction as the action, so claim + apply commit or
+      // roll back together. A replayed opId conflicts, applies nothing, and
+      // falls through to return the current authoritative payload — this is
+      // what makes a retried "defer" move the stop once, not twice.
+      if (opId) {
+        const claimed = await trx
+          .insertInto('companion_ops')
+          .values({ tenant_id: tenantId, op_id: opId, scope: 'deliveries' })
+          .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
+          .returning('op_id')
+          .executeTakeFirst();
+        if (!claimed) return;
+      }
+      const stop = await trx
+        .selectFrom('delivery_route_stops')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', stopId)
+        .where('route_id', '=', routeId)
+        .executeTakeFirst();
+      if (!stop) throw new NotFoundError('Stop not found');
+
+      if (action === 'defer') {
+        await this.deferStop(trx, actor, routeId, stopId);
+      } else if (action === 'undo') {
+        await this.undoStop(trx, actor, routeId, stopId);
+      } else {
+        await this.applyStopTransition(trx, actor, routeId, stopId, action, reason, 'volunteer_link');
+      }
+    });
+    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId);
+    const fresh = await this.routesRepo.getRouteRow(tenantId, routeId);
+    const orgName = await this.publicOrgName(tenantId);
+    return fresh ? this.publicRoutePayload(fresh, stops, orgName) : null;
+  }
+
+  /**
+   * The volunteer-identity gate on every public data request. Throws
+   * UnauthorizedError (401 — no/invalid device session, the gate re-verifies)
+   * or ForbiddenError (403 — verified but not yet admin-approved); the route
+   * handler passes those two statuses through so the companion gate can render
+   * its verify/pending states, and keeps the uniform 404 for dead tokens.
+   */
+  private async requireCompanionSession(
+    route: { tenant_id: string } & Record<string, unknown>,
+    sessionToken: string | null,
+  ): Promise<void> {
+    const volunteerId = route['volunteer_person_id'];
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: String(route.tenant_id),
+      volunteer_person_id: volunteerId == null ? null : String(volunteerId),
+    });
+  }
+
+  // ---- Shared transition helpers ------------------------------------------
+  private async applyStopTransition(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    stopId: string,
+    action: 'deliver' | 'skip',
+    reason: string | null,
+    via: StopVia,
+  ): Promise<void> {
+    const stop = await trx
+      .selectFrom('delivery_route_stops')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', stopId)
+      .where('route_id', '=', routeId)
+      .executeTakeFirst();
+    if (!stop) throw new NotFoundError('Stop not found');
+
+    const now = new Date();
+    if (action === 'deliver') {
+      await trx
+        .updateTable('delivery_route_stops')
+        .set({
+          status: 'delivered',
+          reason: null,
+          acted_at: now,
+          acted_via: via,
+          updatedby_id: auth.user_id,
+          updated_at: now,
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .execute();
+      await trx
+        .updateTable('delivery_requests')
+        .set({ status: 'delivered', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(stop.request_id))
+        .execute();
+    } else {
+      const skipReason = reason ?? 'Other';
+      await trx
+        .updateTable('delivery_route_stops')
+        .set({
+          status: 'skipped',
+          reason: skipReason,
+          acted_at: now,
+          acted_via: via,
+          updatedby_id: auth.user_id,
+          updated_at: now,
+        })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stopId)
+        .execute();
+      // A skipped house returns to the planning pool automatically.
+      await trx
+        .updateTable('delivery_requests')
+        .set({ status: 'approved', skip_reason: skipReason, updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', String(stop.request_id))
+        .execute();
+    }
+
+    await this.advanceRouteStatus(trx, auth, routeId, via);
+    const message =
+      action === 'deliver'
+        ? `Stop ${stop.seq} delivered${via === 'volunteer_link' ? ' via volunteer link' : ''}`
+        : `Stop ${stop.seq} skipped: ${(reason ?? 'Other').toLowerCase()}${via === 'volunteer_link' ? ' via volunteer link' : ''}`;
+    await this.logRouteActivity(
+      trx,
+      auth,
+      routeId,
+      'update',
+      action === 'deliver' ? 'stop_delivered' : 'stop_skipped',
+      message,
+      via,
+    );
+  }
+
+  private async deferStop(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    stopId: string,
+  ): Promise<void> {
+    const stops = await trx
+      .selectFrom('delivery_route_stops')
+      .select(['id', 'seq', 'status'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('route_id', '=', routeId)
+      .orderBy('seq', 'asc')
+      .execute();
+    const target = stops.find((s) => String(s.id) === stopId);
+    if (!target || target.status !== 'pending') return;
+    // Move the target to the end: rebuild the order with it last, then renumber via a temp offset.
+    const others = stops.filter((s) => String(s.id) !== stopId);
+    const newOrder = [...others.map((s) => String(s.id)), stopId];
+    await this.applySeqOrder(trx, auth.tenant_id, newOrder);
+    await this.renumberAndRecompute(trx, auth, routeId);
+    await this.logRouteActivity(
+      trx,
+      auth,
+      routeId,
+      'update',
+      'stop_deferred',
+      'Stop moved to the end of the route',
+      'volunteer_link',
+    );
+  }
+
+  private async undoStop(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    stopId: string,
+  ): Promise<void> {
+    const stop = await trx
+      .selectFrom('delivery_route_stops')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', stopId)
+      .where('route_id', '=', routeId)
+      .executeTakeFirst();
+    if (!stop) throw new NotFoundError('Stop not found');
+    const now = new Date();
+    await trx
+      .updateTable('delivery_route_stops')
+      .set({
+        status: 'pending',
+        reason: null,
+        acted_at: null,
+        acted_via: null,
+        updatedby_id: auth.user_id,
+        updated_at: now,
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', stopId)
+      .execute();
+    // Restore the request to the pool state (approved) — undo clears the delivered/skipped result.
+    await trx
+      .updateTable('delivery_requests')
+      .set({ status: 'approved', skip_reason: null, updatedby_id: auth.user_id, updated_at: now })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', String(stop.request_id))
+      .execute();
+    // Undoing from a completed route reopens it to in_progress.
+    await trx
+      .updateTable('delivery_routes')
+      .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .where('status', '=', 'completed')
+      .execute();
+    await this.logRouteActivity(trx, auth, routeId, 'update', 'stop_undo', `Stop ${stop.seq} undone`, 'volunteer_link');
+  }
+
+  /** First action flips assigned → in_progress; all-terminal auto-completes the route. */
+  private async advanceRouteStatus(
+    trx: Transaction<Models>,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    _via: StopVia,
+  ): Promise<void> {
+    const now = new Date();
+    const counts = await trx
+      .selectFrom('delivery_route_stops')
+      .select([
+        ({ fn }) => fn.count<number>('id').as('total'),
+        ({ fn }) => fn.count<number>('id').filterWhere('status', '=', 'pending').as('pending'),
+      ])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('route_id', '=', routeId)
+      .executeTakeFirst();
+    const total = Number(counts?.total ?? 0);
+    const pending = Number(counts?.pending ?? 0);
+    if (total > 0 && pending === 0) {
+      await trx
+        .updateTable('delivery_routes')
+        .set({ status: 'completed', updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .execute();
+      await this.logRouteActivity(
+        trx,
+        auth,
+        routeId,
+        'close',
+        'route_completed',
+        'Route auto-completed: every stop handled',
+      );
+    } else {
+      await trx
+        .updateTable('delivery_routes')
+        .set({ status: 'in_progress', updatedby_id: auth.user_id, updated_at: now })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', routeId)
+        .where('status', 'in', ['assigned', 'draft'])
+        .execute();
+    }
+  }
+
+  private async setStopSeq(trx: Transaction<Models>, tenantId: string, stopId: string, seq: number): Promise<void> {
+    await trx
+      .updateTable('delivery_route_stops')
+      .set({ seq })
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', stopId)
+      .execute();
+  }
+
+  /** Assign contiguous 1..n seq values to the given ordered stop ids, avoiding unique collisions. */
+  private async applySeqOrder(trx: Transaction<Models>, tenantId: string, orderedIds: string[]): Promise<void> {
+    const OFFSET = 100000;
+    for (let i = 0; i < orderedIds.length; i++) {
+      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', OFFSET + i);
+    }
+    for (let i = 0; i < orderedIds.length; i++) {
+      await this.setStopSeq(trx, tenantId, orderedIds[i] ?? '', i + 1);
+    }
+  }
+
+  /** Renumber stops to contiguous seq in current order and recompute leg times + route estimate. */
+  private async renumberAndRecompute(trx: Transaction<Models>, auth: IAuthKeyPayload, routeId: string): Promise<void> {
+    const route = await trx
+      .selectFrom('delivery_routes')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .executeTakeFirst();
+    if (!route) return;
+    const params = this.paramsFromRoute(route.params);
+    const start: LatLng = { lat: Number(route.start_lat), lng: Number(route.start_lng) };
+    const stops = await this.stopsRepo.getStopsForRoute(auth.tenant_id, routeId, trx);
+    // Ensure contiguous seq.
+    await this.applySeqOrder(
+      trx,
+      auth.tenant_id,
+      stops.map((s) => s.id),
+    );
+
+    let cursor: LatLng = start;
+    let totalMinutes = 0;
+    let totalKm = 0;
+    for (const stop of stops) {
+      const point: LatLng = { lat: stop.lat ?? start.lat, lng: stop.lng ?? start.lng };
+      const leg = legMinutes(cursor, point, params.avgSpeedKmh);
+      await trx
+        .updateTable('delivery_route_stops')
+        .set({ leg_minutes: Math.round(leg * 10) / 10 })
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', stop.id)
+        .execute();
+      totalMinutes += leg + params.serviceMinutes;
+      totalKm += roadKm(cursor, point);
+      cursor = point;
+    }
+    if (params.includeReturnLeg && stops.length > 0) totalKm += roadKm(cursor, start);
+    await trx
+      .updateTable('delivery_routes')
+      .set({
+        est_minutes: Math.round(totalMinutes * 10) / 10,
+        est_km: Math.round(totalKm * 10) / 10,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', routeId)
+      .execute();
+  }
+
+  private paramsFromRoute(raw: unknown): RouteParamsSnapshot {
+    const obj = typeof raw === 'string' ? safeParse(raw) : raw;
+    const rec = (obj ?? {}) as Record<string, unknown>;
+    return {
+      serviceMinutes: typeof rec['serviceMinutes'] === 'number' ? rec['serviceMinutes'] : SERVICE_MINUTES_PER_STOP,
+      avgSpeedKmh: typeof rec['avgSpeedKmh'] === 'number' ? rec['avgSpeedKmh'] : AVG_SPEED_KMH,
+      includeReturnLeg: rec['includeReturnLeg'] === true,
+      drivers: typeof rec['drivers'] === 'number' ? rec['drivers'] : null,
+    };
+  }
+
+  private async readRouteProgress(trx: Transaction<Models>, tenantId: string, routeId: string) {
+    const route = await trx
+      .selectFrom('delivery_routes')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', routeId)
+      .executeTakeFirst();
+    const stops = await this.stopsRepo.getStopsForRoute(tenantId, routeId, trx);
+    return {
+      id: routeId,
+      status: route ? String(route.status) : 'unknown',
+      est_minutes: route ? Number(route.est_minutes) : 0,
+      est_km: route ? Number(route.est_km) : 0,
+      stops,
+    };
+  }
+
+  /** `enforceExpiry` is the live Workspace → App policy (volunteerLinksExpire) — when the
+   * workspace disables expiry, a link stays usable for the life of the route (until revoked
+   * or the route is canceled). */
+  private isTokenUsable(
+    route: { status?: unknown; share_token_expires_at?: unknown } | undefined,
+    enforceExpiry: boolean,
+  ): route is {
+    id: string;
+    tenant_id: string;
+    createdby_id: string;
+    status: string;
+    share_token_expires_at: Date | string | null;
+  } & Record<string, unknown> {
+    if (!route) return false;
+    const status = String((route as Record<string, unknown>)['status']);
+    if (status === 'canceled') return false;
+    if (!enforceExpiry) return true;
+    const exp = (route as Record<string, unknown>)['share_token_expires_at'];
+    if (!exp) return false;
+    return new Date(String(exp)) > new Date();
+  }
+
+  private async publicOrgName(tenantId: string): Promise<string> {
+    const row = await this.routesRepo.db
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'organization.name')
+      .executeTakeFirst();
+    const value = row?.value;
+    return typeof value === 'string' && value.trim() ? value : 'Our organization';
+  }
+
+  private publicRoutePayload(
+    route: Record<string, unknown>,
+    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
+    orgName: string,
+  ) {
+    const delivered = stops.filter((s) => s.status === 'delivered').length;
+    // Data minimization (spec §4.4): first name + address only. No email/phone/notes/person_id.
+    return {
+      organization_name: orgName,
+      route_name: String(route['name'] ?? 'Delivery route'),
+      status: String(route['status'] ?? 'assigned'),
+      start: { lat: Number(route['start_lat']), lng: Number(route['start_lng']) },
+      stops_total: stops.length,
+      stops_delivered: delivered,
+      stops: stops.map((s) => ({
+        id: s.id,
+        seq: s.seq,
+        first_name: s.first_name ?? 'Neighbour',
+        address: s.address,
+        lat: s.lat,
+        lng: s.lng,
+        status: s.status,
+        reason: s.reason,
+        acted_at: s.acted_at,
+      })),
+    };
+  }
+
+  private sanitizeRoute(
+    route: Record<string, unknown>,
+    stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
+    volunteerName: string | null,
+    expiryEnforced: boolean,
+  ) {
+    // link_expires_at is a POLICY-shaped value: null when the workspace disables expiry, so the
+    // UI never shows a date that won't be enforced.
+    const expiresAt = expiryEnforced ? route['share_token_expires_at'] : null;
+    const linkActive =
+      route['share_token_hash'] != null &&
+      (!expiryEnforced || (!!expiresAt && new Date(String(expiresAt)) > new Date()));
+    return {
+      id: String(route['id']),
+      name: String(route['name'] ?? ''),
+      status: String(route['status'] ?? 'draft'),
+      volunteer_person_id: route['volunteer_person_id'] != null ? String(route['volunteer_person_id']) : null,
+      volunteer_name: volunteerName,
+      start_address: String(route['start_address'] ?? ''),
+      start_lat: Number(route['start_lat']),
+      start_lng: Number(route['start_lng']),
+      est_minutes: Number(route['est_minutes'] ?? 0),
+      est_km: Number(route['est_km'] ?? 0),
+      scheduled_for: (route['scheduled_for'] as Date | string | null) ?? null,
+      link_active: linkActive,
+      link_expires_at: (expiresAt as Date | string | null) ?? null,
+      stops,
+    };
+  }
+
+  /**
+   * Yard-sign standing changes surface on the household's (and requester's) activity feed —
+   * the sign lives at the door, so that's where its history belongs (honest attribution, §22.7).
+   * Route-level history is logged separately by applyStopTransition/logRouteActivity.
+   */
+  private async logRequestStanding(
+    trx: Transaction<Models> | undefined,
+    auth: IAuthKeyPayload,
+    requestIds: string[],
+    status: 'recorded' | SetDeliveryRequestStatusType['status'],
+  ): Promise<void> {
+    const db = trx ?? this.requestsRepo.db;
+    const labels: Record<string, string> = {
+      recorded: 'Yard sign request recorded',
+      new: 'Yard sign request reopened',
+      approved: 'Yard sign request approved',
+      declined: 'Yard sign request declined',
+      delivered: 'Yard sign marked delivered',
+    };
+    const message = labels[status] ?? `Yard sign request ${status}`;
+    try {
+      const rows = await db
+        .selectFrom('delivery_requests')
+        .select(['id', 'household_id', 'person_id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', requestIds)
+        .execute();
+      for (const r of rows) {
+        const targets: Array<{ entity: string; entity_id: string }> = [
+          { entity: 'households', entity_id: String(r.household_id) },
+        ];
+        if (r.person_id != null) targets.push({ entity: 'persons', entity_id: String(r.person_id) });
+        for (const target of targets) {
+          await this.userActivity.log(
+            {
+              tenant_id: auth.tenant_id,
+              user_id: auth.user_id,
+              activity: status === 'recorded' ? 'create' : 'update',
+              entity: target.entity,
+              entity_id: target.entity_id,
+              quantity: 1,
+              metadata: {
+                action: 'yard_sign_status',
+                message,
+                entity_label: message,
+                request_id: String(r.id),
+                via: 'staff',
+              },
+            },
+            trx,
+          );
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to log yard sign standing activity');
+    }
+  }
+
+  private async logRouteActivity(
+    trxOrAny: Transaction<Models> | unknown,
+    auth: IAuthKeyPayload,
+    routeId: string,
+    activity: 'create' | 'update' | 'assign' | 'unassign' | 'close' | 'reopen' | 'delete',
+    action: string,
+    message: string,
+    via?: StopVia,
+  ): Promise<void> {
+    const trx = isTransaction(trxOrAny) ? trxOrAny : undefined;
+    try {
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity,
+          entity: 'delivery_routes',
+          entity_id: routeId,
+          quantity: 1,
+          metadata: { action, message, entity_label: message, via: via ?? 'staff' },
+        },
+        trx,
+      );
+    } catch (err) {
+      logger.error({ err }, 'Failed to log delivery route activity');
+    }
+  }
+}
+
+function isTransaction(value: unknown): value is Transaction<Models> {
+  return typeof value === 'object' && value !== null && 'selectFrom' in (value as Record<string, unknown>);
+}
+
+function safeParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
   }
 }
 `````
@@ -80686,72 +80814,128 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 }
 `````
 
-## File: apps/backend/Dockerfile
-`````dockerfile
-# syntax=docker/dockerfile:1
-#
-# Production image for the pplCRM backend (Fastify + tRPC + Kysely).
-#
-# The backend is a SINGLE process: it serves the API *and* runs the in-process background-job
-# worker, the webhook worker, and self-scheduled cron (via the background_jobs table + Postgres
-# LISTEN/NOTIFY). There is no separate worker/scheduler to deploy — but for that reason, run one
-# instance to start (the DB queue makes scaling out safe later via SELECT ... FOR UPDATE SKIP LOCKED).
-#
-# Migrations are NOT run here. They run as a separate deploy step as the `pplcrm_owner` role, via
-# `npx tsx apps/backend/src/app/kyselyinit.ts` over the source tree (the migrator imports the .ts
-# migration files). This image sets MIGRATE_ON_BOOT=false and carries no migration files.
+## File: apps/backend/src/app/routes.ts
+`````typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { sql } from 'kysely';
 
-##############################
-# Stage 1 — build the backend
-##############################
-# Node 26 matches the repo's local runtime. esbuild bundles main.ts to an ESM file but keeps
-# node_modules EXTERNAL (project.json: packages "external", generatePackageJson false), so the
-# runtime image must ship the production node_modules alongside the bundle.
-FROM node:26-bookworm-slim AS builder
-WORKDIR /app
+import { BaseRepository } from './lib/base.repo';
+import emailsApiRoute from './modules/emails/routes/emails-api.route';
+import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
+import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
+import filesRoute from './modules/files/routes/files.route';
+import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
+import importsDownloadRoute from './modules/imports/routes/imports-download.route';
+import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
+import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
+import eventsPublicRoute from './modules/events/routes/events-public.route';
+import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
+import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
+import unsubscribeRoute from './modules/newsletters/routes/unsubscribe.route';
+import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
+import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
+import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
+import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
+import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
+import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
 
-# Install ALL deps (incl. dev) for the Nx/esbuild build. Lockfile first for layer caching.
-# .npmrc carries legacy-peer-deps=true (Nx 23 vs Angular 22 peer conflict) — npm ci needs it here too.
-COPY package.json package-lock.json .npmrc ./
-RUN npm ci
+// A worker heartbeat older than this = the in-process job worker is wedged (the ops watchdog
+// beats every 5 minutes; 20 = 3-4 missed cycles plus slack for retry backoff).
+const WORKER_HEARTBEAT_STALE_MS = 20 * 60 * 1000;
 
-# The backend build pulls cross-package types (@common, the tRPC router type) from elsewhere in the
-# monorepo, so the whole repo must be present. The build's `generate-context` step runs `npx repomix`
-# to refresh STRUCTURE.md and needs network access at build time (standard for image builds).
-COPY . .
+export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
+  // --- Public REST routes (No Auth required) ---
 
-# Produce dist/apps/backend (ESM bundle; node_modules NOT bundled).
-RUN npx nx build backend --configuration=production
+  // Register public web forms submission REST routes
+  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
 
-# Re-resolve node_modules to production-only for the runtime image. Because esbuild left every
-# dependency external, all *runtime* deps must remain — only devDependencies are dropped.
-# The `prepare` script runs husky (a devDependency); under --omit=dev husky is gone and the script
-# fails with 127. Strip the hook first — dependency install scripts still run (no native-dep risk).
-RUN npm pkg delete scripts.prepare && npm ci --omit=dev
+  // Register public volunteer events REST routes
+  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
 
-######################################
-# Stage 2 — slim runtime (serve only)
-######################################
-FROM node:26-bookworm-slim AS runtime
-WORKDIR /app
-ENV NODE_ENV=production \
-    HOST=0.0.0.0 \
-    PORT=3000 \
-    MIGRATE_ON_BOOT=false
+  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
+  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
 
-# Ship the pruned prod deps + the bundle. Run as the image's built-in unprivileged `node` user.
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
-COPY --from=builder --chown=node:node /app/dist/apps/backend ./dist/apps/backend
-COPY --from=builder --chown=node:node /app/package.json ./package.json
+  // Register public RSVP event pages REST routes
+  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
 
-USER node
-EXPOSE 3000
+  // Register public volunteer delivery-route pages (token is the credential, §14)
+  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
 
-# Readiness probe hits the DB-aware /healthz (returns 503 when Postgres is unreachable).
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  // Companion access layer: verify + approve gate for both volunteer companions
+  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
 
-CMD ["node", "--enable-source-maps", "dist/apps/backend/main.js"]
+  // Register Stripe billing webhook route
+  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
+
+  // Register Stripe donations webhook route
+  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
+
+  // Register SendGrid newsletters event webhook route
+  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
+
+  // One-click unsubscribe for automation emails (signed token, no session)
+  fastify.register(unsubscribeRoute, { prefix: '/api/unsubscribe' });
+
+  // Register Postmark transactional bounce/spam-complaint webhook route
+  fastify.register(postmarkWebhookRoute, { prefix: '/api/postmark' });
+
+  // Register Zapier inbound action routes (API key auth handled inside route)
+  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
+
+  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
+  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
+
+  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
+  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
+
+  // Register exports download REST route (auth handled inside route via query token)
+  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
+
+  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
+  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
+
+  // Register email attachments REST routes (auth handled inside route via token/query token)
+  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
+
+  // Register files download REST route (auth handled inside route via token/query token)
+  fastify.register(filesRoute, { prefix: '/api/files' });
+
+  // Root health check — cheap liveness ping (process is up); does NOT touch Postgres.
+  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
+
+  // Readiness probe — verifies Postgres is reachable so an orchestrator can gate traffic/restarts.
+  // Returns 503 (not 200) when the DB is down; body is intentionally minimal (no error details).
+  fastify.get('/healthz', async (_req, res) => {
+    try {
+      await sql`select 1`.execute(BaseRepository.dbInstance);
+      return res.send({ status: 'ok' });
+    } catch {
+      return res.code(503).send({ status: 'unavailable' });
+    }
+  });
+
+  // Job-worker dead-man's switch, probed by the external availability test (NOT wired into the
+  // container's readiness probe — a jammed queue must not pull the API from ingress). The ops
+  // watchdog cron updates ops_heartbeats every 5 minutes; a beat older than 20 minutes (3-4
+  // missed cycles plus slack) means the in-process worker is wedged even though HTTP is fine.
+  // Missing row/table (fresh DB, migration not applied yet) also reports stale — the safe
+  // direction, and the reason for the catch.
+  fastify.get('/healthz/worker', async (_req, res) => {
+    try {
+      const row = await BaseRepository.dbInstance
+        .selectFrom('ops_heartbeats')
+        .select('beat_at')
+        .where('name', '=', 'ops_watchdog')
+        .executeTakeFirst();
+      const stale = !row || Date.now() - new Date(row.beat_at).getTime() > WORKER_HEARTBEAT_STALE_MS;
+      return stale ? res.code(503).send({ status: 'stale' }) : res.send({ status: 'ok' });
+    } catch {
+      return res.code(503).send({ status: 'stale' });
+    }
+  });
+
+  done();
+};
 `````
 
 ## File: apps/website/src/app/ui/site-footer.ts
@@ -84815,6 +84999,20 @@ import { SmsService } from '../../lib/sms/sms.service';
 import { hashToken } from '../../lib/token-hash';
 import { getPlanDef } from '@common';
 import { assertNotDemoMode } from '../demo/demo-guard';
+import { DEMO_MANIFEST_SETTINGS_KEY } from '../demo/demo-seed';
+import { STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY } from '../donations/stripe-connect';
+
+/** Server-managed settings keys that must never be written via the public upsert: the
+ * verified sender/domain lists back the newsletter send guards, the Stripe Connect account
+ * id/status back the donations fail-closed gate, and the demo manifest drives demo-data
+ * deletion. A direct write to any of them is a guard bypass or data corruption. */
+const SERVER_MANAGED_SETTINGS_MESSAGES: Record<string, string> = {
+  'communications.verified_emails': 'Verified emails list cannot be modified directly.',
+  'communications.verified_domains': 'Verified domains list cannot be modified directly.',
+  [STRIPE_ACCOUNT_ID_KEY]: 'Stripe connection settings cannot be modified directly.',
+  [STRIPE_ACCOUNT_STATUS_KEY]: 'Stripe connection settings cannot be modified directly.',
+  [DEMO_MANIFEST_SETTINGS_KEY]: 'This setting is managed by pplCRM and cannot be modified directly.',
+};
 import { SettingsRepo } from './repositories/settings.repo';
 
 const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
@@ -84875,15 +85073,14 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
-    // Workspace configuration is locked while the tenant is on the demo test drive.
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-
-    // 1. Block direct updates to verified_emails setting key
-    if (entries.some((entry) => entry.key === 'communications.verified_emails')) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Verified emails list cannot be modified directly.',
-      });
+    // 1. Block direct updates to server-managed keys (SERVER_MANAGED_SETTINGS_MESSAGES).
+    //    Ordinary workspace settings are deliberately NOT demo-gated — the demo guard covers
+    //    only outward-facing actions (verification, sync, sending, invites, Stripe Connect).
+    for (const entry of entries) {
+      const blockedMessage = SERVER_MANAGED_SETTINGS_MESSAGES[entry.key];
+      if (blockedMessage) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: blockedMessage });
+      }
     }
 
     // 2. Validate default from and reply-to emails
@@ -85657,130 +85854,6 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     return this.generateApiKey(auth);
   }
 }
-`````
-
-## File: apps/backend/src/app/routes.ts
-`````typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { sql } from 'kysely';
-
-import { BaseRepository } from './lib/base.repo';
-import emailsApiRoute from './modules/emails/routes/emails-api.route';
-import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
-import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
-import filesRoute from './modules/files/routes/files.route';
-import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
-import importsDownloadRoute from './modules/imports/routes/imports-download.route';
-import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
-import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
-import eventsPublicRoute from './modules/events/routes/events-public.route';
-import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
-import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
-import unsubscribeRoute from './modules/newsletters/routes/unsubscribe.route';
-import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
-import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
-import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
-import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
-import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
-import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
-
-// A worker heartbeat older than this = the in-process job worker is wedged (the ops watchdog
-// beats every 5 minutes; 20 = 3-4 missed cycles plus slack for retry backoff).
-const WORKER_HEARTBEAT_STALE_MS = 20 * 60 * 1000;
-
-export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
-  // --- Public REST routes (No Auth required) ---
-
-  // Register public web forms submission REST routes
-  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
-
-  // Register public volunteer events REST routes
-  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
-
-  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
-  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
-
-  // Register public RSVP event pages REST routes
-  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
-
-  // Register public volunteer delivery-route pages (token is the credential, §14)
-  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
-
-  // Companion access layer: verify + approve gate for both volunteer companions
-  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
-
-  // Register Stripe billing webhook route
-  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
-
-  // Register Stripe donations webhook route
-  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
-
-  // Register SendGrid newsletters event webhook route
-  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
-
-  // One-click unsubscribe for automation emails (signed token, no session)
-  fastify.register(unsubscribeRoute, { prefix: '/api/unsubscribe' });
-
-  // Register Postmark transactional bounce/spam-complaint webhook route
-  fastify.register(postmarkWebhookRoute, { prefix: '/api/postmark' });
-
-  // Register Zapier inbound action routes (API key auth handled inside route)
-  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
-
-  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
-  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
-
-  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
-  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
-
-  // Register exports download REST route (auth handled inside route via query token)
-  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
-
-  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
-  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
-
-  // Register email attachments REST routes (auth handled inside route via token/query token)
-  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
-
-  // Register files download REST route (auth handled inside route via token/query token)
-  fastify.register(filesRoute, { prefix: '/api/files' });
-
-  // Root health check — cheap liveness ping (process is up); does NOT touch Postgres.
-  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
-
-  // Readiness probe — verifies Postgres is reachable so an orchestrator can gate traffic/restarts.
-  // Returns 503 (not 200) when the DB is down; body is intentionally minimal (no error details).
-  fastify.get('/healthz', async (_req, res) => {
-    try {
-      await sql`select 1`.execute(BaseRepository.dbInstance);
-      return res.send({ status: 'ok' });
-    } catch {
-      return res.code(503).send({ status: 'unavailable' });
-    }
-  });
-
-  // Job-worker dead-man's switch, probed by the external availability test (NOT wired into the
-  // container's readiness probe — a jammed queue must not pull the API from ingress). The ops
-  // watchdog cron updates ops_heartbeats every 5 minutes; a beat older than 20 minutes (3-4
-  // missed cycles plus slack) means the in-process worker is wedged even though HTTP is fine.
-  // Missing row/table (fresh DB, migration not applied yet) also reports stale — the safe
-  // direction, and the reason for the catch.
-  fastify.get('/healthz/worker', async (_req, res) => {
-    try {
-      const row = await BaseRepository.dbInstance
-        .selectFrom('ops_heartbeats')
-        .select('beat_at')
-        .where('name', '=', 'ops_watchdog')
-        .executeTakeFirst();
-      const stale = !row || Date.now() - new Date(row.beat_at).getTime() > WORKER_HEARTBEAT_STALE_MS;
-      return stale ? res.code(503).send({ status: 'stale' }) : res.send({ status: 'ok' });
-    } catch {
-      return res.code(503).send({ status: 'stale' });
-    }
-  });
-
-  done();
-};
 `````
 
 ## File: apps/website/src/app/pricing/pricing-page.html
@@ -91713,399 +91786,6 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
 ];
 `````
 
-## File: libs/common/src/lib/help/articles/engagement.ts
-`````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-      'stripe',
-      'processor',
-      'residency',
-      'paused',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
-      },
-      {
-        kind: 'p',
-        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
-      },
-      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
-      {
-        kind: 'p',
-        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
-      },
-      {
-        kind: 'p',
-        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
-      },
-      {
-        kind: 'p',
-        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Donations are paused until you confirm residency',
-        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page: your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Add ticket tiers and set their order',
-            detail:
-              'On the event’s edit page, add ticket types under **Ticket types** (leave it empty for a free RSVP). Drag a ticket by its handle to set the order; the order you set is the order attendees see on the public page.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-      'api',
-      'api key',
-      'zapier',
-      'integration',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Drag a field by its handle to reorder it; the order you set is the order people see on the public form. Changes apply to the live form instantly. There is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
-      {
-        kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
-      },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
-      {
-        kind: 'list',
-        items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
-        ],
-      },
-      { kind: 'h2', id: 'api', text: 'Bring your own form (API)' },
-      {
-        kind: 'p',
-        text: 'Already have a form that matches your website’s design? Keep it. Point its submit action at your form’s public endpoint — `POST /api/forms/submit/<slug>?t=<workspace>` on the API domain (the same URL the raw-HTML embed uses) — with your enabled field names, and every submission still becomes a person, applies your tags and lists, and respects double opt-in. Include the hidden `_hp` field and leave it empty; it’s the spam trap.',
-      },
-      {
-        kind: 'p',
-        text: 'Submitting from your own server or backend instead? Generate a **workspace API key** (Workspace settings → **API keys**) and send it as an `Authorization: Bearer` header. The key identifies your workspace on its own — no `?t=` needed — and lifts the anonymous per-visitor rate limit in favor of a per-workspace one built for batch traffic. The same key authenticates Zapier and the event RSVP and volunteer signup endpoints.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Never put the API key in a public page',
-        text: 'The key is a secret — anyone who has it can write into your workspace. Browser-side forms don’t need it (the public endpoint works keyless); the key belongs only in server-side code. If it ever leaks, regenerate it in Workspace settings → API keys, which invalidates the old key instantly.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Donation forms show here too',
-        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip, and selecting one previews it right beside the list like any other form. Because they collect card payments through your connected Stripe account, they aren’t edited in the live editor. **Edit donation form** opens the [Donations](/donations) fundraising builder, where the amount and payment settings live, and their responses arrive as gifts in the Donations ledger rather than a form responses tab.',
-      },
-    ],
-  },
-  {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
-    summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
-      },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
-          },
-          {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
-          },
-          {
-            title: 'Confirm',
-            detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
-      {
-        kind: 'p',
-        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link, **sends it to them automatically** by email and text (whichever contacts their [person record](/people) has on file), and copies it to your clipboard as a backup. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the same email or mobile, and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Before you assign',
-        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their link and verification code go. No contact on file means nothing can be sent and the link can’t be opened — the app warns you and leaves the copied link for you to deliver another way.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      {
-        kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
-      },
-      {
-        kind: 'p',
-        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Assigning **sends the volunteer their private link automatically** by email and text, using whichever contacts their person record has on file — no contact on file, and the app warns you to share the link yourself via **Copy volunteer link** (note that copying mints a fresh link, which replaces the one that was sent). If the message went missing — or the volunteer’s contact details changed — pick **Resend link to volunteer** from the route’s ⋯ menu: it emails/texts them a fresh link (the old one stops working). The link expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy or resend the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
-      },
-      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
-      {
-        kind: 'p',
-        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
-      },
-      {
-        kind: 'p',
-        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
-      },
-    ],
-  },
-];
-`````
-
 ## File: libs/common/src/lib/kysely.models.ts
 `````typescript
 // tsco:ignore
@@ -94230,6 +93910,399 @@ export const env = {
   webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
   webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
 };
+`````
+
+## File: libs/common/src/lib/help/articles/engagement.ts
+`````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+      'stripe',
+      'processor',
+      'residency',
+      'paused',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
+      },
+      {
+        kind: 'p',
+        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
+      },
+      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
+      {
+        kind: 'p',
+        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
+      },
+      {
+        kind: 'p',
+        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
+      },
+      {
+        kind: 'p',
+        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Donations are paused until you confirm residency',
+        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page: your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Add ticket tiers and set their order',
+            detail:
+              'On the event’s edit page, add ticket types under **Ticket types** (leave it empty for a free RSVP). Drag a ticket by its handle to set the order; the order you set is the order attendees see on the public page.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+      'api',
+      'api key',
+      'zapier',
+      'integration',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Drag a field by its handle to reorder it; the order you set is the order people see on the public form. Changes apply to the live form instantly. There is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      { kind: 'h2', id: 'api', text: 'Bring your own form (API)' },
+      {
+        kind: 'p',
+        text: 'Already have a form that matches your website’s design? Keep it. Point its submit action at your form’s public endpoint — `POST /api/forms/submit/<slug>?t=<workspace>` on the API domain (the same URL the raw-HTML embed uses) — with your enabled field names, and every submission still becomes a person, applies your tags and lists, and respects double opt-in. Include the hidden `_hp` field and leave it empty; it’s the spam trap.',
+      },
+      {
+        kind: 'p',
+        text: 'Submitting from your own server or backend instead? Generate a **workspace API key** (Workspace settings → **API keys**) and send it as an `Authorization: Bearer` header. The key identifies your workspace on its own — no `?t=` needed — and lifts the anonymous per-visitor rate limit in favor of a per-workspace one built for batch traffic. The same key authenticates Zapier and the event RSVP and volunteer signup endpoints.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Never put the API key in a public page',
+        text: 'The key is a secret — anyone who has it can write into your workspace. Browser-side forms don’t need it (the public endpoint works keyless); the key belongs only in server-side code. If it ever leaks, regenerate it in Workspace settings → API keys, which invalidates the old key instantly.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Donation forms show here too',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip, and selecting one previews it right beside the list like any other form. Because they collect card payments through your connected Stripe account, they aren’t edited in the live editor. **Edit donation form** opens the [Donations](/donations) fundraising builder, where the amount and payment settings live, and their responses arrive as gifts in the Donations ledger rather than a form responses tab.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link, **sends it to them automatically** by email and text (whichever contacts their [person record](/people) has on file), and copies it to your clipboard as a backup. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the same email or mobile, and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their link and verification code go. No contact on file means nothing can be sent and the link can’t be opened — the app warns you and leaves the copied link for you to deliver another way.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Assigning **sends the volunteer their private link automatically** by email and text, using whichever contacts their person record has on file — no contact on file, and the app warns you to share the link yourself via **Copy volunteer link** (note that copying mints a fresh link, which replaces the one that was sent). If the message went missing — or the volunteer’s contact details changed — pick **Resend link to volunteer** from the route’s ⋯ menu: it emails/texts them a fresh link (the old one stops working). The link expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy or resend the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
+      {
+        kind: 'p',
+        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
+      },
+      {
+        kind: 'p',
+        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
+      },
+    ],
+  },
+];
 `````
 
 ## File: apps/website/src/app/faq/faq-page.ts
@@ -101151,50 +101224,6 @@ export class StatCard {
 }
 ````
 
-## File: libs/uxcommon/src/components/status-badge/status-badge.ts
-````typescript
-import { Component, computed, input } from '@angular/core';
-
-export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
-
-@Component({
-  selector: 'pc-status-badge',
-  template: `
-    <span class="badge font-semibold uppercase" [class]="badgeClass()">
-      <ng-content></ng-content>
-    </span>
-  `,
-})
-export class StatusBadge {
-  public type = input<PcStatusType>('ghost');
-  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
-
-  protected badgeClass = computed(() => {
-    const t = this.type();
-    let cls = '';
-    if (this.size() === 'xs') cls += 'badge-xs ';
-    else if (this.size() === 'sm') cls += 'badge-sm ';
-    else if (this.size() === 'md') cls += 'badge-md ';
-    else if (this.size() === 'lg') cls += 'badge-lg ';
-
-    switch (t) {
-      case 'success':
-        return cls + 'badge-success text-success-content';
-      case 'warning':
-        return cls + 'badge-warning text-warning-content';
-      case 'error':
-        return cls + 'badge-error text-error-content';
-      case 'info':
-        return cls + 'badge-info text-info-content';
-      case 'neutral':
-        return cls + 'badge-neutral text-neutral-content';
-      default:
-        return cls + 'badge-ghost';
-    }
-  });
-}
-````
-
 ## File: libs/uxcommon/src/components/swap/swap.ts
 ````typescript
 import { Component, input, output } from '@angular/core';
@@ -105431,6 +105460,50 @@ export class RowActions {
 }
 ````
 
+## File: libs/uxcommon/src/components/status-badge/status-badge.ts
+````typescript
+import { Component, computed, input } from '@angular/core';
+
+export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
+
+@Component({
+  selector: 'pc-status-badge',
+  template: `
+    <span class="badge whitespace-nowrap font-semibold uppercase" [class]="badgeClass()">
+      <ng-content></ng-content>
+    </span>
+  `,
+})
+export class StatusBadge {
+  public type = input<PcStatusType>('ghost');
+  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
+
+  protected badgeClass = computed(() => {
+    const t = this.type();
+    let cls = '';
+    if (this.size() === 'xs') cls += 'badge-xs ';
+    else if (this.size() === 'sm') cls += 'badge-sm ';
+    else if (this.size() === 'md') cls += 'badge-md ';
+    else if (this.size() === 'lg') cls += 'badge-lg ';
+
+    switch (t) {
+      case 'success':
+        return cls + 'badge-success text-success-content';
+      case 'warning':
+        return cls + 'badge-warning text-warning-content';
+      case 'error':
+        return cls + 'badge-error text-error-content';
+      case 'info':
+        return cls + 'badge-info text-info-content';
+      case 'neutral':
+        return cls + 'badge-neutral text-neutral-content';
+      default:
+        return cls + 'badge-ghost';
+    }
+  });
+}
+````
+
 ## File: libs/uxcommon/src/components/tags/tagitem.css
 ````css
 :host {
@@ -107930,7 +108003,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'assign', text: 'Assign and share' },
       {
         kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Assigning **sends the volunteer their private link automatically** by email and text, using whichever contacts their person record has on file — no contact on file, and the app warns you to share the link yourself via **Copy volunteer link** (note that copying mints a fresh link, which replaces the one that was sent). The link expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Assigning **sends the volunteer their private link automatically** by email and text, using whichever contacts their person record has on file — no contact on file, and the app warns you to share the link yourself via **Copy volunteer link** (note that copying mints a fresh link, which replaces the one that was sent). If the message went missing — or the volunteer’s contact details changed — pick **Resend link to volunteer** from the route’s ⋯ menu: it emails/texts them a fresh link (the old one stops working). The link expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy or resend the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
       },
       { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
       {

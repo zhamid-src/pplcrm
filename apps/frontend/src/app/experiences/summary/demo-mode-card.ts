@@ -36,9 +36,10 @@ import { DemoService } from './services/demo.service';
             report. Everything here is safe to open, edit, and delete.
           </p>
           <p class="text-sm text-base-content/60">
-            Sending email, inviting teammates, and workspace configuration (sender identities, domains, mailbox sync)
-            stay locked during the demo. When you’re ready, choose a plan, then exit demo mode. Your six draft forms,
-            the built-in tags, and anything you created yourself will be kept.
+            Sending email, inviting teammates, sender setup (verifying sender emails and domains, connecting a mailbox),
+            and donation setup (connecting Stripe) stay locked during the demo; everything else, including workspace
+            settings, works normally. When you’re ready, choose a plan, then exit demo mode. Your six draft forms, the
+            built-in tags, and anything you created yourself will be kept.
           </p>
 
           <div class="card-actions items-center gap-3">

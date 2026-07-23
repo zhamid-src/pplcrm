@@ -8,11 +8,23 @@ import { idSchema } from '@common';
 import { sql } from 'kysely';
 import { encodeOAuthState } from '../../lib/oauth-state';
 import { assertNotDemoMode } from '../demo/demo-guard';
+import { BadRequestError } from '../../errors/app-errors';
 
 let _oauthSvc: MsOAuthService | null = null;
 let _syncSvc: MsSyncService | null = null;
 
+/** Mailbox sync is optional per deployment (the env vars are optional by design). */
+function isConfigured(): boolean {
+  return !!env.msClientId && !!env.msClientSecret;
+}
+
 function getServices() {
+  // msal-node's ConfidentialClientApplication rejects an empty clientSecret at
+  // construction with a raw invalid_client_credential error — fail with
+  // user-facing copy before it gets the chance.
+  if (!isConfigured()) {
+    throw new BadRequestError('Microsoft email sync is not configured on this server.');
+  }
   if (!_oauthSvc || !_syncSvc) {
     const db = BaseRepository.dbInstance; // reuse the shared Kysely instance
     _oauthSvc = new MsOAuthService(db, {
@@ -50,6 +62,19 @@ function getAuthUrl() {
 
 function getConnectionStatus() {
   return authProcedure.input(campaignInput).query(async ({ ctx, input }) => {
+    // Unconfigured is a normal state (e.g. local dev): render the section calmly
+    // instead of erroring on load.
+    if (!isConfigured()) {
+      return {
+        configured: false,
+        connected: false,
+        msEmail: null,
+        syncedAt: null,
+        lastSyncError: null,
+        lastSyncErrorAt: null,
+        syncing: false,
+      };
+    }
     const { oauthSvc } = getServices();
     const db = BaseRepository.dbInstance;
     const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id, input.campaignId);
@@ -64,6 +89,7 @@ function getConnectionStatus() {
       .executeTakeFirst();
 
     return {
+      configured: true,
       ...status,
       syncing: !!activeJob,
     };

@@ -8,11 +8,23 @@ import { idSchema } from '@common';
 import { sql } from 'kysely';
 import { encodeOAuthState } from '../../lib/oauth-state';
 import { assertNotDemoMode } from '../demo/demo-guard';
+import { BadRequestError } from '../../errors/app-errors';
 
 let _oauthSvc: GoogleOAuthService | null = null;
 let _syncSvc: GoogleSyncService | null = null;
 
+/** Mailbox sync is optional per deployment (the env vars are optional by design). */
+function isConfigured(): boolean {
+  return !!env.googleClientId && !!env.googleClientSecret;
+}
+
 function getServices() {
+  // Unlike MSAL, Google's client constructs fine with empty credentials — the
+  // failure would surface later as a dead-end Google error page. Same guard,
+  // same user-facing copy as the Microsoft router.
+  if (!isConfigured()) {
+    throw new BadRequestError('Google email sync is not configured on this server.');
+  }
   if (!_oauthSvc || !_syncSvc) {
     const db = BaseRepository.dbInstance; // reuse the shared Kysely instance
     _oauthSvc = new GoogleOAuthService(db, {
@@ -49,6 +61,19 @@ function getAuthUrl() {
 
 function getConnectionStatus() {
   return authProcedure.input(campaignInput).query(async ({ ctx, input }) => {
+    // Unconfigured is a normal state (e.g. local dev): render the section calmly
+    // instead of erroring on load.
+    if (!isConfigured()) {
+      return {
+        configured: false,
+        connected: false,
+        googleEmail: null,
+        syncedAt: null,
+        lastSyncError: null,
+        lastSyncErrorAt: null,
+        syncing: false,
+      };
+    }
     const { oauthSvc } = getServices();
     const db = BaseRepository.dbInstance;
     const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id, input.campaignId);
@@ -63,6 +88,7 @@ function getConnectionStatus() {
       .executeTakeFirst();
 
     return {
+      configured: true,
       ...status,
       syncing: !!activeJob,
     };

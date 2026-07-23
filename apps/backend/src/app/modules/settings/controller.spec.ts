@@ -5,6 +5,8 @@ import { TRPCError } from '@trpc/server';
 import { createSigner } from 'fast-jwt';
 import { env } from '../../../env';
 import { HouseholdsController } from '../households/controller';
+import { DEMO_MANIFEST_SETTINGS_KEY } from '../demo/demo-seed';
+import { STRIPE_ACCOUNT_ID_KEY, STRIPE_ACCOUNT_STATUS_KEY } from '../donations/stripe-connect';
 import { sql } from 'kysely';
 
 async function createTestSeed(db: any) {
@@ -75,6 +77,44 @@ describe('SettingsController Integration', () => {
         message: 'Verified emails list cannot be modified directly.',
       }),
     );
+  });
+
+  it('should block direct updates to every server-managed settings key', async () => {
+    const auth = { tenant_id: tenantId, user_id: userId } as any;
+
+    await expect(
+      controller.upsert(auth, [
+        { key: 'communications.verified_domains', value: [{ domain: 'evil.com', status: 'verified' }] },
+      ]),
+    ).rejects.toThrow(/cannot be modified directly/);
+
+    // Forging the Stripe Connect status would bypass the donations fail-closed gate.
+    await expect(
+      controller.upsert(auth, [{ key: STRIPE_ACCOUNT_STATUS_KEY, value: { chargesEnabled: true } }]),
+    ).rejects.toThrow(/cannot be modified directly/);
+    await expect(controller.upsert(auth, [{ key: STRIPE_ACCOUNT_ID_KEY, value: 'acct_evil' }])).rejects.toThrow(
+      /cannot be modified directly/,
+    );
+
+    await expect(controller.upsert(auth, [{ key: DEMO_MANIFEST_SETTINGS_KEY, value: {} }])).rejects.toThrow(
+      /cannot be modified directly/,
+    );
+  });
+
+  it('should allow ordinary settings updates while the tenant is in demo mode', async () => {
+    const auth = { tenant_id: tenantId, user_id: userId } as any;
+    await db.updateTable('tenants').set({ demo_mode_at: new Date() }).where('id', '=', tenantId).execute();
+
+    const snapshot = await controller.upsert(auth, [{ key: 'organization.name', value: 'Demo Org' }]);
+    expect(snapshot['organization.name']).toBe('Demo Org');
+  });
+
+  it('should still block sender verification while the tenant is in demo mode', async () => {
+    const auth = { tenant_id: tenantId, user_id: userId } as any;
+    await db.updateTable('tenants').set({ demo_mode_at: new Date() }).where('id', '=', tenantId).execute();
+
+    await expect(controller.requestEmailVerification(auth, 'demo-blocked@example.com')).rejects.toThrow(/demo/i);
+    await expect(controller.addVerifiedDomain(auth, 'demo-blocked.com')).rejects.toThrow(/demo/i);
   });
 
   it('should block unverified emails from being used as default_from_email or reply_to', async () => {

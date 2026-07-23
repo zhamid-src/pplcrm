@@ -21,6 +21,7 @@ import { MsOAuthService, NEEDS_FULL_SYNC } from './ms-oauth.service';
 import { MsSyncService } from './ms-sync.service';
 import { BaseRepository } from '../../lib/base.repo';
 import { decodeOAuthState } from '../../lib/oauth-state';
+import { env } from '../../../env';
 
 /**
  * The router reads `(BaseRepository as any)['_db']` directly (not the
@@ -64,14 +65,44 @@ const CAMPAIGN = '30';
 
 describe('MsSyncRouter', () => {
   let originalDb: unknown;
+  let originalCreds: { id: string | undefined; secret: string | undefined };
 
   beforeEach(() => {
     vi.restoreAllMocks();
     originalDb = (BaseRepository as any)._db;
+    // The router refuses to run unconfigured; give it fake credentials for the
+    // happy-path tests (MSAL itself is mocked above, so they are never used).
+    originalCreds = { id: env.msClientId, secret: env.msClientSecret };
+    (env as { msClientId?: string }).msClientId = 'test-ms-client-id';
+    (env as { msClientSecret?: string }).msClientSecret = 'test-ms-client-secret';
   });
 
   afterEach(() => {
     (BaseRepository as any)._db = originalDb;
+    (env as { msClientId?: string }).msClientId = originalCreds.id;
+    (env as { msClientSecret?: string }).msClientSecret = originalCreds.secret;
+  });
+
+  it('getConnectionStatus reports configured=false without touching MSAL when credentials are absent', async () => {
+    installMockDb();
+    (env as { msClientId?: string }).msClientId = undefined;
+    (env as { msClientSecret?: string }).msClientSecret = undefined;
+    const statusSpy = vi.spyOn(MsOAuthService.prototype, 'getConnectionStatus');
+
+    const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
+    const result = await caller.getConnectionStatus({ campaignId: CAMPAIGN });
+
+    expect(result).toMatchObject({ configured: false, connected: false, syncing: false });
+    expect(statusSpy).not.toHaveBeenCalled();
+  });
+
+  it('getAuthUrl fails with user-facing copy when credentials are absent', async () => {
+    installMockDb();
+    (env as { msClientId?: string }).msClientId = undefined;
+    (env as { msClientSecret?: string }).msClientSecret = undefined;
+
+    const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
+    await expect(caller.getAuthUrl({ campaignId: CAMPAIGN })).rejects.toThrow(/not configured on this server/);
   });
 
   it('rejects unauthenticated callers', async () => {

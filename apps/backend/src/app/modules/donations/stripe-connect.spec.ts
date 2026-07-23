@@ -101,6 +101,15 @@ describe('stripe-connect (Connect account management)', () => {
     await cleanTenant(tenantId);
   });
 
+  it('blocks Stripe Connect changes while the tenant is in demo mode', async () => {
+    await db.updateTable('tenants').set({ demo_mode_at: new Date() }).where('id', '=', tenantId).execute();
+
+    await expect(startOnboarding(tenantId, userId, 'US')).rejects.toThrow(/demo/i);
+    await expect(createDashboardLoginLink(tenantId)).rejects.toThrow(/demo/i);
+    await expect(disconnect(tenantId)).rejects.toThrow(/demo/i);
+    expect(stripeMocks.accountsCreate).not.toHaveBeenCalled();
+  });
+
   it('startOnboarding creates the account with the decided controller shape, persists the id, and returns the link', async () => {
     stripeMocks.accountsCreate.mockResolvedValue({ id: 'acct_new_1' });
     stripeMocks.accountLinksCreate.mockResolvedValue({ url: 'https://connect.stripe.example/onboard' });
