@@ -19,8 +19,13 @@ import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.
 @Component({
   selector: 'pc-dg-columns-dropdown',
   template: `
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
+    <ul
+      tabindex="0"
+      class="dropdown-content pc-dropdown-sheet menu bg-base-100 sm:rounded-box z-[1] sm:w-64 p-2 shadow"
+    >
+      <!-- flex-row beats DaisyUI's .menu li column stacking so the three
+           bulk actions sit on one row. -->
+      <li class="px-2 py-1 flex flex-row flex-wrap gap-2">
         <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
         <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
         <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>

@@ -28,7 +28,9 @@
 
   <pc-table [loading]="loading()" [columns]="5">
     <ng-container pcTableHead>
-      <th>Tag</th>
+      <!-- min-w keeps narrow viewports from strangling the chip into per-letter
+           wrapping; the pc-table-shell scrolls horizontally instead. -->
+      <th class="min-w-44">Tag</th>
       <th>People</th>
       <th>Last applied</th>
       <th>Created by</th>

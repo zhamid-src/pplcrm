@@ -2,7 +2,7 @@ import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { By } from '@angular/platform-browser';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DetailHeader } from './detail-header';
 import { FormActions } from '../form-actions/form-actions';
 import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
@@ -126,6 +126,49 @@ describe('DetailHeader', () => {
     deleteButton.nativeElement.click();
 
     expect(deleteSpy).toHaveBeenCalledTimes(1);
+  });
+
+  describe('mobile (below sm)', () => {
+    const originalMatchMedia = window.matchMedia;
+
+    function createMobileFixture(): ComponentFixture<DetailHeader> {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: vi.fn().mockReturnValue({
+          matches: true,
+          media: '(max-width: 639.98px)',
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }),
+      });
+      const mobileFixture = TestBed.createComponent(DetailHeader);
+      mobileFixture.componentRef.setInput('title', 'Jane Doe');
+      mobileFixture.componentRef.setInput('isLoading', false);
+      return mobileFixture;
+    }
+
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', { writable: true, value: originalMatchMedia });
+    });
+
+    it('collapses the action cluster into the overflow menu instead of rendering it inline', () => {
+      const mobileFixture = createMobileFixture();
+      mobileFixture.detectChanges();
+
+      // The overflow dropdown renders even without showDelete, and form-actions lives inside it.
+      const inMenu = mobileFixture.debugElement.query(By.css('.dropdown-content pc-form-actions'));
+      expect(inMenu).not.toBeNull();
+      expect(mobileFixture.debugElement.queryAll(By.directive(FormActions)).length).toBe(1);
+    });
+
+    it('keeps the delete item below the collapsed actions when showDelete is true', () => {
+      const mobileFixture = createMobileFixture();
+      mobileFixture.componentRef.setInput('showDelete', true);
+      mobileFixture.detectChanges();
+
+      expect(mobileFixture.debugElement.query(By.css('.dropdown-content pc-form-actions'))).not.toBeNull();
+      expect(mobileFixture.debugElement.query(By.css('.dropdown-content button.text-error'))).not.toBeNull();
+    });
   });
 
   it('emits save when the nested form-actions emits btn1Clicked', () => {

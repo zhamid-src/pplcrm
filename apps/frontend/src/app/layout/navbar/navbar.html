@@ -230,8 +230,15 @@
     </div>
 
     <!-- profile drop down -->
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
+    <div>
+      <button
+        type="button"
+        class="btn btn-ghost btn-circle avatar ml-2"
+        [attr.popovertarget]="profileMenuId"
+        [style.anchor-name]="profileMenuAnchor"
+        aria-label="Account menu"
+        i18n-aria-label="Navbar|Account menu button@@navbar.profile.menuButton"
+      >
         <div
           class="bg-base-100 border-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
         >
@@ -250,13 +257,17 @@
           >
           }
         </div>
-      </div>
+      </button>
 
-      <!-- Menu -->
+      <!-- Menu — popover-mode dropdown (same idiom as pc-row-actions); bottom
+           sheet below sm via pc-dropdown-sheet. Every item is terminal, so any
+           click inside dismisses the menu. -->
       <ul
-        tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
-        (click)="closeDropdown()"
+        popover
+        [id]="profileMenuId"
+        [style.position-anchor]="profileMenuAnchor"
+        class="dropdown dropdown-end pc-dropdown-sheet menu menu-md bg-base-100 sm:rounded-box sm:mt-3 sm:w-44 cursor-pointer font-light shadow px-0 mx-0"
+        (click)="closeSheet($event)"
       >
         <li class="hover:text-primary">
           <a routerLink="/profile">

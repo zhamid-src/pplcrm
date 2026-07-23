@@ -1,10 +1,12 @@
 @if (open()) {
-<div class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
+<div class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10 max-sm:p-0">
   <!-- backdrop click closes -->
   <button type="button" class="absolute inset-0 cursor-default" aria-label="Close settings" (click)="close()"></button>
 
+  <!-- Full-screen page below sm: the popup covers ~95% of a phone anyway, so the
+       peeking backdrop is noise and double-scroll; desktop keeps the centered card. -->
   <div
-    class="animate-drop relative z-[71] w-full max-w-[430px] rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl"
+    class="animate-drop relative z-[71] w-full max-w-[430px] rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl max-sm:min-h-dvh max-sm:max-w-none max-sm:rounded-none max-sm:border-0"
     role="dialog"
     aria-modal="true"
     aria-label="Settings"

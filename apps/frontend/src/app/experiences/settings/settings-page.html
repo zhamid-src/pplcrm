@@ -42,8 +42,10 @@
   <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
     <!-- Sidebar Navigation -->
     <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
+      <!-- Below md the pills wrap so every section is visible at once (§1 "where
+           am I going" — no sections hidden behind an unmarked horizontal scroll). -->
       <nav
-        class="flex flex-row gap-0.5 overflow-x-auto pc-panel p-1.5 md:flex-col md:overflow-visible"
+        class="flex flex-row flex-wrap gap-0.5 pc-panel p-1.5 md:flex-col md:flex-nowrap"
         aria-label="Settings sections"
       >
         <!-- Grouped nav merged from both section sources (navGroups in settings-page.ts).

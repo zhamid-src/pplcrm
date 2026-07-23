@@ -7,8 +7,10 @@
     <div class="min-w-0 flex-1"></div>
 
     <div class="flex items-center gap-1 text-xs text-base-content/70">
+      <!-- Compact date on phones; the full timestamp lives in the details sheet. -->
       <span class="whitespace-nowrap pr-2">
-        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
+        <span class="max-sm:hidden">{{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}</span>
+        <span class="sm:hidden">{{ (getDateSent() || email()!.updated_at) | date:'MMM d' }}</span>
       </span>
 
       <div class="border-t border-base-300 my-1 h-0"></div>
@@ -88,8 +90,14 @@
         </button>
       </div>
       <!-- More Actions Dropdown -->
-      <div class="dropdown dropdown-end">
-        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
+      <div>
+        <button
+          type="button"
+          class="btn btn-ghost btn-circle btn-sm max-sm:touch-target"
+          [attr.popovertarget]="moreMenuId"
+          [style.anchor-name]="moreMenuAnchor"
+          aria-label="More"
+        >
           <svg viewBox="0 0 24 24" class="h-5 w-5">
             <path
               fill="currentColor"
@@ -97,9 +105,14 @@
             />
           </svg>
         </button>
+        <!-- Popover-mode dropdown; bottom sheet below sm via pc-dropdown-sheet. Every
+             item is a terminal action, so any click inside dismisses the menu. -->
         <ul
-          tabindex="0"
-          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
+          popover
+          [id]="moreMenuId"
+          [style.position-anchor]="moreMenuAnchor"
+          class="dropdown dropdown-end pc-dropdown-sheet menu bg-base-100 border border-base-200 sm:rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] sm:w-48 p-1 select-none"
+          (click)="closeSheet($event)"
         >
           <li>
             <a
@@ -241,18 +254,30 @@
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-1.5 min-w-0">
         @if (headerData()?.person; as person) {
-        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
+        <a
+          [routerLink]="['/people', person.id]"
+          class="font-semibold text-primary hover:underline cursor-pointer truncate"
+        >
           {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
           (email()!.from_name || email()!.from_email) }}
         </a>
-        <div class="dropdown dropdown-bottom inline-block">
-          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
-            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
+        <div class="inline-block">
+          <button
+            type="button"
+            class="btn btn-ghost btn-circle btn-sm max-sm:touch-target hover:bg-base-200"
+            [attr.popovertarget]="personCardId"
+            [style.anchor-name]="personCardAnchor"
+            aria-label="Person details"
+          >
+            <pc-icon name="chevron-down" [size]="4" class="text-base-content/60"></pc-icon>
           </button>
+          <!-- Popover-mode dropdown (same idiom as pc-row-actions); pc-dropdown-sheet
+               turns it into a bottom sheet below sm instead of a 384px anchored card. -->
           <div
-            #personDropdownContent
-            tabindex="0"
-            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
+            popover
+            [id]="personCardId"
+            [style.position-anchor]="personCardAnchor"
+            class="dropdown dropdown-bottom pc-dropdown-sheet card card-compact p-4 shadow-xl bg-base-100 border border-base-300 text-base-content sm:w-96 sm:mt-1 animate-drop"
           >
             <div class="space-y-4">
               <div class="flex items-center gap-3">
@@ -310,7 +335,7 @@
                     </h3>
                     <button
                       type="button"
-                      class="btn btn-ghost btn-xs btn-circle opacity-0 transition-opacity group-hover:opacity-100"
+                      class="btn btn-ghost btn-xs btn-circle opacity-60 transition-opacity group-hover:opacity-100 max-sm:opacity-100"
                       aria-label="Edit name"
                       (click)="startEditName(person)"
                     >
@@ -386,13 +411,19 @@
         } @else {
         <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
         }
-        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
+        <!-- The raw address is noise on a phone; it lives in the details sheet. -->
+        <span class="text-xs text-base-content/60 truncate max-sm:hidden"> &lt;{{ email()!.from_email }}&gt; </span>
       </div>
 
       <div class="text-xs text-base-content/60 mt-1">
         to
-        <div class="dropdown inline-block">
-          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
+        <div class="inline-block">
+          <button
+            type="button"
+            class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto sm:min-h-0 max-sm:touch-target"
+            [attr.popovertarget]="recipientsMenuId"
+            [style.anchor-name]="recipientsMenuAnchor"
+          >
             @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
             (getToRecipients().length > 1) {
             <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
@@ -403,9 +434,12 @@
               />
             </svg>
           </button>
+          <!-- Popover-mode dropdown; bottom sheet below sm via pc-dropdown-sheet. -->
           <ul
-            tabindex="0"
-            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
+            popover
+            [id]="recipientsMenuId"
+            [style.position-anchor]="recipientsMenuAnchor"
+            class="dropdown pc-dropdown-sheet menu menu-sm sm:mt-1 sm:w-96 sm:rounded-box bg-base-100 p-2 shadow sm:max-h-96 overflow-y-auto"
           >
             <!-- Recipients Section -->
             <li class="menu-title text-xs">Recipients</li>
@@ -536,14 +570,17 @@
         </div>
       </div>
     </div>
-    <div class="flex items-center gap-1">
-      <pc-icon
-        class="hover:text-primary tooltip tooltip-left cursor-pointer"
-        [attr.data-tip]="'Expand email body'"
-        name="expand-content"
-        [size]="4"
+    <!-- Hidden below md: the reading pane already fills the screen there. -->
+    <div class="flex items-center gap-1 max-md:hidden">
+      <button
+        type="button"
+        class="btn btn-ghost btn-circle btn-sm tooltip tooltip-left hover:text-primary"
+        data-tip="Expand email body"
+        aria-label="Expand email body"
         (click)="toggleExpand()"
-      ></pc-icon>
+      >
+        <pc-icon name="expand-content" [size]="4"></pc-icon>
+      </button>
     </div>
   </div>
 </header>

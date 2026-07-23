@@ -1,4 +1,5 @@
-import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import { Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
@@ -6,9 +7,12 @@ import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
 import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
 import { FormActions } from '../form-actions/form-actions';
 
+/** Below Tailwind `sm` (640px) the header stacks and has no room for inline action buttons. */
+const MOBILE_ACTIONS_QUERY = '(max-width: 639.98px)';
+
 @Component({
   selector: 'pc-detail-header',
-  imports: [Icon, FormActions],
+  imports: [Icon, FormActions, NgTemplateOutlet],
   template: `
     <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -48,7 +52,8 @@ import { FormActions } from '../form-actions/form-actions';
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <!-- justify-end below sm keeps the ⋮ trigger on the right so its menu opens on-screen -->
+        <div class="flex items-center gap-2 max-sm:justify-end">
           <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
                so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
           @if (positionLabel()) {
@@ -78,41 +83,65 @@ import { FormActions } from '../form-actions/form-actions';
               </button>
             </div>
           }
-          <ng-content select="[pc-actions-prefix]"></ng-content>
-          @if (showActions()) {
-            <pc-form-actions
-              size="sm"
-              [isLoading]="isLoading()"
-              [signalForm]="form()"
-              [disabled]="disabled()"
-              [saveAlwaysEnabled]="saveAlwaysEnabled()"
-              [buttonsToShow]="formActionsButtons()"
-              [btn1Text]="btn1Text()"
-              [btn1Icon]="btn1Icon()"
-              [showDelete]="false"
-              [showCancel]="showCancel()"
-              (btn1Clicked)="save.emit($event)"
-            ></pc-form-actions>
+          <!-- Single source for the action cluster: stamped inline on ≥sm, or inside
+               the overflow menu on mobile where the header has no room for buttons. -->
+          <ng-template #actionCluster>
+            <ng-content select="[pc-actions-prefix]"></ng-content>
+            @if (showActions()) {
+              <pc-form-actions
+                size="sm"
+                [isLoading]="isLoading()"
+                [signalForm]="form()"
+                [disabled]="disabled()"
+                [saveAlwaysEnabled]="saveAlwaysEnabled()"
+                [buttonsToShow]="formActionsButtons()"
+                [btn1Text]="btn1Text()"
+                [btn1Icon]="btn1Icon()"
+                [showDelete]="false"
+                [showCancel]="showCancel()"
+                (btn1Clicked)="save.emit($event)"
+              ></pc-form-actions>
+            }
+            <ng-content select="[pc-actions-suffix]"></ng-content>
+          </ng-template>
+
+          @if (!isMobile()) {
+            <ng-container [ngTemplateOutlet]="actionCluster"></ng-container>
           }
-          <ng-content select="[pc-actions-suffix]"></ng-content>
-          @if (showDelete()) {
-            <div class="dropdown dropdown-end">
+          @if (isMobile() || showDelete()) {
+            <!-- Self-hides when the menu would be empty (a page with no actions at all). -->
+            <div class="dropdown dropdown-end [&:not(:has(.dropdown-content_li,.dropdown-content_.btn))]:hidden">
               <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
                 <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
               </button>
-              <ul
+              <div
                 tabindex="0"
-                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
+                class="dropdown-content pc-dropdown-sheet z-30 border border-base-200 bg-base-100 p-2 shadow-lg sm:w-56 sm:rounded-box"
               >
-                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
-                <ng-content select="[pc-overflow-extra]"></ng-content>
-                <li>
-                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
-                    <pc-icon name="trash" [size]="4"></pc-icon>
-                    {{ deleteText() }}
-                  </button>
-                </li>
-              </ul>
+                @if (isMobile()) {
+                  <!-- The inline action cluster, restacked as full-width rows. The div[…] rules
+                       unroll pages' own row wrappers (e.g. <div pc-actions-suffix class="flex …">).
+                       min-h-11 + text-sm match the 44px/14px menu rows below so the sheet reads
+                       as one action sheet, not a pile of toolbar buttons. -->
+                  <div
+                    class="flex flex-col items-stretch gap-2 empty:hidden [&_.btn]:w-full [&_.btn]:justify-start [&_.btn]:min-h-11 [&_.btn]:text-sm [&_.dropdown]:w-full [&_pc-form-actions>div]:flex-col [&_div[pc-actions-prefix]]:flex-col [&_div[pc-actions-prefix]]:items-stretch [&_div[pc-actions-suffix]]:flex-col [&_div[pc-actions-suffix]]:items-stretch"
+                  >
+                    <ng-container [ngTemplateOutlet]="actionCluster"></ng-container>
+                  </div>
+                }
+                <ul class="menu w-full p-0 max-sm:mt-1 max-sm:border-t max-sm:border-base-200 max-sm:pt-1">
+                  <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
+                  <ng-content select="[pc-overflow-extra]"></ng-content>
+                  @if (showDelete()) {
+                    <li>
+                      <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
+                        <pc-icon name="trash" [size]="4"></pc-icon>
+                        {{ deleteText() }}
+                      </button>
+                    </li>
+                  }
+                </ul>
+              </div>
             </div>
           }
         </div>
@@ -170,6 +199,9 @@ export class DetailHeader {
     this.showDelete() ? 'two' : this.buttonsToShow(),
   );
 
+  /** True below Tailwind `sm`: the action cluster collapses into the overflow menu. */
+  protected readonly isMobile = signal(false);
+
   constructor() {
     // The breadcrumb trail renders in the navbar; the record pager now lives in
     // this header card (design source), so publish the trail only and leave the
@@ -188,6 +220,18 @@ export class DetailHeader {
       });
     });
 
-    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
+    const destroyRef = inject(DestroyRef);
+
+    // matchMedia is guarded for non-browser test environments; without it the
+    // header stays in the desktop (inline actions) layout.
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      const mediaQuery = window.matchMedia(MOBILE_ACTIONS_QUERY);
+      this.isMobile.set(mediaQuery.matches);
+      const onChange = (event: MediaQueryListEvent): void => this.isMobile.set(event.matches);
+      mediaQuery.addEventListener('change', onChange);
+      destroyRef.onDestroy(() => mediaQuery.removeEventListener('change', onChange));
+    }
+
+    destroyRef.onDestroy(() => this.breadcrumbs.clear());
   }
 }

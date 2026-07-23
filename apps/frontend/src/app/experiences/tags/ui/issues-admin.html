@@ -10,7 +10,9 @@
   <pc-table [loading]="loading()" [columns]="6">
     <ng-container pcTableHead>
       <th class="w-10">#</th>
-      <th>Issue</th>
+      <!-- min-w keeps narrow viewports from strangling the chip into per-letter
+           wrapping; the pc-table-shell scrolls horizontally instead. -->
+      <th class="min-w-44">Issue</th>
       <th class="min-w-48">People interested</th>
       <th>Trend</th>
       <th>Top ward</th>

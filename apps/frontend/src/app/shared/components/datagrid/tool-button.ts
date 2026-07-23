@@ -22,7 +22,9 @@ import { PcIconNameType } from '@icons/icons.index';
       (click)="onLiClick($event)"
     >
       @if (hasDropdown()) {
-        <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
+        <!-- name groups every grid dropdown into a native exclusive accordion:
+             opening one closes any other (chip-row pills included). -->
+        <details class="dropdown group" name="pc-dg-dropdown" [class.dropdown-end]="dropdownEnd()">
           <summary
             class="list-none cursor-pointer"
             [class.pc-no-caret]="hideCaret()"
@@ -68,6 +70,12 @@ import { PcIconNameType } from '@icons/icons.index';
       /* Suppress DaisyUI's .menu accordion caret (summary::after) on icon-only
          dropdown buttons that opt out via [hideCaret]. */
       summary.pc-no-caret::after {
+        display: none;
+      }
+      /* The trigger keeps focus after opening its dropdown, which would leave
+         the hover/focus tooltip floating on top of the open panel. */
+      li.tooltip:has(details[open])::before,
+      li.tooltip:has(details[open])::after {
         display: none;
       }
     `,

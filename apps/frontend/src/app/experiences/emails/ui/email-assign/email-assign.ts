@@ -18,7 +18,7 @@ let nextEmailAssignId = 0;
     <span i18n class="text-xs text-base-content/70">Owner:</span>
     <button
       type="button"
-      class="badge badge-xs text-xs badge-info badge-outline cursor-pointer"
+      class="badge badge-sm text-xs badge-info badge-outline cursor-pointer"
       [attr.popovertarget]="menuId"
       [style.anchor-name]="anchorName"
     >
@@ -35,7 +35,7 @@ let nextEmailAssignId = 0;
       popover
       [id]="menuId"
       [style.position-anchor]="anchorName"
-      class="dropdown menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow"
+      class="dropdown pc-dropdown-sheet menu bg-base-100 sm:rounded-box sm:w-44 p-2 shadow"
       (click)="closeMenu()"
     >
       @for (user of users(); track user.id) {
@@ -50,9 +50,13 @@ let nextEmailAssignId = 0;
   </div>`,
   styles: `
     /* Near the bottom of the viewport, drop the menu above the trigger instead of
-       off-screen. position-area alone does not reposition itself. */
-    ul[popover] {
-      position-try-fallbacks: flip-block;
+       off-screen. position-area alone does not reposition itself. Scoped to sm+
+       because below sm the menu is a pc-dropdown-sheet, and this unlayered
+       component style would otherwise beat the utility's fallback reset. */
+    @media (width >= 40rem) {
+      ul[popover] {
+        position-try-fallbacks: flip-block;
+      }
     }
   `,
 })

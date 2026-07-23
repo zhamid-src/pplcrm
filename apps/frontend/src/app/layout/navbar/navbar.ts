@@ -77,8 +77,12 @@ export class Navbar implements OnDestroy {
   /** Personal Settings popup (§5a) — opened from the avatar menu. */
   protected readonly settingsOpen = signal(false);
 
+  /** Popover-mode dropdown plumbing for the avatar menu (same idiom as pc-row-actions).
+   *  The navbar is a singleton, so static ids are safe. */
+  protected readonly profileMenuId = 'pc-navbar-profile-menu';
+  protected readonly profileMenuAnchor = '--pc-navbar-profile-menu';
+
   protected openSettings(): void {
-    this.closeDropdown();
     this.settingsOpen.set(true);
   }
 
@@ -284,11 +288,22 @@ export class Navbar implements OnDestroy {
     void this.auth.signOut();
   }
 
+  /** Blur-to-close for the focus-based notifications dropdown only; the avatar
+   *  menu is popover-mode and closes via closeSheet(). */
   protected closeDropdown(): void {
     const activeEl = document.activeElement as HTMLElement | null;
     if (activeEl) {
       activeEl.blur();
     }
+  }
+
+  /**
+   * Dismiss a popover-mode menu once an item is chosen. `popover` light-dismisses on
+   * outside clicks and Esc, but a click *inside* the menu is not a dismissal to the
+   * platform — and every item in the avatar menu is a terminal action, so it is to us.
+   */
+  protected closeSheet(ev: Event): void {
+    if (ev.currentTarget instanceof HTMLElement) ev.currentTarget.hidePopover();
   }
 
   protected toggleFullScreen(): void {

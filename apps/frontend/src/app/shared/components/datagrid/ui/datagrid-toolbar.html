@@ -1,5 +1,7 @@
 <!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
+<!-- z-40: the toolbar's stacking context must clear the table's sticky
+     headers (z-30, later in DOM) so an open dropdown sheet paints above them. -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-40 gap-0.5">
   <pc-grid-tool-btn
     [touch]="true"
     [enabled]="!!grid.addRoute()"
@@ -37,6 +39,7 @@
     icon="funnel"
     tip="Filters"
     [hasDropdown]="true"
+    [hideCaret]="true"
     [dropdownEnd]="false"
     [active]="
       grid.selectedNarrowType() !== null ||
@@ -47,14 +50,12 @@
       grid.hasActiveAdvancedFilters()
     "
   >
-    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
+    <!-- Bottom sheet on touch via pc-dropdown-sheet (grab handle included);
          reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
     <div
       tabindex="0"
-      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6 sm:static sm:w-72 sm:rounded-box sm:pb-3"
+      class="dropdown-content pc-dropdown-sheet bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg sm:static sm:w-72 sm:rounded-box sm:pb-3"
     >
-      <!-- Grab handle — bottom-sheet affordance, touch only -->
-      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
       <h3 class="pc-eyebrow mb-2 px-1 sm:hidden">Filters</h3>
       @if (grid.showTagFilter()) {
       <pc-dg-filter-section
@@ -130,13 +131,23 @@
     </div>
   </pc-grid-tool-btn>
   }
-  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true" [hideCaret]="true">
     <pc-dg-columns-dropdown [grid]="grid" />
   </pc-grid-tool-btn>
 
   <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+  <pc-grid-tool-btn
+    [touch]="true"
+    icon="ellipsis-vertical"
+    tip="More"
+    [hasDropdown]="true"
+    [hideCaret]="true"
+    [dropdownEnd]="true"
+  >
+    <ul
+      tabindex="0"
+      class="dropdown-content pc-dropdown-sheet menu bg-base-100 sm:rounded-box z-[50] sm:w-52 p-2 shadow"
+    >
       <li
         [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
         [class.cursor-not-allowed]="grid.disableRefresh()"
@@ -233,7 +244,7 @@
     >
       <ul
         tabindex="0"
-        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
+        class="dropdown-content pc-dropdown-sheet menu bg-base-100 sm:rounded-box border-base-200 z-[50] sm:w-72 gap-1 border p-2 shadow-lg"
       >
         @if (!grid.disableImport()) {
         <li>

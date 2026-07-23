@@ -1,6 +1,8 @@
 <div class="flex h-full flex-col bg-base-100">
   <!-- Header -->
-  <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
+  <!-- Stacks below sm so the action buttons drop under the title instead of
+       painting over the wrapped heading. -->
+  <header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-base-200 px-6 py-4">
     <h1 class="text-xl font-bold flex items-center gap-2">
       <pc-icon name="currency-dollar" [size]="5" class="text-primary"></pc-icon>
       {{ isNew() ? 'Create Donation Page' : 'Edit Donation Page' }}

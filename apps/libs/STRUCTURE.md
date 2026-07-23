@@ -2726,157 +2726,6 @@ export const FormSubmissionObj = z.object({
 });
 ````
 
-## File: libs/common/src/lib/auth.ts
-````typescript
-import { z } from 'zod';
-
-export interface IAuthKeyPayload {
-  name?: string;
-
-  session_id: string;
-
-  tenant_id: string;
-
-  user_id: string;
-
-  role?: string | null;
-
-  source?: string;
-}
-
-export interface IAuthUser {
-  email: string;
-
-  first_name: string;
-
-  last_name?: string;
-
-  id: string;
-
-  role?: string | null;
-
-  avatar_url?: string | null;
-
-  email_verified: boolean;
-
-  passkey_setup_dismissed_at?: Date | null;
-
-  tenant_deletion_scheduled_at?: Date | null;
-
-  tenant_paused_at?: Date | null;
-
-  /** Set while the tenant still has the seeded demo data (drives the demo-mode banner). */
-  tenant_demo_mode_at?: Date | null;
-
-  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
-  tenant_slug?: string | null;
-}
-
-export interface IUserStatsSnapshot {
-  emails_assigned: {
-    total: number;
-    open: number;
-    closed: number;
-  };
-  contacts_added: {
-    total: number;
-    last_created_at: Date | null;
-  };
-  files_imported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-  files_exported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-}
-
-export interface IAuthUserRecord extends IAuthUser {
-  last_name: string;
-  role: string | null;
-  /** Campaigns §15 — admin-assigned campaign; null = office. Not enforced for admins/owners. */
-  campaign_id: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: Date | null;
-  /** Admin deactivation: set = can't sign in until an admin/owner reactivates. */
-  deactivated_at?: Date | null;
-  /** Most recent session activity; null until the user has signed in at least once. */
-  last_active_at?: Date | null;
-  created_at: Date | null;
-  updated_at: Date | null;
-  previous_email?: string | null;
-  previous_role?: string | null;
-  avatar_url?: string | null;
-  notification_preferences?: {
-    mention_in_comment: boolean;
-    mention_in_comment_in_app: boolean;
-    task_assigned: boolean;
-    task_assigned_in_app: boolean;
-    task_due: boolean;
-    task_due_in_app: boolean;
-    person_assigned: boolean;
-    person_assigned_in_app: boolean;
-    export_ready: boolean;
-    export_ready_in_app: boolean;
-    import_summary: boolean;
-    import_summary_in_app: boolean;
-  };
-}
-
-export interface IAuthUserDetail extends IAuthUserRecord {
-  stats: IUserStatsSnapshot;
-}
-
-export interface IToken {
-  auth_token: string | null;
-  refresh_token: string | null;
-}
-
-/**
- * The one generic message shown for any failed sign-in attempt, regardless of
- * whether the email or the password was wrong — never reveal which, so that
- * sign-in cannot be used to probe which emails have accounts. Shared by the
- * backend error formatter and the frontend so the copy never drifts.
- */
-export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
-
-/**
- * Product names for the stored role values — the working role 'user' is shown as
- * "Editor" everywhere (Users list, user page, Profile). Shared so the label never drifts.
- */
-export const AUTH_ROLE_LABELS: Record<string, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  user: 'Editor',
-  viewer: 'Viewer',
-};
-
-export function authRoleLabel(role: string | null | undefined): string {
-  return role ? (AUTH_ROLE_LABELS[role] ?? role) : '—';
-}
-
-export type signInInputType = z.infer<typeof signInInputObj>;
-
-export type signUpInputType = z.infer<typeof signUpInputObj>;
-
-export const signInInputObj = z.object({
-  email: z.email(),
-  password: z.string().min(8).max(72),
-  rememberMe: z.boolean().optional(),
-});
-
-export const signUpInputObj = z.object({
-  organization: z.string(),
-  email: z.string().max(100),
-  password: z.string().min(8).max(72),
-  first_name: z.string().max(100),
-});
-````
-
 ## File: libs/common/src/lib/emails.ts
 ````typescript
 // ---------- Public compatibility interface (loose) ----------
@@ -3928,6 +3777,139 @@ export class AlertService {
 export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
 ````
 
+## File: libs/uxcommon/src/components/alerts/alerts.html
+````html
+<div
+  class="pointer-events-none z-50 flex w-full flex-col items-center gap-2 px-4"
+  [class.absolute]="!isPositionRelative()"
+  [class.left-0]="!isPositionRelative()"
+  [class.top-4]="isPositionTop()"
+  [class.bottom-4]="isPositionBottom()"
+>
+  @for (alert of alerts(); track alert.id) {
+  <div
+    class="pointer-events-auto relative flex max-w-[520px] cursor-pointer items-start gap-3 overflow-hidden rounded-[12px] border border-base-300 bg-base-100 py-3 pl-4 pr-3.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
+    role="alert"
+    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: getExitAnim()"
+    (click)="dismiss(alert.id)"
+  >
+    <span aria-hidden="true" class="absolute inset-y-0 left-0 w-[5px] {{ barToneClass(alert.type) }}"></span>
+    <span
+      aria-hidden="true"
+      class="mt-px flex shrink-0 items-center justify-center rounded-[8px] p-1.5 {{ chipToneClass(alert.type) }}"
+    >
+      <pc-icon [name]="icon(alert.type)" [size]="4" class="{{ toneClass(alert.type) }}"></pc-icon>
+    </span>
+    <div class="line-clamp-3 text-[12.5px] leading-[1.45] text-base-content [overflow-wrap:anywhere]">
+      {{ alert.text }}
+    </div>
+    @if (alert.count() > 1) {
+    <span
+      class="mt-px shrink-0 rounded-full bg-base-content/10 px-[7px] py-px text-[10.5px] font-semibold tabular-nums text-base-content"
+    >
+      ×{{ alert.count() }}
+    </span>
+    }
+  </div>
+  }
+</div>
+````
+
+## File: libs/uxcommon/src/components/alerts/alerts.ts
+````typescript
+import { Component, computed, inject, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+
+import { ALERTTYPE, AlertService } from './alert-service';
+
+@Component({
+  selector: 'pc-alerts',
+  imports: [Icon, AnimateIfDirective],
+  templateUrl: './alerts.html',
+})
+export class Alerts {
+  protected alertSvc = inject(AlertService);
+
+  public position = input<'top' | 'bottom' | 'relative'>('bottom');
+
+  protected readonly alerts = computed(() => {
+    const list = this.alertSvc.alertList();
+    // Service list is newest-first; render newest nearest the pinned edge
+    // (bottom of the stack when pinned bottom — spec §2).
+    return this.isPositionBottom() ? list.slice().reverse() : list;
+  });
+
+  protected dismiss(id: string): void {
+    this.alertSvc.dismiss(id);
+  }
+
+  protected getEnterAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
+  }
+
+  protected getExitAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
+  }
+
+  protected icon(type?: ALERTTYPE): PcIconNameType {
+    return type === 'success'
+      ? 'check-circle'
+      : type === 'warning'
+        ? 'exclamation-triangle'
+        : type === 'error'
+          ? 'exclamation-circle'
+          : 'information-circle';
+  }
+
+  protected isPositionBottom() {
+    return this.position() === 'bottom';
+  }
+
+  protected isPositionRelative() {
+    return this.position() === 'relative';
+  }
+
+  protected isPositionTop() {
+    return this.position() === 'top';
+  }
+
+  /** Tone accent bar hugging the card's left edge — the card surface and text stay neutral. */
+  protected barToneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'bg-success'
+      : type === 'warning'
+        ? 'bg-warning'
+        : type === 'error'
+          ? 'bg-error'
+          : 'bg-info';
+  }
+
+  /** Soft tinted background for the icon chip — echoes the accent bar without shouting. */
+  protected chipToneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'bg-success/10'
+      : type === 'warning'
+        ? 'bg-warning/10'
+        : type === 'error'
+          ? 'bg-error/10'
+          : 'bg-info/10';
+  }
+
+  /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
+  protected toneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'text-success'
+      : type === 'warning'
+        ? 'text-warning'
+        : type === 'error'
+          ? 'text-error'
+          : 'text-info';
+  }
+}
+````
+
 ## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
 ````typescript
 import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
@@ -4442,7 +4424,8 @@ export function autoMapPersonsHeader(header: string): string {
 
 ## File: libs/uxcommon/src/components/detail-header/detail-header.ts
 ````typescript
-import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import { Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
@@ -4450,9 +4433,12 @@ import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
 import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
 import { FormActions } from '../form-actions/form-actions';
 
+/** Below Tailwind `sm` (640px) the header stacks and has no room for inline action buttons. */
+const MOBILE_ACTIONS_QUERY = '(max-width: 639.98px)';
+
 @Component({
   selector: 'pc-detail-header',
-  imports: [Icon, FormActions],
+  imports: [Icon, FormActions, NgTemplateOutlet],
   template: `
     <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -4492,7 +4478,8 @@ import { FormActions } from '../form-actions/form-actions';
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <!-- justify-end below sm keeps the ⋮ trigger on the right so its menu opens on-screen -->
+        <div class="flex items-center gap-2 max-sm:justify-end">
           <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
                so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
           @if (positionLabel()) {
@@ -4522,41 +4509,65 @@ import { FormActions } from '../form-actions/form-actions';
               </button>
             </div>
           }
-          <ng-content select="[pc-actions-prefix]"></ng-content>
-          @if (showActions()) {
-            <pc-form-actions
-              size="sm"
-              [isLoading]="isLoading()"
-              [signalForm]="form()"
-              [disabled]="disabled()"
-              [saveAlwaysEnabled]="saveAlwaysEnabled()"
-              [buttonsToShow]="formActionsButtons()"
-              [btn1Text]="btn1Text()"
-              [btn1Icon]="btn1Icon()"
-              [showDelete]="false"
-              [showCancel]="showCancel()"
-              (btn1Clicked)="save.emit($event)"
-            ></pc-form-actions>
+          <!-- Single source for the action cluster: stamped inline on ≥sm, or inside
+               the overflow menu on mobile where the header has no room for buttons. -->
+          <ng-template #actionCluster>
+            <ng-content select="[pc-actions-prefix]"></ng-content>
+            @if (showActions()) {
+              <pc-form-actions
+                size="sm"
+                [isLoading]="isLoading()"
+                [signalForm]="form()"
+                [disabled]="disabled()"
+                [saveAlwaysEnabled]="saveAlwaysEnabled()"
+                [buttonsToShow]="formActionsButtons()"
+                [btn1Text]="btn1Text()"
+                [btn1Icon]="btn1Icon()"
+                [showDelete]="false"
+                [showCancel]="showCancel()"
+                (btn1Clicked)="save.emit($event)"
+              ></pc-form-actions>
+            }
+            <ng-content select="[pc-actions-suffix]"></ng-content>
+          </ng-template>
+
+          @if (!isMobile()) {
+            <ng-container [ngTemplateOutlet]="actionCluster"></ng-container>
           }
-          <ng-content select="[pc-actions-suffix]"></ng-content>
-          @if (showDelete()) {
-            <div class="dropdown dropdown-end">
+          @if (isMobile() || showDelete()) {
+            <!-- Self-hides when the menu would be empty (a page with no actions at all). -->
+            <div class="dropdown dropdown-end [&:not(:has(.dropdown-content_li,.dropdown-content_.btn))]:hidden">
               <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
                 <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
               </button>
-              <ul
+              <div
                 tabindex="0"
-                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
+                class="dropdown-content pc-dropdown-sheet z-30 border border-base-200 bg-base-100 p-2 shadow-lg sm:w-56 sm:rounded-box"
               >
-                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
-                <ng-content select="[pc-overflow-extra]"></ng-content>
-                <li>
-                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
-                    <pc-icon name="trash" [size]="4"></pc-icon>
-                    {{ deleteText() }}
-                  </button>
-                </li>
-              </ul>
+                @if (isMobile()) {
+                  <!-- The inline action cluster, restacked as full-width rows. The div[…] rules
+                       unroll pages' own row wrappers (e.g. <div pc-actions-suffix class="flex …">).
+                       min-h-11 + text-sm match the 44px/14px menu rows below so the sheet reads
+                       as one action sheet, not a pile of toolbar buttons. -->
+                  <div
+                    class="flex flex-col items-stretch gap-2 empty:hidden [&_.btn]:w-full [&_.btn]:justify-start [&_.btn]:min-h-11 [&_.btn]:text-sm [&_.dropdown]:w-full [&_pc-form-actions>div]:flex-col [&_div[pc-actions-prefix]]:flex-col [&_div[pc-actions-prefix]]:items-stretch [&_div[pc-actions-suffix]]:flex-col [&_div[pc-actions-suffix]]:items-stretch"
+                  >
+                    <ng-container [ngTemplateOutlet]="actionCluster"></ng-container>
+                  </div>
+                }
+                <ul class="menu w-full p-0 max-sm:mt-1 max-sm:border-t max-sm:border-base-200 max-sm:pt-1">
+                  <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
+                  <ng-content select="[pc-overflow-extra]"></ng-content>
+                  @if (showDelete()) {
+                    <li>
+                      <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
+                        <pc-icon name="trash" [size]="4"></pc-icon>
+                        {{ deleteText() }}
+                      </button>
+                    </li>
+                  }
+                </ul>
+              </div>
             </div>
           }
         </div>
@@ -4614,6 +4625,9 @@ export class DetailHeader {
     this.showDelete() ? 'two' : this.buttonsToShow(),
   );
 
+  /** True below Tailwind `sm`: the action cluster collapses into the overflow menu. */
+  protected readonly isMobile = signal(false);
+
   constructor() {
     // The breadcrumb trail renders in the navbar; the record pager now lives in
     // this header card (design source), so publish the trail only and leave the
@@ -4632,7 +4646,19 @@ export class DetailHeader {
       });
     });
 
-    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
+    const destroyRef = inject(DestroyRef);
+
+    // matchMedia is guarded for non-browser test environments; without it the
+    // header stays in the desktop (inline actions) layout.
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      const mediaQuery = window.matchMedia(MOBILE_ACTIONS_QUERY);
+      this.isMobile.set(mediaQuery.matches);
+      const onChange = (event: MediaQueryListEvent): void => this.isMobile.set(event.matches);
+      mediaQuery.addEventListener('change', onChange);
+      destroyRef.onDestroy(() => mediaQuery.removeEventListener('change', onChange));
+    }
+
+    destroyRef.onDestroy(() => this.breadcrumbs.clear());
   }
 }
 ````
@@ -8354,270 +8380,6 @@ Run `nx test uxcommon` to execute the unit tests.
 }
 ````
 
-## File: libs/common/src/lib/help/articles/contacts.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const CONTACTS_ARTICLES: HelpArticle[] = [
-  {
-    id: 'add-people',
-    category: 'contacts',
-    title: 'Add and edit people',
-    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
-    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
-    related: ['person-profile', 'import', 'tags-issues', 'households'],
-    blocks: [
-      { kind: 'h2', id: 'add-one', text: 'Add a person' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
-          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
-          {
-            title: 'Fill in what you know',
-            detail:
-              'Fields validate as you type. Problems are explained right under the field, so you can fix them before saving.',
-          },
-          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'The new-person form also carries the **Campaign standing** card, so you can set a **support level**, **voting status**, **email subscription**, and the global **do-not-contact** flag right as you create the person. Support, voting, and the subscription apply to the campaign context you are working in (shown on the card); do-not-contact is global. You do not have to. Leave them alone and the person is created with everything “Unknown”, then set standing later from their profile.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Have a spreadsheet?',
-        text: 'Do not type hundreds of rows by hand. [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
-      },
-      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
-      {
-        kind: 'p',
-        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid. Double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
-      },
-      {
-        kind: 'p',
-        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use. Click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
-      },
-      {
-        kind: 'p',
-        text: 'If you try to leave a form with unsaved changes, pplCRM asks before discarding them. It names exactly which fields would be lost, so nothing disappears silently.',
-      },
-      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
-      {
-        kind: 'p',
-        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
-      },
-    ],
-  },
-  {
-    id: 'person-profile',
-    category: 'contacts',
-    title: 'Inside a person profile',
-    summary:
-      'The profile gathers everything about one person. Here is what each tab shows and where the numbers come from.',
-    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
-    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials (who this is and their status) and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
-      },
-      {
-        kind: 'p',
-        text: 'The contact card on the left carries the essentials: email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest. The record’s notes sit just below it.',
-      },
-      {
-        kind: 'p',
-        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. The card always shows the campaign you are working in — your assigned campaign, or, for admins, the context selected under **Workspace → Campaigns**.',
-      },
-      {
-        kind: 'p',
-        text: 'Use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives in the header on household and company pages, which carry the identical Activity tab.',
-      },
-      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
-      {
-        kind: 'list',
-        items: [
-          '**Household**: everyone at the same address.',
-          '**Connections**: the people this person is linked to (referrals, relationships, and other ties), separate from who they live with.',
-          '**Emails**: messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
-          '**Donations**: every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
-          '**Volunteer**: their shift history and hours.',
-          '**Events**: event registrations and attendance.',
-          '**Activity**: the running history of this record, pairing the interactions you log (calls, door knocks, notes, meetings) with the audit trail of edits, newest first. It sits last, as it does on every record.',
-        ],
-      },
-      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
-      {
-        kind: 'p',
-        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows. Use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Empty tab? That is a prompt, not a dead end',
-        text: 'Empty states name the cause and offer the next step. For example, a person with no household shows an assign action right there.',
-      },
-    ],
-  },
-  {
-    id: 'households',
-    category: 'contacts',
-    title: 'Households',
-    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
-    keywords: [
-      'household',
-      'family',
-      'address',
-      'members',
-      'assign household',
-      'home',
-      'map',
-      'ward',
-      'district',
-      'precinct',
-      'geocode',
-      'door notes',
-    ],
-    related: ['add-people', 'person-profile', 'duplicates'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create a household' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Households](/households)',
-            detail:
-              'From [People](/people), click the **Households** tab under the header. People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
-          },
-          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
-          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Start from the person',
-        text: 'On a profile with no household yet, the household area offers **Assign household** directly, often the fastest route.',
-      },
-      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
-      {
-        kind: 'p',
-        text: 'Editing a household, search for an address and pick a suggestion. It fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
-      },
-      {
-        kind: 'p',
-        text: 'The household page shows a map card. Clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), **Address problem** (the address could not be found; open Edit and fix it), or **Not geocoded** (geocoding is a Movement feature and your plan is below it — the address is saved and fine, it just wasn’t placed on the map). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in. Set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
-      },
-      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
-      {
-        kind: 'p',
-        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them. See [Find and merge duplicates](/help/duplicates).',
-      },
-    ],
-  },
-  {
-    id: 'companies',
-    category: 'contacts',
-    title: 'Companies',
-    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
-    keywords: [
-      'company',
-      'organization',
-      'employer',
-      'business',
-      'sponsor',
-      'corporate',
-      'enrich',
-      'google',
-      'google places',
-    ],
-    related: ['person-profile', 'duplicates', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Companies hold the organizations in your world: employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
-      },
-      { kind: 'h2', id: 'create', text: 'Add a company' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Companies](/companies)',
-            detail:
-              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
-          },
-          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
-          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
-        ],
-      },
-      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
-      {
-        kind: 'p',
-        text: 'While adding a company, tab out of the **Company Name** field and pplCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create**. Nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
-      },
-      {
-        kind: 'p',
-        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Deleting a company keeps the people',
-        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping. Everyone keeps their person record, they just lose the employer link.',
-      },
-      {
-        kind: 'p',
-        text: 'Companies get the full grid toolkit (filters, tags, CSV import and export, and inline editing) plus their own view in the [Duplicates](/duplicates) finder.',
-      },
-    ],
-  },
-  {
-    id: 'teams',
-    category: 'contacts',
-    title: 'Teams',
-    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
-    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
-    related: ['events-shifts', 'tasks', 'lists'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Teams turn a crowd of volunteers into working units: a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
-      },
-      {
-        kind: 'p',
-        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead**: the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go. Pick a lead.”); open the team and set a lead to clear it.',
-      },
-      { kind: 'h2', id: 'create', text: 'Set up a team' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
-          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
-          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
-          {
-            title: 'Give it work',
-            detail: 'Attach lists to call through and tasks to complete. The team page tracks both.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Teams pair well with shifts',
-        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile. See [Events and volunteer shifts](/help/events-shifts).',
-      },
-    ],
-  },
-];
-````
-
 ## File: libs/common/src/lib/help/articles/productivity.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -8710,69 +8472,6 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
     ],
   },
 ];
-````
-
-## File: libs/common/src/lib/schemas/auth.schema.ts
-````typescript
-import { z } from 'zod';
-import { emailSchema, nameSchema } from './core.schema';
-
-export const InviteAuthUserObj = z.object({
-  email: emailSchema,
-  first_name: nameSchema('First name'),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-  /** Campaigns §15 — assign the invitee to a campaign; null/absent = the office context. */
-  campaign_id: z.string().nullable().optional(),
-});
-
-export const NotificationPreferencesObj = z.object({
-  mention_in_comment: z.boolean().default(true),
-  mention_in_comment_in_app: z.boolean().default(true),
-  task_assigned: z.boolean().default(true),
-  task_assigned_in_app: z.boolean().default(true),
-  task_due: z.boolean().default(true),
-  task_due_in_app: z.boolean().default(true),
-  person_assigned: z.boolean().default(true),
-  person_assigned_in_app: z.boolean().default(true),
-  email_assigned: z.boolean().default(true),
-  email_assigned_in_app: z.boolean().default(true),
-  export_ready: z.boolean().default(true),
-  export_ready_in_app: z.boolean().default(true),
-  import_summary: z.boolean().default(true),
-  import_summary_in_app: z.boolean().default(true),
-});
-
-/**
- * Shape of the profiles.preferences jsonb column (formerly the untyped
- * profiles.json grab-bag). Only `notifications` is written today; unknown
- * keys from older rows are preserved rather than rejected.
- */
-export const ProfilePreferencesObj = z
-  .object({
-    notifications: NotificationPreferencesObj.partial().optional(),
-    /** Campaigns §15 — the context (campaign id) this user is working in; per-user, cross-device. */
-    active_campaign_id: z.string().optional(),
-  })
-  .catchall(z.unknown());
-
-export const UpdateAuthUserObj = z.object({
-  email: emailSchema.optional(),
-  first_name: nameSchema('First name').optional(),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-  verified: z.boolean().optional(),
-  two_factor_enabled: z.boolean().optional(),
-  notification_preferences: NotificationPreferencesObj.optional(),
-  /** Campaigns §15 — admin-assigned campaign; null = the office context. Admin/owner callers only. */
-  campaign_id: z.string().nullable().optional(),
-});
-
-export const Verify2FAObj = z.object({
-  email: emailSchema,
-  code: z.string().length(6),
-  rememberMe: z.boolean().optional(),
-});
 ````
 
 ## File: libs/common/src/lib/schemas/connections.schema.ts
@@ -9403,6 +9102,157 @@ export const NewsletterTemplateObj = z.object({
 export type AddNewsletterTemplateType = z.infer<typeof AddNewsletterTemplateObj>;
 export type UpdateNewsletterTemplateType = z.infer<typeof UpdateNewsletterTemplateObj>;
 export type NewsletterTemplateType = z.infer<typeof NewsletterTemplateObj>;
+````
+
+## File: libs/common/src/lib/auth.ts
+````typescript
+import { z } from 'zod';
+
+export interface IAuthKeyPayload {
+  name?: string;
+
+  session_id: string;
+
+  tenant_id: string;
+
+  user_id: string;
+
+  role?: string | null;
+
+  source?: string;
+}
+
+export interface IAuthUser {
+  email: string;
+
+  first_name: string;
+
+  last_name?: string;
+
+  id: string;
+
+  role?: string | null;
+
+  avatar_url?: string | null;
+
+  email_verified: boolean;
+
+  passkey_setup_dismissed_at?: Date | null;
+
+  tenant_deletion_scheduled_at?: Date | null;
+
+  tenant_paused_at?: Date | null;
+
+  /** Set while the tenant still has the seeded demo data (drives the demo-mode banner). */
+  tenant_demo_mode_at?: Date | null;
+
+  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
+  tenant_slug?: string | null;
+}
+
+export interface IUserStatsSnapshot {
+  emails_assigned: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+  contacts_added: {
+    total: number;
+    last_created_at: Date | null;
+  };
+  files_imported: {
+    count: number;
+    total_rows: number;
+    last_activity_at: Date | null;
+  };
+  files_exported: {
+    count: number;
+    total_rows: number;
+    last_activity_at: Date | null;
+  };
+}
+
+export interface IAuthUserRecord extends IAuthUser {
+  last_name: string;
+  role: string | null;
+  /** Campaigns §15 — admin-assigned campaign; null = office. Not enforced for admins/owners. */
+  campaign_id: string | null;
+  verified: boolean;
+  two_factor_enabled: boolean;
+  deletion_scheduled_at: Date | null;
+  /** Admin deactivation: set = can't sign in until an admin/owner reactivates. */
+  deactivated_at?: Date | null;
+  /** Most recent session activity; null until the user has signed in at least once. */
+  last_active_at?: Date | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+  previous_email?: string | null;
+  previous_role?: string | null;
+  avatar_url?: string | null;
+  notification_preferences?: {
+    mention_in_comment: boolean;
+    mention_in_comment_in_app: boolean;
+    task_assigned: boolean;
+    task_assigned_in_app: boolean;
+    task_due: boolean;
+    task_due_in_app: boolean;
+    person_assigned: boolean;
+    person_assigned_in_app: boolean;
+    export_ready: boolean;
+    export_ready_in_app: boolean;
+    import_summary: boolean;
+    import_summary_in_app: boolean;
+  };
+}
+
+export interface IAuthUserDetail extends IAuthUserRecord {
+  stats: IUserStatsSnapshot;
+}
+
+export interface IToken {
+  auth_token: string | null;
+  refresh_token: string | null;
+}
+
+/**
+ * The one generic message shown for any failed sign-in attempt, regardless of
+ * whether the email or the password was wrong — never reveal which, so that
+ * sign-in cannot be used to probe which emails have accounts. Shared by the
+ * backend error formatter and the frontend so the copy never drifts.
+ */
+export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
+
+/**
+ * Product names for the stored role values — the working role 'user' is shown as
+ * "Editor" everywhere (Users list, user page, Profile). Shared so the label never drifts.
+ */
+export const AUTH_ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  user: 'Editor',
+  viewer: 'Viewer',
+};
+
+export function authRoleLabel(role: string | null | undefined): string {
+  return role ? (AUTH_ROLE_LABELS[role] ?? role) : '—';
+}
+
+export type signInInputType = z.infer<typeof signInInputObj>;
+
+export type signUpInputType = z.infer<typeof signUpInputObj>;
+
+export const signInInputObj = z.object({
+  email: z.email(),
+  password: z.string().min(8).max(72),
+  rememberMe: z.boolean().optional(),
+});
+
+export const signUpInputObj = z.object({
+  organization: z.string(),
+  email: z.string().max(100),
+  password: z.string().min(8).max(72),
+  first_name: z.string().max(100),
+});
 ````
 
 ## File: libs/common/src/lib/models.ts
@@ -10148,139 +9998,6 @@ export default defineConfig(() => ({
 }));
 ````
 
-## File: libs/uxcommon/src/components/alerts/alerts.html
-````html
-<div
-  class="pointer-events-none z-50 flex w-full flex-col items-center gap-2 px-4"
-  [class.absolute]="!isPositionRelative()"
-  [class.left-0]="!isPositionRelative()"
-  [class.top-4]="isPositionTop()"
-  [class.bottom-4]="isPositionBottom()"
->
-  @for (alert of alerts(); track alert.id) {
-  <div
-    class="pointer-events-auto relative flex max-w-[520px] cursor-pointer items-start gap-3 overflow-hidden rounded-[12px] border border-base-300 bg-base-100 py-3 pl-4 pr-3.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
-    role="alert"
-    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: getExitAnim()"
-    (click)="dismiss(alert.id)"
-  >
-    <span aria-hidden="true" class="absolute inset-y-0 left-0 w-[5px] {{ barToneClass(alert.type) }}"></span>
-    <span
-      aria-hidden="true"
-      class="mt-px flex shrink-0 items-center justify-center rounded-[8px] p-1.5 {{ chipToneClass(alert.type) }}"
-    >
-      <pc-icon [name]="icon(alert.type)" [size]="4" class="{{ toneClass(alert.type) }}"></pc-icon>
-    </span>
-    <div class="line-clamp-3 text-[12.5px] leading-[1.45] text-base-content [overflow-wrap:anywhere]">
-      {{ alert.text }}
-    </div>
-    @if (alert.count() > 1) {
-    <span
-      class="mt-px shrink-0 rounded-full bg-base-content/10 px-[7px] py-px text-[10.5px] font-semibold tabular-nums text-base-content"
-    >
-      ×{{ alert.count() }}
-    </span>
-    }
-  </div>
-  }
-</div>
-````
-
-## File: libs/uxcommon/src/components/alerts/alerts.ts
-````typescript
-import { Component, computed, inject, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import type { PcIconNameType } from '@icons/icons.index';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-import { ALERTTYPE, AlertService } from './alert-service';
-
-@Component({
-  selector: 'pc-alerts',
-  imports: [Icon, AnimateIfDirective],
-  templateUrl: './alerts.html',
-})
-export class Alerts {
-  protected alertSvc = inject(AlertService);
-
-  public position = input<'top' | 'bottom' | 'relative'>('bottom');
-
-  protected readonly alerts = computed(() => {
-    const list = this.alertSvc.alertList();
-    // Service list is newest-first; render newest nearest the pinned edge
-    // (bottom of the stack when pinned bottom — spec §2).
-    return this.isPositionBottom() ? list.slice().reverse() : list;
-  });
-
-  protected dismiss(id: string): void {
-    this.alertSvc.dismiss(id);
-  }
-
-  protected getEnterAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
-  }
-
-  protected getExitAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
-  }
-
-  protected icon(type?: ALERTTYPE): PcIconNameType {
-    return type === 'success'
-      ? 'check-circle'
-      : type === 'warning'
-        ? 'exclamation-triangle'
-        : type === 'error'
-          ? 'exclamation-circle'
-          : 'information-circle';
-  }
-
-  protected isPositionBottom() {
-    return this.position() === 'bottom';
-  }
-
-  protected isPositionRelative() {
-    return this.position() === 'relative';
-  }
-
-  protected isPositionTop() {
-    return this.position() === 'top';
-  }
-
-  /** Tone accent bar hugging the card's left edge — the card surface and text stay neutral. */
-  protected barToneClass(type?: ALERTTYPE): string {
-    return type === 'success'
-      ? 'bg-success'
-      : type === 'warning'
-        ? 'bg-warning'
-        : type === 'error'
-          ? 'bg-error'
-          : 'bg-info';
-  }
-
-  /** Soft tinted background for the icon chip — echoes the accent bar without shouting. */
-  protected chipToneClass(type?: ALERTTYPE): string {
-    return type === 'success'
-      ? 'bg-success/10'
-      : type === 'warning'
-        ? 'bg-warning/10'
-        : type === 'error'
-          ? 'bg-error/10'
-          : 'bg-info/10';
-  }
-
-  /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
-  protected toneClass(type?: ALERTTYPE): string {
-    return type === 'success'
-      ? 'text-success'
-      : type === 'warning'
-        ? 'text-warning'
-        : type === 'error'
-          ? 'text-error'
-          : 'text-info';
-  }
-}
-````
-
 ## File: libs/uxcommon/src/components/geocode-chip/geocode-chip.ts
 ````typescript
 import { Component, computed, input } from '@angular/core';
@@ -10401,7 +10118,7 @@ let nextRowActionsId = 0;
       popover
       [id]="menuId"
       [style.position-anchor]="anchorName"
-      class="dropdown dropdown-end menu w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
+      class="dropdown dropdown-end pc-dropdown-sheet menu sm:w-56 sm:rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
       (click)="closeMenu()"
     >
       <ng-content></ng-content>
@@ -10413,9 +10130,13 @@ let nextRowActionsId = 0;
     }
 
     /* Near the bottom of the viewport, drop the menu above the trigger instead of
-       off-screen. position-area alone does not reposition itself. */
-    ul[popover] {
-      position-try-fallbacks: flip-block;
+       off-screen. position-area alone does not reposition itself. Scoped to sm+
+       because below sm the menu is a pc-dropdown-sheet, and this unlayered
+       component style would otherwise beat the utility's fallback reset. */
+    @media (width >= 40rem) {
+      ul[popover] {
+        position-try-fallbacks: flip-block;
+      }
     }
   `,
 })
@@ -10859,6 +10580,333 @@ export function formatCurrency(amount: number, code: CurrencyCode): string {
   const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
   return `${currencyPriceSymbol(code)}${number}`;
 }
+````
+
+## File: libs/common/src/lib/help/articles/contacts.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const CONTACTS_ARTICLES: HelpArticle[] = [
+  {
+    id: 'add-people',
+    category: 'contacts',
+    title: 'Add and edit people',
+    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
+    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
+    related: ['person-profile', 'import', 'tags-issues', 'households'],
+    blocks: [
+      { kind: 'h2', id: 'add-one', text: 'Add a person' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
+          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
+          {
+            title: 'Fill in what you know',
+            detail:
+              'Fields validate as you type. Problems are explained right under the field, so you can fix them before saving.',
+          },
+          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'The new-person form also carries the **Campaign standing** card, so you can set a **support level**, **voting status**, **email subscription**, and the global **do-not-contact** flag right as you create the person. Support, voting, and the subscription apply to the campaign context you are working in (shown on the card); do-not-contact is global. You do not have to. Leave them alone and the person is created with everything “Unknown”, then set standing later from their profile.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Have a spreadsheet?',
+        text: 'Do not type hundreds of rows by hand. [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
+      },
+      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
+      {
+        kind: 'p',
+        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid. Double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
+      },
+      {
+        kind: 'p',
+        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use. Click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
+      },
+      {
+        kind: 'p',
+        text: 'If you try to leave a form with unsaved changes, pplCRM asks before discarding them. It names exactly which fields would be lost, so nothing disappears silently.',
+      },
+      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
+      {
+        kind: 'p',
+        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
+      },
+    ],
+  },
+  {
+    id: 'person-profile',
+    category: 'contacts',
+    title: 'Inside a person profile',
+    summary:
+      'The profile gathers everything about one person. Here is what each tab shows and where the numbers come from.',
+    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
+    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials (who this is and their status) and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
+      },
+      {
+        kind: 'p',
+        text: 'The contact card on the left carries the essentials: email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest. The record’s notes sit just below it.',
+      },
+      {
+        kind: 'p',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. The card always shows the campaign you are working in — your assigned campaign, or, for admins, the context selected under **Workspace → Campaigns**.',
+      },
+      {
+        kind: 'p',
+        text: 'Use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives in the header on household and company pages, which carry the identical Activity tab.',
+      },
+      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
+      {
+        kind: 'list',
+        items: [
+          '**Household**: everyone at the same address.',
+          '**Connections**: the people this person is linked to (referrals, relationships, and other ties), separate from who they live with.',
+          '**Emails**: messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
+          '**Donations**: every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
+          '**Volunteer**: their shift history and hours.',
+          '**Events**: event registrations and attendance.',
+          '**Activity**: the running history of this record, pairing the interactions you log (calls, door knocks, notes, meetings) with the audit trail of edits, newest first. It sits last, as it does on every record.',
+        ],
+      },
+      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
+      {
+        kind: 'p',
+        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows. Use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Empty tab? That is a prompt, not a dead end',
+        text: 'Empty states name the cause and offer the next step. For example, a person with no household shows an assign action right there.',
+      },
+    ],
+  },
+  {
+    id: 'households',
+    category: 'contacts',
+    title: 'Households',
+    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
+    keywords: [
+      'household',
+      'family',
+      'address',
+      'members',
+      'assign household',
+      'home',
+      'map',
+      'ward',
+      'district',
+      'precinct',
+      'geocode',
+      'door notes',
+    ],
+    related: ['add-people', 'person-profile', 'duplicates'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a household' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Households](/households)',
+            detail:
+              'From [People](/people), click the **Households** tab under the header. People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
+          },
+          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
+          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Start from the person',
+        text: 'On a profile with no household yet, the household area offers **Assign household** directly, often the fastest route.',
+      },
+      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
+      {
+        kind: 'p',
+        text: 'Editing a household, search for an address and pick a suggestion. It fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
+      },
+      {
+        kind: 'p',
+        text: 'The household page shows a map card. Clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), **Address problem** (the address could not be found; open Edit and fix it), or **Not geocoded** (geocoding is a Movement feature and your plan is below it — the address is saved and fine, it just wasn’t placed on the map). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in. Set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
+      },
+      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
+      {
+        kind: 'p',
+        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them. See [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+  {
+    id: 'companies',
+    category: 'contacts',
+    title: 'Companies',
+    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
+    keywords: [
+      'company',
+      'organization',
+      'employer',
+      'business',
+      'sponsor',
+      'corporate',
+      'enrich',
+      'google',
+      'google places',
+    ],
+    related: ['person-profile', 'duplicates', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Companies hold the organizations in your world: employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
+      },
+      { kind: 'h2', id: 'create', text: 'Add a company' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Companies](/companies)',
+            detail:
+              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
+          },
+          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
+          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
+        ],
+      },
+      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
+      {
+        kind: 'p',
+        text: 'While adding a company, tab out of the **Company Name** field and pplCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create**. Nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
+      },
+      {
+        kind: 'p',
+        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Deleting a company keeps the people',
+        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping. Everyone keeps their person record, they just lose the employer link.',
+      },
+      {
+        kind: 'p',
+        text: 'Companies get the full grid toolkit (filters, tags, CSV import and export, and inline editing) plus their own view in the [Duplicates](/duplicates) finder.',
+      },
+    ],
+  },
+  {
+    id: 'teams',
+    category: 'contacts',
+    title: 'Teams',
+    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
+    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
+    related: ['events-shifts', 'tasks', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Teams turn a crowd of volunteers into working units: a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
+      },
+      {
+        kind: 'p',
+        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead**: the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go. Pick a lead.”); open the team and set a lead to clear it.',
+      },
+      { kind: 'h2', id: 'create', text: 'Set up a team' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
+          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
+          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
+          {
+            title: 'Give it work',
+            detail: 'Attach lists to call through and tasks to complete. The team page tracks both.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Teams pair well with shifts',
+        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile. See [Events and volunteer shifts](/help/events-shifts).',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/schemas/auth.schema.ts
+````typescript
+import { z } from 'zod';
+import { emailSchema, nameSchema } from './core.schema';
+
+export const InviteAuthUserObj = z.object({
+  email: emailSchema,
+  first_name: nameSchema('First name'),
+  last_name: nameSchema('Last name').nullable().optional(),
+  role: z.string().max(100).nullable().optional(),
+  /** Campaigns §15 — assign the invitee to a campaign; null/absent = the office context. */
+  campaign_id: z.string().nullable().optional(),
+});
+
+export const NotificationPreferencesObj = z.object({
+  mention_in_comment: z.boolean().default(true),
+  mention_in_comment_in_app: z.boolean().default(true),
+  task_assigned: z.boolean().default(true),
+  task_assigned_in_app: z.boolean().default(true),
+  task_due: z.boolean().default(true),
+  task_due_in_app: z.boolean().default(true),
+  person_assigned: z.boolean().default(true),
+  person_assigned_in_app: z.boolean().default(true),
+  email_assigned: z.boolean().default(true),
+  email_assigned_in_app: z.boolean().default(true),
+  export_ready: z.boolean().default(true),
+  export_ready_in_app: z.boolean().default(true),
+  import_summary: z.boolean().default(true),
+  import_summary_in_app: z.boolean().default(true),
+});
+
+/**
+ * Shape of the profiles.preferences jsonb column (formerly the untyped
+ * profiles.json grab-bag). Only `notifications` is written today; unknown
+ * keys from older rows are preserved rather than rejected.
+ */
+export const ProfilePreferencesObj = z
+  .object({
+    notifications: NotificationPreferencesObj.partial().optional(),
+    /** Campaigns §15 — the context (campaign id) this user is working in; per-user, cross-device. */
+    active_campaign_id: z.string().optional(),
+  })
+  .catchall(z.unknown());
+
+export const UpdateAuthUserObj = z.object({
+  email: emailSchema.optional(),
+  first_name: nameSchema('First name').optional(),
+  last_name: nameSchema('Last name').nullable().optional(),
+  role: z.string().max(100).nullable().optional(),
+  verified: z.boolean().optional(),
+  two_factor_enabled: z.boolean().optional(),
+  notification_preferences: NotificationPreferencesObj.optional(),
+  /** Campaigns §15 — admin-assigned campaign; null = the office context. Admin/owner callers only. */
+  campaign_id: z.string().nullable().optional(),
+});
+
+export const Verify2FAObj = z.object({
+  email: emailSchema,
+  code: z.string().length(6),
+  rememberMe: z.boolean().optional(),
+});
 ````
 
 ## File: libs/common/src/lib/schemas/content-check.schema.ts
@@ -12288,6 +12336,525 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
     ],
   },
 ];
+````
+
+## File: libs/common/src/index.ts
+````typescript
+export type {
+  IAuthKeyPayload,
+  IAuthUser,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  IUserStatsSnapshot,
+  IToken,
+  signInInputType,
+  signUpInputType,
+} from './lib/auth';
+
+export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
+
+export type {
+  INow,
+  AddTagType,
+  AddListType,
+  AddMarketingEmailType,
+  AddTaskType,
+  AddTeamType,
+  AddCampaignType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  SetCampaignSubscriptionType,
+  CarryOverCampaignType,
+  InviteAuthUserType,
+  Verify2FAType,
+  PERSONINHOUSEHOLDTYPE,
+  PersonsType,
+  MarketingEmailType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportPreviousSendType,
+  CreateClickersListResultType,
+  TasksType,
+  ListsType,
+  SettingsType,
+  SettingsEntryType,
+  UpsertSettingsInputType,
+  SortModelType,
+  UpdateHouseholdsType,
+  UpdatePersonsType,
+  UpdateTagType,
+  UpdateListType,
+  UpdateTeamType,
+  UpdateAuthUserType,
+  ProfilePreferencesType,
+  UpdateMarketingEmailType,
+  UpdateTaskType,
+  getAllOptionsType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  QueueExportInputType,
+  LogInstantExportInputType,
+  DataExportRecordType,
+  ImportListItem,
+  AddVolunteerEventType,
+  VolunteerEventsType,
+  UpdateVolunteerEventType,
+  AddVolunteerShiftType,
+  VolunteerShiftsType,
+  UpdateVolunteerShiftType,
+  AddWebFormType,
+  UpdateWebFormType,
+  WebFormsType,
+  CreateFormType,
+  UpdateFormType,
+  FormSubmissionType,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowsType,
+  AddWorkflowType,
+  UpdateWorkflowType,
+  WorkflowStepsType,
+  AddWorkflowStepType,
+  UpdateWorkflowStepType,
+  WorkflowEnrollmentsType,
+  AddEventType,
+  EventType,
+  UpdateEventType,
+  AddTicketTypeType,
+  TicketTypeType,
+  UpdateTicketTypeType,
+  ReorderTicketTypesType,
+  AddRegistrationType,
+  RegistrationType,
+  UpdateRegistrationType,
+  AddConnectionType,
+  AddTurfType,
+  UpdateTurfType,
+  CutTurfsType,
+  AssignTurfType,
+  FieldReportRangeType,
+  LogKnockType,
+} from './lib/models';
+
+export {
+  cloneQueryBuilderNode,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  TASK_STATUSES,
+  TASK_BOARD_STATUSES,
+  TASK_OPEN_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskStatus,
+  isTaskBoardStatus,
+  AddTeamObj,
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  SUBSCRIPTION_STATUSES,
+  CONSENT_SOURCES,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STATUSES,
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  FACT_SOURCES,
+  DNC_CHANNELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
+  InviteAuthUserObj,
+  Verify2FAObj,
+  PersonsObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  TasksObj,
+  ReorderTasksObj,
+  ReorderSubtasksObj,
+  ListsObj,
+  SettingsObj,
+  SettingsEntryObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  UpdateListObj,
+  UpdateTeamObj,
+  UpdateAuthUserObj,
+  NotificationPreferencesObj,
+  ProfilePreferencesObj,
+  UpdateMarketingEmailObj,
+  UpdateTaskObj,
+  sortModelItem,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  ImportListItemObj,
+  dbIdSchema,
+  uuidSchema,
+  addressSchema,
+  idSchema,
+  folderIdSchema,
+  regularFolderIdSchema,
+  nameSchema,
+  descriptionSchema,
+  emailSchema,
+  phoneSchema,
+  notesSchema,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  FormFieldObj,
+  FormTypeEnum,
+  FORM_TYPES,
+  FORM_STATUSES,
+  FORM_TEMPLATES,
+  FORM_STANDARD_CATALOG,
+  FORM_EMAIL_FIELD,
+  normForm,
+  fieldsForTemplate,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  WorkflowRunObj,
+  WorkflowStepConfigObj,
+  WORKFLOW_TRIGGER_TYPES,
+  WORKFLOW_STEP_KINDS,
+  CompanyInputObj,
+  CompanyEnrichmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+  RELATION_TYPES,
+  RELATION_TYPE_LABELS,
+  relationTypeSchema,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  TURF_STATUSES,
+  KNOCK_OUTCOMES,
+  KNOCK_RESPONSES,
+  KNOCK_RESPONSE_LABELS,
+  DOORS_PER_TURF_PRESETS,
+  turfStatusSchema,
+  knockOutcomeSchema,
+  knockResponseSchema,
+  isTurfStatus,
+  isKnockOutcome,
+  CompanionSurveyObj,
+  CompanionPersonResultObj,
+  CompanionDoorOutcomeObj,
+  CompanionClearOutcomeObj,
+  CompanionPersonCreateObj,
+  CompanionOpObj,
+  CompanionResultsObj,
+  UpdateCompanionSettingsObj,
+  AddDeliveryRequestObj,
+  UpdateDeliveryRequestObj,
+  SetDeliveryRequestStatusObj,
+  PlanDeliveriesObj,
+  CommitDeliveriesObj,
+  UpdateDeliveryRouteObj,
+  AssignVolunteerObj,
+  SetDeliveryRouteStatusObj,
+  ReorderStopObj,
+  ReorderStopsObj,
+  StopActionObj,
+  RouteIdObj,
+  MintShareLinkObj,
+  PublicStopActionObj,
+  GetSignStatusObj,
+  DELIVERY_REQUEST_STATUSES,
+  DELIVERY_REQUEST_STATUS_LABELS,
+  DELIVERY_ROUTE_STATUSES,
+  DELIVERY_STOP_STATUSES,
+  DELIVERY_SOURCES,
+  DELIVERY_SKIP_REASONS,
+  DONATION_METHODS,
+  DONATION_METHOD_LABELS,
+  donationMethodSchema,
+  RecordDonationObj,
+  INTERACTION_TYPES,
+  INTERACTION_TYPE_LABELS,
+  interactionTypeSchema,
+  LogInteractionObj,
+  CompanionAccessQueryObj,
+  CompanionVerifyStartObj,
+  CompanionVerifyConfirmObj,
+  COMPANION_LINK_KINDS,
+  COMPANION_VERIFY_CHANNELS,
+  COMPANION_VOLUNTEER_STATUSES,
+  COMPANION_ACCESS_STATES,
+} from './lib/schema';
+
+export type {
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVolunteerStatus,
+  CompanionAccessState,
+  CompanionContact,
+  CompanionAccessPayload,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+} from './lib/schemas/companion-access.schema';
+
+export type {
+  CampaignKind,
+  CampaignStatus,
+  SupportLevel,
+  VotingStatus,
+  FactSource,
+  SubscriptionStatus,
+  ConsentSource,
+} from './lib/schemas/campaigns.schema';
+export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
+export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
+
+export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
+
+export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
+export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
+
+export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
+export type { TaskStatus, TaskBoardStatus, ReorderTasksType, ReorderSubtasksType } from './lib/schemas/tasks.schema';
+export type {
+  WorkflowTriggerType,
+  WorkflowStepKind,
+  WorkflowStepConfigType,
+  WorkflowRunType,
+  WorkflowSendCondition,
+  WorkflowExitCondition,
+} from './lib/schemas/workflows.schema';
+export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
+export type {
+  TurfStatus,
+  KnockOutcome,
+  KnockResponse,
+  CompanionSurveyType,
+  CompanionOpType,
+  CompanionResultsType,
+  CompanionOpAck,
+  CompanionSurveyPrefill,
+  CompanionPersonResult,
+  CompanionPerson,
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionTurfPayload,
+  UpdateCompanionSettingsType,
+} from './lib/schemas/canvassing.schema';
+export type {
+  AddDeliveryRequestType,
+  UpdateDeliveryRequestType,
+  SetDeliveryRequestStatusType,
+  PlanDeliveriesType,
+  CommitDeliveriesType,
+  UpdateDeliveryRouteType,
+  AssignVolunteerType,
+  SetDeliveryRouteStatusType,
+  ReorderStopType,
+  ReorderStopsType,
+  StopActionType,
+  MintShareLinkType,
+  PublicStopActionType,
+  GetSignStatusType,
+  DeliveryRequestStatus,
+  DeliveryRouteStatus,
+  DeliveryStopStatus,
+  DeliverySource,
+  DeliverySkipReason,
+} from './lib/schemas/deliveries.schema';
+
+export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
+export {
+  CROCKFORD_ALPHABET,
+  PUBLIC_ID_LENGTH,
+  encodeCrockford,
+  normalizeCrockford,
+  extractPublicIdFromSlug,
+  buildPersonSlug,
+} from './lib/public-id';
+export { calculateWorkingTimeMs } from './lib/sla';
+
+export {
+  AddNewsletterTemplateObj,
+  NewsletterTemplateObj,
+  UpdateNewsletterTemplateObj,
+} from './lib/schemas/newsletter-templates.schema';
+export type {
+  AddNewsletterTemplateType,
+  NewsletterTemplateType,
+  UpdateNewsletterTemplateType,
+} from './lib/schemas/newsletter-templates.schema';
+
+export {
+  AI_CONTENT_TYPES,
+  AI_REVIEW_STATUSES,
+  AiPreflightVerdictObj,
+  PREFLIGHT_BANDS,
+  PREFLIGHT_BLOCK,
+  PREFLIGHT_GOOD,
+  PREFLIGHT_SEVERITIES,
+  PreflightFindingObj,
+  PreflightResultObj,
+  RunPreflightObj,
+  preflightBand,
+} from './lib/schemas/content-check.schema';
+export type {
+  AiContentType,
+  AiPreflightVerdict,
+  AiReviewStatus,
+  PreflightBand,
+  PreflightFinding,
+  PreflightResult,
+  PreflightSeverity,
+  RunPreflightType,
+} from './lib/schemas/content-check.schema';
+export {
+  buildAiFindings,
+  buildSpamAssassinFinding,
+  computeScore,
+  lintNewsletterContent,
+  preflightHashInput,
+} from './lib/preflight-lint';
+export type { PreflightInput } from './lib/preflight-lint';
+
+export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
+
+export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+
+export {
+  GB,
+  PLANS,
+  PLANS_BY_KEY,
+  PURCHASABLE_PLAN_KEYS,
+  LEGACY_PLAN_ALIASES,
+  FEATURE_MATRIX,
+  getPlanDef,
+  planDisplayName,
+  bracketIndexForSubscribers,
+  maxQuantity,
+  bracketForQuantity,
+  subscriberCapForQuantity,
+  emailCapForQuantity,
+  priceForQuantity,
+  annualPriceForQuantity,
+  monthlyEquivalentUsd,
+  startingPriceLabel,
+  startingPriceUsd,
+  priceLabelAt,
+  cadenceLabel,
+  BILLING_INTERVALS,
+  ANNUAL_MONTHS_FREE,
+  ANNUAL_PRICE_MULTIPLIER,
+  GATED_FEATURES,
+  planAllowsFeature,
+  GEOCODING_MIN_PLAN,
+  planAllowsGeocoding,
+} from './lib/billing/plans';
+export type {
+  PlanKey,
+  GatedFeature,
+  PurchasablePlanKey,
+  BillingInterval,
+  PlanDef,
+  PriceBracket,
+  TierPricing,
+  FeatureMatrixRow,
+  FeatureMatrixGroup,
+} from './lib/billing/plans';
+export {
+  CURRENCY_CODES,
+  SUPPORTED_CURRENCIES,
+  COUNTRY_TO_CURRENCY,
+  isCurrencyCode,
+  currencyForCountry,
+  convertFromUsd,
+  formatCurrency,
+  currencyPriceSymbol,
+} from './lib/billing/currency';
+export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
+
+export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
+
+export type {
+  JSend,
+  JSendSuccessInterface as JSendSuccess,
+  JSendFailInterface as JSendFail,
+  JSendStatus,
+  JSendErrorInterface as JSendError,
+} from './lib/jsend';
+
+export type {
+  HelpArticle,
+  HelpBlock,
+  HelpCategory,
+  HelpCategoryId,
+  HelpStep,
+  HelpKeyRow,
+  HelpInlineSegment,
+} from './lib/help/help-types';
+export {
+  parseHelpInline,
+  stripHelpInline,
+  blockToPlainText,
+  articleToPlainText,
+  readingMinutes,
+} from './lib/help/help-types';
+
+export {
+  HELP_CATEGORIES,
+  HELP_ARTICLES,
+  POPULAR_ARTICLE_IDS,
+  getHelpArticle,
+  getHelpCategory,
+  articlesInCategory,
+  relatedArticles,
+  categoryNeighbors,
+} from './lib/help/help-content';
+
+export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
+export { searchHelp, highlightTerms } from './lib/help/help-search';
+
+export type { HelpRouteTarget } from './lib/help/help-links';
+export { classifyHelpRoute } from './lib/help/help-links';
+
+export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
 ````
 
 ## File: libs/common/src/lib/help/articles/administration.ts
@@ -14027,525 +14594,6 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
   persons_count: number;
   tags: string[] | null;
 };
-````
-
-## File: libs/common/src/index.ts
-````typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
-
-export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
-
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  AddCampaignType,
-  UpdateCampaignType,
-  UpsertCampaignPersonFactType,
-  SetCampaignSubscriptionType,
-  CarryOverCampaignType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  NewsletterReportType,
-  NewsletterReportBounceType,
-  NewsletterReportEngagedType,
-  NewsletterReportLinkType,
-  NewsletterReportPreviousSendType,
-  CreateClickersListResultType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  ProfilePreferencesType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  LogInstantExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  CreateFormType,
-  UpdateFormType,
-  FormSubmissionType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  ReorderTicketTypesType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-  AddTurfType,
-  UpdateTurfType,
-  CutTurfsType,
-  AssignTurfType,
-  FieldReportRangeType,
-  LogKnockType,
-} from './lib/models';
-
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  TASK_STATUSES,
-  TASK_BOARD_STATUSES,
-  TASK_OPEN_STATUSES,
-  TASK_STATUS_LABELS,
-  isTaskStatus,
-  isTaskBoardStatus,
-  AddTeamObj,
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  SUBSCRIPTION_STATUSES,
-  CONSENT_SOURCES,
-  CAMPAIGN_KINDS,
-  CAMPAIGN_STATUSES,
-  SUPPORT_LEVELS,
-  SUPPORT_LEVEL_LABELS,
-  VOTING_STATUSES,
-  VOTING_STATUS_LABELS,
-  FACT_SOURCES,
-  DNC_CHANNELS,
-  VOLUNTEER_STATUSES,
-  VOLUNTEER_STATUS_LABELS,
-  STAFF_STATUSES,
-  STAFF_STATUS_LABELS,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ReorderTasksObj,
-  ReorderSubtasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  ProfilePreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  folderIdSchema,
-  regularFolderIdSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  FormFieldObj,
-  FormTypeEnum,
-  FORM_TYPES,
-  FORM_STATUSES,
-  FORM_TEMPLATES,
-  FORM_STANDARD_CATALOG,
-  FORM_EMAIL_FIELD,
-  normForm,
-  fieldsForTemplate,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  WorkflowRunObj,
-  WorkflowStepConfigObj,
-  WORKFLOW_TRIGGER_TYPES,
-  WORKFLOW_STEP_KINDS,
-  CompanyInputObj,
-  CompanyEnrichmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  ReorderTicketTypesObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  TURF_STATUSES,
-  KNOCK_OUTCOMES,
-  KNOCK_RESPONSES,
-  KNOCK_RESPONSE_LABELS,
-  DOORS_PER_TURF_PRESETS,
-  turfStatusSchema,
-  knockOutcomeSchema,
-  knockResponseSchema,
-  isTurfStatus,
-  isKnockOutcome,
-  CompanionSurveyObj,
-  CompanionPersonResultObj,
-  CompanionDoorOutcomeObj,
-  CompanionClearOutcomeObj,
-  CompanionPersonCreateObj,
-  CompanionOpObj,
-  CompanionResultsObj,
-  UpdateCompanionSettingsObj,
-  AddDeliveryRequestObj,
-  UpdateDeliveryRequestObj,
-  SetDeliveryRequestStatusObj,
-  PlanDeliveriesObj,
-  CommitDeliveriesObj,
-  UpdateDeliveryRouteObj,
-  AssignVolunteerObj,
-  SetDeliveryRouteStatusObj,
-  ReorderStopObj,
-  ReorderStopsObj,
-  StopActionObj,
-  RouteIdObj,
-  MintShareLinkObj,
-  PublicStopActionObj,
-  GetSignStatusObj,
-  DELIVERY_REQUEST_STATUSES,
-  DELIVERY_REQUEST_STATUS_LABELS,
-  DELIVERY_ROUTE_STATUSES,
-  DELIVERY_STOP_STATUSES,
-  DELIVERY_SOURCES,
-  DELIVERY_SKIP_REASONS,
-  DONATION_METHODS,
-  DONATION_METHOD_LABELS,
-  donationMethodSchema,
-  RecordDonationObj,
-  INTERACTION_TYPES,
-  INTERACTION_TYPE_LABELS,
-  interactionTypeSchema,
-  LogInteractionObj,
-  CompanionAccessQueryObj,
-  CompanionVerifyStartObj,
-  CompanionVerifyConfirmObj,
-  COMPANION_LINK_KINDS,
-  COMPANION_VERIFY_CHANNELS,
-  COMPANION_VOLUNTEER_STATUSES,
-  COMPANION_ACCESS_STATES,
-} from './lib/schema';
-
-export type {
-  CompanionLinkKind,
-  CompanionVerifyChannel,
-  CompanionVolunteerStatus,
-  CompanionAccessState,
-  CompanionContact,
-  CompanionAccessPayload,
-  CompanionVerifyConfirmResult,
-  CompanionVolunteerRow,
-} from './lib/schemas/companion-access.schema';
-
-export type {
-  CampaignKind,
-  CampaignStatus,
-  SupportLevel,
-  VotingStatus,
-  FactSource,
-  SubscriptionStatus,
-  ConsentSource,
-} from './lib/schemas/campaigns.schema';
-export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
-export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
-
-export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
-
-export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
-export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
-
-export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-export type { TaskStatus, TaskBoardStatus, ReorderTasksType, ReorderSubtasksType } from './lib/schemas/tasks.schema';
-export type {
-  WorkflowTriggerType,
-  WorkflowStepKind,
-  WorkflowStepConfigType,
-  WorkflowRunType,
-  WorkflowSendCondition,
-  WorkflowExitCondition,
-} from './lib/schemas/workflows.schema';
-export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
-export type {
-  TurfStatus,
-  KnockOutcome,
-  KnockResponse,
-  CompanionSurveyType,
-  CompanionOpType,
-  CompanionResultsType,
-  CompanionOpAck,
-  CompanionSurveyPrefill,
-  CompanionPersonResult,
-  CompanionPerson,
-  CompanionDoorOutcome,
-  CompanionHousehold,
-  CompanionTurfPayload,
-  UpdateCompanionSettingsType,
-} from './lib/schemas/canvassing.schema';
-export type {
-  AddDeliveryRequestType,
-  UpdateDeliveryRequestType,
-  SetDeliveryRequestStatusType,
-  PlanDeliveriesType,
-  CommitDeliveriesType,
-  UpdateDeliveryRouteType,
-  AssignVolunteerType,
-  SetDeliveryRouteStatusType,
-  ReorderStopType,
-  ReorderStopsType,
-  StopActionType,
-  MintShareLinkType,
-  PublicStopActionType,
-  GetSignStatusType,
-  DeliveryRequestStatus,
-  DeliveryRouteStatus,
-  DeliveryStopStatus,
-  DeliverySource,
-  DeliverySkipReason,
-} from './lib/schemas/deliveries.schema';
-
-export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
-export {
-  CROCKFORD_ALPHABET,
-  PUBLIC_ID_LENGTH,
-  encodeCrockford,
-  normalizeCrockford,
-  extractPublicIdFromSlug,
-  buildPersonSlug,
-} from './lib/public-id';
-export { calculateWorkingTimeMs } from './lib/sla';
-
-export {
-  AddNewsletterTemplateObj,
-  NewsletterTemplateObj,
-  UpdateNewsletterTemplateObj,
-} from './lib/schemas/newsletter-templates.schema';
-export type {
-  AddNewsletterTemplateType,
-  NewsletterTemplateType,
-  UpdateNewsletterTemplateType,
-} from './lib/schemas/newsletter-templates.schema';
-
-export {
-  AI_CONTENT_TYPES,
-  AI_REVIEW_STATUSES,
-  AiPreflightVerdictObj,
-  PREFLIGHT_BANDS,
-  PREFLIGHT_BLOCK,
-  PREFLIGHT_GOOD,
-  PREFLIGHT_SEVERITIES,
-  PreflightFindingObj,
-  PreflightResultObj,
-  RunPreflightObj,
-  preflightBand,
-} from './lib/schemas/content-check.schema';
-export type {
-  AiContentType,
-  AiPreflightVerdict,
-  AiReviewStatus,
-  PreflightBand,
-  PreflightFinding,
-  PreflightResult,
-  PreflightSeverity,
-  RunPreflightType,
-} from './lib/schemas/content-check.schema';
-export {
-  buildAiFindings,
-  buildSpamAssassinFinding,
-  computeScore,
-  lintNewsletterContent,
-  preflightHashInput,
-} from './lib/preflight-lint';
-export type { PreflightInput } from './lib/preflight-lint';
-
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
-
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
-
-export {
-  GB,
-  PLANS,
-  PLANS_BY_KEY,
-  PURCHASABLE_PLAN_KEYS,
-  LEGACY_PLAN_ALIASES,
-  FEATURE_MATRIX,
-  getPlanDef,
-  planDisplayName,
-  bracketIndexForSubscribers,
-  maxQuantity,
-  bracketForQuantity,
-  subscriberCapForQuantity,
-  emailCapForQuantity,
-  priceForQuantity,
-  annualPriceForQuantity,
-  monthlyEquivalentUsd,
-  startingPriceLabel,
-  startingPriceUsd,
-  priceLabelAt,
-  cadenceLabel,
-  BILLING_INTERVALS,
-  ANNUAL_MONTHS_FREE,
-  ANNUAL_PRICE_MULTIPLIER,
-  GATED_FEATURES,
-  planAllowsFeature,
-  GEOCODING_MIN_PLAN,
-  planAllowsGeocoding,
-} from './lib/billing/plans';
-export type {
-  PlanKey,
-  GatedFeature,
-  PurchasablePlanKey,
-  BillingInterval,
-  PlanDef,
-  PriceBracket,
-  TierPricing,
-  FeatureMatrixRow,
-  FeatureMatrixGroup,
-} from './lib/billing/plans';
-export {
-  CURRENCY_CODES,
-  SUPPORTED_CURRENCIES,
-  COUNTRY_TO_CURRENCY,
-  isCurrencyCode,
-  currencyForCountry,
-  convertFromUsd,
-  formatCurrency,
-  currencyPriceSymbol,
-} from './lib/billing/currency';
-export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
-
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
-
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
-
-export type {
-  HelpArticle,
-  HelpBlock,
-  HelpCategory,
-  HelpCategoryId,
-  HelpStep,
-  HelpKeyRow,
-  HelpInlineSegment,
-} from './lib/help/help-types';
-export {
-  parseHelpInline,
-  stripHelpInline,
-  blockToPlainText,
-  articleToPlainText,
-  readingMinutes,
-} from './lib/help/help-types';
-
-export {
-  HELP_CATEGORIES,
-  HELP_ARTICLES,
-  POPULAR_ARTICLE_IDS,
-  getHelpArticle,
-  getHelpCategory,
-  articlesInCategory,
-  relatedArticles,
-  categoryNeighbors,
-} from './lib/help/help-content';
-
-export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
-export { searchHelp, highlightTerms } from './lib/help/help-search';
-
-export type { HelpRouteTarget } from './lib/help/help-links';
-export { classifyHelpRoute } from './lib/help/help-links';
-
-export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
 ````
 
 ## File: libs/common/src/lib/help/articles/engagement.ts

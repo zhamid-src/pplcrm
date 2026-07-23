@@ -22,7 +22,10 @@
         <span>{{ inlineFilterLabel()(col!.field!) }}</span>
         <span>▾</span>
       </label>
-      <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[100] w-60 p-2 shadow">
+      <ul
+        tabindex="0"
+        class="dropdown-content pc-dropdown-sheet menu bg-base-100 sm:rounded-box z-[100] sm:w-60 p-2 shadow"
+      >
         @for (opt of getFilterOptionsForCol()(col!)!; track opt) {
         <li>
           <label class="label cursor-pointer justify-start gap-2 px-2 py-1">

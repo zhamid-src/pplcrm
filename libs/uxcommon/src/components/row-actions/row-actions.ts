@@ -64,7 +64,7 @@ let nextRowActionsId = 0;
       popover
       [id]="menuId"
       [style.position-anchor]="anchorName"
-      class="dropdown dropdown-end menu w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
+      class="dropdown dropdown-end pc-dropdown-sheet menu sm:w-56 sm:rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
       (click)="closeMenu()"
     >
       <ng-content></ng-content>
@@ -76,9 +76,13 @@ let nextRowActionsId = 0;
     }
 
     /* Near the bottom of the viewport, drop the menu above the trigger instead of
-       off-screen. position-area alone does not reposition itself. */
-    ul[popover] {
-      position-try-fallbacks: flip-block;
+       off-screen. position-area alone does not reposition itself. Scoped to sm+
+       because below sm the menu is a pc-dropdown-sheet, and this unlayered
+       component style would otherwise beat the utility's fallback reset. */
+    @media (width >= 40rem) {
+      ul[popover] {
+        position-try-fallbacks: flip-block;
+      }
     }
   `,
 })

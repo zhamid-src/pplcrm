@@ -9,7 +9,9 @@
   @if (grainLayout()) {
   <!-- Grain layout (People/Households/Companies, owner screenshot): grain tabs (left) + toolbar
        (right) share one band. No in-grid title/ⓘ — redundant with the sidebar + breadcrumb. -->
-  <div class="mb-3 flex items-center justify-between gap-4">
+  <!-- flex-wrap: on narrow screens the toolbar drops below the tabs instead of
+       painting over them (tabs can't shrink; toolbar is shrink-0). -->
+  <div class="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
     <div class="min-w-0"><ng-content select="[pcGridBelowHeader]"></ng-content></div>
     @if (showToolbar()) {
     <div class="shrink-0"><pc-dg-toolbar /></div>
@@ -80,7 +82,7 @@
 
     <!-- + Add filter: quick single field → operator → value chip entry -->
     @if (allowFilter()) {
-    <details class="dropdown" #addFilterDd>
+    <details class="dropdown" name="pc-dg-dropdown" #addFilterDd>
       <summary
         class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
       >
@@ -148,7 +150,7 @@
 
     <!-- Tags dashed pill — opens the OR checkbox picker -->
     @if (showTagFilter()) {
-    <details class="dropdown">
+    <details class="dropdown" name="pc-dg-dropdown">
       <summary
         class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
         [class.!border-primary]="selectedTags().length > 0"
@@ -188,7 +190,7 @@
 
     <!-- Issues dashed pill -->
     @if (showIssueFilter()) {
-    <details class="dropdown">
+    <details class="dropdown" name="pc-dg-dropdown">
       <summary
         class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
         [class.!border-primary]="selectedIssues().length > 0"
@@ -228,7 +230,7 @@
 
     <!-- Lists dashed pill — apply a saved list as a chip -->
     @if (showListFilter()) {
-    <details class="dropdown">
+    <details class="dropdown" name="pc-dg-dropdown">
       <summary
         class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
         [class.!border-primary]="selectedListId() !== null"

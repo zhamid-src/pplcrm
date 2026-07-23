@@ -13,7 +13,7 @@ import { Component, input, output } from '@angular/core';
   template: `
     <div
       tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
+      class="dropdown-content pc-dropdown-sheet bg-base-100 sm:rounded-box sm:w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
     >
       <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
         <span>{{ title() }}</span>

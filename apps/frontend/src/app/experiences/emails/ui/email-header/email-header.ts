@@ -12,6 +12,9 @@ import { EmailsStore } from '../../services/store/emailstore';
 import { EmailAssign } from '../email-assign/email-assign';
 import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
 
+/** Feeds the unique `id`/`anchor-name` pairs each instance needs to anchor its popovers. */
+let nextEmailHeaderId = 0;
+
 @Component({
   selector: 'pc-email-header',
   // include swap for expand/collapse control
@@ -47,27 +50,25 @@ export class EmailHeader {
   private savingName = false;
 
   private readonly firstNameInput = viewChild<ElementRef<HTMLInputElement>>('firstNameInput');
-  private readonly personDropdownContent = viewChild<ElementRef<HTMLElement>>('personDropdownContent');
 
-  // DaisyUI's dropdown is visible only while something inside it holds focus (`:focus-within`);
-  // losing focus even for one render flips `.dropdown-content` to `display: none`, and a
-  // `display: none` element can't be focused back into view — so the fix is to never let focus
-  // leave the subtree in the first place. We hold focus on the always-present wrapper *before*
-  // toggling which button/input gets rendered, then hand focus off to the fresh element once it
-  // exists.
-  private holdDropdownFocus(): void {
-    this.personDropdownContent()?.nativeElement.focus();
-  }
+  // Popover-mode dropdown plumbing (same idiom as pc-row-actions / pc-email-assign):
+  // open/close state lives in the popover, not in :focus-within, so re-rendering the
+  // name-edit controls inside the person card no longer dismisses it.
+  private readonly popoverInstance = nextEmailHeaderId++;
+  protected readonly personCardId = `pc-email-person-card-${this.popoverInstance}`;
+  protected readonly personCardAnchor = `--pc-email-person-card-${this.popoverInstance}`;
+  protected readonly recipientsMenuId = `pc-email-recipients-${this.popoverInstance}`;
+  protected readonly recipientsMenuAnchor = `--pc-email-recipients-${this.popoverInstance}`;
+  protected readonly moreMenuId = `pc-email-more-actions-${this.popoverInstance}`;
+  protected readonly moreMenuAnchor = `--pc-email-more-actions-${this.popoverInstance}`;
 
   protected startEditName(person: { first_name?: string | null; last_name?: string | null }): void {
-    this.holdDropdownFocus();
     this.nameDraft.set({ first_name: person.first_name ?? '', last_name: person.last_name ?? '' });
     this.editingName.set(true);
     setTimeout(() => this.firstNameInput()?.nativeElement.focus());
   }
 
   protected cancelEditName(): void {
-    this.holdDropdownFocus();
     this.editingName.set(false);
   }
 
@@ -78,7 +79,6 @@ export class EmailHeader {
     try {
       await this.personsSvc.update(personId, { first_name: first_name.trim(), last_name: last_name.trim() });
       this.store.refreshEmailHeader(this.email().id);
-      this.holdDropdownFocus();
       this.editingName.set(false);
     } catch (e) {
       console.error('Failed to update name:', e);
@@ -301,6 +301,15 @@ export class EmailHeader {
 
   protected handleCreateTask(): void {
     void this.createTaskDialog()?.open();
+  }
+
+  /**
+   * Dismiss a popover-mode menu once an item is chosen. `popover` light-dismisses on
+   * outside clicks and Esc, but a click *inside* the menu is not a dismissal to the
+   * platform — and every item in the ⋯ menu is a terminal action, so it is to us.
+   */
+  protected closeSheet(ev: Event): void {
+    if (ev.currentTarget instanceof HTMLElement) ev.currentTarget.hidePopover();
   }
 
   protected toggleExpand(): void {

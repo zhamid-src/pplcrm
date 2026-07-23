@@ -407,6 +407,85 @@ body {
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* shadow-sm */
 }
 
+/* Bottom sheet below sm (UX-GUIDELINES §4: touch pickers = bottom sheet, 44px
+   rows). Wear it on any .dropdown-content or popover-mode dropdown
+   ([popover].dropdown) to swap the anchored desktop card for a full-width
+   sheet pinned to the bottom edge, with grab handle and scrim. Call sites keep
+   their desktop geometry sm:-prefixed (sm:w-56, sm:mt-1, sm:rounded-box) so
+   nothing competes below sm. */
+@utility pc-dropdown-sheet {
+  @media (width < 40rem) {
+    /* Doubled class specificity: Tailwind sorts multi-property custom utilities
+       before single-property ones, so a call site's `p-2` or `border` would
+       otherwise out-cascade the sheet geometry. The contract is "the sheet owns
+       mobile geometry", so it must win regardless of source order. */
+    &.pc-dropdown-sheet {
+      position: fixed;
+      /* DaisyUI anchors popover dropdowns via position-area only; `none` detaches
+         the sheet from its anchor. position-anchor itself can stay — it is inert. */
+      position-area: none;
+      position-try-fallbacks: none;
+      inset: auto 0 0 0;
+      margin: 0;
+      width: 100%;
+      max-width: none;
+      max-height: 80vh;
+      overflow-y: auto;
+      /* DaisyUI .menu wraps into columns when height-constrained; a sheet must
+         scroll vertically instead. */
+      flex-wrap: nowrap;
+      border-radius: 1rem 1rem 0 0;
+      border-bottom-width: 0;
+      padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+
+      /* Focus-based sheets never reach the top layer, so they get no ::backdrop.
+         A viewport-sized shadow paints the same scrim behind the sheet; tap
+         outside still light-dismisses via the dropdown's blur. Popover sheets
+         are excluded — their real ::backdrop already does this. */
+      &:not([popover]) {
+        box-shadow: 0 0 0 100vmax oklab(0% none none / 0.3);
+      }
+    }
+
+    /* Grab handle — painted here so call sites don't each add a div. */
+    &::before {
+      content: '';
+      display: block;
+      flex-shrink: 0;
+      margin: 0 auto 0.75rem;
+      height: 0.25rem;
+      width: 2.5rem;
+      border-radius: calc(infinity * 1px);
+      background-color: var(--color-base-300);
+    }
+
+    /* Scrim for popover-mode sheets — the same value DaisyUI uses for its own
+       top-layer fallback backdrop. No-op for focus-based dropdowns. */
+    &::backdrop {
+      background-color: oklab(0% none none / 0.3);
+    }
+
+    /* 44px rows when the sheet is a menu */
+    & :where(li > a, li > button) {
+      min-height: 2.75rem;
+      align-items: center;
+    }
+  }
+}
+
+/* On phones the Quill formatting toolbar (4 wrapped rows of controls) costs
+   more than it gives: writing is plain text there; formatting stays available
+   on desktop and existing rich content still renders. The container keeps a
+   top border so the editor box stays visually closed. */
+@media (width < 40rem) {
+  .ql-toolbar.ql-snow {
+    display: none;
+  }
+  .ql-toolbar.ql-snow + .ql-container.ql-snow {
+    border-top: 1px solid var(--color-base-300);
+  }
+}
+
 /* Dark mode overrides for Quill and email prose */
 [data-theme='dark'] .ql-toolbar.ql-snow,
 [data-theme='dark'] .ql-container.ql-snow {
