@@ -41,16 +41,18 @@ export class EmailClient {
   protected mobileView = this.stateStore.mobilePanelView;
 
   protected folderPanelClass = computed(() =>
-    this.mobileView() === 'folders' ? 'flex-1 md:flex-none' : 'hidden md:block',
+    this.mobileView() === 'folders' ? 'flex-1 min-w-0 md:flex-none' : 'hidden md:block',
   );
 
   protected listPanelClass = computed(() =>
-    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 md:flex-none' : 'hidden md:flex md:flex-col md:h-full',
+    this.mobileView() === 'list'
+      ? 'flex flex-col h-full flex-1 min-w-0 md:flex-none'
+      : 'hidden md:flex md:flex-col md:h-full',
   );
 
   protected detailPanelClass = computed(() =>
     this.mobileView() === 'detail'
-      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10 bg-base-100'
+      ? 'flex flex-col flex-1 min-w-0 h-full p-4 pt-2 relative z-10 bg-base-100'
       : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10 bg-base-100',
   );
 
