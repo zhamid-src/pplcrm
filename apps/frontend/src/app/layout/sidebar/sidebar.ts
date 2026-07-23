@@ -250,11 +250,12 @@ export class Sidebar {
     return this.sidebarSvc.isCollapsed(name);
   }
 
-  /** Collapse is a text-density preference that only applies to the expanded sidebar. The
-   *  narrow icon rail always shows every section's icons — a collapsed section there has no
-   *  visible header, so its items would be unreachable. */
+  /** Collapse is a text-density preference that only applies to the expanded desktop sidebar.
+   *  The narrow icon rail always shows every section's icons — a collapsed section there has no
+   *  visible header, so its items would be unreachable. The full-screen mobile menu likewise
+   *  always shows everything: it has no chevrons, so a collapsed section would be a dead end. */
   protected isVisuallyCollapsed(name: string): boolean {
-    return !this.isEffectivelyNarrow() && this.isCollapsed(name);
+    return !this.isMobileOpen() && !this.isEffectivelyNarrow() && this.isCollapsed(name);
   }
 
   protected isDrawerFull() {

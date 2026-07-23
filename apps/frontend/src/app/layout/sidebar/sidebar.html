@@ -1,7 +1,7 @@
 <ng-template #navLink let-nav>
   <a
     *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
+    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer max-sm:min-h-11 max-sm:pb-0"
     [class.animate-up]="nav.justPinned"
     [class.tooltip]="isEffectivelyNarrow()"
     [class.tooltip-right]="isEffectivelyNarrow()"
@@ -13,7 +13,7 @@
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
     <span
-      class="indicator whitespace-nowrap pl-2 text-[13px] tracking-[0.03em]"
+      class="indicator whitespace-nowrap pl-2 text-[13px] tracking-[0.03em] max-sm:pl-3 max-sm:text-base"
       [class.invisible]="isEffectivelyNarrow()"
     >
       {{ nav.name }} @if (nav.indicator) {
@@ -29,7 +29,7 @@
       >
       }
     </span>
-    @if (nav.shortcut && !isEffectivelyNarrow()) {
+    @if (nav.shortcut && !isEffectivelyNarrow() && !isMobileOpen()) {
     <span
       class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
       aria-hidden="true"
@@ -45,14 +45,14 @@
      below the navbar (top-16 = the navbar's 4rem min-height), keeping the navbar's
      X button reachable to close it. Inert at sm+ and when closed (hidden wins). -->
 <div
-  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50 max-sm:fixed max-sm:inset-x-0 max-sm:top-16 max-sm:bottom-0 max-sm:z-40 max-sm:min-h-0 max-sm:w-full max-sm:overflow-y-auto"
+  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50 max-sm:fixed max-sm:inset-x-0 max-sm:top-16 max-sm:bottom-0 max-sm:z-40 max-sm:min-h-0 max-sm:w-full max-sm:overflow-y-auto max-sm:pb-10"
   [class.hidden]="!this.isMobileOpen()"
   [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
   [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
 >
   <a
     [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
+    class="mx-4 mb-5 mt-2.5 block max-w-44 flex-none cursor-pointer rounded-lg px-2 py-1 max-sm:mx-auto max-sm:mt-6 max-sm:mb-8"
     i18n-aria-label="@@sidebar.logoHomeAriaLabel"
     (click)="this.closeMobile()"
   >
@@ -70,13 +70,15 @@
     <span aria-hidden="true">pC</span>
   </a>
 
+  <!-- max-sm: the full-screen menu is a centered fixed-width column (aligned icons read
+       better than per-row centering), sections always expanded with no collapse chevrons -->
   @for (item of items(); track item.name) {
-  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+  <div class="flex-none max-sm:mx-auto max-sm:w-64" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
     @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
     <div
-      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em]"
-      [class.hover:cursor-pointer]="!isEffectivelyNarrow()"
-      (click)="!isEffectivelyNarrow() && toggleCollapse(item.name)"
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] max-sm:mt-6 max-sm:mb-1 max-sm:text-xs"
+      [class.hover:cursor-pointer]="!isEffectivelyNarrow() && !isMobileOpen()"
+      (click)="!isEffectivelyNarrow() && !isMobileOpen() && toggleCollapse(item.name)"
     >
       <span class="flex-1 min-w-0">
         @if (isEffectivelyNarrow()) {
@@ -85,7 +87,7 @@
       </span>
       @if (item.children?.length) {
       <pc-swap
-        class="mr-2"
+        class="mr-2 max-sm:hidden"
         [class.hidden]="isEffectivelyNarrow()"
         swapOnIcon="chevron-right"
         swapOffIcon="chevron-down"

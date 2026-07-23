@@ -3,7 +3,10 @@
 <div class="drawer drawer-open bg-base-200 h-screen overflow-hidden">
   <input class="drawer-toggle" />
   <div class="drawer-side">
-    <pc-sidebar></pc-sidebar>
+    <!-- translate-none/will-change-auto: undo daisyUI's `.drawer-side > *` translate/will-change,
+         which otherwise make pc-sidebar a containing block for position:fixed in Safari — that
+         traps the full-screen mobile menu overlay inside the zero-width drawer column -->
+    <pc-sidebar class="max-sm:translate-none max-sm:will-change-auto"></pc-sidebar>
   </div>
 
   <!-- Add the Navbar and router-outlet for the body -->
